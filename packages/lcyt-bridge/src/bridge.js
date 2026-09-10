@@ -229,6 +229,11 @@ export class Bridge extends EventEmitter {
         this.emit('command:error', { host, port, error: err.message });
       }
     } else if (cmd.type === 'atem_switch') {
+      // cmd.port is present (packages/plugins/lcyt-production's atem.js
+      // adapter's getSwitchCommand()) so _resolveIpTargets()/_checkSecurity()
+      // above can match a port-qualified security rule; AtemPool itself
+      // still dials atem-connection's own default port (9910) — its pooled
+      // UDP connection is unrelated to this security-check concern.
       const { requestId, host, meIndex = 0, inputNumber } = cmd;
       try {
         await this._atemPool.switch(host, meIndex, inputNumber);

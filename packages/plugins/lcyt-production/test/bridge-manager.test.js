@@ -350,6 +350,48 @@ describe('BridgeManager.sendCommand — security enforcement', () => {
     mgr.disconnect(id);
   });
 
+  // Regression coverage for the atem_switch port-threading fix: previously
+  // getSwitchCommand() never included a `port` field, so _resolveIpTargets()
+  // always resolved `port: null` for atem_switch and a ":port"-qualified rule
+  // could never match one (a host-only rule still worked — that was the
+  // pre-existing workaround). Both directions are covered: the port-qualified
+  // rule now blocks a matching command, and does NOT block a command whose
+  // (now real) port doesn't match the rule.
+  it('rejects an atem_switch blocked by a port-qualified deny IP rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '192.168.1.100:9910' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    // port: 9910 mirrors what atem.js's getSwitchCommand() now sends by
+    // default (atem-connection's own DEFAULT_PORT) when connectionConfig
+    // doesn't set one.
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'atem_switch', host: '192.168.1.100', port: 9910, meIndex: 0, inputNumber: 3 }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null);
+    mgr.disconnect(id);
+  });
+
+  it('allows an atem_switch whose port does not match a port-qualified deny IP rule', async () => {
+    const db = makeDb();
+    const { id } = insertInstance(db);
+    createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '192.168.1.100:9910' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    mgr.connect(id, res);
+
+    const promise = mgr.sendCommand(id, { type: 'atem_switch', host: '192.168.1.100', port: 19910, meIndex: 0, inputNumber: 3 });
+    const cmdData = extractCommandData(res.chunks);
+    assert.ok(cmdData, 'command was written to the SSE stream — the deny rule is scoped to a different port');
+    mgr.receiveStatus(id, { requestId: cmdData.requestId, ok: true });
+    await promise;
+    mgr.disconnect(id);
+  });
+
   it('rejects a model_call whose sourceUrl host is blocked by a deny IP rule, even when endpoint is allowed', async () => {
     const db = makeDb();
     const { id } = insertInstance(db);

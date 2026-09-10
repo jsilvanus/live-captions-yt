@@ -59,6 +59,7 @@ describe('ATEM adapter — getSwitchCommand', () => {
     assert.deepEqual(result, {
       type: 'atem_switch',
       host: '192.168.1.10',
+      port: 9910,
       meIndex: 0,
       inputNumber: 3,
     });
@@ -79,6 +80,18 @@ describe('ATEM adapter — getSwitchCommand', () => {
 
     assert.equal(result.meIndex, 1);
     assert.equal(result.inputNumber, 5);
+  });
+
+  test('defaults port to atem-connection\'s DEFAULT_PORT (9910) when not configured', async () => {
+    const { getSwitchCommand } = await import('../src/adapters/mixer/atem.js');
+    const result = getSwitchCommand({ host: '192.168.1.10' }, 1);
+    assert.equal(result.port, 9910);
+  });
+
+  test('uses a configured port when present, so a port-qualified security rule can target it', async () => {
+    const { getSwitchCommand } = await import('../src/adapters/mixer/atem.js');
+    const result = getSwitchCommand({ host: '192.168.1.10', port: 19910 }, 1);
+    assert.equal(result.port, 19910);
   });
 });
 

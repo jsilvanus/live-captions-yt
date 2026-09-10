@@ -139,14 +139,23 @@ export function getMixerById(db, registry, id) {
 }
 
 export function createMixer(db, registry, fields = {}) {
-  const { name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend', outputKey = null } = fields;
+  const {
+    name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend', outputKey = null,
+    // Optional (mirrors createCamera()'s ownerApiKey — plan_ingest_feeds.md's
+    // cross-tenant review finding, applied to prod_mixers). Not set by
+    // packages/lcyt-tools' mixer.create handler today for the same reason
+    // createCamera()'s comment gives — that tool group treats mixers as a
+    // shared, project-wide pool. Available here for any in-process caller
+    // that does have real project context to pass along.
+    ownerApiKey = null,
+  } = fields;
   if (!name || typeof name !== 'string') return { ok: false, error: 'name is required' };
   if (!type || !MIXER_TYPES.includes(type)) return { ok: false, error: `type must be one of: ${MIXER_TYPES.join(', ')}` };
   const id = randomUUID();
   db.prepare(`
-    INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey);
+    INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key, owner_api_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey, ownerApiKey);
   registry.reloadMixer(id).catch((err) => console.warn(`[production-control] reloadMixer after create: ${err.message}`));
   return { ok: true, mixer: getMixerById(db, registry, id) };
 }

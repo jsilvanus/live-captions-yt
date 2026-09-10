@@ -4,7 +4,15 @@
  * connectionConfig shape:
  * {
  *   host:     string,   // ATEM IP address
- *   meIndex?: number    // 0-based M/E index (0 = M/E 1). Defaults to 0.
+ *   meIndex?: number,   // 0-based M/E index (0 = M/E 1). Defaults to 0.
+ *   port?:    number    // ATEM UDP control port. Defaults to atem-connection's
+ *                       // own DEFAULT_PORT (9910) when omitted — same default
+ *                       // this adapter's direct connect() and AtemPool have
+ *                       // always dialed. Stored here (rather than as a
+ *                       // separate prod_mixers column) purely so a
+ *                       // bridge_security_rules 'ip' rule can be scoped to
+ *                       // ":port" for an atem_switch command — see
+ *                       // getSwitchCommand()'s doc comment.
  * }
  *
  * ─── Protocol notes ──────────────────────────────────────────────────────────
@@ -28,7 +36,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { Atem } from 'atem-connection';
+import { Atem, DEFAULT_PORT as ATEM_DEFAULT_PORT } from 'atem-connection';
 
 // ---------------------------------------------------------------------------
 // Reconnect config
@@ -129,14 +137,25 @@ export function getActiveSource(handle) {
  * Used by mixers.js bridge routing — returns a typed command object (not a
  * raw TCP string like Roland/AMX).
  *
+ * `port` is included so bridge-manager.js's `_resolveIpTargets()` (and its
+ * lcyt-bridge-side mirror in bridge.js) can resolve a real port for this
+ * command, rather than always `null` — without it, a `bridge_security_rules`
+ * 'ip' rule scoped to `"<atem-ip>:9910"` could never match an atem_switch
+ * command (a host-only rule still worked; this only fixes the port-qualified
+ * case). Defaults to atem-connection's own DEFAULT_PORT (9910) when the
+ * mixer's connectionConfig doesn't set one — the same port this adapter's
+ * connect() and lcyt-bridge's AtemPool have always dialed, so existing rows
+ * with no configured port see no behavior change.
+ *
  * @param {object} connectionConfig
  * @param {number} inputNumber
- * @returns {{ type: 'atem_switch', host: string, meIndex: number, inputNumber: number }}
+ * @returns {{ type: 'atem_switch', host: string, port: number, meIndex: number, inputNumber: number }}
  */
 export function getSwitchCommand(connectionConfig, inputNumber) {
   return {
     type: 'atem_switch',
     host: connectionConfig.host,
+    port: connectionConfig.port ?? ATEM_DEFAULT_PORT,
     meIndex: connectionConfig.meIndex ?? 0,
     inputNumber,
   };

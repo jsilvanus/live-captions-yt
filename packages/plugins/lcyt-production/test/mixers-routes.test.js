@@ -37,14 +37,15 @@ function insertBridgeInstance(id = 'bridge-1') {
 function insertMixer(overrides = {}) {
   const id = overrides.id ?? randomUUID();
   db.prepare(`
-    INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, owner_api_key)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     id,
     overrides.name ?? 'Mixer 1',
     overrides.type ?? 'lcyt',
     JSON.stringify(overrides.connection_config ?? {}),
     overrides.bridge_instance_id ?? null,
+    overrides.owner_api_key ?? null,
   );
   return id;
 }
@@ -277,5 +278,95 @@ describe('Setup/Production tier gate', () => {
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const res = await fetch(`${baseUrl}/production/mixers`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(res.status, 200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mixer ownership (mirrors routes/cameras.js's canAccessCamera() cross-tenant
+// coverage — plan_ingest_feeds.md's review finding, applied to prod_mixers)
+// ---------------------------------------------------------------------------
+
+describe('mixer CRUD auth + ownership (cross-tenant, mirrors camera ownership)', () => {
+  it('with no auth configured, an unowned mixer is fully visible/editable (legacy behavior preserved)', async () => {
+    const id = insertMixer();
+    await startApp(makeRegistryStub());
+    const res = await fetch(`${baseUrl}/production/mixers/${id}`);
+    assert.equal(res.status, 200);
+  });
+
+  it('owner can read/update/delete their own mixer', async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const id = insertMixer({ owner_api_key: 'proj-a' });
+
+    const getRes = await fetch(`${baseUrl}/production/mixers/${id}`, { headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(getRes.status, 200);
+
+    const putRes = await fetch(`${baseUrl}/production/mixers/${id}`, {
+      method: 'PUT', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed' }),
+    });
+    assert.equal(putRes.status, 200);
+
+    const delRes = await fetch(`${baseUrl}/production/mixers/${id}`, { method: 'DELETE', headers: { 'x-api-key': 'proj-a' } });
+    assert.equal(delRes.status, 204);
+  });
+
+  it("a different project cannot read, update, delete, or switch another project's owned mixer (404, not leaked)", async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const id = insertMixer({ owner_api_key: 'proj-a', type: 'lcyt' });
+
+    const getRes = await fetch(`${baseUrl}/production/mixers/${id}`, { headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(getRes.status, 404);
+
+    const putRes = await fetch(`${baseUrl}/production/mixers/${id}`, {
+      method: 'PUT', headers: { 'x-api-key': 'proj-b', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Hijacked' }),
+    });
+    assert.equal(putRes.status, 404);
+
+    const switchRes = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-b' },
+    });
+    assert.equal(switchRes.status, 404);
+
+    const delRes = await fetch(`${baseUrl}/production/mixers/${id}`, { method: 'DELETE', headers: { 'x-api-key': 'proj-b' } });
+    assert.equal(delRes.status, 404);
+  });
+
+  it("GET / filters out other projects' owned mixers but keeps unowned (legacy) ones visible", async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const ownedId = insertMixer({ owner_api_key: 'proj-a', name: 'Owned by A' });
+    const otherOwnedId = insertMixer({ owner_api_key: 'proj-b', name: 'Owned by B' });
+    const legacyId = insertMixer({ owner_api_key: null, name: 'Legacy unowned' });
+
+    const list = await (await fetch(`${baseUrl}/production/mixers`, { headers: { 'x-api-key': 'proj-a' } })).json();
+    const ids = list.map((m) => m.id);
+    assert.ok(ids.includes(ownedId));
+    assert.ok(ids.includes(legacyId));
+    assert.ok(!ids.includes(otherOwnedId));
+  });
+
+  it('POST / stamps the creating project as owner_api_key, never serialized back to the client', async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const res = await fetch(`${baseUrl}/production/mixers`, {
+      method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'New Mixer', type: 'lcyt' }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.isOwned, true);
+    assert.equal(body.owner_api_key, undefined, 'owner_api_key must never be serialized back to the client');
+
+    const row = db.prepare('SELECT owner_api_key FROM prod_mixers WHERE id = ?').get(body.id);
+    assert.equal(row.owner_api_key, 'proj-a');
+  });
+
+  it('a credential-less kiosk switch request is unaffected by ownership (fails open, per isUnauthenticatedMixerRoute)', async () => {
+    await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
+    const id = insertMixer({ owner_api_key: 'proj-a', type: 'lcyt' });
+
+    const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
+    assert.notEqual(res.status, 401);
+    assert.notEqual(res.status, 404);
   });
 });

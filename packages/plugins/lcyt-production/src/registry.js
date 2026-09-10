@@ -354,13 +354,19 @@ export function parseCamera(row) {
 }
 
 export function parseMixer(row) {
+  // owner_api_key is a real api_keys.key value — never spread it into the
+  // response; same treatment as parseCamera() above. Callers that need it
+  // for an ownership check (canAccessMixer()) read row.owner_api_key
+  // directly before calling parseMixer().
+  const { owner_api_key, ...rest } = row;
   return {
-    ...row,
+    ...rest,
     connectionConfig: JSON.parse(row.connection_config || '{}'),
     connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
     outputKey:        row.output_key ?? null,
     createdAt:        row.created_at,
+    isOwned:          owner_api_key != null,
   };
 }
 
