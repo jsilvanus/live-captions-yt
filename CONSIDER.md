@@ -11,18 +11,6 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
-## `lcyt-rtmp`'s ingestion/radio/stream config routes can't be gated at 'setup' tier — same auth-model blocker as `icons.js`/`lcyt-files`, whole router group affected
-
-**Where:** `packages/plugins/lcyt-rtmp/src/routes/ingestion.js` (`PATCH /config`, `POST /config/rotate`), `radio.js` (`PUT /config`), `stream.js` (`POST /`, `PUT /active`, `PUT /:slot`, `DELETE /:slot`, `DELETE /`), `packages/lcyt-backend/src/server.js`'s `createRtmpRouters(db, auth, rtmp, ...)` call (mounts `/ingestion`, `/stream`, `/stream-hls`, `/radio`, `/preview`, `/crop`, `/rtmp`, `/feed-rtmp`).
-
-**Finding:** `plan_project_roles.md`'s route list names these config routes as in-scope Setup-tier writes (same class as `targets.js`/`translation.js`, which Stream A did gate). But unlike those, the entire RTMP router group is constructed with `auth` = the module-level `const auth = createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the plain session-JWT-only middleware, not `scopedAuth()`/`createProjectAccessMiddleware`. `createAuthMiddleware` only ever sets `req.session = payload` (the raw JWT payload) and **never** sets `req.user` under any circumstances, for any token kind — there is no code path in it that could populate a real `userId`. This is the identical root cause already logged for `routes/icons.js` and `lcyt-files`' `/file/storage-config` (see that entry above) — `requireProjectRole()`/`hasProjectRole()`-style gating needs a real `userId` to resolve a role at all, so applying it here would either 403 every request unconditionally (fail-closed forever, since the auth model can never satisfy it) or require migrating this entire router group onto `scopedAuth()` first.
-
-**Skipped because:** switching `createRtmpRouters`'s auth model is a bigger, separate change than adding a role gate — it affects `/ingestion`, `/stream`, `/stream-hls`, `/radio`, `/preview`, `/crop`, `/rtmp`, and `/feed-rtmp` all at once (they share the one `auth` instance), several of which (`/rtmp`, `/feed-rtmp`, `/stream-hls`, `/preview`) are public/nginx-callback/kiosk routes that must stay working exactly as they do today. Left entirely ungated (unchanged from before this pass) rather than attempting that migration as a side effect of the Setup-tier pass. A future pass wanting this gated needs to first decide whether to thread `scopedAuth('<resource>')` through per-sub-router (risking behavior changes on the public/callback routes sharing the group) or give the config-only routes (`ingestion.js`/`radio.js`/`stream.js`) their own separate, real auth middleware instance.
-
-(Found during: Phase 2 Stream D, `plan_project_roles.md`, 2026-07-26.)
-
----
-
 ## DSK live-graphics-operate routes left ungated by the Setup-tier pass — the `/graphics` page's own access tier was never decided
 
 **Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` — `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`.
@@ -83,15 +71,22 @@ Each entry: what was found, why it was skipped, and where.
 
 ---
 
-## `routes/icons.js` and `lcyt-files`' `/file/storage-config` can't be gated at 'setup' tier without a broader auth-model change
+## ~~`lcyt-rtmp`'s ingestion/radio/stream config routes, `routes/icons.js`, and `lcyt-files`' `/file/storage-config` can't be gated at 'setup' tier~~ — RESOLVED 2026-09-10
 
-**Where:** `packages/lcyt-backend/src/routes/icons.js`, `packages/plugins/lcyt-files/src/routes/files.js` (the `/storage-config` GET/PUT/DELETE trio), `packages/lcyt-backend/src/server.js` (`app.use('/icons', createIconRouter(db, auth, store))`), `packages/lcyt-backend/src/routes/content.js` (`router.use('/file', createFilesRouter(db, auth, store, jwtSecret, ...))`), `docs/plans/plan_project_roles.md` Phase 2 Stream A.
+**Where:** `packages/plugins/lcyt-rtmp/src/routes/{ingestion,stream,radio,crop}.js`, `packages/plugins/lcyt-rtmp/src/api.js` (`createRtmpRouters`), `packages/lcyt-backend/src/routes/icons.js`, `packages/plugins/lcyt-files/src/routes/files.js` (the `/storage-config` trio), `packages/lcyt-backend/src/server.js`, `packages/lcyt-backend/src/routes/content.js`, `packages/lcyt-backend/src/middleware/project-access.js`.
 
-**Finding:** `plan_project_roles.md`'s "deliberately not touched by the interim fix" list names `icons` and "lcyt-files' storage config" alongside `targets.js`/`translation.js`/`stt.js`'s config routes as in-scope for Setup-tier gating. But both routers are mounted with the plain `createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the ephemeral session-JWT-only auth used by `/live`/`/captions`/`/mic` — not `scopedAuth()`/`createProjectAccessMiddleware`, which every other Setup-shaped route (targets, translation, stt, connectors, mcp-tokens, ai/providers) uses. The plain session middleware never populates `req.user.userId` (it only sets `req.session = { sessionId, apiKey }`), and both routers' handlers read `req.session.sessionId` + `store.get(sessionId)` directly rather than `req.auth`/`req.user`. `requireProjectRole()` (`middleware/project-access.js`) requires a real `userId` to resolve a role at all, so dropping it into either router as-is would 403 every request unconditionally, not gate it correctly.
+**Original finding:** all of these were mounted with the plain `createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the ephemeral session-JWT-only auth used by `/live`/`/captions`/`/mic` — not `scopedAuth()`/`createProjectAccessMiddleware`. The plain middleware never populates a real `userId`, and `requireProjectRole()` needs one to resolve a role at all, so dropping it in as-is would 403 every request unconditionally rather than gate it correctly. `icons.js`/`lcyt-files` additionally read `req.session.sessionId` + `store.get(sessionId)` directly, tying them to a **live** `/live` session existing.
 
-**Skipped because:** fixing it means migrating both routers off the ephemeral-session auth model onto the project-access-JWT model the other Setup routes use — a real, separate auth-plumbing change (and a check for whether anything relies on either working over a bare `/live` session with no logged-in user), not a one-line drop-in like the other routes in this same pass. Neither carries mintable credentials and both are lower risk (per the plan's own framing), so both were left ungated rather than rushed.
+**Resolved.** The investigation that unblocked this (recorded here as the recipe for the next router that hits the same wall):
 
-(Found during: Phase 2 Stream A, `plan_project_roles.md`, 2026-07-26.)
+1. **The "whole router group shares one auth instance" fear was overstated.** `createRtmpRouters(db, auth, managers, opts)` only threads `auth` into the four config-shaped sub-routers (`ingestion.js`, `stream.js`, `radio.js`'s `/config` pair, `crop.js`) — the public/callback ones (`rtmp.js`, `feed-rtmp.js`, `stream-hls.js`, `preview.js`) never accept an `auth` parameter at their factory signature at all. Swapping what `auth` value flows into `createRtmpRouters()` cannot touch them, full stop — no "narrow vs. broad" tradeoff to make.
+2. **`createProjectAccessMiddleware` already back-fills `req.session.apiKey = authInfo.projectId`** for exactly this kind of legacy call site (`attachProjectContext()`) — this is *why* `targets.js`/`translation.js`/`stt.js` migrated cleanly before this pass: every handler in the four rtmp config routers already read `req.session.apiKey` directly, zero handler-body changes needed, just swap the injected middleware + add `requireProjectRole(db, 'setup')` (which self-exempts GET/HEAD/OPTIONS, so reads stay open to any project member with no per-route sprinkling needed).
+3. **`icons.js`/`lcyt-files`'s "requires a live session" dependency was incidental, not load-bearing** — every handler that did `store.get(sessionId)` only ever read `.apiKey` off the result; the "session not found" 404 gate was an artificial requirement (uploading an icon or configuring S3 storage has no real reason to need an active broadcast running). Dropped the `store.get()` indirection entirely in favor of `req.session.apiKey`, same fix as #2.
+4. **One real gotcha, found and fixed along the way:** `stream.js`'s domain-allowlist check (`requireRtmpDomain`, gated on `ALLOWED_RTMP_DOMAINS`) reads `req.session.domain` — a field only a legacy plain `/live`-session JWT ever carries, and one `createProjectAccessMiddleware`'s back-fill did **not** propagate (it only ever set `.apiKey`/`.projectId`). Swapping the auth middleware without fixing this would have 403'd *every* request through this check the moment a deployment sets a non-wildcard `ALLOWED_RTMP_DOMAINS`/`ALLOWED_DOMAINS` (the default), including plain reads — a real regression, not a narrowing. Fixed by threading `domain` through `attachProjectContext`'s session-kind branch (`req.session.domain = authInfo.domain` when present) so a genuine session JWT keeps working exactly as before, and by changing `requireRtmpDomain` to treat "no domain on this token" (any project-scoped JWT) as "not this legacy throttle's concern" rather than always-deny. **Lesson for next time: before swapping a route's auth middleware, grep the route's own handlers for every `req.session.*` field it reads, not just `.apiKey` — `createProjectAccessMiddleware`'s back-compat shim only forwards fields it's been explicitly taught to forward.**
+
+Net effect: `ingestion.js`/`stream.js`/`radio.js`'s `/config` pair/`crop.js` now require explicit project admin/owner for writes (GET stays open); `icons.js`'s POST/DELETE and `lcyt-files`' `/storage-config` PUT/DELETE do the same. Full test suites green: lcyt-backend (1172), lcyt-rtmp (249), lcyt-files (91).
+
+(Found during: Phase 2 Stream A/D, `plan_project_roles.md`, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
@@ -752,12 +747,17 @@ roleId, permissions}` token fully compatible with
 `createProjectAccessMiddleware`) but neither kiosk page reads or sends it —
 it's stored in `sessionStorage['lcyt-device']` and never used again.
 
-**Also found in the same area (separate bug, not fixed):**
-`DeviceLoginPage.jsx` redirects to `/production/camera/${apiKey}` (passing
-the *project's apiKey* as the `:key` route param) while `CameraStreamPage.jsx`
-treats `:key` as a raw `cameraId`. These are different values — the redirect
-target looks like it would 404 or resolve the wrong camera today, independent
-of the auth question.
+**Also found in the same area — RESOLVED 2026-09-10:**
+`DeviceLoginPage.jsx` used to redirect to `/production/camera/${apiKey}`
+(passing the *project's apiKey* as `CameraStreamPage.jsx`'s `:key` route
+param, which it actually treats as a raw `cameraId` — two different values).
+Investigation confirmed no per-device camera binding exists anywhere in the
+data model (`deviceLoginHandler`'s response carries no camera id;
+`project_device_roles` has no such column, and no UI ever populates one), so
+a camera-specific destination isn't buildable today. The redirect now falls
+back to the same project-preloaded captioning UI the `mic`/`custom` device
+roles already use. The WHIP/kiosk device-JWT wiring itself (the paragraph
+above) is unchanged — still a documented gap, not built.
 
 **Why skipped:** wiring the device-role JWT into two kiosk pages that
 currently have zero auth UI is a real feature addition (reading the token
@@ -771,28 +771,30 @@ thumbnail-capture) and left WHIP/kiosk auth as this follow-up.
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
 plan_ingest_feeds.md, 2026-07-19.)
 
-## `prod_mixers` has no `owner_api_key`/ownership scoping, unlike `prod_cameras`
+## ~~`prod_mixers` has no `owner_api_key`/ownership scoping, unlike `prod_cameras`~~ — RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/db.js`,
 `packages/plugins/lcyt-production/src/routes/mixers.js`
 
-**Finding:** The cross-tenant `sourceCameraId` fix added `owner_api_key` to
+**Original finding:** The cross-tenant `sourceCameraId` fix added `owner_api_key` to
 `prod_cameras` and real auth + `canAccessCamera()` gating to
-`routes/cameras.js`. `prod_mixers` has the identical shape problem in
-principle (no project/tenant column at all, `routes/mixers.js` has no
-`opts.auth`), but nothing in `plan_ingest_feeds.md`'s named-feed/egress work
-ever references a mixer by cross-project ID the way relay slots reference
-cameras via `sourceCameraId` — there's no equivalent attack surface exercised
-by this plan, so it wasn't in scope for this pass.
+`routes/cameras.js`. `prod_mixers` had the identical shape problem in
+principle (no project/tenant column at all, `routes/mixers.js` had no
+`opts.auth`) — nothing in `plan_ingest_feeds.md`'s named-feed/egress work
+exercised the gap, so it wasn't fixed as part of that pass.
 
-**Why skipped:** doing mixers the same way is a same-shaped, mechanical
-follow-up (additive `owner_api_key` column, `canAccessCamera`-equivalent
-gate, `opts.auth` wiring, ownership-filtering tests) but is a separate
-change with its own review, not a hidden dependency of the sourceCameraId
-fix.
+**Resolved:** mirrored the camera fix exactly — additive nullable
+`owner_api_key` column (legacy/pre-existing rows stay in the open/unowned
+bucket), a `canAccessMixer()`-equivalent ownership check, `opts.auth` wired
+into `createMixersRouter`, and the credential-less kiosk `switch` carve-out
+(`isUnauthenticatedMixerRoute`) preserved unchanged. Test coverage mirrors
+`cameras-routes.test.js`'s cross-tenant suite: owner CRUD, a different
+project getting 404 (not a leak) on read/update/delete/switch, `GET /`
+filtering out other projects' owned mixers while keeping legacy unowned ones
+visible, and `owner_api_key` never serialized back to the client.
 
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
-plan_ingest_feeds.md, 2026-07-19.)
+plan_ingest_feeds.md, 2026-07-19. Resolved 2026-09-10.)
 
 ## ~~`AiModelsSection.jsx`/`ai_model_configs` is dead-end plumbing, disconnected from the `ai_providers` registry~~ (RESOLVED)
 
@@ -1116,23 +1118,21 @@ pass:
 
 **Recommendation:** If the bridge's `http_request`/`model_call` surface grows (more encoder types, more third-party APIs relayed through a bridge), revisit with either a `path` pattern field on `ip`-kind rules or a dedicated `url`-kind rule that wraps `network-guard.js`'s evaluator.
 
-**Addendum (2026-07-26 code review):** a related, separate gap in the same area — `lcyt-bridge/src/bridge.js`'s `_httpRequest()`/`_modelCall()` call plain `fetch(url, init)` with no `redirect: 'manual'`/`'error'` option, so a 3xx response is followed transparently. The IP check (both the backend's authoritative one and the bridge's local defense-in-depth one) only ever validates the pre-redirect host — an `http_request` command to an allowed host that responds `302 Location: http://10.0.0.5/admin` (a denied internal host) lands the bridge's actual outbound request on the denied host with neither layer ever seeing the second hop. Same "would need real design work, not a quick fix" reasoning as the rest of this entry applies — `redirect: 'manual'` handling would need the bridge to re-validate and re-fetch each hop itself, a larger rework of `_httpRequest`/`_modelCall`'s fetch strategy. Not implemented; revisit together with the URL-aware rule-kind work above if this surface ever needs to defend against an actively adversarial HTTP target, not just a misconfigured one.
+**Addendum (2026-07-26 code review) — RESOLVED 2026-09-10:** a related, separate gap in the same area — `lcyt-bridge/src/bridge.js`'s `_httpRequest()`/`_modelCall()` called plain `fetch(url, init)` with no `redirect` option, so a 3xx response was followed transparently, landing the bridge's actual outbound request on a denied host via the second hop with neither the backend's nor the bridge's own IP check ever seeing it. Rather than the per-hop re-validation this entry originally sketched, redirects are now blocked outright: `redirect: 'error'` on both fetch calls in `_httpRequest()`/`_modelCall()`, so any 3xx response is rejected before it's ever followed (surfaces as a normal command-failure result via the existing try/catch in `_handleCommand()`, not a crash). `bridge-manager.js` was checked and has no outbound `fetch()` of its own to fix — it only relays the command over SSE and does the pre-flight IP-target resolution.
 
-(Found during: `plan`-driven bridge TCP command / IP security layer implementation, 2026-07-26; addendum found during the follow-up code-review pass the same day.)
+(Found during: `plan`-driven bridge TCP command / IP security layer implementation, 2026-07-26; addendum found during the follow-up code-review pass the same day. Addendum resolved 2026-09-10.)
 
 ---
 
-## Bridge security: atem_switch commands never carry a port, so a port-qualified IP rule can never match them
+## ~~Bridge security: atem_switch commands never carry a port, so a port-qualified IP rule can never match them~~ — RESOLVED 2026-09-10
 
-**Where:** `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_resolveIpTargets()`, `packages/lcyt-bridge/src/bridge.js`'s duplicate, `packages/plugins/lcyt-production/src/adapters/mixer/atem.js` (builds `{ type: 'atem_switch', host, meIndex, inputNumber }` — no `port` field, since `AtemPool.switch(host, meIndex, inputNumber)` takes none)
+**Where:** `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_resolveIpTargets()`, `packages/lcyt-bridge/src/bridge.js`'s duplicate, `packages/plugins/lcyt-production/src/adapters/mixer/atem.js`
 
-**Finding:** `_resolveIpTargets()` always resolves `port: null` for `atem_switch`, since the command object never carries one. `matchesHostPattern()`'s port-suffix check (`if (parsed.port != null && parsed.port !== port) return false`) means a rule written with a `:port` suffix (e.g. `"192.168.1.100:9910"`, the natural way to scope a deny rule to "that ATEM switcher") can never match an `atem_switch` command — the actual resolved port is always `null`, so the comparison always fails. A host-only pattern (no `:port` suffix) still works correctly and is the safe way to write an ATEM-targeting rule today.
+**Original finding:** `_resolveIpTargets()` always resolved `port: null` for `atem_switch` commands, since the command object never carried one. `matchesHostPattern()`'s port-suffix check meant a rule written with a `:port` suffix (e.g. `"192.168.1.100:9910"`) could never match — a host-only pattern still worked and was the safe workaround.
 
-**Why skipped:** The two real fixes both have real downsides: (a) inject ATEM's well-known default UDP port (9910) into the generic dispatcher for matching purposes, which couples the security layer to protocol-specific knowledge and would be *wrong* for any deployment where the ATEM's actual configured port differs from the default; or (b) thread the real port through `atem_switch` commands end-to-end (`AtemPool`, the ATEM adapter, the command shape) even though nothing else about ATEM control needs it — a real API change to an unrelated subsystem just to serve a rule-matching edge case. Neither is a small, obviously-correct fix, and the workaround (write host-only deny/allow rules for ATEM devices, which fully protects them) is simple and already available.
+**Resolved:** threaded a real `port` field through the whole path instead of taking either of the two previously-rejected shortcuts. `getSwitchCommand()` (`adapters/mixer/atem.js`) now includes `port: connectionConfig.port ?? ATEM_DEFAULT_PORT` (`atem-connection`'s own `DEFAULT_PORT`, 9910 — the same value this adapter's `connect()` and `AtemPool` have always dialed, so existing rows with no configured port see zero behavior change); a mixer's `connectionConfig` can now optionally set its own `port`. `_resolveIpTargets()` in both `bridge-manager.js` and `lcyt-bridge/src/bridge.js` use the command's real port instead of hardcoding `null`. A port-qualified rule now correctly matches/blocks an `atem_switch` command; host-only rules keep working exactly as before.
 
-**Recommendation:** Document the limitation in `bridge-security.js`'s doc comment (host-only patterns for ATEM devices) and/or surface a UI hint in `SecurityRuleList` when a `:port`-suffixed pattern is added for a bridge with ATEM-type mixers assigned. Revisit only if this specific gap causes a real incident.
-
-(Found during: code-review pass on the bridge security layer, 2026-07-26.)
+(Found during: code-review pass on the bridge security layer, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 

@@ -233,7 +233,10 @@ POST /production/perception/shared/start — start the one shared-feed perceptio
 POST /production/perception/shared/stop  — stop it (Bearer token)
 GET  /production/perception/shared/status — running shared-feed job info, or null (Bearer token)
 
-GET  /icons/*             — icon assets (authenticated)
+GET  /icons               — list icons for the authenticated project (Bearer token)
+POST /icons               — upload a PNG or SVG icon (Bearer token; Setup-tier project role required)
+GET  /icons/:id           — serve an icon (public, no auth, CORS *)
+DELETE /icons/:id         — delete an icon (Bearer token; Setup-tier project role required)
 
 GET/POST/PUT/DELETE /production/device-roles — device role CRUD (admin or user Bearer)
 GET  /production/device-roles/:code/auth     — device role pin-code authentication
