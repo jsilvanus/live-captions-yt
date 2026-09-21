@@ -10,6 +10,7 @@
 | **8080** | HTTP | MediaMTX — HLS output | internal | `MEDIAMTX_HLS_BASE_URL` |
 | **8554** | RTSP | MediaMTX — RTSP output | internal | `MEDIAMTX_RTSP_BASE_URL` |
 | **8889** | HTTP/WS | MediaMTX — WebRTC preview | inbound (browsers) | `MEDIAMTX_WEBRTC_BASE_URL` |
+| **8090** | HTTP | STT service (liturgos-auditor) | internal | `AUDITOR_STT_PORT` |
 | **9997** | HTTP | MediaMTX — REST API | internal | `MEDIAMTX_API_URL` |
 | **9998** | HTTP | MediaMTX — Prometheus metrics | internal | — (`docker/mediamtx.yml` `metricsAddress`) |
 | **5560+** | ZeroMQ | Vertical-crop live repositioning (`CropManager`, one port per running crop renderer) | internal (loopback only) | `CROP_ZMQ_PORT_BASE` |
@@ -75,6 +76,19 @@ WebRTC preview is used.
 - **Inbound from internet:** yes — if WebRTC preview is exposed to end users
 - **Firewall:** open TCP 8889 (and UDP range for WebRTC ICE if using STUN/TURN)
 - Override: `MEDIAMTX_WEBRTC_BASE_URL=http://127.0.0.1:8889`
+
+### STT service (liturgos-auditor) — port 8090
+
+Self-hosted speech-to-text inference service (FastAPI + faster-whisper). Receives audio chunks from HLS segments or RTMP/WHEP via the SttManager.
+
+- **Inbound from internet:** no — internal only (reachable by lcyt-backend and HLS segment fetcher)
+- **Accessed by:** lcyt-backend (SttManager via WhisperHttpAdapter or OpenAiAdapter)
+- **Endpoints:**
+  - `GET /health` — model load status
+  - `POST /inference` — whisper.cpp-compatible audio transcription
+  - `POST /v1/audio/transcriptions` — OpenAI-compatible endpoint
+  - `GET /status` — queue depth and model info
+- Override: `AUDITOR_STT_PORT=8090`, `AUDITOR_STT_URL=http://127.0.0.1:8090`, or `WHISPER_HTTP_URL=http://auditor-stt:8090`
 
 ### MediaMTX — REST API, port 9997
 
