@@ -446,6 +446,18 @@ class TestFormatTimestamp:
         assert ts.startswith("2026-03-15T10:30:00")
         assert not ts.endswith("Z")
         assert "+" not in ts
+        # Should have exactly 3 fractional digits
+        assert ts == "2026-03-15T10:30:00.123"
+
+    def test_datetime_object_with_zero_microseconds(self):
+        # Regression test: datetime.isoformat() omits fractional part when microsecond=0
+        s = self._sender()
+        dt = datetime(2026, 3, 15, 10, 30, 0, 0, tzinfo=timezone.utc)
+        ts = s._format_timestamp(dt)
+        # Must always have exactly 3 fractional digits
+        assert ts == "2026-03-15T10:30:00.000"
+        assert not ts.endswith("Z")
+        assert "+" not in ts
 
     def test_iso_string_strips_trailing_z(self):
         s = self._sender()
@@ -464,6 +476,15 @@ class TestFormatTimestamp:
         ts = s._format_timestamp("2026-01-01T00:00:00.123456")
         assert ts == "2026-01-01T00:00:00.123"
 
+    def test_iso_string_pads_short_fractional_part(self):
+        # When given an ISO string with only 1 or 2 fractional digits, pad to 3
+        s = self._sender()
+        ts = s._format_timestamp("2026-01-01T00:00:00.1")
+        assert ts == "2026-01-01T00:00:00.100"
+
+        ts = s._format_timestamp("2026-01-01T00:00:00.12")
+        assert ts == "2026-01-01T00:00:00.120"
+
     def test_large_int_treated_as_epoch_seconds(self):
         # Values >= 1000 are Unix epoch seconds
         s = self._sender()
@@ -471,6 +492,11 @@ class TestFormatTimestamp:
         ts = s._format_timestamp(epoch_s)
         assert ts.startswith("20")  # year should be 20xx
         assert "T" in ts
+        # Must have exactly 3 fractional digits
+        assert "." in ts
+        frac_part = ts.split(".")[-1]
+        assert len(frac_part) == 3
+        assert frac_part == "000"  # This specific epoch happens to have 0 microseconds
 
     def test_small_float_treated_as_relative_offset(self):
         # Values < 1000 are relative seconds from now
@@ -478,11 +504,21 @@ class TestFormatTimestamp:
         ts = s._format_timestamp(0.0)
         assert ts.startswith("20")
         assert "T" in ts
+        # Must have exactly 3 fractional digits (not necessarily .000 since it's "now")
+        assert "." in ts
+        frac_part = ts.split(".")[-1]
+        assert len(frac_part) == 3
+        assert frac_part.isdigit()
 
     def test_negative_value_treated_as_relative_offset(self):
         s = self._sender()
         ts = s._format_timestamp(-2.0)  # 2 seconds ago
         assert ts.startswith("20")
+        # Must have exactly 3 fractional digits
+        assert "." in ts
+        frac_part = ts.split(".")[-1]
+        assert len(frac_part) == 3
+        assert frac_part.isdigit()
 
 
 # ---------------------------------------------------------------------------
