@@ -1,13 +1,20 @@
 ---
 id: plan/local-stt
 title: "Local STT Service (`liturgos-auditor`) — Self-Hosted, Trainable Finnish Speech-to-Text"
-status: in-progress
-summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, OpenAI-compatible /v1/audio/transcriptions endpoint, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter and OpenAiAdapter. Implemented in the sibling `liturgos-auditor` repository."
+status: superseded
+summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, OpenAI-compatible /v1/audio/transcriptions endpoint, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter and OpenAiAdapter. Implemented in the sibling `liturgos-auditor` repository; the in-repo copy this plan originally described was removed on `chore/retire-lcyt-stt`, see the retirement note below."
 ---
 
 # Local STT Service (`liturgos-auditor`)
 
-**Implementation:** The service is implemented in the sibling `liturgos-auditor` repository (Python package `auditor_stt`, Docker images, trained models registry). LCYT connects via `WhisperHttpAdapter` (`WHISPER_HTTP_URL=http://auditor-stt:8090`, no auth) or `OpenAiAdapter` (`OPENAI_STT_URL=http://auditor-stt:8090`, with `OPENAI_STT_API_KEY` if the service has `AUDITOR_STT_API_KEY` set). **No changes to the existing STT adapter contract** — the service speaks the whisper.cpp `/inference` and OpenAI-compatible `/v1/audio/transcriptions` HTTP APIs that the adapters already implement.
+> **Retired (branch `chore/retire-lcyt-stt`).** The service this plan describes was originally
+> built here as `python-packages/lcyt-stt/` + `docker/lcyt-stt/`. Development then moved to the
+> sibling [`liturgos-auditor`](https://github.com/jsilvanus/liturgos-auditor) repository, where it
+> was substantially extended (OpenAI-compatible endpoint, model management, ops runbook, and more).
+> This repo's original copy never received those changes and has now been **removed** — see the
+> git history on this branch for the deletion commit. The plan below is kept for historical record.
+
+**Implementation:** The service is implemented in the sibling `liturgos-auditor` repository (Python package `auditor_stt`, Docker images, trained models registry). LCYT connects via `WhisperHttpAdapter` (`WHISPER_HTTP_URL=http://auditor-stt:8090`, no auth) or `OpenAiAdapter` (`OPENAI_STT_URL=http://auditor-stt:8090`, with `OPENAI_STT_API_KEY` if the service has `AUDITOR_STT_API_KEY` set), as documented in `PORTS.md`. **No changes to the existing STT adapter contract** — the service speaks the whisper.cpp `/inference` and OpenAI-compatible `/v1/audio/transcriptions` HTTP APIs that the adapters already implement.
 
 **Companion repository:** [`jsilvanus/crowd-source-voice`](https://github.com/jsilvanus/crowd-source-voice) — the crowdsourcing platform that produces the training data. It is a separate project with its own lifecycle; this plan treats its **export API as a stable input contract**, not as code to modify.
 
@@ -203,8 +210,6 @@ The standalone service is implemented at `auditor_stt/serve/` in the sibling `li
 
 ## Implementation Status
 
-> Note: `python-packages/lcyt-stt/` and `docker/lcyt-stt/` in this repository are the original copy of the service, from before it moved to the `liturgos-auditor` repository. The maintained implementation, with everything listed below, lives in `liturgos-auditor`; this copy has not received those changes and should be retired.
-
 - [x] **Phase 1** — inference service MVP (FastAPI + faster-whisper, `/inference` + `/health` + `/v1/audio/transcriptions`, CPU/CUDA images, compose wiring)
   - [x] WhisperHttpAdapter integration path tested
   - [ ] End-to-end test against live LCYT stack (BLOCKING for production)
@@ -215,3 +220,4 @@ The standalone service is implemented at `auditor_stt/serve/` in the sibling `li
 - [ ] **Phase 5** — model management endpoints, `lcyt` provider alias, Setup Hub health surfacing, runbook
   - [x] STT entry in `PORTS.md` (port 8090)
   - [x] Ops runbook `ops/runbooks/stt.md`
+- [x] **Retirement** — `python-packages/lcyt-stt/` and `docker/lcyt-stt/` removed on `chore/retire-lcyt-stt`; the maintained implementation lives in the sibling `liturgos-auditor` repo (see the note at the top of this document)

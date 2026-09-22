@@ -81,11 +81,12 @@ services:
       FFMPEG_IMAGE: ${FFMPEG_IMAGE:-lcyt-ffmpeg:latest}
       DOCKER_HOST: ${DOCKER_HOST:-}
       # ── Self-hosted STT (docs/plans/plan_local_stt.md) ───────────────────
-      # Wired but inert unless the `lcyt-stt` service below is actually running
-      # (enable with `docker compose --profile lcyt-stt up`) — the existing
-      # WhisperHttpAdapter just needs provider: whisper_http configured via
-      # POST /stt/start or the stt.whisper_http_url setting.
-      WHISPER_HTTP_URL: ${WHISPER_HTTP_URL:-http://lcyt-stt:8090}
+      # The self-hosted service is no longer built from this repo — it moved to,
+      # and was substantially extended in, the sibling `liturgos-auditor` repo.
+      # Point this at that deployment; the existing WhisperHttpAdapter just needs
+      # provider: whisper_http configured via POST /stt/start or the
+      # stt.whisper_http_url setting.
+      WHISPER_HTTP_URL: ${WHISPER_HTTP_URL:-}
     depends_on:
       - mediamtx
     restart: unless-stopped
@@ -121,26 +122,12 @@ services:
     environment:
       MTX_LOGLEVEL: ${MEDIAMTX_LOG_LEVEL:-info}
 
-  # ── lcyt-stt — self-hosted STT inference (docs/plans/plan_local_stt.md) ────
-  # Opt-in: `docker compose --profile lcyt-stt up`. CPU image by default; see
-  # docker/lcyt-stt/README.md for the CUDA variant and GPU passthrough.
-  lcyt-stt:
-    build:
-      context: ./python-packages/lcyt-stt
-      dockerfile: ../../docker/lcyt-stt/Dockerfile
-    image: lcyt-stt:latest
-    container_name: lcyt-stt
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:8090:8090"
-    environment:
-      LCYT_STT_MODEL_DIR: /models
-      LCYT_STT_MODEL: ${LCYT_STT_MODEL:-Systran/faster-whisper-large-v3-turbo}
-      LCYT_STT_DEFAULT_LANGUAGE: ${LCYT_STT_DEFAULT_LANGUAGE:-fi}
-    volumes:
-      - lcyt-stt-models:/models
-    profiles:
-      - lcyt-stt
+  # ── Self-hosted STT ──────────────────────────────────────────────────────
+  # The `lcyt-stt` service that used to be built here (python-packages/lcyt-stt,
+  # docker/lcyt-stt) was retired: the maintained implementation moved to, and
+  # has been substantially extended in, the sibling `liturgos-auditor` repo.
+  # Deploy that repo's service separately and point WHISPER_HTTP_URL above at
+  # it. See docs/plans/plan_local_stt.md for the history.
 
   # ── Docker socket proxy (Phases 2–3 only) ──────────────────────────────────
   # Allows the backend to launch ephemeral ffmpeg compute containers without
@@ -160,7 +147,6 @@ services:
 
 volumes:
   lcyt-db: {}
-  lcyt-stt-models: {}
 
 networks:
   default:
