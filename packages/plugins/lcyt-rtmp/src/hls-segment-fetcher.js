@@ -18,11 +18,11 @@ import { EventEmitter } from 'node:events';
 const MIN_POLL_INTERVAL_MS = 1000;
 
 /**
- * Parse a MediaMTX/HLS playlist text and return segment descriptors.
+ * Parse a MediaMTX/HLS playlist text and return segment descriptors with init segment URL.
  *
  * @param {string} text   Raw playlist text
  * @param {string} baseUrl  Base URL of the playlist (used to resolve relative URLs)
- * @returns {{ mediaSequence: number, segments: Array<{ url: string, duration: number, programDateTime?: Date }> }}
+ * @returns {{ mediaSequence: number, initUrl?: string, segments: Array<{ url: string, duration: number, programDateTime?: Date }> }}
  */
 function parsePlaylist(text, baseUrl) {
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -31,6 +31,7 @@ function parsePlaylist(text, baseUrl) {
   let pendingDuration = null;
   let pendingDateTime = null;
   let accumulatedMs = 0;
+  let initUrl = undefined;
 
   const segments = [];
 
@@ -39,6 +40,27 @@ function parsePlaylist(text, baseUrl) {
 
     if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
       mediaSequence = parseInt(line.split(':')[1], 10) || 0;
+      continue;
+    }
+
+    if (line.startsWith('#EXT-X-MAP:')) {
+      // #EXT-X-MAP:URI="...",BYTERANGE="len@offset"
+      // Extract the URI attribute
+      const uriMatch = line.match(/URI="([^"]+)"/);
+      if (uriMatch) {
+        let uri = uriMatch[1];
+        // Resolve relative URL
+        if (!uri.startsWith('http')) {
+          uri = `${baseUrl.replace(/\/[^/]*$/, '')}/${uri}`;
+        }
+        initUrl = uri;
+
+        // Extract BYTERANGE if present
+        const byterangeMatch = line.match(/BYTERANGE="(\d+)@(\d+)"/);
+        if (byterangeMatch) {
+          initUrl = { url: uri, byterangeLength: parseInt(byterangeMatch[1], 10), byterangeOffset: parseInt(byterangeMatch[2], 10) };
+        }
+      }
       continue;
     }
 
@@ -91,7 +113,7 @@ function parsePlaylist(text, baseUrl) {
     }
   }
 
-  return { mediaSequence, segments };
+  return { mediaSequence, initUrl, segments };
 }
 
 export class HlsSegmentFetcher extends EventEmitter {
@@ -118,7 +140,8 @@ export class HlsSegmentFetcher extends EventEmitter {
     this._timer          = null;
     this._lastSequence   = -1; // last mediaSequence we processed
     this._lastSegmentIdx = -1; // last segment index seen within that sequence window
-    this._initUrl        = null; // cached init segment URL (for fMP4)
+    this._initUrl        = null; // cached init segment URL descriptor (string or { url, byterangeLength, byterangeOffset })
+    this._initBuffer     = null; // cached init segment buffer
     this._stopped        = false;
   }
 
@@ -147,6 +170,36 @@ export class HlsSegmentFetcher extends EventEmitter {
   }
 
   // ── Internal ──────────────────────────────────────────────────────────────
+
+  async _fetchInitSegment(initUrlDescriptor) {
+    /**
+     * Fetch the init segment buffer from the given URL or URL with byte range.
+     * Returns the buffer, or null if fetch fails.
+     * @param {string | { url: string, byterangeLength: number, byterangeOffset: number }} initUrlDescriptor
+     * @returns {Promise<Buffer|null>}
+     */
+    let url, headers = {};
+    if (typeof initUrlDescriptor === 'string') {
+      url = initUrlDescriptor;
+    } else {
+      url = initUrlDescriptor.url;
+      const offset = initUrlDescriptor.byterangeOffset;
+      const length = initUrlDescriptor.byterangeLength;
+      headers['Range'] = `bytes=${offset}-${offset + length - 1}`;
+    }
+
+    try {
+      const resp = await fetch(url, { headers, signal: AbortSignal.timeout(15_000) });
+      if (!resp.ok) {
+        this.emit('error', { error: new Error(`Init segment fetch failed: HTTP ${resp.status} ${url}`) });
+        return null;
+      }
+      return Buffer.from(await resp.arrayBuffer());
+    } catch (err) {
+      this.emit('error', { error: new Error(`Init segment fetch error: ${err.message}`) });
+      return null;
+    }
+  }
 
   async _poll() {
     if (!this._running) return;
@@ -184,9 +237,27 @@ export class HlsSegmentFetcher extends EventEmitter {
       throw err;
     }
 
-    const { mediaSequence, segments } = parsePlaylist(playlistText, playlistUrl);
+    const { mediaSequence, initUrl, segments } = parsePlaylist(playlistText, playlistUrl);
 
     if (segments.length === 0) return;
+
+    // Handle EXT-X-MAP init segment: fetch once per URI change, cache the buffer
+    if (initUrl !== undefined) {
+      const initUrlStr = typeof initUrl === 'string' ? initUrl : initUrl.url;
+      if (this._initUrl !== initUrlStr) {
+        // URI changed or this is the first time — fetch and cache the init segment
+        this._initBuffer = await this._fetchInitSegment(initUrl);
+        // Only mark as fetched if successful; if fetch failed, leave _initUrl unchanged
+        // so the next poll will retry the same URI
+        if (this._initBuffer) {
+          this._initUrl = initUrlStr;
+        }
+      }
+    } else {
+      // No EXT-X-MAP in the playlist — clear any cached init segment
+      this._initUrl = null;
+      this._initBuffer = null;
+    }
 
     // First poll of an already-live stream: skip the window backlog so we
     // start at the live edge (emit only the newest segment).
@@ -216,6 +287,19 @@ export class HlsSegmentFetcher extends EventEmitter {
       } catch (err) {
         this.emit('error', { error: new Error(`Segment fetch error: ${err.message}`) });
         continue;
+      }
+
+      // Skip segment if init segment is required but not available (fetch failed).
+      // Segments are lost on transient init failures; the next poll retries init fetch.
+      if (initUrl !== undefined && !this._initBuffer) {
+        // Playlist declares EXT-X-MAP but init fetch failed; skip this segment
+        // (error already emitted by _fetchInitSegment)
+        continue;
+      }
+
+      // Prepend init segment buffer if available
+      if (this._initBuffer) {
+        buffer = Buffer.concat([this._initBuffer, buffer]);
       }
 
       const timestamp = seg.timestamp ?? new Date();

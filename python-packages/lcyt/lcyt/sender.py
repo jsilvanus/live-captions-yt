@@ -444,11 +444,11 @@ class YoutubeLiveCaptionSender:
         YouTube expects: YYYY-MM-DDTHH:MM:SS.mmm (milliseconds, no timezone suffix)
 
         Accepted inputs:
-        - ``datetime``: converted via isoformat()
+        - ``datetime``: converted to ISO format with exactly 3 fractional digits
         - ``int``/``float`` >= 1000: Unix epoch in **seconds** (time.time() convention)
         - ``int``/``float`` < 1000 or negative: relative seconds offset from now
           (sync offset applied when use_sync_offset is True)
-        - ISO string with or without trailing 'Z' or '+00:00'
+        - ISO string with or without trailing 'Z' or '+00:00' (used as-is)
         """
         if isinstance(timestamp, datetime):
             timestamp = timestamp.isoformat()
@@ -469,10 +469,18 @@ class YoutubeLiveCaptionSender:
         # Strip +00:00 timezone offset
         if "+" in timestamp:
             timestamp = timestamp.split("+")[0]
-        # Truncate to milliseconds (3 decimal places) — YouTube rejects microseconds
+
+        # Ensure exactly 3 fractional digits (milliseconds)
+        # When datetime.isoformat() has microsecond=0, it omits the fractional part entirely.
+        # Always produce YYYY-MM-DDTHH:MM:SS.mmm format (truncated to 3 digits, never rounded).
         if "." in timestamp:
             base, frac = timestamp.rsplit(".", 1)
-            timestamp = f"{base}.{frac[:3]}"
+            # Truncate to 3 digits (don't round)
+            timestamp = f"{base}.{frac[:3].ljust(3, '0')}"
+        else:
+            # No fractional part — add .000
+            timestamp = f"{timestamp}.000"
+
         return timestamp
 
     def _build_caption_body(self, timestamp: str, text: str) -> str:
