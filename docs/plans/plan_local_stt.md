@@ -1,13 +1,22 @@
 ---
 id: plan/local-stt
 title: "Local STT Service (`lcyt-stt`) — Self-Hosted, Trainable Finnish Speech-to-Text"
-status: in-progress
-summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter."
+status: superseded
+summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter. Superseded: the in-repo copy was removed on `chore/retire-lcyt-stt`; see the retirement note below."
 ---
 
 # Local STT Service (`lcyt-stt`)
 
-**Scope:** New Python package `python-packages/lcyt-stt/` (inference server + dataset/training/eval tooling); new Docker build contexts `docker/lcyt-stt/` (CPU and CUDA variants); docker-compose wiring; small optional additions to `packages/plugins/lcyt-rtmp` (named provider alias + health surfacing). **No changes to the existing STT adapter contract** — the service speaks the whisper.cpp HTTP API that `WhisperHttpAdapter` already implements.
+> **Retired (branch `chore/retire-lcyt-stt`).** The service this plan describes was originally
+> built here as `python-packages/lcyt-stt/` + `docker/lcyt-stt/`. Development then moved to the
+> sibling [`liturgos-auditor`](https://github.com/jsilvanus/liturgos-auditor) repository, where it
+> was substantially extended (OpenAI-compatible endpoint, model management, ops runbook, and more).
+> This repo's original copy never received those changes and has now been **removed** — see the
+> git history on this branch for the deletion commit. The plan below is kept for historical record;
+> for the current implementation, deploy `liturgos-auditor` and point `WHISPER_HTTP_URL` (or the
+> OpenAI-compatible adapter) at it, as documented in `PORTS.md`.
+
+**Scope (historical):** New Python package `python-packages/lcyt-stt/` (inference server + dataset/training/eval tooling); new Docker build contexts `docker/lcyt-stt/` (CPU and CUDA variants); docker-compose wiring; small optional additions to `packages/plugins/lcyt-rtmp` (named provider alias + health surfacing). **No changes to the existing STT adapter contract** — the service speaks the whisper.cpp HTTP API that `WhisperHttpAdapter` already implements.
 
 **Companion repository:** [`jsilvanus/crowd-source-voice`](https://github.com/jsilvanus/crowd-source-voice) — the crowdsourcing platform that produces the training data. It is a separate project with its own lifecycle; this plan treats its **export API as a stable input contract**, not as code to modify.
 
@@ -182,6 +191,7 @@ New package `python-packages/lcyt-stt/` (`pyproject.toml`, published nowhere —
 
 - [x] Phase 1 — inference service MVP (FastAPI + faster-whisper, `/inference` + `/health`, CPU/CUDA images, compose, E2E via `WhisperHttpAdapter`) — `python-packages/lcyt-stt/`, `docker/lcyt-stt/`. Unit tests (health states, inference shape, queue overflow) pass; the live Docker-build + real end-to-end RTMP→caption verification still needs an environment with a running Docker daemon (not available in the sandbox this was implemented in).
 - [x] Phase 2 — dataset pipeline (snapshot pull/build, speaker-disjoint split; speaker id added to crowdsource export) — `lcyt_stt/dataset/`. `pull.py` validates `corpus.type == 'text'` (rejects `music`), re-checks the 0.5–30s duration gate defensively (crowd-source-voice's server never re-validates it), and records provenance in `snapshot.json`. `build.py`'s split is speaker-disjoint via the new `speaker_id` field, with a logged, explicitly-flagged fallback when it's absent. Unit tests mock the crowd-source-voice HTTP client; no live-server smoke test in CI (documented as a manual operator step in the package README).
-- [ ] Phase 3 — training pipeline (config-driven fine-tune, CT2 conversion, versioned artifacts)
-- [ ] Phase 4 — eval harness (held-out + real-service sets, promotion gate) — build before first paid training run
-- [ ] Phase 5 — model management endpoints, `lcyt` provider alias, Setup Hub health surfacing, runbook
+- [ ] Phase 3 — training pipeline (config-driven fine-tune, CT2 conversion, versioned artifacts) — not built in this repo; superseded
+- [ ] Phase 4 — eval harness (held-out + real-service sets, promotion gate) — not built in this repo; superseded
+- [ ] Phase 5 — model management endpoints, `lcyt` provider alias, Setup Hub health surfacing, runbook — not built in this repo; superseded
+- [x] Retirement — `python-packages/lcyt-stt/` and `docker/lcyt-stt/` removed on `chore/retire-lcyt-stt`; the maintained implementation lives in the sibling `liturgos-auditor` repo (see the note at the top of this document)

@@ -15,7 +15,7 @@
 | **5560+** | ZeroMQ | Vertical-crop live repositioning (`CropManager`, one port per running crop renderer) | internal (loopback only) | `CROP_ZMQ_PORT_BASE` |
 | **4000** | HTTP | lcyt-orchestrator | internal | `PORT` |
 | **5000** | HTTP | lcyt-worker-daemon | internal | `PORT` |
-| **8090** | HTTP | lcyt-stt — self-hosted STT inference (faster-whisper) | internal | `LCYT_STT_PORT` |
+| **8090** | HTTP | Self-hosted STT inference (faster-whisper) — now deployed from the sibling `liturgos-auditor` repo | internal | service-specific, see that repo |
 | **9090** | HTTP | Prometheus (docker-compose.monitoring.yml) | internal | — |
 | **80 / 443** | HTTP/HTTPS | nginx reverse proxy | inbound (public) | — |
 
@@ -98,17 +98,20 @@ and never exposed outside the host.
 - **Firewall:** no rule needed (never listens outside 127.0.0.1)
 - Override: `CROP_ZMQ_PORT_BASE=5560`
 
-### lcyt-stt — port 8090
+### Self-hosted STT — port 8090
 
-Self-hosted faster-whisper inference service (`python-packages/lcyt-stt/`,
-`docker/lcyt-stt/`, `docs/plans/plan_local_stt.md`). Exposes a
-whisper.cpp-compatible `/inference` API — the existing `WhisperHttpAdapter`
+Self-hosted faster-whisper inference service. **Retired from this repo** —
+the original copy (`python-packages/lcyt-stt/`, `docker/lcyt-stt/`) has been
+removed; the maintained implementation now lives in, and has been
+substantially extended in, the sibling `liturgos-auditor` repo (see
+`docs/plans/plan_local_stt.md`). It still exposes a whisper.cpp-compatible
+`/inference` API — the existing `WhisperHttpAdapter`
 (`packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js`) talks to it
 via `WHISPER_HTTP_URL`, same as any other whisper.cpp-compatible server.
 
 - **Inbound from internet:** no — internal only, same treatment as MediaMTX's internal ports
 - **Accessed by:** lcyt-backend / lcyt-rtmp's `SttManager` (as the `whisper_http` provider)
-- Override: `LCYT_STT_PORT=8090` (service's own listen port); `WHISPER_HTTP_URL=http://lcyt-stt:8090` (consumer-side)
+- Override: `WHISPER_HTTP_URL=http://<liturgos-auditor-stt-host>:8090` (consumer-side; see that repo for its own port env var)
 
 ### nginx — ports 80 / 443
 
@@ -135,7 +138,7 @@ TCP  8889  MediaMTX WebRTC
 TCP  3000  lcyt-backend
 TCP  4000  lcyt-orchestrator
 TCP  5000  lcyt-worker-daemon
-TCP  8090  lcyt-stt (self-hosted STT inference)
+TCP  8090  Self-hosted STT inference (now deployed from liturgos-auditor, if used)
 TCP  8080  MediaMTX HLS
 TCP  8554  MediaMTX RTSP
 TCP  9090  Prometheus (docker-compose.monitoring.yml)
@@ -155,5 +158,4 @@ TCP  9998  MediaMTX Prometheus metrics
 | `MEDIAMTX_WEBRTC_BASE_URL` | `http://127.0.0.1:8889` | MediaMTX WebRTC base — returned by `/preview/:key/webrtc` |
 | `MEDIAMTX_API_URL` | `http://localhost:9997` | MediaMTX REST API — used by MediaMtxClient |
 | `CROP_ZMQ_PORT_BASE` | `5560` | First 127.0.0.1 port for per-process vertical-crop zmq binds |
-| `LCYT_STT_PORT` | `8090` | lcyt-stt inference service's own listen port |
-| `WHISPER_HTTP_URL` | (unset) | Base URL of a whisper.cpp-compatible STT server — point at lcyt-stt or any other |
+| `WHISPER_HTTP_URL` | (unset) | Base URL of a whisper.cpp-compatible STT server — point at a `liturgos-auditor` deployment or any other |
