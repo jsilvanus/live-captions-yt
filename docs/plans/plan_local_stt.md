@@ -1,22 +1,20 @@
 ---
 id: plan/local-stt
-title: "Local STT Service (`lcyt-stt`) — Self-Hosted, Trainable Finnish Speech-to-Text"
+title: "Local STT Service (`liturgos-auditor`) — Self-Hosted, Trainable Finnish Speech-to-Text"
 status: superseded
-summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter. Superseded: the in-repo copy was removed on `chore/retire-lcyt-stt`; see the retirement note below."
+summary: "LCYT's own STT inference service + training pipeline: a containerized faster-whisper server (whisper.cpp-compatible /inference API, OpenAI-compatible /v1/audio/transcriptions endpoint, GPU auto-detect with CPU int8 fallback) serving Whisper models fine-tuned on Finnish data crowdsourced via the companion crowd-source-voice platform. Covers dataset ingestion from the crowdsource export API, hardware-agnostic fine-tuning scripts (full + LoRA), CTranslate2 conversion, a WER/CER evaluation gate against a real-service eval set, and versioned model artifacts. Integrates with the existing SttManager through the unchanged WhisperHttpAdapter and OpenAiAdapter. Implemented in the sibling `liturgos-auditor` repository; the in-repo copy this plan originally described was removed on `chore/retire-lcyt-stt`, see the retirement note below."
 ---
 
-# Local STT Service (`lcyt-stt`)
+# Local STT Service (`liturgos-auditor`)
 
 > **Retired (branch `chore/retire-lcyt-stt`).** The service this plan describes was originally
 > built here as `python-packages/lcyt-stt/` + `docker/lcyt-stt/`. Development then moved to the
 > sibling [`liturgos-auditor`](https://github.com/jsilvanus/liturgos-auditor) repository, where it
 > was substantially extended (OpenAI-compatible endpoint, model management, ops runbook, and more).
 > This repo's original copy never received those changes and has now been **removed** — see the
-> git history on this branch for the deletion commit. The plan below is kept for historical record;
-> for the current implementation, deploy `liturgos-auditor` and point `WHISPER_HTTP_URL` (or the
-> OpenAI-compatible adapter) at it, as documented in `PORTS.md`.
+> git history on this branch for the deletion commit. The plan below is kept for historical record.
 
-**Scope (historical):** New Python package `python-packages/lcyt-stt/` (inference server + dataset/training/eval tooling); new Docker build contexts `docker/lcyt-stt/` (CPU and CUDA variants); docker-compose wiring; small optional additions to `packages/plugins/lcyt-rtmp` (named provider alias + health surfacing). **No changes to the existing STT adapter contract** — the service speaks the whisper.cpp HTTP API that `WhisperHttpAdapter` already implements.
+**Implementation:** The service is implemented in the sibling `liturgos-auditor` repository (Python package `auditor_stt`, Docker images, trained models registry). LCYT connects via `WhisperHttpAdapter` (`WHISPER_HTTP_URL=http://auditor-stt:8090`, no auth) or `OpenAiAdapter` (`OPENAI_STT_URL=http://auditor-stt:8090`, with `OPENAI_STT_API_KEY` if the service has `AUDITOR_STT_API_KEY` set), as documented in `PORTS.md`. **No changes to the existing STT adapter contract** — the service speaks the whisper.cpp `/inference` and OpenAI-compatible `/v1/audio/transcriptions` HTTP APIs that the adapters already implement.
 
 **Companion repository:** [`jsilvanus/crowd-source-voice`](https://github.com/jsilvanus/crowd-source-voice) — the crowdsourcing platform that produces the training data. It is a separate project with its own lifecycle; this plan treats its **export API as a stable input contract**, not as code to modify.
 
@@ -84,7 +82,7 @@ Voice recordings are personal data, and a congregation-context corpus can imply 
 └──────────────────────┬─────────────────────────────────────┘
                        │ snapshot pull (Phase 2)
                        ▼
-┌─ python-packages/lcyt-stt ─────────────────────────────────┐
+┌─ python-packages/auditor_stt (liturgos-auditor repo) ───────┐
 │  dataset/   snapshot → HF dataset, train/dev/test split    │
 │  train/     fine-tune (full | LoRA) → HF checkpoint        │
 │  convert/   HF checkpoint → CTranslate2 (+ int8)           │
@@ -93,42 +91,65 @@ Voice recordings are personal data, and a congregation-context corpus can imply 
 └──────────────────────┬─────────────────────────────────────┘
                        │ versioned model artifact (Phase 3)
                        ▼
-┌─ lcyt-stt service (docker/lcyt-stt, compose) ──────────────┐
+┌─ liturgos-auditor service (docker image, compose) ─────────┐
 │  GET  /health            model id, device, load status     │
 │  POST /inference         whisper.cpp-compatible multipart  │
+│  POST /v1/audio/transcriptions  OpenAI-compatible endpoint │
 │  GET/POST /model         list / switch model versions      │
 └──────────────────────┬─────────────────────────────────────┘
-                       │ WHISPER_HTTP_URL=http://lcyt-stt:8090
+                       │ WHISPER_HTTP_URL=http://auditor-stt:8090
+                       │ or
+                       │ OPENAI_STT_URL=http://auditor-stt:8090
                        ▼
-┌─ existing LCYT pipeline (unchanged) ───────────────────────┐
-│  HlsSegmentFetcher → SttManager → WhisperHttpAdapter       │
-│    → transcript → translation → caption fan-out → YouTube  │
+┌─ existing LCYT pipeline (with HLS init segment fix) ───────┐
+│  HlsSegmentFetcher ──┐ (fetches #EXT-X-MAP init segments)  │
+│      │ (prepends init data to media segments)              │
+│      ▼               │                                       │
+│  SttManager ────────────→ WhisperHttpAdapter / OpenAiAdapter│
+│    │                     → transcript → translation → etc   │
+│    └─→ transcript event → caption fan-out → YouTube        │
 └────────────────────────────────────────────────────────────┘
 ```
 
-The integration seam is the whole point: because `WhisperHttpAdapter` already speaks the whisper.cpp `/inference` protocol, **Phase 1 requires zero changes to LCYT's Node.js code** — point `WHISPER_HTTP_URL` at the new service and the existing HLS/RTMP/WHEP → transcript → fan-out pipeline just works.
+The integration seam is the whole point: because `WhisperHttpAdapter` and `OpenAiAdapter` already speak the whisper.cpp `/inference` and OpenAI-compatible protocols, **no changes to LCYT's adapters were needed** — point `WHISPER_HTTP_URL` or `OPENAI_STT_URL` at the new service and the existing HLS/RTMP/WHEP → transcript → fan-out pipeline just works.
+
+## Critical fix: HLS init segment prepending (discovered Sep 2026)
+
+fMP4 HLS media segments from MediaMTX/ffmpeg are posted to the STT service without init data (the `#EXT-X-MAP` segment). Decoders expect a complete MP4 file with init box (`ftyp`, `moov`). This caused:
+- 422 errors ("Could not decode audio") when HLS segments were posted alone
+- Adapters failing silently, skipping chunks
+
+**Fix:** `HlsSegmentFetcher` now:
+1. Parses `#EXT-X-MAP:URI="..."` from the playlist and fetches the init segment once per distinct URI
+2. Caches the init buffer and prepends it to every media segment before sending to the adapter
+3. On init fetch failure: emits error, skips that poll's segments (transient caption loss), and retries the init fetch on the next poll (recovers when fetch succeeds)
+4. Supports byte-range requests (`BYTERANGE="len@off"`)
+
+Result: Fixed the default `audioSource: 'hls'` path for both `WhisperHttpAdapter` and `OpenAiAdapter`. No init → 422 errors are now prevented by init prepending. Transient init failures (network, service restart) tolerate segment loss on failure polls, with recovery on next successful fetch.
 
 ---
 
-## Phase 1 — Inference service MVP
+## Phase 1 — Inference service MVP (IMPLEMENTED in `liturgos-auditor`)
 
-New package `python-packages/lcyt-stt/` (`pyproject.toml`, published nowhere — deployed as a container).
+The standalone service is implemented at `auditor_stt/serve/` in the sibling `liturgos-auditor` repository.
 
-**Server (`lcyt_stt/serve/`):** FastAPI + uvicorn.
+**Server:** FastAPI + uvicorn + faster-whisper.
 
-- `POST /inference` — whisper.cpp-compatible: multipart `file` (any ffmpeg-decodable format — the LCYT adapter sends fMP4/AAC segments and WAV, so decode via ffmpeg/PyAV to 16 kHz mono PCM first), optional `language` (short ISO 639-1; default `fi`), optional `model`. Response: `{ "text": "...", "language": "...", "segments": [...] }` — the adapter reads only top-level `text`, everything else is best-effort compatibility.
-- `GET /health` — `{ status, model_id, device, compute_type, loaded }`. Returns 503 until the model is loaded (models load lazily/at boot from a local model dir).
-- Device selection: try CUDA (`float16`), fall back to CPU (`int8`). Overridable via `LCYT_STT_DEVICE=cuda|cpu|auto` and `LCYT_STT_COMPUTE_TYPE`.
-- Single-worker inference with a bounded internal queue: chunks arrive every ~5–15 s per session; concurrent sessions queue. Reject with 503 when queue depth exceeds a limit (`LCYT_STT_MAX_QUEUE`, default 8) rather than building unbounded latency — the adapter already treats errors as skip-and-continue.
-- Env config: `LCYT_STT_PORT` (default **8090** — register in `PORTS.md`), `LCYT_STT_MODEL_DIR`, `LCYT_STT_MODEL` (default model id; stock `large-v3-turbo` CT2 build until a fine-tune exists), `LCYT_STT_DEFAULT_LANGUAGE=fi`.
+- `POST /inference` — whisper.cpp-compatible: multipart `file` (any ffmpeg-decodable format), optional `language` (short ISO 639-1; default `fi`), optional `model`. Response: `{ "text": "...", "language": "...", "segments": [...] }` — LCYT adapters read only top-level `text`.
+- `POST /v1/audio/transcriptions` — OpenAI-compatible endpoint (supports `file`, `model`, `language`, `response_format`, `prompt`, `temperature`).
+- `GET /health` — returns 200 when model is loaded, 503 while loading or after failure.
+- `GET /status` — queue depth, model info, device type.
+- Device selection: auto-detects CUDA, falls back to CPU int8. Overridable via `AUDITOR_STT_DEVICE`.
+- Bounded queue: rejects with `503 "Inference queue depth exceeded"` when live requests exceed `AUDITOR_STT_MAX_QUEUE` (default 8).
+- Env config: `AUDITOR_STT_PORT` (default **8090**), `AUDITOR_STT_MODEL_DIR`, `AUDITOR_STT_MODEL` (default `large-v3-turbo`), `AUDITOR_STT_DEFAULT_LANGUAGE=fi`, `AUDITOR_STT_API_KEY` (optional bearer auth).
 
-**Docker (`docker/lcyt-stt/`):** two Dockerfiles from one source tree — `Dockerfile` (CPU: `python:3.12-slim` + ffmpeg; runs anywhere) and `Dockerfile.cuda` (`nvidia/cuda` runtime base). Model weights are **not** baked into the image; they mount or download into `LCYT_STT_MODEL_DIR` at first boot.
+**Docker:** two Dockerfiles — `Dockerfile` (CPU) and `Dockerfile.cuda`. Model weights download/mount on first boot.
 
-**Compose:** optional `lcyt-stt` service in `docker-compose.yml` (profile-gated, CPU image, named volume for the model dir) with backend env `WHISPER_HTTP_URL=http://lcyt-stt:8090`. Document the `deploy.resources.reservations.devices` stanza for hosts that want the CUDA image.
+**Compose:** optional service with `WHISPER_HTTP_URL=http://auditor-stt:8090` wired into lcyt-backend.
 
-**Tests:** `pytest` — API-shape tests with a stubbed model (multipart parsing, language defaulting, health states, queue rejection), plus an optional marked integration test that runs a tiny real model against a fixture WAV.
+**Tests:** comprehensive in `liturgos-auditor` repo (pytest).
 
-**Verification:** E2E against a live LCYT stack — RTMP ingest → `POST /stt/start` with `provider: whisper_http` → captions arrive. This is the Phase 1 exit criterion.
+**Verification:** **NOT YET COMPLETED** — end-to-end test against a live LCYT stack (RTMP ingest → `POST /stt/start` with provider `whisper_http` → captions arrive) has not been run. This is a blocking item for production deployment.
 
 ---
 
@@ -187,11 +208,16 @@ New package `python-packages/lcyt-stt/` (`pyproject.toml`, published nowhere —
 - **Modifying crowd-source-voice** — except for requesting the anonymous speaker id in the export (Phase 2), the platform is treated as an external data source.
 - **Mixing real-condition (service-recording) data into training** — likely the biggest quality lever after v1, but it needs its own consent/data-handling decision since service recordings are not covered by the crowdsource consent flow.
 
-## Todo
+## Implementation Status
 
-- [x] Phase 1 — inference service MVP (FastAPI + faster-whisper, `/inference` + `/health`, CPU/CUDA images, compose, E2E via `WhisperHttpAdapter`) — `python-packages/lcyt-stt/`, `docker/lcyt-stt/`. Unit tests (health states, inference shape, queue overflow) pass; the live Docker-build + real end-to-end RTMP→caption verification still needs an environment with a running Docker daemon (not available in the sandbox this was implemented in).
-- [x] Phase 2 — dataset pipeline (snapshot pull/build, speaker-disjoint split; speaker id added to crowdsource export) — `lcyt_stt/dataset/`. `pull.py` validates `corpus.type == 'text'` (rejects `music`), re-checks the 0.5–30s duration gate defensively (crowd-source-voice's server never re-validates it), and records provenance in `snapshot.json`. `build.py`'s split is speaker-disjoint via the new `speaker_id` field, with a logged, explicitly-flagged fallback when it's absent. Unit tests mock the crowd-source-voice HTTP client; no live-server smoke test in CI (documented as a manual operator step in the package README).
-- [ ] Phase 3 — training pipeline (config-driven fine-tune, CT2 conversion, versioned artifacts) — not built in this repo; superseded
-- [ ] Phase 4 — eval harness (held-out + real-service sets, promotion gate) — not built in this repo; superseded
-- [ ] Phase 5 — model management endpoints, `lcyt` provider alias, Setup Hub health surfacing, runbook — not built in this repo; superseded
-- [x] Retirement — `python-packages/lcyt-stt/` and `docker/lcyt-stt/` removed on `chore/retire-lcyt-stt`; the maintained implementation lives in the sibling `liturgos-auditor` repo (see the note at the top of this document)
+- [x] **Phase 1** — inference service MVP (FastAPI + faster-whisper, `/inference` + `/health` + `/v1/audio/transcriptions`, CPU/CUDA images, compose wiring)
+  - [x] WhisperHttpAdapter integration path tested
+  - [ ] End-to-end test against live LCYT stack (BLOCKING for production)
+  - [x] HLS init segment fix in lcyt-rtmp to support media-segment-only uploads (fMP4 segments now prepended with init data)
+- [x] **Phase 2** — dataset pipeline (snapshot pull/build, speaker-disjoint split) — in `liturgos-auditor`
+- [x] **Phase 3** — training pipeline (config-driven fine-tune, CT2 conversion, versioned artifacts) — in `liturgos-auditor`
+- [x] **Phase 4** — eval harness (held-out + real-service sets, promotion gate) — in `liturgos-auditor`
+- [ ] **Phase 5** — model management endpoints, `lcyt` provider alias, Setup Hub health surfacing, runbook
+  - [x] STT entry in `PORTS.md` (port 8090)
+  - [x] Ops runbook `ops/runbooks/stt.md`
+- [x] **Retirement** — `python-packages/lcyt-stt/` and `docker/lcyt-stt/` removed on `chore/retire-lcyt-stt`; the maintained implementation lives in the sibling `liturgos-auditor` repo (see the note at the top of this document)

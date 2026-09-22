@@ -407,4 +407,32 @@ describe('SttManager', () => {
     assert.equal(fakeSession.sequence, 1);
     await mgr.stop('mykey2');
   });
+
+  test('emitter errors are logged even when no error listener is registered (regression test)', async () => {
+    // When an adapter emits an 'error' event and no listener is registered,
+    // Node throws ERR_UNHANDLED_ERROR and crashes the process. This test
+    // ensures we don't crash — we log the error instead.
+    // See: https://nodejs.org/api/events.html#error-events
+    globalThis.fetch = async () => ({ ok: false, status: 404 });
+
+    const mgr = new SttManager(makeStore());
+    await mgr.start('mykey', { provider: 'google', language: 'en-US' });
+
+    const sttSession = mgr._sessions.get('mykey');
+    assert.ok(sttSession, 'stt session should exist');
+
+    // Emit an error without registering any error listener on the manager
+    // This should NOT throw or crash the process
+    sttSession.adapter.emit('error', {
+      error: new Error('Test adapter error'),
+    });
+
+    // Give any async error handling a moment to complete
+    await new Promise(r => setTimeout(r, 20));
+
+    // Should still be running
+    assert.equal(mgr.isRunning('mykey'), true);
+
+    await mgr.stop('mykey');
+  });
 });

@@ -94,6 +94,12 @@ export class SttManager extends EventEmitter {
     /** @type {{ major: number, minor: number }|null} */
     this.ffmpegVersion = null;
 
+    // Default error handler to prevent ERR_UNHANDLED_ERROR when no listener is attached.
+    // Real error listeners (e.g. from the SSE handler in lcyt-backend) still see the event.
+    this.on('error', ({ apiKey, error }) => {
+      logger.error(`[stt] Error for key ${apiKey?.slice(0, 8)}…: ${error?.message || error}`);
+    });
+
     // Probe ffmpeg asynchronously; errors are non-fatal
     probeFfmpegVersion().then(v => {
       this.ffmpegVersion = v;
