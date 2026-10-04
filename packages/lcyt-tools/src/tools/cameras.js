@@ -9,12 +9,12 @@
  */
 
 /**
- * @param {{ db, registry, bridgeManager, listCameras, getCameraById, createCamera, updateCamera, deleteCamera }} deps
+ * @param {{ db, registry, commands, listCameras, getCameraById, createCamera, updateCamera, deleteCamera }} deps
  *   db + registry from 'lcyt-production'
  * @returns {Array<{ name, description, inputSchema, annotations, handler }>}
  */
 export function createCameraTools(deps) {
-  const { db, registry, bridgeManager, listCameras, getCameraById, createCamera, updateCamera, deleteCamera } = deps;
+  const { db, commands, listCameras, getCameraById, createCamera, updateCamera, deleteCamera } = deps;
 
   return [
     {
@@ -75,26 +75,11 @@ export function createCameraTools(deps) {
         required: ['cameraId', 'presetId'],
       },
       annotations: { destructiveHint: true },
-      handler: async ({ cameraId, presetId }) => {
-        const camera = getCameraById(db, cameraId);
-        if (!camera) return { ok: false, error: 'Camera not found' };
-        try {
-          if (camera.bridgeInstanceId && bridgeManager) {
-            if (!bridgeManager.isConnected(camera.bridgeInstanceId)) {
-              return { ok: false, error: 'Bridge is not connected' };
-            }
-            const preset = (camera.controlConfig?.presets ?? []).find((p) => p.id === presetId);
-            if (!preset) return { ok: false, error: `Unknown preset '${presetId}'` };
-            await bridgeManager.sendCommand(camera.bridgeInstanceId, {
-              host: camera.controlConfig.host, port: camera.controlConfig.port, payload: preset.command + '\r\n',
-            });
-          } else {
-            await registry.callPreset(cameraId, presetId);
-          }
-          return { ok: true, cameraId, presetId };
-        } catch (err) {
-          return { ok: false, error: err.message };
-        }
+      handler: async ({ cameraId, presetId }, ctx) => {
+        // Same path as the HTTP route: ownership check, bridge-vs-direct
+        // routing and the production-follow (vertical crop) notification.
+        const r = await commands.callCameraPreset(ctx?.apiKey ?? null, cameraId, presetId, { source: 'tool' });
+        return r.ok ? { ok: true, cameraId, presetId } : { ok: false, error: r.error };
       },
     },
   ];

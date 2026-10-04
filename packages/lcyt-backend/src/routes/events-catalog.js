@@ -35,6 +35,7 @@ export const EVENT_TOPIC_CATALOG = {
     { topic: 'caption.*', label: 'Caption results', description: 'caption.sent and caption.error for the project’s live sessions.' },
     { topic: 'session.*', label: 'Session lifecycle', description: 'Mic-lock state and session-closed events.' },
     { topic: 'external.*', label: 'External events', description: 'Events published by third-party integrations via POST /events. Only the external.* namespace is writable by external tokens.' },
+    { topic: 'production.command_result', label: 'Production commands', description: 'A camera preset recall or mixer switch was attempted (success or failure, transport, duration, and which caller triggered it).' },
     { topic: 'mcp.*', label: 'MCP tool events', description: 'Tool execution and staging events from the MCP endpoint (mcp.tool_executed, mcp.tool_staged).' },
     { topic: 'operator.*', label: 'Operator events', description: 'Hosted operator lifecycle and action events (operator.started, operator.stopped, operator.action_executed, operator.action_staged).' },
     { topic: 'platform.*', label: 'Broadcast platform events', description: 'Live viewer stats and status changes for broadcasts synced to an external platform (platform.stats_updated, platform.status_changed).' },

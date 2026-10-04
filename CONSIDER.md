@@ -940,7 +940,10 @@ doesn't support the concept at all.
 
 ---
 
-## AI-tool-driven mixer switches / camera preset recalls don't trigger vertical-crop follow
+## ~~AI-tool-driven mixer switches / camera preset recalls don't trigger vertical-crop follow~~ — RESOLVED 2026-10-04
+
+**Resolved:** `lcyt-production`'s new `commands.js` (`ProductionCommands`) is now the single path for camera preset recall and mixer switching; the HTTP routes and `lcyt-tools`' `camera.preset`/`mixer.switch` all call it, and it fires the production-follow notifications (and applies the owner check the tools used to skip). See `docs/plans/plan_backend_actions.md`. Original finding kept below.
+
 
 **Where:** `packages/lcyt-tools/src/tools/mixers.js` (`mixer.switch`),
 `packages/lcyt-tools/src/tools/cameras.js` (`camera.preset`),
