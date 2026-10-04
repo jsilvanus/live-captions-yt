@@ -27,6 +27,7 @@ export const AUDITED_TOPICS = [
   'dsk.templates_changed',
   'bridge.command_result',
   'production.command_result',
+  'action.*',
   'target.*',
   'translation.*',
   'external.*',

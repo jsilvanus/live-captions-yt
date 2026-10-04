@@ -11,7 +11,7 @@ import Database from 'better-sqlite3';
 import { EventBus } from 'lcyt/event-bus';
 
 import { runMigrations } from '../src/db.js';
-import { createProductionCommands, commandStatus } from '../src/commands.js';
+import { createProductionCommands, commandStatus, slugifyLabel } from '../src/commands.js';
 
 let db, registry, bridge, bus, events, commands;
 
@@ -227,5 +227,74 @@ describe('commandStatus', () => {
     assert.equal(commandStatus({ code: 'unavailable' }), 503);
     assert.equal(commandStatus({ code: 'forbidden' }), 403);
     assert.equal(commandStatus({}), 400);
+  });
+});
+
+describe('action atoms (label addressing)', () => {
+  const presets = [
+    { id: 'p-wide', name: 'Wide shot', presetNumber: 1 },
+    { id: 'p-alt', label: 'Altar', presetNumber: 2 },
+  ];
+
+  it('camera atom resolves a camera by label slug and a preset by name slug', async () => {
+    const id = insertCamera({ control_config: { presets } });
+    db.prepare('UPDATE prod_cameras SET label = ? WHERE id = ?').run('Pulpit', id);
+    const r = await commands.runCameraAtom('key1', 'pulpit.wide-shot', { source: 'action' });
+    assert.equal(r.ok, true);
+    assert.deepEqual(registry.calls, [['callPreset', id, 'p-wide']]);
+    assert.equal(events[0].data.source, 'action');
+  });
+
+  it('camera atom resolves by camera name when no label is set, preset by label or number or id', async () => {
+    const id = insertCamera({ name: 'Back Camera', control_config: { presets } });
+    assert.equal((await commands.runCameraAtom('key1', 'back-camera.altar')).ok, true);
+    assert.equal((await commands.runCameraAtom('key1', 'back-camera.1')).ok, true);
+    assert.equal((await commands.runCameraAtom('key1', `${id}.p-alt`)).ok, true);
+    assert.deepEqual(registry.calls.map((c) => c[2]), ['p-alt', 'p-wide', 'p-alt']);
+  });
+
+  it('camera atom errors: unknown camera, unknown preset, malformed value, ambiguous label', async () => {
+    insertCamera({ name: 'Cam A', control_config: { presets } });
+    assert.equal((await commands.runCameraAtom('key1', 'nope.wide')).code, 'not_found');
+    assert.equal((await commands.runCameraAtom('key1', 'cam-a.zzz')).code, 'not_found');
+    assert.equal((await commands.runCameraAtom('key1', 'cam-a')).code, 'bad_request');
+    insertCamera({ name: 'cam a', control_config: { presets } });
+    const r = await commands.runCameraAtom('key1', 'cam-a.wide-shot');
+    assert.equal(r.code, 'bad_request');
+    assert.match(r.error, /ambiguous/);
+    assert.deepEqual(registry.calls, []);
+  });
+
+  it('an exact id wins over a label match, and other projects\' cameras are invisible', async () => {
+    const mine = insertCamera({ name: 'Cam', control_config: { presets }, owner_api_key: 'key1' });
+    insertCamera({ name: 'Cam', control_config: { presets }, owner_api_key: 'other' });
+    // only 'mine' is visible to key1, so the shared label is not ambiguous
+    assert.equal((await commands.runCameraAtom('key1', 'cam.wide-shot')).ok, true);
+    assert.equal(registry.calls[0][1], mine);
+    const hidden = insertCamera({ name: 'Secret', control_config: { presets }, owner_api_key: 'other' });
+    assert.equal((await commands.runCameraAtom('key1', 'secret.wide-shot')).code, 'not_found');
+    assert.equal((await commands.runCameraAtom('key1', `${hidden}.p-wide`)).code, 'not_found');
+  });
+
+  it('mixer atom resolves by name slug and switches to the input number', async () => {
+    const id = insertMixer({ name: 'Main Mixer' });
+    const r = await commands.runMixerAtom('key1', 'main-mixer.3', { source: 'action' });
+    assert.equal(r.ok, true);
+    assert.deepEqual(registry.calls, [['switchSource', id, 3]]);
+  });
+
+  it('mixer atom errors: non-numeric input, unknown mixer, malformed value', async () => {
+    insertMixer({ name: 'Main' });
+    assert.equal((await commands.runMixerAtom('key1', 'main.two')).code, 'bad_request');
+    assert.equal((await commands.runMixerAtom('key1', 'main')).code, 'bad_request');
+    assert.equal((await commands.runMixerAtom('key1', 'nope.1')).code, 'not_found');
+    assert.deepEqual(registry.calls, []);
+  });
+});
+
+describe('slugifyLabel', () => {
+  it('lowercases and collapses non-alphanumerics', () => {
+    assert.equal(slugifyLabel('  Pulpit — Wide!  '), 'pulpit-wide');
+    assert.equal(slugifyLabel(null), '');
   });
 });

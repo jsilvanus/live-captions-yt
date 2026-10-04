@@ -89,7 +89,7 @@ import {
   initConnectors, createConnectorsRouter, createVariablesRouter,
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
-import { initActions, createActionsRouter } from 'lcyt-actions';
+import { initActions, createActionsRouter, createActionExecutor } from 'lcyt-actions';
 import { initPlatforms, createOAuthRouter as createPlatformsRouter } from 'lcyt-platforms';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
@@ -375,6 +375,8 @@ const _toolRegistry = createToolRegistry({
   agent: _agent,
   assets: { listImages, getImageByKey, updateImageSettings, deleteImage },
   crop: { cropManager: rtmp.cropManager, getCropConfig, getCropPreset, listCropPresets },
+  // The executor needs the connectors engine, which is built further down.
+  actions: { executor: () => _actionExecutor },
 });
 // Real MCP Server + in-process Client wiring (InMemoryTransport) — the
 // agentic_chat turn loop consumes tools through this bridge, exactly the
@@ -401,6 +403,28 @@ const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsSc
 });
 // Named Actions plugin — runs its own migration (action_defs table).
 initActions(db);
+
+// Server-side action runner (plan_backend_actions.md): lcyt-actions stays
+// generic, this is the one place that knows which atom keys map to which
+// subsystem. Device atoms go through ProductionCommands (ownership check,
+// bridge routing, crop follow); `device: true` is what a disarmed project skips.
+const _actionExecutor = createActionExecutor({
+  db,
+  eventBus,
+  handlers: {
+    camera: { device: true, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
+    mixer: { device: true, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    crop: { device: true, run: (apiKey, value) => _toolRegistry.callTool('crop.activate_preset', { presetId: value }, { apiKey }) },
+    api: {
+      run: async (apiKey, value) => {
+        const dot = String(value).indexOf('.');
+        if (dot <= 0 || dot === value.length - 1) return { ok: false, error: `api atom needs connector.request, got '${value}'` };
+        const r = await _connectorsEngine.fireRequest(apiKey, value.slice(0, dot), value.slice(dot + 1));
+        return { ok: r?.ok !== false, error: r?.error };
+      },
+    },
+  },
+});
 
 // Broadcast Platform Sync plugin (plan_broadcast_platform_sync.md) — server-side
 // OAuth, YouTube Live scheduling/thumbnails/go-live, and viewer stats tied to
@@ -772,7 +796,10 @@ app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, pr
 // requireProjectRole's own doc comment) — connector auth_config can hold
 // credentials, same risk class as /ai/providers (plan_project_roles.md).
 app.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
-app.use('/actions', createActionsRouter(db, scopedAuth('action')));
+app.use('/actions', createActionsRouter(db, scopedAuth('action'), {
+  executor: _actionExecutor,
+  checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
+}));
 app.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));

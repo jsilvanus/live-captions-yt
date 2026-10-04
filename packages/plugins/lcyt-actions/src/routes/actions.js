@@ -7,7 +7,12 @@
  *   PUT    /actions/:slug      — update { name?, slug?, definition?, description? }
  *   DELETE /actions/:slug      — remove
  *
- * Storage only — parsing/expansion/execution are client-side.
+ *   POST   /actions/run        — run a named action or inline expression on the
+ *                                server { ref? | expr?, stopOnError? } (production tier)
+ *
+ * CRUD is storage only. `/run` executes server atoms (camera, mixer, crop, api,
+ * wait) through the injected ActionExecutor and returns client atoms (audio,
+ * section, variables, …) for the caller's browser to apply.
  */
 import { Router } from 'express';
 import crypto from 'crypto';
@@ -21,8 +26,33 @@ import { requireApiKey, isValidSlug } from './helpers.js';
  * @param {import('better-sqlite3').Database} db
  * @param {import('express').RequestHandler} auth
  */
-export function createActionsRouter(db, auth) {
+export function createActionsRouter(db, auth, opts = {}) {
+  const { executor = null, checkProjectRole = null } = opts;
   const router = Router();
+
+  // Same operator+ gate as the DSK activate routes: session/device callers pass,
+  // user JWT callers need the 'production' tier.
+  function requireProduction(req, res, next) {
+    if (!req.user?.userId) return next();
+    if (typeof checkProjectRole !== 'function' || !checkProjectRole('production', req.session?.apiKey, req.user.userId)) {
+      return res.status(403).json({ error: 'Explicit project operator+ access required' });
+    }
+    next();
+  }
+
+  // Registered before '/:slug' so 'run' is not read as a slug.
+  router.post('/run', auth, requireProduction, async (req, res) => {
+    const apiKey = requireApiKey(req, res);
+    if (!apiKey) return;
+    if (!executor) return res.status(503).json({ error: 'Action runner is not available' });
+    const { ref, expr, stopOnError } = req.body || {};
+    if (!ref && !expr) return res.status(400).json({ error: 'ref or expr is required' });
+    const result = await executor.run(apiKey, { ref, expr }, { source: 'api', stopOnError: stopOnError === true });
+    if (result.ok === false && !result.steps) {
+      return res.status(result.code === 'not_found' ? 404 : 400).json({ error: result.error });
+    }
+    res.json(result);
+  });
 
   router.get('/', auth, (req, res) => {
     const apiKey = requireApiKey(req, res);

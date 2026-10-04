@@ -20,6 +20,7 @@ lcyt/config       → config utilities
 lcyt/logger       → logger
 lcyt/errors       → error classes
 lcyt/event-bus    → EventBus + topicMatches (shared pub/sub)
+lcyt/actions      → parseActionItems + expandActionItems (named-action parsing, shared by lcyt-web and lcyt-actions' server runner)
 ```
 
 **Build:**

@@ -296,3 +296,25 @@ describe('createToolRegistry', () => {
     });
   });
 });
+
+describe('action.run', () => {
+  it('runs through the executor with the call context apiKey and tool source', async () => {
+    const calls = [];
+    const executor = { run: async (...args) => { calls.push(args); return { ok: true, steps: [] }; } };
+    const reg = createToolRegistry({ db: {}, actions: { executor } });
+    assert.deepEqual(reg.tools.map((t) => t.name), ['action.run']);
+    assert.equal(reg.tools[0].annotations.destructiveHint, true);
+    const r = await reg.callTool('action.run', { ref: 'intro', stopOnError: true }, { apiKey: 'key1' });
+    assert.equal(r.ok, true);
+    assert.deepEqual(calls[0], ['key1', { ref: 'intro', expr: undefined }, { source: 'tool', stopOnError: true }]);
+  });
+
+  it('accepts a late-bound executor getter and rejects an empty call', async () => {
+    let executor = null;
+    const reg = createToolRegistry({ db: {}, actions: { executor: () => executor } });
+    assert.equal((await reg.callTool('action.run', { expr: 'a:b' }, { apiKey: 'k' })).ok, false);
+    executor = { run: async () => ({ ok: true }) };
+    assert.equal((await reg.callTool('action.run', { expr: 'a:b' }, { apiKey: 'k' })).ok, true);
+    assert.match((await reg.callTool('action.run', {}, { apiKey: 'k' })).error, /ref or expr/);
+  });
+});
