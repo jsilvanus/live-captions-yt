@@ -3,9 +3,8 @@ import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseMixer } from '../registry.js';
-import { buildSwitchCommand } from '../crud.js';
+import { createProductionCommands, commandStatus } from '../commands.js';
 import { requireTier } from '../route-access.js';
-import { isSecurityBlockError } from '../bridge-security.js';
 
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
 
@@ -50,6 +49,7 @@ function isUnauthenticatedMixerRoute(req) {
 }
 
 export function createMixersRouter(db, registry, bridgeManager = null, opts = {}) {
+  const commands = opts.commands ?? createProductionCommands({ db, registry, bridgeManager });
   const mediamtxClient = opts.mediamtxClient ?? null;
   // Real session/user/device auth (createProjectAccessMiddleware), same
   // opt-in pattern as routes/cameras.js's opts.auth: optional so existing
@@ -217,51 +217,22 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
     res.status(204).end();
   });
 
-  // POST /production/mixers/:id/switch/:inputNumber — switch program source
+  // POST /production/mixers/:id/switch/:inputNumber — switch program source.
+  // Ownership, bridge-vs-direct routing and the production-follow
+  // notification live in ProductionCommands (src/commands.js). A
+  // credential-less kiosk /switch request never sets req.session (see
+  // isUnauthenticatedMixerRoute() above), so apiKey is null and ownership
+  // fails open for it — the gate only bites a *credentialed* session
+  // switching a mixer it doesn't own.
   router.post('/:id/switch/:inputNumber', requireProduction, async (req, res) => {
     const { id, inputNumber } = req.params;
     const input = Number(inputNumber);
     if (!Number.isInteger(input) || input < 0) {
       return res.status(400).json({ error: 'inputNumber must be a non-negative integer' });
     }
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
-    // A credential-less kiosk /switch request never sets req.session (see
-    // isUnauthenticatedMixerRoute() above), so canAccessMixer() correctly
-    // fails open for it — this gate only ever bites a *credentialed* session
-    // switching a mixer it doesn't own.
-    if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
-
-    try {
-      const mixer = parseMixer(row);
-      // Whichever project's session performed this switch — production-follow
-      // (plan_vertical_crop.md §4) scopes the crop_source_map lookup to it.
-      // prod_mixers has no project/owner column of its own (see db.js), so
-      // "which project" is the acting session, not the mixer's ownership.
-      const apiKey = req.session?.apiKey ?? null;
-
-      // Bridge routing: if mixer is assigned to a bridge, relay via SSE
-      if (mixer.bridgeInstanceId && bridgeManager) {
-        if (!bridgeManager.isConnected(mixer.bridgeInstanceId)) {
-          return res.status(503).json({ error: 'Bridge is not connected' });
-        }
-        const command = buildSwitchCommand(mixer, input);
-        // lcyt mixer returns null — skip bridge dispatch, fall through to registry
-        if (command !== null) {
-          await bridgeManager.sendCommand(mixer.bridgeInstanceId, command);
-          registry.notifyProgramChanged({ apiKey, mixerId: id, inputNumber: input });
-          return res.json({ ok: true, mixerId: id, activeSource: input });
-        }
-      }
-
-      // Direct via registry (handles lcyt in-memory tracking and all non-bridge cases)
-      await registry.switchSource(id, input);
-      registry.notifyProgramChanged({ apiKey, mixerId: id, inputNumber: input });
-      res.json({ ok: true, mixerId: id, activeSource: input });
-    } catch (err) {
-      const status = isSecurityBlockError(err) ? 403
-        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 400;
-      res.status(status).json({ error: err.message });
-    }
+    const result = await commands.switchMixer(req.session?.apiKey ?? null, id, input, { source: 'http' });
+    if (!result.ok) return res.status(commandStatus(result)).json({ error: result.error });
+    res.json({ ok: true, mixerId: id, activeSource: input });
   });
 
   // GET /production/mixers/:id/active — current active input

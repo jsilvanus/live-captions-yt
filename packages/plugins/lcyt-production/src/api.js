@@ -17,6 +17,7 @@ import { createCamerasRouter } from './routes/cameras.js';
 import { createMixersRouter } from './routes/mixers.js';
 import { createBridgeRouter } from './routes/bridge.js';
 import { createEncodersRouter } from './routes/encoders.js';
+import { createProductionCommands, commandStatus, slugifyLabel } from './commands.js';
 import { createPerceptionManager, isPerceptionDispatchAvailable } from './perception-manager.js';
 import { DEFAULT_PREVIEW_BASE_URL } from './camera-thumbnail.js';
 
@@ -68,6 +69,8 @@ export async function initProductionControl(db, { settings = null } = {}) {
  * @param {string} [opts.publicUrl]      Server's public URL for .env generation
  * @param {MediaMtxClient} [opts.mediamtxClient]  MediaMTX REST client (optional)
  * @param {object} [opts.cameraThumbnail]  Overrides for camera-thumbnail.js's defaults (thumbnailsDir/previewBaseUrl) — tests only, env vars suffice in production
+ * @param {ReturnType<typeof createProductionCommands>} [opts.commands]  Shared ProductionCommands instance (commands.js) — pass the same one given to the AI tool registry; built here from db/registry/bridgeManager when omitted
+ * @param {import('lcyt/event-bus').EventBus} [opts.eventBus]  Only used when `opts.commands` is omitted: publishes production.command_result
  * @param {object} [opts.metrics]  Optional backend metrics handle (plan_metering_audit §3.2: production.commands)
  * @param {import('express').RequestHandler} [opts.auth]  Session/user/device auth middleware (createProjectAccessMiddleware) applied to the camera CRUD routes (plan_ingest_feeds.md's cross-tenant review finding), the mixer routes (plan_vertical_crop.md §4 — a mixer switch needs the acting session's apiKey to report to registry.onProgramChanged()), the bridge instance/command/security-rules routes, and the encoder routes; WHIP/thumbnail/sources kiosk routes and the bridge-agent's own /commands, /status, and .../security-rules/for-agent endpoints stay unauthenticated (those authenticate via a per-bridge token instead — see routes/bridge.js's isUnauthenticatedBridgeRoute()). Previously bridge and encoder routes received no auth at all regardless of this option — that gap is now closed. Omit to keep this router's historical fully-open behavior (e.g. existing route-level tests).
  * @param {ReturnType<typeof createPerceptionManager>} [opts.perceptionManager]  fps30 tracker job dispatch (plan_video_perception.md Phase 2) — omit to 503 the /cameras/:id/perception/* routes (e.g. tests, or a deployment with no ORCHESTRATOR_URL/WORKER_DAEMON_URL configured)
@@ -77,6 +80,7 @@ export async function initProductionControl(db, { settings = null } = {}) {
  */
 export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
   const router = Router();
+  const commands = opts.commands ?? createProductionCommands({ db, registry, bridgeManager, eventBus: opts.eventBus ?? null });
   const mediamtxClient = opts.mediamtxClient ?? null;
   const metrics = opts.metrics ?? null;
   const settings = opts.settings ?? null;
@@ -100,8 +104,8 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
     next();
   });
 
-  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, cameraThumbnail: { ...opts.cameraThumbnail, previewBaseUrl }, auth: opts.auth, perceptionManager: opts.perceptionManager, deps }));
-  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, auth: opts.auth, deps }));
+  router.use('/cameras',  createCamerasRouter(db, registry, bridgeManager, { mediamtxClient, commands, cameraThumbnail: { ...opts.cameraThumbnail, previewBaseUrl }, auth: opts.auth, perceptionManager: opts.perceptionManager, deps }));
+  router.use('/mixers',   createMixersRouter(db, registry, bridgeManager, { mediamtxClient, commands, auth: opts.auth, deps }));
   router.use('/bridge',   createBridgeRouter(db, bridgeManager, opts.publicUrl, { auth: opts.auth, deps }));
   router.use('/encoders', createEncodersRouter(db, bridgeManager, { auth: opts.auth, deps }));
 
@@ -110,6 +114,9 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
 
 // Re-export OBSClient for use by bridge and adapters
 export { OBSClient };
+
+// Shared device-command service: camera preset / mixer switch for HTTP routes, AI tools, action runner
+export { createProductionCommands, commandStatus, slugifyLabel };
 
 // fps30 tracker subsystem job dispatch (plan_video_perception.md Phase 2/3)
 export { createPerceptionManager, isPerceptionDispatchAvailable, DEFAULT_PREVIEW_BASE_URL };

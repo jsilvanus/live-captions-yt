@@ -22,6 +22,7 @@ export default defineConfig({
       { find: 'lcyt/errors',  replacement: resolve(__dirname, '../lcyt/src/errors.js') },
       { find: 'lcyt/config',  replacement: resolve(__dirname, '../lcyt/src/config.js') },
       { find: 'lcyt/logger',  replacement: resolve(__dirname, '../lcyt/src/logger.js') },
+      { find: 'lcyt/actions', replacement: resolve(__dirname, '../lcyt/src/actions.js') },
       { find: 'lcyt',         replacement: resolve(__dirname, '../lcyt/src/sender.js') },
       // Point imports of the shim to a small ESM wrapper inside the repo.
       // This avoids aliasing directly to a CJS file which can confuse

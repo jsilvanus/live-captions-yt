@@ -2,6 +2,8 @@
 
 Cue engine for detecting spoken phrases, sounds, and AI-analyzed events to auto-advance rundown files. Supports inline cue metacodes in caption files. Imported by `lcyt-backend` as `lcyt-cues`.
 
+**Executable actions:** a rule's `action` may carry `{ run: "@intro | camera:pulpit.wide", cooldownMs?, stopOnError? }`; lcyt-actions' `CueActionDispatcher` runs it when the cue fires (plan_backend_actions.md). `createCueRouter(db, auth, engine, { authoringGuard })` asks the guard before saving a rule whose `action.run` has a device atom (Setup tier) and rejects a non-string `run`. Rules without `run` keep their descriptive actions.
+
 **Main entry:** `src/api.js`
 **Usage in lcyt-backend:**
 ```js
@@ -21,7 +23,7 @@ app.use('/cues', createCueRouter(db, auth, engine));
   - `evaluateCompositeRules(apiKey, text, codes, onFired)` — evaluates DB-backed `match_type: 'composite'` rules (async, additive alongside `evaluate()`/`evaluateEventCues()`).
   - `evaluateTrackerEvent(apiKey, state, onFired)` — evaluates standalone `match_type: 'track'` rules against `{ labels: [{ label, confidence, region? }] }` tracker state; also updates the `_trackerState` cache that `track:` leaves inside composite trees read.
   - Inline cues (session-scoped, from `POST /cues/inline`) are evaluated separately via `evaluateInlineCues()` — not merged into the DB-rule cache, since they never need regex precompilation or DB persistence.
-- `cue-processor.js` — `createCueProcessor()`: strips `<!-- cue:label -->` metacodes from caption text, fires cue events on session emitter, triggers CueEngine automatic/inline/event-cue/composite-rule evaluation. `createSoundCueListener()`/`createTrackerCueListener()`: mirror-image session-emitter listeners for `sound_label`/`track_state` events (music/silence and tracker-state cue rules respectively). `track_state` is now produced by `packages/lcyt-backend/src/perception-aggregator.js` (`plan_video_perception.md` Phase 2, dedicated-feed cameras only so far — Phase 3 adds shared/mixer-only cameras) — the fps30 tracker subsystem itself lives in `lcyt-worker-daemon`'s `perception/` runner, a separate package `plan_cues.md` always anticipated but didn't build (Phase 9 "Tracker-state leaves"); this listener needed no changes to start firing, the same relationship `createSoundCueListener()` has always had with `lcyt-music`.
+- `cue-processor.js` — `createCueProcessor()`: strips `<!-- cue:label -->` metacodes from caption text, fires cue events on the session emitter **and** publishes the canonical `cue.fired` topic on the injected `eventBus` (`createCueEmitter({ store, eventBus })`, the one function every firing site goes through — explicit metacode, auto rules, event/inline/composite results, and the sound/tracker listeners; the bus publish works with no open session, which the session-emitter path never did), triggers CueEngine automatic/inline/event-cue/composite-rule evaluation. `createSoundCueListener()`/`createTrackerCueListener()`: mirror-image session-emitter listeners for `sound_label`/`track_state` events (music/silence and tracker-state cue rules respectively). `track_state` is now produced by `packages/lcyt-backend/src/perception-aggregator.js` (`plan_video_perception.md` Phase 2, dedicated-feed cameras only so far — Phase 3 adds shared/mixer-only cameras) — the fps30 tracker subsystem itself lives in `lcyt-worker-daemon`'s `perception/` runner, a separate package `plan_cues.md` always anticipated but didn't build (Phase 9 "Tracker-state leaves"); this listener needed no changes to start firing, the same relationship `createSoundCueListener()` has always had with `lcyt-music`.
 - `db.js` — `cue_rules`, `cue_events`, `cue_named_conditions` tables, all indexed by `api_key`. `cue_rules.condition_tree` (additive column) holds a composite rule's JSON tree. Migrations run on init.
 - `routes/cues.js` — `GET/POST/PUT/DELETE /cues/rules`, `GET /cues/events`, `POST /cues/inline` (session-scoped inline cue sync), `GET/POST/PUT/DELETE /cues/defs` (named conditions, Phase 9). Regex pattern validation on create/update. Condition-tree validation (known leaf types, `not:` exactly one child) shared by `/cues/rules` composite rules and `/cues/defs`; named-condition writes additionally reject self-reference and multi-hop reference cycles at write time (400, not caught later at evaluation time).
 
@@ -40,7 +42,7 @@ Composite condition-tree cues (`<!-- cue:\nor:\n  exact: ...\n-->`) and `<!-- cu
 **Sound cue match types:** `music_start`, `music_stop`, `silence` (with minimum duration timer).
 **Tracker cue match type:** `track` (label + confidence threshold, checked against the latest cached `track_state` — no timer, unlike `silence`).
 
-**Tests:** `packages/plugins/lcyt-cues/test/*.test.js` — uses `node:test`.
+**Tests:** `test/cue-bus.test.js` covers the `cue.fired` bus publishing (no session, payload shape, event/composite results, sound/tracker listeners, throwing bus). `packages/plugins/lcyt-cues/test/*.test.js` — uses `node:test`.
 
 ---
 

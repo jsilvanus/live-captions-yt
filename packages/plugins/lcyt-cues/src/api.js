@@ -23,7 +23,7 @@
  *   }));
  */
 
-export { createCueProcessor, createSoundCueListener, createTrackerCueListener } from './cue-processor.js';
+export { createCueProcessor, createSoundCueListener, createTrackerCueListener, createCueEmitter } from './cue-processor.js';
 export { CueEngine, jaroWinkler, fuzzyWordMatch } from './cue-engine.js';
 export { createCueRouter } from './routes/cues.js';
 export {

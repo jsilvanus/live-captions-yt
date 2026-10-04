@@ -61,6 +61,7 @@ function formatRow(row) {
     rundownFileId:      row.rundown_file_id ?? null,
     recordEnabled:      Boolean(row.record_enabled),
     privacyStatus:      row.privacy_status ?? 'unlisted',
+    armed:              Boolean(row.armed),
     archivedAt:         row.archived_at ?? null,
     createdAt:          row.created_at,
     updatedAt:          row.updated_at,
@@ -522,6 +523,7 @@ export function completeBroadcast(db, id, { youtubeVideoIds, endedAt } = {}) {
   db.prepare(`
     UPDATE broadcasts
     SET status = CASE WHEN status = 'archived' THEN status ELSE 'completed' END,
+        armed = 0,
         actual_end = ?,
         youtube_video_ids = COALESCE(?, youtube_video_ids),
         updated_at = datetime('now')

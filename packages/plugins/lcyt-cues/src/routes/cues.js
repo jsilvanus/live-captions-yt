@@ -204,8 +204,25 @@ function normalizeInlineCue(rawCue, index, apiKey) {
  * @param {import('../cue-engine.js').CueEngine} engine
  * @returns {import('express').Router}
  */
-export function createCueRouter(db, auth, engine) {
+export function createCueRouter(db, auth, engine, { authoringGuard = null } = {}) {
   const router = Router();
+
+  /**
+   * A rule whose `action.run` moves devices needs the Setup tier to save
+   * (plan_backend_actions.md). The guard comes from lcyt-actions via the
+   * composition root so this plugin does not depend on it.
+   * @returns {boolean} true when the request was rejected
+   */
+  function rejectUnauthorizedRun(req, res, apiKey, action) {
+    const run = action && typeof action === 'object' ? action.run : undefined;
+    if (run !== undefined && typeof run !== 'string') {
+      res.status(400).json({ error: 'action.run must be a string' });
+      return true;
+    }
+    const denied = authoringGuard?.(req, apiKey, run);
+    if (denied) { res.status(denied.status).json({ error: denied.error }); return true; }
+    return false;
+  }
 
   /** Look up a named condition's tree by name, for `treeContainsTrackLeaf` ref resolution. */
   function resolveNamedConditionTree(apiKey, name) {
@@ -259,6 +276,7 @@ export function createCueRouter(db, auth, engine) {
     if (!apiKey) return;
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold, condition_tree } = req.body || {};
+    if (rejectUnauthorizedRun(req, res, apiKey, action)) return;
     const resolvedMatchType = match_type || 'phrase';
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
@@ -318,6 +336,7 @@ export function createCueRouter(db, auth, engine) {
     if (rule.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold, condition_tree } = req.body || {};
+    if (rejectUnauthorizedRun(req, res, apiKey, action)) return;
     const resolvedMatchType = match_type || rule.match_type || 'phrase';
 
     if (!VALID_MATCH_TYPES.includes(resolvedMatchType)) {

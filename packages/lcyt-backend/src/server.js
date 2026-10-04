@@ -5,7 +5,7 @@ import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast, getBroadcast, updateBroadcast, onKeyDeleted,
+  completeBroadcast, disarmOnEnd, isArmed, getBroadcast, updateBroadcast, onKeyDeleted,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -15,6 +15,7 @@ import { createAccountRouters } from './routes/account.js';
 import { createOrganizationsRouter } from './routes/orgs.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
+import { createArmingRouter } from './routes/arming.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createAdminMetricsRouter } from './routes/metrics.js';
 import { createAdminSettingsRouter } from './routes/admin-settings.js';
@@ -30,9 +31,9 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
+  initProductionControl, createProductionRouter, createProductionCommands, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
-  listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
+  listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from 'lcyt-production';
 import {
   initDskControl, createDskRouters,
@@ -89,7 +90,7 @@ import {
   initConnectors, createConnectorsRouter, createVariablesRouter,
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
-import { initActions, createActionsRouter } from 'lcyt-actions';
+import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
 import { initPlatforms, createOAuthRouter as createPlatformsRouter } from 'lcyt-platforms';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
@@ -246,6 +247,11 @@ const {
   bridgeManager: productionBridgeManager,
   mediamtxClient: productionMediamtxClient,
 } = await initProductionControl(db, { settings });
+// One shared device-command service for the HTTP routes and the AI tool
+// registry (docs/plans/plan_backend_actions.md).
+const productionCommands = createProductionCommands({
+  db, registry: productionRegistry, bridgeManager: productionBridgeManager, eventBus,
+});
 
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
@@ -332,12 +338,12 @@ const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 // The processor strips <!-- cue:... --> metacodes and evaluates phrase/regex/section
 // rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
 const { engine: _cueEngine } = await initCueEngine(db);
-const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
+const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine, eventBus });
 
 // Wire sound_label events (from lcyt-music) to cue engine for
 // music_start, music_stop, and silence cue rules.
-createSoundCueListener({ store, engine: _cueEngine });
-createTrackerCueListener({ store, engine: _cueEngine });
+createSoundCueListener({ store, engine: _cueEngine, eventBus });
+createTrackerCueListener({ store, engine: _cueEngine, eventBus });
 
 // AI Agent — central AI service. Owns AI configuration, embedding calls,
 // context window management, and future vision/LLM features.
@@ -363,13 +369,15 @@ const _toolRegistry = createToolRegistry({
   db,
   captionTargets: { getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget },
   production: {
-    registry: productionRegistry, bridgeManager: productionBridgeManager,
+    registry: productionRegistry, commands: productionCommands,
     listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
-    listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
+    listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
   },
   agent: _agent,
   assets: { listImages, getImageByKey, updateImageSettings, deleteImage },
   crop: { cropManager: rtmp.cropManager, getCropConfig, getCropPreset, listCropPresets },
+  // The executor needs the connectors engine, which is built further down.
+  actions: { executor: () => _actionExecutor },
 });
 // Real MCP Server + in-process Client wiring (InMemoryTransport) — the
 // agentic_chat turn loop consumes tools through this bridge, exactly the
@@ -396,6 +404,37 @@ const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsSc
 });
 // Named Actions plugin — runs its own migration (action_defs table).
 initActions(db);
+
+const _checkProjectRole = (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId);
+// Server-side action runner (plan_backend_actions.md): lcyt-actions stays
+// generic, this is the one place that knows which atom keys map to which
+// subsystem. Device atoms go through ProductionCommands (ownership check,
+// bridge routing, crop follow); `device: true` is what a disarmed project skips.
+const _actionExecutor = createActionExecutor({
+  db,
+  eventBus,
+  handlers: {
+    camera: { device: true, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
+    mixer: { device: true, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    crop: { device: true, run: (apiKey, value) => _toolRegistry.callTool('crop.activate_preset', { presetId: value }, { apiKey }) },
+    api: {
+      run: async (apiKey, value) => {
+        const dot = String(value).indexOf('.');
+        if (dot <= 0 || dot === value.length - 1) return { ok: false, error: `api atom needs connector.request, got '${value}'` };
+        const r = await _connectorsEngine.fireRequest(apiKey, value.slice(0, dot), value.slice(dot + 1));
+        return { ok: r?.ok !== false, error: r?.error };
+      },
+    },
+  },
+});
+const _actionAuthoringGuard = createAuthoringGuard({ executor: _actionExecutor, checkProjectRole: _checkProjectRole });
+
+// Cue rules with `action.run` execute through the runner when their cue fires;
+// disarmed projects skip device steps (plan_backend_actions.md, db/arming.js).
+const _cueActionDispatcher = createCueActionDispatcher({
+  eventBus, executor: _actionExecutor, isArmed: (apiKey) => isArmed(db, apiKey),
+});
+_cueActionDispatcher.start();
 
 // Broadcast Platform Sync plugin (plan_broadcast_platform_sync.md) — server-side
 // OAuth, YouTube Live scheduling/thumbnails/go-live, and viewer stats tied to
@@ -510,6 +549,7 @@ store.onSessionEnd = async (session) => {
     // Transition the bound broadcast to completed (plan/broadcasts).
     if (session.broadcastId) {
       try {
+        disarmOnEnd(db, eventBus, session.apiKey, session.broadcastId);
         completeBroadcast(db, session.broadcastId, {
           youtubeVideoIds: session.youtubeVideoIds,
           endedAt,
@@ -711,7 +751,7 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings, platforms: platformDeps }, scopedAuth));
-app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard }));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
@@ -767,7 +807,10 @@ app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, pr
 // requireProjectRole's own doc comment) — connector auth_config can hold
 // credentials, same risk class as /ai/providers (plan_project_roles.md).
 app.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
-app.use('/actions', createActionsRouter(db, scopedAuth('action')));
+app.use('/actions', createActionsRouter(db, scopedAuth('action'), {
+  executor: _actionExecutor,
+  checkProjectRole: _checkProjectRole,
+}));
 app.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
@@ -813,9 +856,11 @@ app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, 
   auth: scopedAuth('production'),
 }));
 
+app.use('/production/arming', createArmingRouter(db, scopedAuth('production'), eventBus));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
+  commands: productionCommands,
   metrics,
   // Real session/user/device auth on the camera/mixer/encoder/bridge-instance
   // CRUD routes — WHIP, thumbnail-image, and bridge-agent-channel routes stay

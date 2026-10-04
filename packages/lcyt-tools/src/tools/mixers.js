@@ -2,18 +2,17 @@
  * mixer.* tools — Setup Hub's Mixers card (Setup Assistant) and
  * Production Assistant's device-control tool (mixer.switch).
  *
- * Bridge-relayed source switching mirrors routes/mixers.js's dispatch logic
- * (buildSwitchCommand) for every mixer type except 'lcyt', which never uses
- * bridge dispatch and always goes through registry.switchSource().
+ * mixer.switch goes through lcyt-production's ProductionCommands (the same
+ * path as the HTTP route), which handles bridge-relayed dispatch.
  */
 
 /**
- * @param {{ db, registry, bridgeManager, listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand }} deps
- *   db + registry from 'lcyt-production'; buildSwitchCommand from lcyt-production's mixer route module
+ * @param {{ db, registry, commands, listMixers, getMixerById, createMixer, updateMixer, deleteMixer }} deps
+ *   db + registry + commands (createProductionCommands) from 'lcyt-production'
  * @returns {Array<{ name, description, inputSchema, annotations, handler }>}
  */
 export function createMixerTools(deps) {
-  const { db, registry, bridgeManager, listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand } = deps;
+  const { db, registry, commands, listMixers, getMixerById, createMixer, updateMixer, deleteMixer } = deps;
 
   return [
     {
@@ -72,25 +71,11 @@ export function createMixerTools(deps) {
         required: ['mixerId', 'inputNumber'],
       },
       annotations: { destructiveHint: true },
-      handler: async ({ mixerId, inputNumber }) => {
-        const mixer = getMixerById(db, registry, mixerId);
-        if (!mixer) return { ok: false, error: 'Mixer not found' };
-        try {
-          if (mixer.bridgeInstanceId && bridgeManager) {
-            if (!bridgeManager.isConnected(mixer.bridgeInstanceId)) {
-              return { ok: false, error: 'Bridge is not connected' };
-            }
-            const command = buildSwitchCommand(mixer, inputNumber);
-            if (command !== null) {
-              await bridgeManager.sendCommand(mixer.bridgeInstanceId, command);
-              return { ok: true, mixerId, activeSource: inputNumber };
-            }
-          }
-          await registry.switchSource(mixerId, inputNumber);
-          return { ok: true, mixerId, activeSource: inputNumber };
-        } catch (err) {
-          return { ok: false, error: err.message };
-        }
+      handler: async ({ mixerId, inputNumber }, ctx) => {
+        // Same path as the HTTP route: ownership check, bridge-vs-direct
+        // routing and the production-follow (vertical crop) notification.
+        const r = await commands.switchMixer(ctx?.apiKey ?? null, mixerId, inputNumber, { source: 'tool' });
+        return r.ok ? { ok: true, mixerId, activeSource: inputNumber } : { ok: false, error: r.error };
       },
     },
   ];
