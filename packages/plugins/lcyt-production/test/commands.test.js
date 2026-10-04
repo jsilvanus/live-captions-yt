@@ -283,9 +283,19 @@ describe('action atoms (label addressing)', () => {
     assert.deepEqual(registry.calls, [['switchSource', id, 3]]);
   });
 
+  it('mixer atom accepts an input written by name (OBS scene name or input label)', async () => {
+    const id = insertMixer({ name: 'Stream OBS', type: 'obs', connection_config: { inputs: [
+      { number: 1, sceneName: 'Pulpit Wide' }, { number: 2, label: 'Choir' }, { number: 3, sceneName: 'Choir' },
+    ] } });
+    assert.equal((await commands.runMixerAtom('key1', 'stream-obs.pulpit-wide')).ok, true);
+    assert.deepEqual(registry.calls, [['switchSource', id, 1]]);
+    assert.equal((await commands.runMixerAtom('key1', 'stream-obs.choir')).code, 'bad_request'); // 2 and 3 share the name
+    assert.equal((await commands.runMixerAtom('key1', 'stream-obs.altar')).code, 'not_found');
+  });
+
   it('mixer atom errors: non-numeric input, unknown mixer, malformed value', async () => {
     insertMixer({ name: 'Main' });
-    assert.equal((await commands.runMixerAtom('key1', 'main.two')).code, 'bad_request');
+    assert.equal((await commands.runMixerAtom('key1', 'main.two')).code, 'not_found');
     assert.equal((await commands.runMixerAtom('key1', 'main')).code, 'bad_request');
     assert.equal((await commands.runMixerAtom('key1', 'nope.1')).code, 'not_found');
     assert.deepEqual(registry.calls, []);

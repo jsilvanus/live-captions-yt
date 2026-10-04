@@ -125,3 +125,42 @@ describe('CueActionDispatcher', () => {
     boom.stop();
   });
 });
+
+describe('CueActionDispatcher — ambient causation and device cooldown', () => {
+  it('a cue fired inside a running action is exactly one level deeper, whatever its source, and depth 4 is refused', async () => {
+    const eventBus = new EventBus();
+    const depths = [];
+    const events = [];
+    eventBus.subscribe('k', ['action.*'], (e) => events.push(e));
+    const { createActionExecutor } = await import('../src/api.js');
+    const Database = (await import('better-sqlite3')).default;
+    const { initActions } = await import('../src/api.js');
+    const db = new Database(':memory:');
+    initActions(db);
+    let n = 0;
+    const executor = createActionExecutor({
+      db, eventBus,
+      handlers: {
+        // Each step raises another text-matched cue synchronously, like a device move feeding a cue.
+        loop: async () => { eventBus.publish('k', 'cue.fired', { label: 'x', source: 'auto', ruleId: `r${++n}`, action: { run: 'loop:1', cooldownMs: 0 } }); return { ok: true }; },
+      },
+    });
+    const dispatcher = createCueActionDispatcher({ eventBus, executor, isArmed: () => true });
+    const orig = executor.run;
+    executor.run = (a, t, o) => { depths.push(o?.causation?.depth); return orig(a, t, o); };
+    dispatcher.start();
+    eventBus.publish('k', 'cue.fired', { label: 'x', source: 'auto', ruleId: 'r0', action: { run: 'loop:1', cooldownMs: 0 } });
+    await new Promise((r) => setTimeout(r, 50));
+    dispatcher.stop();
+    assert.deepEqual(depths, [1, 2, 3]);
+    assert.ok(events.some((e) => e.topic === 'action.skipped' && e.data.reason === 'loop_guard'));
+  });
+
+  it('passes deviceCooldown to the executor', async () => {
+    const eventBus = new EventBus();
+    let opts;
+    const d = createCueActionDispatcher({ eventBus, isArmed: () => true, executor: { run: async (a, t, o) => { opts = o; return { ok: true }; } } });
+    await d.handle({ projectId: 'k', topic: 'cue.fired', data: { source: 'auto', ruleId: 'r', action: { run: 'camera:a.b' } } });
+    assert.equal(opts.deviceCooldown, true);
+  });
+});

@@ -31,7 +31,7 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter, createProductionCommands, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
+  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from 'lcyt-production';
@@ -414,9 +414,37 @@ const _actionExecutor = createActionExecutor({
   db,
   eventBus,
   handlers: {
-    camera: { device: true, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
-    mixer: { device: true, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
-    crop: { device: true, run: (apiKey, value) => _toolRegistry.callTool('crop.activate_preset', { presetId: value }, { apiKey }) },
+    // deviceKey names the physical device so the executor's per-device cooldown
+    // spans atoms (`mixer:` and `obs:` both move the same mixer).
+    camera: { device: true, deviceKey: (value) => `camera:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
+    mixer: { device: true, deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    // `obs:<mixer>.<scene>` is the mixer atom with a scene written by name.
+    obs: { device: true, deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    // `crop:<preset>` by preset id or by name slug.
+    crop: {
+      device: true,
+      deviceKey: () => 'crop',
+      run: (apiKey, value) => {
+        const slug = slugifyLabel(value);
+        const presets = listCropPresets(db, apiKey);
+        const matches = presets.filter((p) => p.id === value);
+        const found = matches.length ? matches : presets.filter((p) => slugifyLabel(p.name) === slug);
+        if (found.length === 0) return { ok: false, code: 'not_found', error: `Crop preset '${value}' not found` };
+        if (found.length > 1) return { ok: false, code: 'bad_request', error: `Crop preset '${value}' is ambiguous; rename one or use its id` };
+        return _toolRegistry.callTool('crop.activate_preset', { presetId: found[0].id }, { apiKey });
+      },
+    },
+    // `graphics:+banner,-logo` and `graphics[vertical-left]:stanza`: the same
+    // metacode the caption path handles, applied to the DSK state directly.
+    // Not a device step: it changes what the overlay shows, not hardware.
+    graphics: {
+      run: async (apiKey, value, meta) => {
+        if (/[<>]/.test(value)) return { ok: false, code: 'bad_request', error: 'graphics atom must not contain < or >' };
+        if (!_dskCaptionProcessor) return { ok: false, code: 'unavailable', error: 'Graphics overlay is not available' };
+        await _dskCaptionProcessor(apiKey, `<!-- ${meta.metacode}:${value} -->`, {});
+        return { ok: true };
+      },
+    },
     api: {
       run: async (apiKey, value) => {
         const dot = String(value).indexOf('.');

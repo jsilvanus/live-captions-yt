@@ -2,7 +2,7 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
 import { EventBus } from 'lcyt/event-bus';
-import { initActions, createActionDef, createActionExecutor, parseWaitMs } from '../src/api.js';
+import { initActions, createActionDef, createActionExecutor, currentCausation, parseWaitMs } from '../src/api.js';
 
 function setup(handlers = {}, extra = {}) {
   const db = new Database(':memory:');
@@ -120,5 +120,63 @@ describe('ActionExecutor', () => {
     assert.equal(t.events[0].data.source, 'tool');
     assert.equal(t.events[0].data.causation.depth, 1);
     assert.equal(t.events[3].data.ok, true);
+  });
+});
+
+describe('ActionExecutor — device cooldown, atom keys, causation', () => {
+  function make(extra = {}) {
+    const db = new Database(':memory:');
+    initActions(db);
+    const calls = [];
+    const clock = { t: 1000 };
+    const executor = createActionExecutor({
+      db, now: () => clock.t, deviceCooldownMs: 1000,
+      handlers: {
+        camera: { device: true, deviceKey: (v) => `camera:${v.split('.')[0]}`, run: async (k, v) => { calls.push(v); return { ok: true }; } },
+        graphics: async (k, v, m) => { calls.push(`${m.metacode}=${v}`); return { ok: true }; },
+        ...extra,
+      },
+    });
+    return { executor, calls, clock };
+  }
+
+  it('deviceCooldown skips a device commanded within the window, per device, but not other devices or plain runs', async () => {
+    const { executor, calls, clock } = make();
+    await executor.run('k', { expr: 'camera:a.wide' });                        // manual run, always works
+    const r = await executor.run('k', { expr: 'camera:a.close | camera:b.wide' }, { deviceCooldown: true });
+    assert.deepEqual(r.steps.map((s) => [s.status, s.reason]), [['skipped', 'device_cooldown'], ['ok', undefined]]);
+    assert.deepEqual(calls, ['a.wide', 'b.wide']);
+    await executor.run('k', { expr: 'camera:a.close' });                       // not a cue run: unaffected
+    clock.t += 1500;
+    const again = await executor.run('k', { expr: 'camera:a.wide' }, { deviceCooldown: true });
+    assert.equal(again.steps[0].status, 'ok');
+  });
+
+  it('handler keys ignore a [viewport] suffix and the handler sees the full key', async () => {
+    const { executor, calls } = make();
+    assert.equal(executor.isServerAtom('graphics[vertical-left]'), true);
+    assert.equal(executor.isDeviceAtom('graphics[vertical-left]'), false);
+    const r = await executor.run('k', { expr: 'graphics[vertical-left]:+logo | graphics:-banner' });
+    assert.deepEqual(r.steps.map((s) => s.where), ['server', 'server']);
+    assert.deepEqual(calls, ['graphics[vertical-left]=+logo', 'graphics=-banner']);
+  });
+
+  it('currentCausation is visible inside a step, including across awaits, and a nested run is one level deeper', async () => {
+    const seen = [];
+    const { executor } = make({
+      probe: async () => { await new Promise((r) => setImmediate(r)); seen.push(currentCausation()); return { ok: true }; },
+    });
+    assert.equal(currentCausation(), undefined);
+    await executor.run('k', { expr: 'probe:1' }, { causation: { rootId: 'root', depth: 2 } });
+    assert.equal(seen[0].rootId, 'root');
+    assert.equal(seen[0].depth, 2);
+    let depth;
+    // same executor instance runs the nested call: build one with both handlers
+    const both = make({
+      probe2: async () => { depth = currentCausation().depth; return { ok: true }; },
+      inner: async () => { await both.executor.run('k', { expr: 'probe2:1' }); return { ok: true }; },
+    });
+    await both.executor.run('k', { expr: 'inner:1' }, { causation: { rootId: 'r', depth: 1 } });
+    assert.equal(depth, 2);
   });
 });
