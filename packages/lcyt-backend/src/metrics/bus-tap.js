@@ -7,7 +7,10 @@
 const TOPIC_COUNTERS = {
   'caption.sent': 'captions.sent',
   'caption.error': 'captions.failed',
-  'plugin.cue_fired': 'cues.fired',
+  // Canonical topic, published for every fired cue with or without a session
+  // (lcyt-cues' createCueEmitter). plugin.cue_fired is the same cue seen again
+  // via the session emitter, so counting it too would double the counter.
+  'cue.fired': 'cues.fired',
   'bridge.command_result': 'bridge.commands',
 };
 

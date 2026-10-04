@@ -19,7 +19,7 @@ process.env.DB_PATH = ':memory:';
 process.env.JWT_SECRET = 'test-server-cue-wiring-secret';
 process.env.PORT = '0';
 
-const { db, store } = await import('../src/server.js');
+const { db, store, eventBus } = await import('../src/server.js');
 const { createKey } = await import('../src/db.js');
 const { insertCueRule } = await import('lcyt-cues/src/db.js');
 
@@ -63,5 +63,24 @@ describe('server.js composition-root wiring: createTrackerCueListener', () => {
     assert.equal(fired.matchType, 'track');
     assert.equal(fired.matched, 'track:person');
     assert.equal(fired.source, 'track');
+  });
+
+  it('publishes the canonical cue.fired topic on the event bus for the same cue', async () => {
+    const session = store.create({ apiKey: API_KEY, streamKey: '', domain: 'https://cue-bus.test', jwt: 'x' });
+    const envelope = await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => { unsubscribe(); reject(new Error('cue.fired never published on the bus')); }, 2000);
+      const unsubscribe = eventBus.subscribe(API_KEY, ['cue.fired'], (env) => {
+        clearTimeout(timeout);
+        unsubscribe();
+        resolve(env);
+      });
+      session.emitter.emit('event', {
+        type: 'track_state',
+        data: { labels: [{ label: 'person', confidence: 0.9 }], ts: Date.now() },
+      });
+    });
+    assert.equal(envelope.topic, 'cue.fired');
+    assert.equal(envelope.projectId, API_KEY);
+    assert.equal(envelope.data.matched, 'track:person');
   });
 });
