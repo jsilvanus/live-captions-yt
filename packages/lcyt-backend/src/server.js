@@ -30,9 +30,9 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
+  initProductionControl, createProductionRouter, createProductionCommands, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
-  listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
+  listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from 'lcyt-production';
 import {
   initDskControl, createDskRouters,
@@ -246,6 +246,11 @@ const {
   bridgeManager: productionBridgeManager,
   mediamtxClient: productionMediamtxClient,
 } = await initProductionControl(db, { settings });
+// One shared device-command service for the HTTP routes and the AI tool
+// registry (docs/plans/plan_backend_actions.md).
+const productionCommands = createProductionCommands({
+  db, registry: productionRegistry, bridgeManager: productionBridgeManager, eventBus,
+});
 
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
@@ -363,9 +368,9 @@ const _toolRegistry = createToolRegistry({
   db,
   captionTargets: { getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget },
   production: {
-    registry: productionRegistry, bridgeManager: productionBridgeManager,
+    registry: productionRegistry, commands: productionCommands,
     listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
-    listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand,
+    listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
   },
   agent: _agent,
   assets: { listImages, getImageByKey, updateImageSettings, deleteImage },
@@ -816,6 +821,7 @@ app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, 
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
+  commands: productionCommands,
   metrics,
   // Real session/user/device auth on the camera/mixer/encoder/bridge-instance
   // CRUD routes — WHIP, thumbnail-image, and bridge-agent-channel routes stay

@@ -5,7 +5,7 @@ import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseCamera } from '../registry.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
 import { requireTier } from '../route-access.js';
-import { isSecurityBlockError } from '../bridge-security.js';
+import { createProductionCommands, commandStatus } from '../commands.js';
 
 // 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
 // than WHIP — no PTZ, uses camera_key/mixer_input exactly like webcam/mobile.
@@ -56,6 +56,7 @@ function isUnauthenticatedCameraRoute(req) {
 }
 
 export function createCamerasRouter(db, registry, bridgeManager = null, opts = {}) {
+  const commands = opts.commands ?? createProductionCommands({ db, registry, bridgeManager });
   const mediamtxClient = opts.mediamtxClient ?? null;
   const cameraThumbnailOpts = opts.cameraThumbnail ?? {};
   const perceptionManager = opts.perceptionManager ?? null;
@@ -286,60 +287,17 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.get('/:id/thumbnail', serveThumbnail);
   router.get('/:id/thumbnail.jpg', serveThumbnail);
 
-  // POST /production/cameras/:id/preset/:presetId — trigger preset
+  // POST /production/cameras/:id/preset/:presetId — trigger preset.
+  // Ownership, bridge-vs-direct routing and the production-follow
+  // notification (plan_vertical_crop.md §4) all live in ProductionCommands
+  // (src/commands.js), shared with the AI tools and the action runner. The
+  // acting session's apiKey (null for an unauthenticated kiosk request) is
+  // what production-follow scopes the crop_source_map lookup to.
   router.post('/:id/preset/:presetId', requireProduction, async (req, res) => {
     const { id, presetId } = req.params;
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
-    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
-
-    try {
-      const camera = parseCamera(row);
-      // Whichever project's session recalled this preset — production-follow
-      // (plan_vertical_crop.md §4) scopes the crop_source_map lookup to it,
-      // same reasoning as the mixer-switch route above; prod_cameras has an
-      // owner_api_key but it's optional/legacy, not what "which project is
-      // driving this camera right now" means for the crop follow.
-      const apiKey = req.session?.apiKey ?? null;
-      // The crop editor's cameraPresetSources() (lcyt-web) binds
-      // crop_source_map.camera_preset to a preset's presetNumber (VISCA) or
-      // array index (AMX, which carries no numeric id) — never to `.id`,
-      // which is what :presetId/req.params actually is here. Recompute the
-      // same key the frontend used so production-follow can actually match
-      // a row (plan_vertical_crop.md §4) instead of comparing a UUID to an
-      // index/number, which would never match.
-      const allPresets = camera.controlConfig?.presets ?? [];
-      const presetIndex = allPresets.findIndex(p => p.id === presetId);
-      const presetForFollow = presetIndex === -1 ? null : allPresets[presetIndex];
-      const presetKey = presetForFollow
-        ? (Number.isInteger(presetForFollow.presetNumber) ? presetForFollow.presetNumber : presetIndex)
-        : presetId;
-
-      // Bridge routing: if camera is assigned to a bridge, relay via SSE
-      if (camera.bridgeInstanceId && bridgeManager) {
-        if (!bridgeManager.isConnected(camera.bridgeInstanceId)) {
-          return res.status(503).json({ error: 'Bridge is not connected' });
-        }
-        const preset = presetForFollow;
-        if (!preset) {
-          return res.status(400).json({ error: `Unknown preset '${presetId}'` });
-        }
-        await bridgeManager.sendCommand(camera.bridgeInstanceId, {
-          host:    camera.controlConfig.host,
-          port:    camera.controlConfig.port,
-          payload: preset.command + '\r\n',
-        });
-      } else {
-        // Direct TCP via registry
-        await registry.callPreset(id, presetId);
-      }
-
-      registry.notifyCameraPresetRecalled({ apiKey, cameraId: id, preset: presetKey });
-      res.json({ ok: true, cameraId: id, presetId });
-    } catch (err) {
-      const status = isSecurityBlockError(err) ? 403
-        : (err.message.includes('not connected') || err.message.includes('timed out')) ? 503 : 400;
-      res.status(status).json({ error: err.message });
-    }
+    const result = await commands.callCameraPreset(req.session?.apiKey ?? null, id, presetId, { source: 'http' });
+    if (!result.ok) return res.status(commandStatus(result)).json({ error: result.error });
+    res.json({ ok: true, cameraId: id, presetId });
   });
 
   // -------------------------------------------------------------------------

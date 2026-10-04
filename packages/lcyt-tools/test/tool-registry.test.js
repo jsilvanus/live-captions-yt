@@ -26,7 +26,19 @@ function makeProductionFake() {
       callPreset: async (id, presetId) => { registryCalls.push(['callPreset', id, presetId]); },
       switchSource: async (id, input) => { registryCalls.push(['switchSource', id, input]); },
     },
-    bridgeManager: null,
+    // ProductionCommands fake: records the acting apiKey and source so the
+    // tests can assert the tools delegate to it (the real service is tested
+    // in lcyt-production's commands.test.js).
+    commands: {
+      callCameraPreset: async (apiKey, cameraId, presetId, meta) => {
+        commandCalls.push(['callCameraPreset', apiKey, cameraId, presetId, meta]);
+        return cameraId === 'cam1' ? { ok: true } : { ok: false, code: 'not_found', error: 'Camera not found' };
+      },
+      switchMixer: async (apiKey, mixerId, inputNumber, meta) => {
+        commandCalls.push(['switchMixer', apiKey, mixerId, inputNumber, meta]);
+        return mixerId === 'mix1' ? { ok: true } : { ok: false, code: 'not_found', error: 'Mixer not found' };
+      },
+    },
     listCameras: () => [camera],
     getCameraById: (db, id) => (id === 'cam1' ? camera : null),
     createCamera: (db, registry, fields) => ({ ok: true, camera: { id: 'new-cam', ...fields } }),
@@ -37,10 +49,10 @@ function makeProductionFake() {
     createMixer: (db, registry, fields) => ({ ok: true, mixer: { id: 'new-mix', ...fields } }),
     updateMixer: (db, registry, id, patch) => ({ ok: true, mixer: { id, ...patch } }),
     deleteMixer: (db, registry, id) => (id === 'mix1' ? { ok: true } : { ok: false, error: 'Mixer not found', status: 404 }),
-    buildSwitchCommand: () => null,
   };
 }
 let registryCalls = [];
+let commandCalls = [];
 
 function makeAgentFake() {
   return {
@@ -94,6 +106,7 @@ function makeAssetsFake() {
 
 function makeFullRegistry() {
   registryCalls = [];
+  commandCalls = [];
   cropApplyCalls = [];
   return createToolRegistry({
     db: {},
@@ -168,11 +181,11 @@ describe('createToolRegistry', () => {
   });
 
   describe('camera.preset', () => {
-    it('calls registry.callPreset for a direct (non-bridge) camera', async () => {
+    it('delegates to ProductionCommands with the acting apiKey', async () => {
       const reg = makeFullRegistry();
       const result = await reg.callTool('camera.preset', { cameraId: 'cam1', presetId: 'home' }, { apiKey: 'key1' });
       assert.equal(result.ok, true);
-      assert.deepEqual(registryCalls, [['callPreset', 'cam1', 'home']]);
+      assert.deepEqual(commandCalls, [['callCameraPreset', 'key1', 'cam1', 'home', { source: 'tool' }]]);
     });
 
     it('returns ok:false for an unknown camera', async () => {
@@ -183,11 +196,17 @@ describe('createToolRegistry', () => {
   });
 
   describe('mixer.switch', () => {
-    it('calls registry.switchSource for a direct (non-bridge) mixer', async () => {
+    it('delegates to ProductionCommands with the acting apiKey', async () => {
       const reg = makeFullRegistry();
       const result = await reg.callTool('mixer.switch', { mixerId: 'mix1', inputNumber: 3 }, { apiKey: 'key1' });
       assert.equal(result.ok, true);
-      assert.deepEqual(registryCalls, [['switchSource', 'mix1', 3]]);
+      assert.deepEqual(commandCalls, [['switchMixer', 'key1', 'mix1', 3, { source: 'tool' }]]);
+    });
+
+    it('returns ok:false with the service error for an unknown mixer', async () => {
+      const reg = makeFullRegistry();
+      const result = await reg.callTool('mixer.switch', { mixerId: 'nope', inputNumber: 1 }, { apiKey: 'key1' });
+      assert.deepEqual(result, { ok: false, error: 'Mixer not found' });
     });
   });
 

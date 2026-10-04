@@ -36,7 +36,7 @@ import { createCropTools } from './tools/crop.js';
  * @param {object} deps
  * @param {import('better-sqlite3').Database} deps.db
  * @param {object} [deps.captionTargets] — { getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget } from 'lcyt-backend/db'
- * @param {object} [deps.production] — { registry, bridgeManager, listCameras, getCameraById, createCamera, updateCamera, deleteCamera, listMixers, getMixerById, createMixer, updateMixer, deleteMixer, buildSwitchCommand } from 'lcyt-production'
+ * @param {object} [deps.production] — { registry, commands, listCameras, getCameraById, createCamera, updateCamera, deleteCamera, listMixers, getMixerById, createMixer, updateMixer, deleteMixer } from 'lcyt-production'
  * @param {import('lcyt-agent').AgentEngine} [deps.agent] — for dsk_template.* tools
  * @param {object} [deps.assets] — { listImages, getImageByKey, updateImageSettings, deleteImage } from 'lcyt-dsk'
  * @param {object} [deps.crop] — { cropManager, getCropConfig, getCropPreset, listCropPresets } from 'lcyt-rtmp' (plan_vertical_crop.md §4)
@@ -48,8 +48,8 @@ export function createToolRegistry(deps = {}) {
   const groups = [];
   if (captionTargets) groups.push(createCaptionTargetTools({ db, ...captionTargets }));
   if (production) {
-    groups.push(createCameraTools({ db, registry: production.registry, bridgeManager: production.bridgeManager, ...production }));
-    groups.push(createMixerTools({ db, registry: production.registry, bridgeManager: production.bridgeManager, ...production }));
+    groups.push(createCameraTools({ db, registry: production.registry, ...production }));
+    groups.push(createMixerTools({ db, registry: production.registry, ...production }));
   }
   if (agent) groups.push(createDskTemplateTools({ agent }));
   if (assets) groups.push(createAssetTools({ db, ...assets }));
