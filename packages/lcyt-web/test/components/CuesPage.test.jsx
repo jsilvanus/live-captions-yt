@@ -439,4 +439,26 @@ describe('CuesManager — Named Conditions', () => {
     const select = screen.getAllByRole('combobox').find(el => el.querySelector('option[value="prayer-ending"]'));
     expect(select).toBeTruthy();
   });
+  it('saves the action run expression and keeps other action keys', async () => {
+    const user = userEvent.setup();
+    global.fetch.mockImplementation((url, opts) => {
+      if (opts?.method === 'PUT') return Promise.resolve({ ok: true, json: async () => ({ ok: true }) });
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ rules: [{ id: 'r-1', name: 'Amen', match_type: 'phrase', pattern: 'amen', enabled: true, cooldown_ms: 0, action: { label: 'Amen!', graphic: 'g1' } }] }),
+      });
+    });
+
+    renderWith(baseSession);
+    await waitFor(() => expect(screen.getByText('Amen')).toBeInTheDocument());
+    await user.click(screen.getByTitle('Settings'));
+    await user.type(await screen.findByLabelText(/Run action when this cue fires/), 'wait:2s');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      const put = global.fetch.mock.calls.find(([, opts]) => opts?.method === 'PUT');
+      expect(put).toBeTruthy();
+      expect(JSON.parse(put[1].body).action).toMatchObject({ label: 'Amen!', graphic: 'g1', run: 'wait:2s' });
+    });
+  });
 });

@@ -46,6 +46,26 @@ function BroadcastStatusControl({ broadcast, onSetStatus }) {
   );
 }
 
+function ArmingBadge({ arming, onToggle }) {
+  if (!arming || typeof arming.armed !== 'boolean') return null;
+  const armed = arming.armed;
+  const colors = armed
+    ? { bg: 'rgba(204,120,0,.25)', color: '#ffb74d' }
+    : { bg: C.chipBg, color: '#888' };
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(!armed)}
+      title={armed
+        ? 'Armed: cue and action rules can move cameras and mixers. Click to disarm.'
+        : 'Safe: cue and action rules will not move hardware. Click to arm.'}
+      style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '4px 9px', borderRadius: 5, background: colors.bg, color: colors.color, border: `1px solid ${C.panelBorder}`, cursor: 'pointer' }}
+    >
+      {armed ? 'Armed' : 'Safe'}
+    </button>
+  );
+}
+
 export function ProductionHeader({ D }) {
   const { ui } = D;
   const projectLabel = short(D.creds.apiKey);
@@ -64,6 +84,7 @@ export function ProductionHeader({ D }) {
       )}
       <BroadcastStatusControl broadcast={D.broadcast} onSetStatus={D.actions.setBroadcastStatus} />
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <ArmingBadge arming={D.arming} onToggle={D.actions.setArmed} />
         <Link href="/production/crop" style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.04em', padding: '4px 9px', borderRadius: 5, background: C.chipBg, color: '#8fbef0', textDecoration: 'none' }}>
           Vertical Crop
         </Link>

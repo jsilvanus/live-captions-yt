@@ -1244,3 +1244,15 @@ pass:
 **Resolved 2026-10-04:** the executor now enforces a per-device cooldown for cue runs (default 1 s, keyed by the physical device so `mixer:` and `obs:` share it). The run's causation travels in an AsyncLocalStorage context, so a cue that fires inside a running action is exactly one level deeper; the time window stays only as a fallback for device feedback that arrives later with no context. `graphics:` (including `graphics[viewport]:`), `obs:<mixer>.<scene>` and `crop:<preset name>` are implemented; `mixer:` also accepts an input by name.
 
 **Still open:** a loop whose feedback arrives after the 3 s window and from outside any run is bounded only by the per-rule and per-device cooldowns.
+
+---
+
+## Action steps store device labels, not ids (renames break saved atoms)
+
+**Where:** `packages/lcyt-web/src/components/ActionStepBuilder.jsx`, `packages/lcyt-web/src/lib/action-atoms.js`
+
+**Finding (2026-10-04):** the agreed design said the id is stored behind the scenes on save so renames do not break saved actions. The cue editor writes the label slug (`camera:pulpit.wide`) into `action.run` as typed and does not rewrite it to an id.
+
+**Why skipped:** the expression is free text that users also edit by hand, so a rewrite on save would change what they typed and make the field unreadable again. The server already accepts ids, and ambiguous labels are rejected there, so nothing runs against the wrong device; a renamed device just makes the step fail with a clear error.
+
+**Still worth doing:** a rename-aware path (update saved atoms when a camera or mixer label changes, or resolve by a stored id alongside the label).

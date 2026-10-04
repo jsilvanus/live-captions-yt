@@ -6,6 +6,8 @@ import { useAuthedFetch } from '../hooks/useAuthedFetch';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { ConditionTreeEditor, summarizeConditionTree } from './ConditionTreeEditor.jsx';
+import { ActionStepBuilder } from './ActionStepBuilder.jsx';
+import { buildRuleAction } from '../lib/action-atoms.js';
 
 // Phase 10 (plan_cues.md) scope, extended in the Phase 9 frontend follow-up:
 // every synchronous/composable rule type is authorable here now that
@@ -27,7 +29,7 @@ const EDITABLE_MATCH_TYPES = [
 ];
 const EDITABLE_TYPE_VALUES = EDITABLE_MATCH_TYPES.map(t => t.value);
 
-const EMPTY_DRAFT = { name: '', match_type: 'phrase', pattern: '', enabled: true, cooldown_ms: 0, fuzzy_threshold: 0.75, actionLabel: '', condition_tree: null };
+const EMPTY_DRAFT = { name: '', match_type: 'phrase', pattern: '', enabled: true, cooldown_ms: 0, fuzzy_threshold: 0.75, actionLabel: '', actionRun: '', condition_tree: null };
 
 function matchTypeLabel(matchType) {
   return EDITABLE_MATCH_TYPES.find(t => t.value === matchType)?.label || matchType;
@@ -158,6 +160,7 @@ export function CuesManager({ embedded = false }) {
       cooldown_ms: rule.cooldown_ms ?? 0,
       fuzzy_threshold: rule.fuzzy_threshold ?? 0.75,
       actionLabel: rule.action?.label || '',
+      actionRun: typeof rule.action?.run === 'string' ? rule.action.run : '',
       condition_tree: rule.condition_tree || null,
     });
   }
@@ -205,7 +208,7 @@ export function CuesManager({ embedded = false }) {
       pattern: isComposite ? undefined : draft.pattern,
       enabled: draft.enabled,
       cooldown_ms: Number(draft.cooldown_ms) || 0,
-      action: draft.actionLabel ? { type: 'event', label: draft.actionLabel } : {},
+      action: buildRuleAction(editing === 'new' ? undefined : editing.action, { label: draft.actionLabel, run: draft.actionRun }),
     };
     if (draft.match_type === 'fuzzy') body.fuzzy_threshold = Number(draft.fuzzy_threshold);
     if (isComposite) body.condition_tree = draft.condition_tree;
@@ -441,6 +444,12 @@ export function CuesManager({ embedded = false }) {
                   placeholder="Shown in the cue events log when this rule fires"
                 />
               </div>
+
+              <ActionStepBuilder
+                value={draft.actionRun}
+                onChange={(next) => setDraft((d) => ({ ...d, actionRun: next }))}
+                authedFetch={authedFetch}
+              />
 
               <div className="settings-field">
                 <label className="settings-checkbox">
