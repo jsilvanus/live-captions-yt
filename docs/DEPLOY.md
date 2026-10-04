@@ -142,7 +142,7 @@ Build all images locally:
 
 ```bash
 docker build -t lcyt-site:latest .
-docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
+docker build -f packages/lcyt-worker-daemon/Dockerfile -t lcyt-worker-daemon:latest .
 docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 docker build -t lcyt-dsk-renderer:latest docker/lcyt-dsk-renderer/
 ```
@@ -433,7 +433,7 @@ lcyt-backend ──► lcyt-orchestrator ──► lcyt-worker-daemon (warm pool
 
 ```bash
 docker build -t lcyt-site:latest .
-docker build -t lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
+docker build -f packages/lcyt-worker-daemon/Dockerfile -t lcyt-worker-daemon:latest .
 docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 ```
 

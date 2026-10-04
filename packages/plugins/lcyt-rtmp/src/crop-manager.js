@@ -23,7 +23,7 @@
  *   CROP_OUTPUT_DEFAULT    — delivery size when config out_w/out_h are NULL (default 1080x1920)
  */
 import { spawn } from 'node:child_process';
-import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
+import { createFfmpegRunner } from 'lcyt-compute/ffmpeg';
 import logger from 'lcyt/logger';
 import { getCropConfig, resolveCropPresetForSource, resolveCameraIdForMixerInput } from './db/crop.js';
 

@@ -1,0 +1,29 @@
+{
+  "name": "lcyt-compute",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ffmpeg runners and job dispatch shared by lcyt-backend, lcyt-worker-daemon and lcyt-orchestrator",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./ffmpeg": "./src/ffmpeg/index.js",
+    "./ffmpeg/*": "./src/ffmpeg/*.js"
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "EUPL-1.2",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/lcyt-compute"
+  }
+}

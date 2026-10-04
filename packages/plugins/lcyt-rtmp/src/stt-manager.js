@@ -15,7 +15,7 @@
 
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
-import { reportFfmpegRun } from 'lcyt-backend/ffmpeg';
+import { reportFfmpegRun } from 'lcyt-compute/ffmpeg';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';

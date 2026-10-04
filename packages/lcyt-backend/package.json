@@ -28,6 +28,7 @@
     "lcyt": "*",
     "lcyt-actions": "*",
     "lcyt-agent": "*",
+    "lcyt-compute": "*",
     "lcyt-connectors": "*",
     "lcyt-cues": "*",
     "lcyt-dsk": "*",

@@ -1,8 +1,8 @@
 import os from 'os';
 import express from 'express';
 import { Registry, Counter, Gauge, Histogram, collectDefaultMetrics } from 'prom-client';
-import { createFfmpegRunner } from 'lcyt-backend/ffmpeg';
-import { makeFifo, createFifoWriter } from 'lcyt-backend/ffmpeg/pipe-utils';
+import { createFfmpegRunner } from 'lcyt-compute/ffmpeg';
+import { makeFifo, createFifoWriter } from 'lcyt-compute/ffmpeg/pipe-utils';
 
 import createUploader from './uploader.js';
 import { createS3UploadFn } from './s3-uploader.js';

@@ -2,7 +2,7 @@ import path from 'node:path';
 import * as fs from 'node:fs';
 import { spawn, spawnSync } from 'node:child_process';
 import logger from 'lcyt/logger';
-import { reportFfmpegRun } from 'lcyt-backend/ffmpeg';
+import { reportFfmpegRun } from 'lcyt-compute/ffmpeg';
 
 export class HlsManager {
   constructor({ hlsRoot = '/tmp/hls', localRtmp = null, rtmpApp = 'live', mediamtxClient = null, resolveStorage = null, settings = null } = {}) {
