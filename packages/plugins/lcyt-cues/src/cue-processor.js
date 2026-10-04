@@ -3,7 +3,8 @@
  *
  * Strips <!-- cue:... --> metacodes from caption text and evaluates
  * incoming captions against CueEngine rules (phrase/regex/section).
- * Fires cue_fired SSE events on the session GET /events stream.
+ * Fires cue_fired SSE events on the session GET /events stream and publishes
+ * the canonical `cue.fired` topic on the EventBus (with or without a session).
  *
  * The returned cleanText is always the original text with all cue metacodes
  * stripped.  For pure-metacode captions this will be "" — nothing is
@@ -31,12 +32,12 @@
  *   track_state events and evaluates match_type: 'track' rules.
  *
  * Usage:
- *   const cueProcessor = createCueProcessor({ store, db, engine });
+ *   const cueProcessor = createCueProcessor({ store, db, engine, eventBus });
  *   // In captions route:
  *   caption.text = cueProcessor(session.apiKey, caption.text || '', caption.codes);
  *
  *   // Wire sound events (call once after store is available):
- *   createSoundCueListener({ store, engine });
+ *   createSoundCueListener({ store, engine, eventBus });
  */
 
 import { insertCueEvent } from './db.js';
@@ -47,35 +48,60 @@ const CUE_RE = /<!--\s*cue\s*:\s*([^>]+?)\s*-->/gi;
 /** Sentinel rule ID for explicit (metacode-triggered) cue events. */
 const EXPLICIT_CUE_RULE_ID = '__explicit__';
 
-/** Emit cue_fired SSE events for fired rules. */
-function _emitCueResults(store, apiKey, fired) {
+/**
+ * Build the one function every cue-firing site goes through.
+ *
+ * A fired cue is delivered two ways: (1) the legacy per-session SSE event
+ * `cue_fired` on the session emitter (store.js re-publishes that on the bus as
+ * `plugin.cue_fired`), which only exists while a caption session is open, and
+ * (2) the canonical `cue.fired` topic published straight on the EventBus
+ * under the project's apiKey, which works with or without a session. The
+ * event catalog, MCP token scopes, the audit allowlist and the Hosted Operator
+ * all subscribe to `cue.fired`; before this it was never published.
+ *
+ * @param {{ store?: object|null, eventBus?: import('lcyt/event-bus').EventBus|null }} opts
+ * @returns {(apiKey: string, data: object, session?: object|null) => void}
+ */
+export function createCueEmitter({ store = null, eventBus = null } = {}) {
+  return function emitCueFired(apiKey, data, session = store?.getByApiKey?.(apiKey)) {
+    if (session?.emitter) {
+      session.emitter.emit('event', { type: 'cue_fired', data });
+    }
+    if (eventBus && apiKey) {
+      try {
+        eventBus.publish(apiKey, 'cue.fired', data);
+      } catch (err) {
+        logger.warn('[cues] Failed to publish cue.fired:', err?.message);
+      }
+    }
+  };
+}
+
+/** Emit cue_fired events for fired rules (event/inline/composite results). */
+function _emitCueResults(emitCueFired, apiKey, fired) {
   if (!fired || fired.length === 0) return;
-  const session = store?.getByApiKey?.(apiKey);
-  if (!session?.emitter) return;
   const ts = Date.now();
   for (const { rule, matched } of fired) {
     let action = {};
     try { action = JSON.parse(rule.action); } catch { /* ignore */ }
-    session.emitter.emit('event', {
-      type: 'cue_fired',
-      data: {
-        label: rule.name,
-        source: rule.source === 'inline' ? 'inline' : (rule.match_type === 'composite' ? 'composite' : 'event_cue'),
-        ruleId: rule.id,
-        matchType: rule.match_type,
-        matched,
-        action,
-        ts,
-      },
+    emitCueFired(apiKey, {
+      label: rule.name,
+      source: rule.source === 'inline' ? 'inline' : (rule.match_type === 'composite' ? 'composite' : 'event_cue'),
+      ruleId: rule.id,
+      matchType: rule.match_type,
+      matched,
+      action,
+      ts,
     });
   }
 }
 
 /**
- * @param {{ store: object|null, db: import('better-sqlite3').Database, engine: import('./cue-engine.js').CueEngine }} opts
+ * @param {{ store: object|null, db: import('better-sqlite3').Database, engine: import('./cue-engine.js').CueEngine, eventBus?: import('lcyt/event-bus').EventBus|null }} opts
  * @returns {(apiKey: string, text: string, codes?: object) => string}
  */
-export function createCueProcessor({ store, db, engine }) {
+export function createCueProcessor({ store, db, engine, eventBus = null }) {
+  const emitCueFired = createCueEmitter({ store, eventBus });
   return function processCueCaption(apiKey, text, codes = {}) {
     if (!text && (!codes || Object.keys(codes).length === 0)) return text || '';
 
@@ -114,14 +140,8 @@ export function createCueProcessor({ store, db, engine }) {
         }
       }
 
-      // Emit SSE event
-      const session = store?.getByApiKey?.(apiKey);
-      if (session?.emitter) {
-        session.emitter.emit('event', {
-          type: 'cue_fired',
-          data: { label, source: 'explicit', matched: label, ts },
-        });
-      }
+      // Emit SSE event + bus topic
+      emitCueFired(apiKey, { label, source: 'explicit', matched: label, ts });
     }
 
     // Evaluate automatic rules from the CueEngine
@@ -131,28 +151,22 @@ export function createCueProcessor({ store, db, engine }) {
         let action = {};
         try { action = JSON.parse(rule.action); } catch { /* ignore */ }
 
-        const session = store?.getByApiKey?.(apiKey);
-        if (session?.emitter) {
-          session.emitter.emit('event', {
-            type: 'cue_fired',
-            data: {
-              label: rule.name,
-              source: 'auto',
-              ruleId: rule.id,
-              matchType: rule.match_type,
-              matched,
-              action,
-              ts,
-            },
-          });
-        }
+        emitCueFired(apiKey, {
+          label: rule.name,
+          source: 'auto',
+          ruleId: rule.id,
+          matchType: rule.match_type,
+          matched,
+          action,
+          ts,
+        });
       }
 
       // Evaluate inline cues from the active rundown file and DB-backed event cues.
       // These run in the background — results arrive via SSE callback.
       if (typeof engine.evaluateInlineCues === 'function') {
         void engine.evaluateInlineCues(apiKey, cleanText, codes, (eventFired) => {
-          _emitCueResults(store, apiKey, eventFired);
+          _emitCueResults(emitCueFired, apiKey, eventFired);
         }).catch(err => {
           console.warn('[cues] Inline cue evaluation error:', err?.message);
         });
@@ -160,7 +174,7 @@ export function createCueProcessor({ store, db, engine }) {
 
       if (typeof engine.evaluateEventCues === 'function') {
         engine.evaluateEventCues(apiKey, cleanText, (eventFired) => {
-          _emitCueResults(store, apiKey, eventFired);
+          _emitCueResults(emitCueFired, apiKey, eventFired);
         }).catch(err => {
           console.warn('[cues] Event cue evaluation error:', err?.message);
         });
@@ -169,7 +183,7 @@ export function createCueProcessor({ store, db, engine }) {
       // Evaluate DB-backed composite rules (Phase 9). Async — results arrive via SSE callback.
       if (typeof engine.evaluateCompositeRules === 'function') {
         engine.evaluateCompositeRules(apiKey, cleanText, codes, (eventFired) => {
-          _emitCueResults(store, apiKey, eventFired);
+          _emitCueResults(emitCueFired, apiKey, eventFired);
         }).catch(err => {
           logger.warn('[cues] Composite rule evaluation error:', err?.message);
         });
@@ -193,24 +207,25 @@ export function createCueProcessor({ store, db, engine }) {
  *
  * @param {{ store: object, engine: import('./cue-engine.js').CueEngine }} opts
  */
-export function createSoundCueListener({ store, engine }) {
+export function createSoundCueListener({ store, engine, eventBus = null }) {
   if (!store || !engine) return;
+  const emitCueFired = createCueEmitter({ store, eventBus });
 
   // Hook into the store's session-creation lifecycle.
   // Each new session gets a listener on its emitter.
   const origOnSession = store.onNewSession;
   store.onNewSession = (session) => {
     origOnSession?.(session);
-    _attachSoundListener(session, engine, store);
+    _attachSoundListener(session, engine, emitCueFired);
   };
 
   // Also attach to existing sessions
   for (const session of store.all?.() ?? []) {
-    _attachSoundListener(session, engine, store);
+    _attachSoundListener(session, engine, emitCueFired);
   }
 }
 
-function _attachSoundListener(session, engine, store) {
+function _attachSoundListener(session, engine, emitCueFired) {
   if (!session?.emitter || session._cueSoundListenerAttached) return;
   session._cueSoundListenerAttached = true;
 
@@ -222,11 +237,11 @@ function _attachSoundListener(session, engine, store) {
     // Evaluate music_start, music_stop, and silence rules
     const fired = engine.evaluateSoundEvent(session.apiKey, label, (delayedResults) => {
       // Silence timer callback — fire cue_fired events for the delayed results
-      _emitCueFired(session, delayedResults, 'sound');
+      _emitCueFired(emitCueFired, session, delayedResults, 'sound');
     });
 
     // Emit immediately fired rules (music_start, music_stop)
-    _emitCueFired(session, fired, 'sound');
+    _emitCueFired(emitCueFired, session, fired, 'sound');
   });
 }
 
@@ -246,21 +261,22 @@ function _attachSoundListener(session, engine, store) {
  *
  * @param {{ store: object, engine: import('./cue-engine.js').CueEngine }} opts
  */
-export function createTrackerCueListener({ store, engine }) {
+export function createTrackerCueListener({ store, engine, eventBus = null }) {
   if (!store || !engine) return;
+  const emitCueFired = createCueEmitter({ store, eventBus });
 
   const origOnSession = store.onNewSession;
   store.onNewSession = (session) => {
     origOnSession?.(session);
-    _attachTrackerListener(session, engine, store);
+    _attachTrackerListener(session, engine, emitCueFired);
   };
 
   for (const session of store.all?.() ?? []) {
-    _attachTrackerListener(session, engine, store);
+    _attachTrackerListener(session, engine, emitCueFired);
   }
 }
 
-function _attachTrackerListener(session, engine, store) {
+function _attachTrackerListener(session, engine, emitCueFired) {
   if (!session?.emitter || session._cueTrackerListenerAttached) return;
   session._cueTrackerListenerAttached = true;
 
@@ -270,28 +286,25 @@ function _attachTrackerListener(session, engine, store) {
     if (!state) return;
 
     const fired = engine.evaluateTrackerEvent(session.apiKey, state);
-    _emitCueFired(session, fired, 'track');
+    _emitCueFired(emitCueFired, session, fired, 'track');
   });
 }
 
-function _emitCueFired(session, fired, source = 'sound') {
-  if (!fired || fired.length === 0 || !session?.emitter) return;
+function _emitCueFired(emitCueFired, session, fired, source = 'sound') {
+  if (!fired || fired.length === 0 || !session) return;
   const ts = Date.now();
   for (const { rule, matched } of fired) {
     let action = {};
     try { action = JSON.parse(rule.action); } catch { /* ignore */ }
 
-    session.emitter.emit('event', {
-      type: 'cue_fired',
-      data: {
-        label: rule.name,
-        source,
-        ruleId: rule.id,
-        matchType: rule.match_type,
-        matched,
-        action,
-        ts,
-      },
-    });
+    emitCueFired(session.apiKey, {
+      label: rule.name,
+      source,
+      ruleId: rule.id,
+      matchType: rule.match_type,
+      matched,
+      action,
+      ts,
+    }, session);
   }
 }

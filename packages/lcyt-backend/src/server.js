@@ -337,12 +337,12 @@ const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 // The processor strips <!-- cue:... --> metacodes and evaluates phrase/regex/section
 // rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
 const { engine: _cueEngine } = await initCueEngine(db);
-const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine });
+const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine, eventBus });
 
 // Wire sound_label events (from lcyt-music) to cue engine for
 // music_start, music_stop, and silence cue rules.
-createSoundCueListener({ store, engine: _cueEngine });
-createTrackerCueListener({ store, engine: _cueEngine });
+createSoundCueListener({ store, engine: _cueEngine, eventBus });
+createTrackerCueListener({ store, engine: _cueEngine, eventBus });
 
 // AI Agent — central AI service. Owns AI configuration, embedding calls,
 // context window management, and future vision/LLM features.
