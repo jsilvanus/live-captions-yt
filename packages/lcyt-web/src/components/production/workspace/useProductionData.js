@@ -156,16 +156,36 @@ export function useProductionData() {
     } catch { /* ignore */ }
   }, [backendUrl, token, jfetch]);
 
+  // Arming: device atoms in cue/action runs only move hardware while armed.
+  // null = unknown (older backend / not signed in), so the badge stays hidden.
+  const [arming, setArming] = useState(null);
+  const loadArming = useCallback(async () => {
+    if (!backendUrl || !token) return;
+    try {
+      const r = await jfetch('/production/arming');
+      if (r.ok) setArming(await r.json());
+    } catch { /* ignore */ }
+  }, [backendUrl, token, jfetch]);
+
+  const setArmed = useCallback(async (armed) => {
+    setArming((a) => ({ ...(a || {}), armed })); // optimistic
+    try {
+      const r = await jfetch('/production/arming', { method: 'PUT', body: JSON.stringify({ armed }) });
+      if (r.ok) setArming(await r.json()); else loadArming();
+    } catch { loadArming(); }
+  }, [jfetch, loadArming]);
+
   useEffect(() => { loadCore(); }, [loadCore]);
+  useEffect(() => { loadArming(); }, [loadArming]);
   useEffect(() => { loadTemplates(); loadCues(); loadRelay(); loadBroadcast(); loadConnectorRequests(); }, [loadTemplates, loadCues, loadRelay, loadBroadcast, loadConnectorRequests]);
   useEffect(() => {
     window.addEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
     return () => window.removeEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
   }, [loadBroadcast]);
   useEffect(() => {
-    const id = setInterval(() => { pollMixers(); loadRelay(); }, POLL_MS);
+    const id = setInterval(() => { pollMixers(); loadRelay(); loadArming(); }, POLL_MS);
     return () => clearInterval(id);
-  }, [pollMixers, loadRelay]);
+  }, [pollMixers, loadRelay, loadArming]);
 
   // ─── Local UI state ───────────────────────────────────────────────────
   const [ui, setUi] = useState({
@@ -412,14 +432,14 @@ export function useProductionData() {
     cameras, mixers, primaryMixer, templates, cueRules, relay, broadcast, thumbTick,
     sentEntries: sentLog?.entries || [],
     variables: variablesCtx?.variables || {},
-    connectorRequests,
+    connectorRequests, arming,
     activeInput, previewCam, programCam, camById,
     ui, patch,
     refresh: loadCore,
     actions: {
       setPreview, recallPreset, captureThumbnail, switchTo, cut,
       toggleCaptioning, stageGraphic, setGraphicField, cutGraphicLive, clearGraphicLive,
-      sendChat, addCueRule, setBroadcastStatus, togglePoll,
+      sendChat, addCueRule, setBroadcastStatus, togglePoll, setArmed,
     },
     youtube: {
       setRelayActive: setRelayActiveFn,

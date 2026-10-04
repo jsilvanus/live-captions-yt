@@ -8,6 +8,8 @@ const STREAM_TOPICS = [
   'caption.*',
   'session.*',
   'plugin.*',
+  'action.*',
+  'production.arming_changed',
 ].join(',');
 
 const RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 16000, 30000];

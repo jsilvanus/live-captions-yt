@@ -1,9 +1,11 @@
-import { useRef, useEffect, useState, useId } from 'react';
+import { useRef, useEffect, useState, useId, useCallback } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
 import { Dialog } from '../../../Dialog.jsx';
 import { useCaptionContext } from '../../../../contexts/CaptionContext';
 import { useConnectionContext } from '../../../../contexts/ConnectionContext';
+import { useEventStream } from '../../../../hooks/useEventStream.js';
+import { foldActionEvent } from '../../../../lib/action-atoms.js';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -706,6 +708,59 @@ function ConnectorPollsPane({ D, settings, onSettingsChange }) {
   );
 }
 
+const RUN_COLORS = { running: '#6ea8e8', done: '#5fd08a', failed: '#ff7788', skipped: '#999' };
+const STEP_COLORS = { done: '#5fd08a', failed: '#ff7788', skipped: '#999', browser: '#6ea8e8' };
+
+function atomText(atom) {
+  if (typeof atom === 'string') return atom;
+  try { return JSON.stringify(atom); } catch { return String(atom); }
+}
+
+/**
+ * Live log of action runs (action.* events on the shared event stream), with
+ * the arming state at the top. Runs are folded per runId, newest first, so a
+ * skipped run (disarmed, cooldown, loop guard) is visible instead of silent.
+ */
+function ActionLogPane({ D }) {
+  const [runs, setRuns] = useState([]);
+  const token = D.creds.token;
+  const getToken = useCallback(() => token, [token]);
+  const { on } = useEventStream({ backendUrl: D.creds.backendUrl, connected: D.connected, getToken });
+
+  useEffect(() => on(['action.*'], (env) => setRuns((r) => foldActionEvent(r, env))), [on]);
+
+  const armed = D.arming?.armed;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {typeof armed === 'boolean' && (
+        <div style={{ padding: '6px 10px', borderBottom: '1px solid #232323', fontSize: '.68rem', color: armed ? '#ffb74d' : C.textMuted }}>
+          {armed ? 'Armed: device steps move hardware.' : 'Safe: device steps are skipped.'}
+        </div>
+      )}
+      <div style={{ flex: 1, overflow: 'auto', padding: 6 }}>
+        {runs.length === 0 && <Empty>No action runs yet. Cue rules and /actions/run show up here as they fire.</Empty>}
+        {runs.map((run) => (
+          <div key={run.runId} style={{ padding: '6px 8px', borderBottom: '1px solid #1f1f1f', fontSize: '.7rem' }}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
+              <span style={{ color: RUN_COLORS[run.status] || '#bbb', fontWeight: 700, textTransform: 'uppercase', fontSize: '.6rem' }}>{run.status}</span>
+              <span style={{ color: '#dcdcdc' }}>{run.action || '(inline)'}</span>
+              {run.source && <span style={{ color: C.textFaint, fontSize: '.62rem' }}>{run.source}</span>}
+              <span style={{ marginLeft: 'auto', color: C.textFaint, fontSize: '.6rem' }}>{new Date(run.ts).toLocaleTimeString()}</span>
+            </div>
+            {run.reason && <div style={{ color: C.textMuted }}>{run.reason}</div>}
+            {run.error && <div style={{ color: '#ff7788' }}>{run.error}</div>}
+            {run.steps.map((st, i) => (
+              <div key={i} style={{ marginLeft: 10, fontFamily: C.mono, fontSize: '.62rem', color: STEP_COLORS[st.status] || '#bbb' }}>
+                {st.status}: {atomText(st.atom)}{st.reason ? ` (${st.reason})` : ''}{st.error ? ` ${st.error}` : ''}
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Dispatch
 // ═══════════════════════════════════════════════════════════════════════════
@@ -729,6 +784,7 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
     case 'variables':   return <VariablesPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     case 'captionInput': return <CaptionInputPane />;
+    case 'actionLog':   return <ActionLogPane D={D} />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }
