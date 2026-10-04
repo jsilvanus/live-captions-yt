@@ -22,11 +22,28 @@
  *
  * When an EventBus is supplied and an apiKey is known, each command
  * publishes `production.command_result` on that project's bus.
+ *
+ * Action atoms (`camera:<ref>.<preset>`, `mixer:<ref>.<input>`): the server-side
+ * action runner (lcyt-actions) addresses devices by label. `runCameraAtom` /
+ * `runMixerAtom` resolve a label slug (or id) to a device the acting project
+ * may use and then call the commands above. A label matches the slug of the
+ * device's `label` or `name`; an exact id match always wins; two matches are
+ * an error rather than a guess.
  */
 
 import { parseCamera, parseMixer } from './registry.js';
 import { buildSwitchCommand } from './crud.js';
 import { isSecurityBlockError } from './bridge-security.js';
+
+/**
+ * Lowercase, non-alphanumerics → single hyphens, trimmed. How a camera/mixer/preset
+ * label is written in an action atom (`Pulpit Wide` → `pulpit-wide`).
+ * @param {unknown} value
+ * @returns {string}
+ */
+export function slugifyLabel(value) {
+  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
 
 const HTTP_STATUS = { not_found: 404, bad_request: 400, unavailable: 503, forbidden: 403 };
 
@@ -164,5 +181,82 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
     }
   }
 
-  return { callCameraPreset, switchMixer };
+  const visibleTo = (apiKey) => (row) =>
+    !apiKey || row.owner_api_key == null || row.owner_api_key === apiKey;
+
+  function pickDevice(candidates, ref, noun, matches) {
+    const exact = candidates.filter((c) => c.id === ref);
+    const found = exact.length ? exact : candidates.filter((c) => matches(c, slugifyLabel(ref)));
+    if (found.length === 0) return { ok: false, code: 'not_found', error: `${noun} '${ref}' not found` };
+    if (found.length > 1) return { ok: false, code: 'bad_request', error: `${noun} '${ref}' is ambiguous (${found.length} matches); rename one or use its id` };
+    return { ok: true, device: found[0] };
+  }
+
+  /**
+   * Resolve a camera by id or label slug among the cameras this project may use.
+   * @param {string|null} apiKey
+   * @param {string} ref
+   */
+  function resolveCamera(apiKey, ref) {
+    const cameras = db.prepare('SELECT * FROM prod_cameras').all().filter(visibleTo(apiKey)).map(parseCamera);
+    const r = pickDevice(cameras, ref, 'Camera', (c, slug) => slugifyLabel(c.label) === slug || slugifyLabel(c.name) === slug);
+    return r.ok ? { ok: true, camera: r.device } : r;
+  }
+
+  /**
+   * Resolve a mixer by id or label slug among the mixers this project may use.
+   * @param {string|null} apiKey
+   * @param {string} ref
+   */
+  function resolveMixer(apiKey, ref) {
+    const mixers = db.prepare('SELECT * FROM prod_mixers').all().filter(visibleTo(apiKey)).map(parseMixer);
+    const r = pickDevice(mixers, ref, 'Mixer', (m, slug) => slugifyLabel(m.name) === slug);
+    return r.ok ? { ok: true, mixer: r.device } : r;
+  }
+
+  function splitAtom(value) {
+    const text = String(value ?? '').trim();
+    const dot = text.indexOf('.');
+    if (dot <= 0 || dot === text.length - 1) return null;
+    return [text.slice(0, dot).trim(), text.slice(dot + 1).trim()];
+  }
+
+  /**
+   * `camera:<camera>.<preset>` — recall a PTZ preset. The preset is matched by id,
+   * then by slug of its label/name, then by its preset number.
+   * @param {string|null} apiKey
+   * @param {string} value  e.g. `pulpit.wide`
+   * @param {{ source?: string }} [meta]
+   */
+  async function runCameraAtom(apiKey, value, meta = {}) {
+    const parts = splitAtom(value);
+    if (!parts) return { ok: false, code: 'bad_request', error: `camera atom needs <camera>.<preset>, got '${value}'` };
+    const cam = resolveCamera(apiKey, parts[0]);
+    if (!cam.ok) return cam;
+    const presets = cam.camera.controlConfig?.presets ?? [];
+    const slug = slugifyLabel(parts[1]);
+    const preset = presets.find((p) => p.id === parts[1])
+      ?? presets.find((p) => slugifyLabel(p.label) === slug || slugifyLabel(p.name) === slug)
+      ?? presets.find((p) => p.presetNumber != null && String(p.presetNumber) === parts[1]);
+    if (!preset) return { ok: false, code: 'not_found', error: `Preset '${parts[1]}' not found on camera '${parts[0]}'` };
+    return callCameraPreset(apiKey, cam.camera.id, preset.id, meta);
+  }
+
+  /**
+   * `mixer:<mixer>.<input>` — switch program source to an input number.
+   * @param {string|null} apiKey
+   * @param {string} value  e.g. `main.2`
+   * @param {{ source?: string }} [meta]
+   */
+  async function runMixerAtom(apiKey, value, meta = {}) {
+    const parts = splitAtom(value);
+    if (!parts || !/^\d+$/.test(parts[1])) {
+      return { ok: false, code: 'bad_request', error: `mixer atom needs <mixer>.<input number>, got '${value}'` };
+    }
+    const mix = resolveMixer(apiKey, parts[0]);
+    if (!mix.ok) return mix;
+    return switchMixer(apiKey, mix.mixer.id, Number(parts[1]), meta);
+  }
+
+  return { callCameraPreset, switchMixer, resolveCamera, resolveMixer, runCameraAtom, runMixerAtom };
 }

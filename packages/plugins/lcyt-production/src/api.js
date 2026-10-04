@@ -17,7 +17,7 @@ import { createCamerasRouter } from './routes/cameras.js';
 import { createMixersRouter } from './routes/mixers.js';
 import { createBridgeRouter } from './routes/bridge.js';
 import { createEncodersRouter } from './routes/encoders.js';
-import { createProductionCommands, commandStatus } from './commands.js';
+import { createProductionCommands, commandStatus, slugifyLabel } from './commands.js';
 import { createPerceptionManager, isPerceptionDispatchAvailable } from './perception-manager.js';
 import { DEFAULT_PREVIEW_BASE_URL } from './camera-thumbnail.js';
 
@@ -116,7 +116,7 @@ export function createProductionRouter(db, registry, bridgeManager, opts = {}) {
 export { OBSClient };
 
 // Shared device-command service: camera preset / mixer switch for HTTP routes, AI tools, action runner
-export { createProductionCommands, commandStatus };
+export { createProductionCommands, commandStatus, slugifyLabel };
 
 // fps30 tracker subsystem job dispatch (plan_video_perception.md Phase 2/3)
 export { createPerceptionManager, isPerceptionDispatchAvailable, DEFAULT_PREVIEW_BASE_URL };
