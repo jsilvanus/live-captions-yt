@@ -1,6 +1,6 @@
 ---
 title: Compute Split — lcyt-compute Library + Job Contract v1
-status: phase 1 implemented (2026-10-04); phases 2-7 pending
+status: phase 1 implemented; the fffleet runner (`FFMPEG_RUNNER=fleet`) implemented 2026-10-04; see "Status after fffleet"
 design doc: https://claude.ai/code/artifact/a512e3d1-5ef2-40ce-9b1c-60d1c5aaa5f2
 ---
 
@@ -38,3 +38,13 @@ One job resource at `/v1/jobs`, served identically by the orchestrator and every
 5. Durable orchestrator store (SQLite) behind an interface.
 6. Saarnavideo adopts the client behind `RENDER_EXECUTOR=local|compute`.
 7. Move the direct `spawn('ffmpeg')` sites onto the runner; remove pre-v1 routes.
+
+
+## Status after fffleet (2026-10-04)
+
+The orchestrator and worker became the generic library [fffleet](https://github.com/jsilvanus/fffleet) (contract v1, batch and stream jobs, S3 staging, logins, autoscaling with Hetzner/Docker/process pools). That covers phases 2 to 5 of the list above for ffmpeg work:
+
+- **LCYT side:** `FFMPEG_RUNNER=fleet` (`FleetFfmpegRunner` in `lcyt-compute`) submits stream jobs to fffleet. It reports the end of a job that finishes by itself (the old runner never emitted `close`) and exposes ffmpeg's stdin as a Writable for CEA-708 cues. No URL or an unreachable fleet means ffmpeg runs on this machine.
+- **Saarnavideo side:** `RENDER_EXECUTOR=fffleet`, batch jobs with S3 staging.
+- **Still on `lcyt-worker-daemon` and `lcyt-orchestrator`:** perception jobs (not ffmpeg), until fffleet has a non-ffmpeg executor or they move into the backend. `FFMPEG_RUNNER=worker` stays until then and is deprecated for ffmpeg.
+- **Not done:** the direct `spawn('ffmpeg')` sites (`hls-manager`, `stt-manager`, `music-manager`, `pcm-extractor`, DSK renderer) are still local.

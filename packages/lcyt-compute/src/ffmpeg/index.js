@@ -1,6 +1,7 @@
 import { LocalFfmpegRunner } from './local-runner.js';
 import { DockerFfmpegRunner } from './docker-runner.js';
 import { WorkerFfmpegRunner } from './worker-runner.js';
+import { FleetFfmpegRunner } from './fleet-runner.js';
 
 /**
  * Runner interface (async):
@@ -91,6 +92,8 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
     case 'docker':
       // ensure image default is taken from env when not provided
       return withAccounting(new DockerFfmpegRunner(Object.assign({ image: ENV_IMAGE }, opts)));
+    case 'fleet':
+      return withAccounting(new FleetFfmpegRunner(opts));
     case 'worker':
       return withAccounting(new WorkerFfmpegRunner(opts));
     default:
@@ -98,4 +101,5 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
   }
 }
 
-export { LocalFfmpegRunner, DockerFfmpegRunner, WorkerFfmpegRunner };
+export { LocalFfmpegRunner, DockerFfmpegRunner, WorkerFfmpegRunner, FleetFfmpegRunner };
+export { getFleet, closeFleet } from './fleet-runner.js';

@@ -411,6 +411,23 @@ BACKEND_INTERNAL_TOKEN=shared-secret
 ORCHESTRATOR_FALLBACK=spawn   # fallback if orchestrator is unreachable
 ```
 
+### `fleet`
+
+Jobs go to an [fffleet](https://github.com/jsilvanus/fffleet) fleet: an
+`fffleet-orchestrator` (or a single `fffleet-worker`). Unlike `worker`, the end of a job that
+finishes by itself is reported, so a relay that dies is noticed. With no
+`FFFLEET_URL`, or when the fleet cannot be reached, ffmpeg runs on this machine
+(`FFFLEET_FALLBACK=none` disables that). SRT cues for CEA-708 go through ffmpeg's stdin on the worker.
+
+```
+FFMPEG_RUNNER=fleet
+FFFLEET_URL=http://fffleet-orchestrator:4000
+FFFLEET_CLIENT_ID=lcyt            # or FFFLEET_TOKEN=...
+FFFLEET_CLIENT_SECRET=...
+```
+
+`worker` stays for the perception jobs, which fffleet does not run.
+
 ### `FFMPEG_WRAPPER`
 
 Alternative: set `FFMPEG_WRAPPER` to a path or wrapper script and the

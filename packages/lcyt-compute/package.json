@@ -25,5 +25,8 @@
     "type": "git",
     "url": "https://github.com/jsilvanus/live-captions-yt.git",
     "directory": "packages/lcyt-compute"
+  },
+  "dependencies": {
+    "fffleet": "^1.0.0"
   }
 }
