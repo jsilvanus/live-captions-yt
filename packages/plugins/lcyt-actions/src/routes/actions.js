@@ -21,6 +21,7 @@ import {
   deleteActionDef, serializeActionDef,
 } from '../db.js';
 import { requireApiKey, isValidSlug } from './helpers.js';
+import { createAuthoringGuard } from '../authoring-guard.js';
 
 /**
  * @param {import('better-sqlite3').Database} db
@@ -28,6 +29,7 @@ import { requireApiKey, isValidSlug } from './helpers.js';
  */
 export function createActionsRouter(db, auth, opts = {}) {
   const { executor = null, checkProjectRole = null } = opts;
+  const guard = createAuthoringGuard({ executor, checkProjectRole });
   const router = Router();
 
   // Same operator+ gate as the DSK activate routes: session/device callers pass,
@@ -64,6 +66,8 @@ export function createActionsRouter(db, auth, opts = {}) {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const { name, slug, definition, description } = req.body || {};
+    const denied = guard(req, apiKey, definition);
+    if (denied) return res.status(denied.status).json({ error: denied.error });
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (!isValidSlug(slug)) return res.status(400).json({ error: 'slug must be lowercase alphanumeric with hyphens' });
     if (getActionDefBySlug(db, apiKey, slug)) return res.status(409).json({ error: `Action slug already in use: ${slug}` });
@@ -85,6 +89,8 @@ export function createActionsRouter(db, auth, opts = {}) {
     const existing = getActionDefBySlug(db, apiKey, req.params.slug);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const { name, slug, definition, description } = req.body || {};
+    const denied = guard(req, apiKey, definition);
+    if (denied) return res.status(denied.status).json({ error: denied.error });
     if (slug !== undefined && !isValidSlug(slug)) return res.status(400).json({ error: 'slug must be lowercase alphanumeric with hyphens' });
     if (slug !== undefined && slug !== existing.slug && getActionDefBySlug(db, apiKey, slug)) {
       return res.status(409).json({ error: `Action slug already in use: ${slug}` });

@@ -28,6 +28,7 @@ export const AUDITED_TOPICS = [
   'bridge.command_result',
   'production.command_result',
   'action.*',
+  'production.arming_changed',
   'target.*',
   'translation.*',
   'external.*',

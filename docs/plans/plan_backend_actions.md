@@ -110,4 +110,9 @@ Phases 1 and 2 are independent and can be done in parallel. 3 needs 1. 4 needs 2
 
 - **Arming: accepted by Juha 2026-10-04.** One switch per project, stored on the active broadcast; disarmed by default, auto-arms when the broadcast goes live and disarms when it ends, with a manual override; ARMED/SAFE badge in the Production header (operator+ may toggle); changes published on the bus.
 - **Device atoms: agreed 2026-10-04.** Steps are written with the camera/mixer label (unique per project, enforced by the editor); the id is stored behind the scenes on save so renames don't break saved actions; typing an id directly still works.
-- **Status: plan ready to implement.** No open design questions.
+- **Status (2026-10-04): backend implemented in five PRs; the web UI (step 6) is still to do.** As built:
+  - Arming is the `broadcasts.armed` column of the project's live broadcast, else its active broadcast. `POST /live` arms it, the session ending disarms it (published as `production.arming_changed`, reason `go_live` / `session_end` / `manual`). `GET/PUT /production/arming`, PUT needs the production tier; 409 when there is no live or active broadcast to hold the flag.
+  - A cue rule opts in with `action: { run, cooldownMs?, stopOnError? }`. Only `cue_rules` rows can run: `explicit` and `inline` cues never do (inline cues come from rundown files any editor can change). Disarmed runs still happen but device steps report `skipped / disarmed`; refusals publish `action.skipped` (`cooldown`, `loop_guard`); browser atoms of a cue-started run go out as `action.client_atoms`.
+  - Saving an action or cue rule with a device atom needs the Setup tier for user callers (`createAuthoringGuard`); running manually needs Production.
+  - Loop guard is a heuristic: `causation` is not carried through the cue engine, so event-driven cues (event, composite, sound, track) that fire within 3 s of a run in the same project count one level deeper, and depth 4 is refused. Text-matched cues always start a fresh chain.
+  - Not done: per-device cooldown (only per-rule), the `graphics:` server atom, `obs:` atom, label→id rewrite on save (belongs to the editor), the web UI.

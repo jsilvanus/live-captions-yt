@@ -404,6 +404,9 @@ export function initDb(dbPath) {
       -- (lcyt-platforms). Defaults to 'unlisted': a broadcast accidentally
       -- created public is a worse failure than one accidentally unlisted.
       privacy_status       TEXT    NOT NULL DEFAULT 'unlisted',
+      -- Production arming (plan_backend_actions.md): while 0, cue-triggered
+      -- actions skip device steps. Auto-set on go-live / session end.
+      armed                INTEGER NOT NULL DEFAULT 0,
       archived_at          TEXT,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
@@ -470,6 +473,7 @@ export function initDb(dbPath) {
 
   const broadcastCols = new Set(db.prepare('PRAGMA table_info(broadcasts)').all().map(c => c.name));
   if (!broadcastCols.has('record_enabled')) db.exec('ALTER TABLE broadcasts ADD COLUMN record_enabled INTEGER NOT NULL DEFAULT 0');
+  if (!broadcastCols.has('armed')) db.exec('ALTER TABLE broadcasts ADD COLUMN armed INTEGER NOT NULL DEFAULT 0');
   if (!broadcastCols.has('privacy_status')) db.exec("ALTER TABLE broadcasts ADD COLUMN privacy_status TEXT NOT NULL DEFAULT 'unlisted'");
 
   db.exec(`

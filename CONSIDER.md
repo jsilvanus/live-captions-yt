@@ -1232,3 +1232,16 @@ pass:
 **Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
 
 **Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
+
+---
+
+## Cue-triggered actions: per-device cooldown, loop guard heuristic, missing atoms
+
+**Where:** `packages/plugins/lcyt-actions/src/cue-dispatcher.js`, `docs/plans/plan_backend_actions.md`
+
+**Found:** while building the cue action dispatcher (2026-10-04).
+
+- **Per-device cooldown not implemented.** The plan asked for cooldown per rule and per device. Only the per-rule cooldown exists (plus the cue engine's own `cooldown_ms`). Two different rules can still move the same camera back to back. Skipped because the dispatcher does not see device atoms (they are expanded inside the executor) and a per-device limit belongs next to the device handlers.
+- **Loop guard is a time-window heuristic.** The plan wanted `causation { rootId, depth }` carried in bus envelope meta. The cue engine does not propagate it, so event-driven cues within 3 s of a run in the same project count one level deeper. A slow loop (period over 3 s) is not caught; it is still bounded by the per-rule cooldown. Carrying real causation needs the tracker/sound/event listeners to read the run context.
+- **Atoms not implemented:** `graphics:` (DSK activate) and `obs:`. Unknown server atoms fall through to `clientAtoms`, so an action that uses them still saves and runs, but nothing happens on the server.
+- **`crop:` takes a preset id only,** not a label slug like `camera:` and `mixer:`.
