@@ -1235,13 +1235,12 @@ pass:
 
 ---
 
-## Cue-triggered actions: per-device cooldown, loop guard heuristic, missing atoms
+## RESOLVED — cue-triggered actions: per-device cooldown, loop guard, missing atoms
 
-**Where:** `packages/plugins/lcyt-actions/src/cue-dispatcher.js`, `docs/plans/plan_backend_actions.md`
+**Where:** `packages/plugins/lcyt-actions/src/{executor,cue-dispatcher}.js`, `packages/lcyt-backend/src/server.js`
 
-**Found:** while building the cue action dispatcher (2026-10-04).
+**Original finding (2026-10-04):** only a per-rule cooldown existed, the loop guard was a 3 s time window, `graphics:` and `obs:` atoms were missing and `crop:` took a preset id only.
 
-- **Per-device cooldown not implemented.** The plan asked for cooldown per rule and per device. Only the per-rule cooldown exists (plus the cue engine's own `cooldown_ms`). Two different rules can still move the same camera back to back. Skipped because the dispatcher does not see device atoms (they are expanded inside the executor) and a per-device limit belongs next to the device handlers.
-- **Loop guard is a time-window heuristic.** The plan wanted `causation { rootId, depth }` carried in bus envelope meta. The cue engine does not propagate it, so event-driven cues within 3 s of a run in the same project count one level deeper. A slow loop (period over 3 s) is not caught; it is still bounded by the per-rule cooldown. Carrying real causation needs the tracker/sound/event listeners to read the run context.
-- **Atoms not implemented:** `graphics:` (DSK activate) and `obs:`. Unknown server atoms fall through to `clientAtoms`, so an action that uses them still saves and runs, but nothing happens on the server.
-- **`crop:` takes a preset id only,** not a label slug like `camera:` and `mixer:`.
+**Resolved 2026-10-04:** the executor now enforces a per-device cooldown for cue runs (default 1 s, keyed by the physical device so `mixer:` and `obs:` share it). The run's causation travels in an AsyncLocalStorage context, so a cue that fires inside a running action is exactly one level deeper; the time window stays only as a fallback for device feedback that arrives later with no context. `graphics:` (including `graphics[viewport]:`), `obs:<mixer>.<scene>` and `crop:<preset name>` are implemented; `mixer:` also accepts an input by name.
+
+**Still open:** a loop whose feedback arrives after the 3 s window and from outside any run is bounded only by the per-rule and per-device cooldowns.

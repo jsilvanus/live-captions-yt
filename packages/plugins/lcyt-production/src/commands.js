@@ -250,12 +250,26 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
    */
   async function runMixerAtom(apiKey, value, meta = {}) {
     const parts = splitAtom(value);
-    if (!parts || !/^\d+$/.test(parts[1])) {
-      return { ok: false, code: 'bad_request', error: `mixer atom needs <mixer>.<input number>, got '${value}'` };
+    if (!parts) {
+      return { ok: false, code: 'bad_request', error: `mixer atom needs <mixer>.<input number or name>, got '${value}'` };
     }
     const mix = resolveMixer(apiKey, parts[0]);
     if (!mix.ok) return mix;
-    return switchMixer(apiKey, mix.mixer.id, Number(parts[1]), meta);
+    let input;
+    if (/^\d+$/.test(parts[1])) {
+      input = Number(parts[1]);
+    } else {
+      // An input written by name: the mixer's own label for it (OBS scene name,
+      // or an `inputs[].label|name` entry).
+      const slug = slugifyLabel(parts[1]);
+      const inputs = Array.isArray(mix.mixer.connectionConfig?.inputs) ? mix.mixer.connectionConfig.inputs : [];
+      const found = inputs.filter((i) => Number.isInteger(i?.number)
+        && [i.sceneName, i.label, i.name].some((n) => n && slugifyLabel(n) === slug));
+      if (found.length === 0) return { ok: false, code: 'not_found', error: `Input '${parts[1]}' not found on mixer '${parts[0]}'` };
+      if (found.length > 1) return { ok: false, code: 'bad_request', error: `Input '${parts[1]}' is ambiguous on mixer '${parts[0]}'` };
+      input = found[0].number;
+    }
+    return switchMixer(apiKey, mix.mixer.id, input, meta);
   }
 
   return { callCameraPreset, switchMixer, resolveCamera, resolveMixer, runCameraAtom, runMixerAtom };

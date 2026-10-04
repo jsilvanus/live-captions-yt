@@ -16,16 +16,23 @@
  *   neither can start an action.
  * - Per-rule cooldown (default 2 s; `cooldownMs: 0` disables).
  * - Loop guard: a camera or mixer move can raise an event cue that moves
- *   another. Cues raised by events (event, composite, sound, track) that follow
- *   a run in the same project within `chainWindowMs` count one level deeper
- *   (carried to the executor as `causation { rootId, depth }`); past `maxDepth`
- *   the run is refused. Text-matched cues always start a new chain.
+ *   another. A cue that fires while an action run is executing (the bus calls
+ *   this synchronously inside the run's async context, see `currentCausation`)
+ *   is exactly one level deeper than that run. Feedback that arrives later from
+ *   a device has no such context, so cues raised by events (event, composite,
+ *   sound, track) that follow a run in the same project within
+ *   `chainWindowMs` count one level deeper as a fallback. Either way the depth
+ *   travels to the executor as `causation { rootId, depth }`; past `maxDepth`
+ *   the run is refused. Text-matched cues with no ambient run start a new chain.
+ * - Device cooldown: cue runs skip a device step when that camera/mixer was
+ *   commanded less than the executor's `deviceCooldownMs` ago (`device_cooldown`).
  *
  * Refusals publish `action.skipped { reason: 'cooldown' | 'loop_guard' }`.
  * Browser atoms of a cue-started run are published as `action.client_atoms` so
  * connected UIs can apply them.
  */
 import crypto from 'crypto';
+import { currentCausation } from './executor.js';
 
 export const DEFAULT_COOLDOWN_MS = 2000;
 export const DEFAULT_CHAIN_WINDOW_MS = 3000;
@@ -83,13 +90,15 @@ export function createCueActionDispatcher({
       return null;
     }
 
+    const ambient = currentCausation();
     const prev = chains.get(apiKey);
-    const inChain = CHAINING_SOURCES.has(data.source) && prev && t - prev.lastAt <= chainWindowMs;
-    const causation = inChain
-      ? { rootId: prev.rootId, depth: prev.depth + 1, ruleId: data.ruleId }
+    const inChain = !ambient && CHAINING_SOURCES.has(data.source) && prev && t - prev.lastAt <= chainWindowMs;
+    const parent = ambient ?? (inChain ? prev : null);
+    const causation = parent
+      ? { rootId: parent.rootId, depth: parent.depth + 1, ruleId: data.ruleId }
       : { rootId: crypto.randomUUID(), depth: 1, ruleId: data.ruleId };
     if (causation.depth > maxDepth) {
-      chains.set(apiKey, { ...prev, lastAt: t }); // keep the window open while the loop keeps trying
+      chains.set(apiKey, { rootId: causation.rootId, depth: parent.depth, lastAt: t }); // keep the window open while the loop keeps trying
       skipped(apiKey, data, run, 'loop_guard');
       return null;
     }
@@ -103,6 +112,7 @@ export function createCueActionDispatcher({
         source: 'cue',
         stopOnError: data.action.stopOnError === true,
         skipDevices: !isArmed(apiKey),
+        deviceCooldown: true,
         causation,
       });
     } finally {

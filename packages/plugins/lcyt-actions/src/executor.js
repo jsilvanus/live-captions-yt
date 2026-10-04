@@ -11,18 +11,46 @@
  * `clientAtoms` for the caller to apply, never silently dropped.
  *
  * A handler is `async (apiKey, value, meta) => { ok, error?, code? }` or
- * `{ run, device: true }`. `device: true` marks steps that move hardware; a run
- * started with `skipDevices` reports those as `skipped` (the disarmed case).
+ * `{ run, device: true, deviceKey?: (value) => string }`. `device: true` marks
+ * steps that move hardware; a run started with `skipDevices` reports those as
+ * `skipped` (the disarmed case). `deviceKey` names the physical device a step
+ * moves (default: the atom key); a run started with `deviceCooldown` skips a
+ * device step when the same device was commanded less than `deviceCooldownMs`
+ * ago by anyone (`reason: 'device_cooldown'`). `meta.metacode` is the atom key
+ * as written, so `graphics[vertical-left]:+logo` reaches the `graphics`
+ * handler with its viewport.
  *
  * Lifecycle events on the project bus: `action.started`, `action.step`,
  * `action.completed` (every step ok or skipped) or `action.failed`.
  */
 import crypto from 'crypto';
+import { AsyncLocalStorage } from 'async_hooks';
 import { parseActionItems, expandActionItems } from 'lcyt/actions';
 import { getActionDefBySlug } from './db.js';
 
 export const MAX_WAIT_MS = 30_000;
 const DEFAULT_STEP_TIMEOUT_MS = 15_000;
+export const DEFAULT_DEVICE_COOLDOWN_MS = 1000;
+
+/**
+ * Causation of the action run currently executing, carried through every await
+ * and synchronous callback it triggers. A cue that fires inside a run (the bus
+ * delivers `cue.fired` to taps synchronously) therefore sees its parent run and
+ * can count one level deeper: the real loop guard. Feedback that arrives later
+ * from a device socket has no context; the dispatcher's time window covers it.
+ * @type {AsyncLocalStorage<{ rootId: string, depth: number, runId: string }>}
+ */
+const causationStore = new AsyncLocalStorage();
+
+/** @returns {{ rootId: string, depth: number, runId: string }|undefined} */
+export function currentCausation() {
+  return causationStore.getStore();
+}
+
+/** `graphics[vertical-left]` → `graphics` */
+function baseKey(metacode) {
+  return String(metacode).toLowerCase().replace(/\[[^\]]*\]$/, '');
+}
 
 /**
  * Parse `wait:` values: `500ms`, `2s`, `1.5s` (bare number = seconds).
@@ -43,7 +71,11 @@ export function parseWaitMs(value) {
  * @param {Record<string, Function | { run: Function, device?: boolean }>} [deps.handlers]
  * @param {number} [deps.stepTimeoutMs]
  */
-export function createActionExecutor({ db, eventBus = null, handlers = {}, stepTimeoutMs = DEFAULT_STEP_TIMEOUT_MS }) {
+export function createActionExecutor({
+  db, eventBus = null, handlers = {}, stepTimeoutMs = DEFAULT_STEP_TIMEOUT_MS,
+  deviceCooldownMs = DEFAULT_DEVICE_COOLDOWN_MS, now = Date.now,
+}) {
+  const deviceLast = new Map(); // `${apiKey}:${deviceKey}` -> ts
   const table = new Map(Object.entries(handlers).map(([key, h]) => [
     key.toLowerCase(),
     typeof h === 'function' ? { run: h, device: false } : { device: false, ...h },
@@ -56,18 +88,31 @@ export function createActionExecutor({ db, eventBus = null, handlers = {}, stepT
 
   /** @param {string} metacode */
   function isServerAtom(metacode) {
-    return metacode === 'wait' || table.has(metacode);
+    return metacode === 'wait' || table.has(baseKey(metacode));
   }
 
   /** @param {string} metacode */
   function isDeviceAtom(metacode) {
-    return table.get(metacode)?.device === true;
+    return table.get(baseKey(metacode))?.device === true;
   }
 
   function withTimeout(promise, ms) {
     let timer;
     const timeout = new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`Step timed out after ${ms} ms`)), ms); });
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+  }
+
+  function deviceKeyOf(handler, metacode, value) {
+    const key = typeof handler.deviceKey === 'function' ? handler.deviceKey(value) : '';
+    return key || baseKey(metacode);
+  }
+
+  /** True when the device this step moves was commanded less than deviceCooldownMs ago. */
+  function cooledDown(apiKey, metacode, value) {
+    if (!(deviceCooldownMs > 0)) return false;
+    const handler = table.get(baseKey(metacode));
+    const last = deviceLast.get(`${apiKey}:${deviceKeyOf(handler, metacode, value)}`);
+    return last !== undefined && now() - last < deviceCooldownMs;
   }
 
   /**
@@ -99,11 +144,18 @@ export function createActionExecutor({ db, eventBus = null, handlers = {}, stepT
    * Run an action.
    * @param {string} apiKey
    * @param {{ ref?: string, expr?: string }} target
-   * @param {{ source?: string, stopOnError?: boolean, skipDevices?: boolean, causation?: object }} [opts]
+   * @param {{ source?: string, stopOnError?: boolean, skipDevices?: boolean, deviceCooldown?: boolean, causation?: object }} [opts]
    */
-  async function run(apiKey, target, opts = {}) {
-    const { source = 'api', stopOnError = false, skipDevices = false, causation } = opts;
+  function run(apiKey, target, opts = {}) {
+    const parent = causationStore.getStore();
+    const causation = opts.causation ?? (parent ? { rootId: parent.rootId, depth: parent.depth + 1 } : undefined);
     const runId = crypto.randomUUID();
+    const ctx = { rootId: causation?.rootId ?? runId, depth: causation?.depth ?? 1, runId };
+    return causationStore.run(ctx, () => runInner(apiKey, target, { ...opts, causation }, runId));
+  }
+
+  async function runInner(apiKey, target, opts, runId) {
+    const { source = 'api', stopOnError = false, skipDevices = false, deviceCooldown = false, causation } = opts;
     const started = Date.now();
     const label = target.ref ? `@${String(target.ref).replace(/^@/, '')}` : String(target.expr ?? '');
 
@@ -133,6 +185,8 @@ export function createActionExecutor({ db, eventBus = null, handlers = {}, stepT
         step = { index, atom, where: 'client', status: 'client' };
       } else if (skipDevices && isDeviceAtom(metacode)) {
         step = { index, atom, where: 'server', status: 'skipped', reason: 'disarmed' };
+      } else if (deviceCooldown && isDeviceAtom(metacode) && cooledDown(apiKey, metacode, value)) {
+        step = { index, atom, where: 'server', status: 'skipped', reason: 'device_cooldown' };
       } else if (metacode === 'wait') {
         const ms = parseWaitMs(value);
         if (ms === null) {
@@ -143,7 +197,9 @@ export function createActionExecutor({ db, eventBus = null, handlers = {}, stepT
         }
       } else {
         try {
-          const result = await withTimeout(Promise.resolve(table.get(metacode).run(apiKey, value, { source, runId, ...(causation && { causation }) })), stepTimeoutMs);
+          const handler = table.get(baseKey(metacode));
+          if (handler.device) deviceLast.set(`${apiKey}:${deviceKeyOf(handler, metacode, value)}`, now());
+          const result = await withTimeout(Promise.resolve(handler.run(apiKey, value, { source, runId, metacode, ...(causation && { causation }) })), stepTimeoutMs);
           step = result?.ok === false
             ? { index, atom, where: 'server', status: 'error', error: result.error ?? 'failed', ...(result.code && { code: result.code }) }
             : { index, atom, where: 'server', status: 'ok', ...(result?.transport && { transport: result.transport }) };
