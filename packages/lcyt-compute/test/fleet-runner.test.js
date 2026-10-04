@@ -1,12 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createFleet } from 'fffleet';
 import { FleetFfmpegRunner } from '../src/ffmpeg/fleet-runner.js';
 import { createFfmpegRunner } from '../src/ffmpeg/index.js';
 
 const fleet = createFleet({}); // local mode
+// The unit job may not have ffmpeg; the tests that run it are skipped then.
+const skip = spawnSync('ffmpeg', ['-version']).status === 0 ? false : 'ffmpeg is not installed';
 
-test('a job that ends by itself reports close with its exit code', async () => {
+test('a job that ends by itself reports close with its exit code', { skip }, async () => {
   const r = new FleetFfmpegRunner({ fleet, args: ['-v', 'error', '-f', 'lavfi', '-i', 'anullsrc', '-t', '0.2', '-f', 'null', '-'], purpose: 'test' });
   await r.start();
   const info = await new Promise((resolve) => r.once('close', resolve));
@@ -14,14 +17,14 @@ test('a job that ends by itself reports close with its exit code', async () => {
   assert.equal(r.isRunning(), false);
 });
 
-test('a failing command closes with a non-zero code', async () => {
+test('a failing command closes with a non-zero code', { skip }, async () => {
   const r = new FleetFfmpegRunner({ fleet, args: ['-v', 'error', '-i', '/no/such/file', '-f', 'null', '-'], purpose: 'test' });
   await r.start();
   const info = await new Promise((resolve) => r.once('close', resolve));
   assert.notEqual(info.code, 0);
 });
 
-test('stop() cancels a running stream job', async () => {
+test('stop() cancels a running stream job', { skip }, async () => {
   const r = new FleetFfmpegRunner({ fleet, args: ['-v', 'error', '-re', '-f', 'lavfi', '-i', 'anullsrc', '-f', 'null', '-'], purpose: 'test' });
   await r.start();
   assert.equal(r.isRunning(), true);
@@ -30,7 +33,7 @@ test('stop() cancels a running stream job', async () => {
   assert.equal(r.isRunning(), false);
 });
 
-test('stdin writes reach ffmpeg', async () => {
+test('stdin writes reach ffmpeg', { skip }, async () => {
   // ffmpeg reads SRT from stdin and finishes when the cue stream ends
   const r = new FleetFfmpegRunner({ fleet, stdin: 'pipe', args: ['-v', 'error', '-f', 'subrip', '-i', 'pipe:0', '-f', 'null', '-'], purpose: 'test' });
   await r.start();
