@@ -2,6 +2,8 @@
 
 Cue engine for detecting spoken phrases, sounds, and AI-analyzed events to auto-advance rundown files. Supports inline cue metacodes in caption files. Imported by `lcyt-backend` as `lcyt-cues`.
 
+**Executable actions:** a rule's `action` may carry `{ run: "@intro | camera:pulpit.wide", cooldownMs?, stopOnError? }`; lcyt-actions' `CueActionDispatcher` runs it when the cue fires (plan_backend_actions.md). `createCueRouter(db, auth, engine, { authoringGuard })` asks the guard before saving a rule whose `action.run` has a device atom (Setup tier) and rejects a non-string `run`. Rules without `run` keep their descriptive actions.
+
 **Main entry:** `src/api.js`
 **Usage in lcyt-backend:**
 ```js

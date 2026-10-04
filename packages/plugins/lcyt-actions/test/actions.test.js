@@ -131,3 +131,36 @@ describe('lcyt-actions — POST /actions/run', () => {
     assert.equal((await post('/actions/run', { ref: 'x' }, { 'x-test-user': '1' })).status, 200);
   });
 });
+
+describe('lcyt-actions — device authoring guard', () => {
+  let server, baseUrl, allowed = false;
+  before(async () => {
+    const db = new Database(':memory:');
+    initActions(db);
+    const auth = (req, _res, next) => {
+      req.session = { apiKey: 'key1' };
+      if (req.headers['x-test-user']) req.user = { userId: 7 };
+      next();
+    };
+    const executor = { run: async () => ({ ok: true, steps: [] }), isDeviceAtom: (m) => m === 'camera' };
+    const app = express();
+    app.use(express.json());
+    app.use('/actions', createActionsRouter(db, auth, { executor, checkProjectRole: (tier) => tier === 'setup' && allowed }));
+    await new Promise((resolve) => { server = app.listen(0, () => resolve()); });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+  after(() => new Promise((resolve) => server.close(resolve)));
+  const send = async (method, path, body, user = true) => {
+    const res = await fetch(`${baseUrl}${path}`, { method, headers: { 'Content-Type': 'application/json', ...(user ? { 'x-test-user': '1' } : {}) }, body: JSON.stringify(body) });
+    return res.status;
+  };
+
+  it('saving a device action needs the setup tier for user callers; other actions do not', async () => {
+    assert.equal(await send('POST', '/actions', { name: 'A', slug: 'a', definition: 'audio:start' }), 201);
+    assert.equal(await send('POST', '/actions', { name: 'B', slug: 'b', definition: 'audio:start | camera:pulpit.wide' }), 403);
+    assert.equal(await send('PUT', '/actions/a', { definition: 'camera:pulpit.wide' }), 403);
+    assert.equal(await send('POST', '/actions', { name: 'B', slug: 'b', definition: 'camera:pulpit.wide' }, false), 201); // session caller
+    allowed = true;
+    assert.equal(await send('PUT', '/actions/a', { definition: 'camera:pulpit.wide' }), 200);
+  });
+});

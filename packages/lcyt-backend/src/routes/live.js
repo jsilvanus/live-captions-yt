@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast, armOnGoLive, disarmOnEnd } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
@@ -357,6 +357,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     } else {
       boundBroadcastId = autoCreateForSession(db, apiKey, { recordEnabled: broadcastRecordEnabled }).id;
     }
+    // Going live arms production (plan_backend_actions.md); the operator can override.
+    armOnGoLive(db, store.eventBus, apiKey, boundBroadcastId);
 
     const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
     const relaySlots = safeGetRelaySlots(db, apiKey);
@@ -593,6 +595,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       // Transition the bound broadcast to completed (plan/broadcasts).
       if (removed.broadcastId) {
         try {
+          disarmOnEnd(db, store.eventBus, removed.apiKey, removed.broadcastId);
           completeBroadcast(db, removed.broadcastId, {
             youtubeVideoIds: removed.youtubeVideoIds,
             endedAt,

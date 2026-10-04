@@ -5,7 +5,7 @@ import { DskBus } from './dsk-bus.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast, getBroadcast, updateBroadcast, onKeyDeleted,
+  completeBroadcast, disarmOnEnd, isArmed, getBroadcast, updateBroadcast, onKeyDeleted,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -15,6 +15,7 @@ import { createAccountRouters } from './routes/account.js';
 import { createOrganizationsRouter } from './routes/orgs.js';
 import { createContentRouters } from './routes/content.js';
 import { createIconRouter } from './routes/icons.js';
+import { createArmingRouter } from './routes/arming.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createAdminMetricsRouter } from './routes/metrics.js';
 import { createAdminSettingsRouter } from './routes/admin-settings.js';
@@ -89,7 +90,7 @@ import {
   initConnectors, createConnectorsRouter, createVariablesRouter,
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
-import { initActions, createActionsRouter, createActionExecutor } from 'lcyt-actions';
+import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
 import { initPlatforms, createOAuthRouter as createPlatformsRouter } from 'lcyt-platforms';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
@@ -404,6 +405,7 @@ const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsSc
 // Named Actions plugin — runs its own migration (action_defs table).
 initActions(db);
 
+const _checkProjectRole = (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId);
 // Server-side action runner (plan_backend_actions.md): lcyt-actions stays
 // generic, this is the one place that knows which atom keys map to which
 // subsystem. Device atoms go through ProductionCommands (ownership check,
@@ -425,6 +427,14 @@ const _actionExecutor = createActionExecutor({
     },
   },
 });
+const _actionAuthoringGuard = createAuthoringGuard({ executor: _actionExecutor, checkProjectRole: _checkProjectRole });
+
+// Cue rules with `action.run` execute through the runner when their cue fires;
+// disarmed projects skip device steps (plan_backend_actions.md, db/arming.js).
+const _cueActionDispatcher = createCueActionDispatcher({
+  eventBus, executor: _actionExecutor, isArmed: (apiKey) => isArmed(db, apiKey),
+});
+_cueActionDispatcher.start();
 
 // Broadcast Platform Sync plugin (plan_broadcast_platform_sync.md) — server-side
 // OAuth, YouTube Live scheduling/thumbnails/go-live, and viewer stats tied to
@@ -539,6 +549,7 @@ store.onSessionEnd = async (session) => {
     // Transition the bound broadcast to completed (plan/broadcasts).
     if (session.broadcastId) {
       try {
+        disarmOnEnd(db, eventBus, session.apiKey, session.broadcastId);
         completeBroadcast(db, session.broadcastId, {
           youtubeVideoIds: session.youtubeVideoIds,
           endedAt,
@@ -740,7 +751,7 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings, platforms: platformDeps }, scopedAuth));
-app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard }));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
@@ -798,7 +809,7 @@ app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, pr
 app.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
 app.use('/actions', createActionsRouter(db, scopedAuth('action'), {
   executor: _actionExecutor,
-  checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
+  checkProjectRole: _checkProjectRole,
 }));
 app.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
 app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
@@ -845,6 +856,7 @@ app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, 
   auth: scopedAuth('production'),
 }));
 
+app.use('/production/arming', createArmingRouter(db, scopedAuth('production'), eventBus));
 app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
