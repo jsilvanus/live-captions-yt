@@ -12,6 +12,7 @@
     "packages/lcyt-mcp-http",
     "packages/lcyt-site",
     "packages/lcyt-bridge",
+    "packages/lcyt-compute",
     "packages/lcyt-orchestrator",
     "packages/lcyt-worker-daemon",
     "packages/lcyt-tools",

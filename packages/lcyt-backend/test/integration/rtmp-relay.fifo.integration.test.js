@@ -4,10 +4,10 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { makeFifo } from '../../src/ffmpeg/pipe-utils.js';
+import { makeFifo } from 'lcyt-compute/ffmpeg/pipe-utils';
 
 test('FIFO host<->container communication (gated)', { skip: process.env.TEST_DOCKER !== '1' }, async () => {
-  const { DockerFfmpegRunner } = await import('../src/ffmpeg/docker-runner.js');
+  const { DockerFfmpegRunner } = await import('lcyt-compute/ffmpeg/docker-runner');
 
   const tmp = fs.mkdtempSync(join(tmpdir(), 'fifo-int-'));
   const fifo = join(tmp, 'thefifo');

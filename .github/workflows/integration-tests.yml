@@ -259,6 +259,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: lcyt-compute
+            dir: packages/lcyt-compute
           - name: lcyt-orchestrator
             dir: packages/lcyt-orchestrator
           - name: lcyt-worker-daemon

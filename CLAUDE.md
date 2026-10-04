@@ -19,6 +19,7 @@ live-captions-yt/
 │   ├── lcyt-mcp-http/          # MCP server (Streamable HTTP transport)
 │   ├── lcyt-site/              # Marketing/docs website (Astro)
 │   ├── lcyt-web/               # Browser-based web UI (Vite + React + wouter)
+│   ├── lcyt-compute/           # ffmpeg runners + job dispatch shared by backend, worker daemon and orchestrator
 │   ├── lcyt-orchestrator/      # Compute orchestrator — worker registration, job dispatch, Hetzner autoscaling
 │   ├── lcyt-worker-daemon/     # Minimal worker daemon — ffmpeg job orchestration, S3 upload
 │   ├── lcyt-tools/             # Shared AI tool-schema/handler registry (MCP + agentic_chat roles)
@@ -116,6 +117,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | CLI tool | `packages/lcyt-cli/CLAUDE.md` |
 | Express relay backend | `packages/lcyt-backend/CLAUDE.md` |
 | Production control bridge agent | `packages/lcyt-bridge/CLAUDE.md` |
+| ffmpeg runners and job dispatch | `packages/lcyt-compute/CLAUDE.md` |
 | Compute orchestrator | `packages/lcyt-orchestrator/CLAUDE.md` |
 | Worker daemon | `packages/lcyt-worker-daemon/CLAUDE.md` |
 | TCP echo test server | `packages/tools/tcp-echo-server/CLAUDE.md` |

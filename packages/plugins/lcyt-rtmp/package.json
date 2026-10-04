@@ -10,7 +10,8 @@
   "dependencies": {
     "express": "^4.21",
     "express-rate-limit": "^8.2.1",
-    "lcyt-backend": "*"
+    "lcyt-backend": "*",
+    "lcyt-compute": "*"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "",

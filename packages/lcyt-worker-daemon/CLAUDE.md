@@ -40,4 +40,6 @@ GET    /_jobs          — debug: list all jobs (perception jobs also carry erro
 
 ---
 
-Dispatched to by `packages/lcyt-orchestrator` (see its `CLAUDE.md`) and, when `FFMPEG_RUNNER=worker`, directly by `packages/lcyt-backend/src/ffmpeg/worker-runner.js`.
+Dispatched to by `packages/lcyt-orchestrator` (see its `CLAUDE.md`) and, when `FFMPEG_RUNNER=worker`, directly by `WorkerFfmpegRunner` (`packages/lcyt-compute/src/ffmpeg/worker-runner.js`).
+
+**Dependencies / image:** the runners come from `lcyt-compute` (`"file:../lcyt-compute"`, so a standalone `npm install` in this directory works); there is no dependency on `lcyt-backend`. The Dockerfile builds from the repository root: `docker build -f packages/lcyt-worker-daemon/Dockerfile -t lcyt-worker-daemon:latest .`
