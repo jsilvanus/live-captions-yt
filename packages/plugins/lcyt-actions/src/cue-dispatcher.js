@@ -27,7 +27,12 @@
  * - Device cooldown: cue runs skip a device step when that camera/mixer was
  *   commanded less than the executor's `deviceCooldownMs` ago (`device_cooldown`).
  *
- * Refusals publish `action.skipped { reason: 'cooldown' | 'loop_guard' }`.
+ * - Rate cap: at most `maxRuns` cue-started runs per project in any `windowMs`
+ *   sliding window (default 20 per 60 s; `maxRuns: 0` disables). It bounds
+ *   feedback loops that the cooldowns and the 3 s loop-guard window miss
+ *   (slow device feedback, many rules each within its own cooldown).
+ *
+ * Refusals publish `action.skipped { reason: 'cooldown' | 'loop_guard' | 'rate_limit' }`.
  * Browser atoms of a cue-started run are published as `action.client_atoms` so
  * connected UIs can apply them.
  */
@@ -37,6 +42,8 @@ import { currentCausation } from './executor.js';
 export const DEFAULT_COOLDOWN_MS = 2000;
 export const DEFAULT_CHAIN_WINDOW_MS = 3000;
 export const DEFAULT_MAX_DEPTH = 3;
+export const DEFAULT_RATE_MAX_RUNS = 20;
+export const DEFAULT_RATE_WINDOW_MS = 60_000;
 
 /** cue.fired sources that come from a cue_rules row. */
 const RULE_SOURCES = new Set(['auto', 'event_cue', 'composite', 'sound', 'track']);
@@ -51,6 +58,8 @@ const CHAINING_SOURCES = new Set(['event_cue', 'composite', 'sound', 'track']);
  * @param {number} [deps.cooldownMs]
  * @param {number} [deps.chainWindowMs]
  * @param {number} [deps.maxDepth]
+ * @param {number|(() => number)} [deps.maxRuns]   per-project cap per window, 0 = off; a function is read on every cue
+ * @param {number|(() => number)} [deps.windowMs]
  * @param {() => number} [deps.now]
  */
 export function createCueActionDispatcher({
@@ -58,8 +67,28 @@ export function createCueActionDispatcher({
   cooldownMs = DEFAULT_COOLDOWN_MS,
   chainWindowMs = DEFAULT_CHAIN_WINDOW_MS,
   maxDepth = DEFAULT_MAX_DEPTH,
+  maxRuns = DEFAULT_RATE_MAX_RUNS,
+  windowMs = DEFAULT_RATE_WINDOW_MS,
   now = Date.now,
 }) {
+  const runTimes = new Map();   // apiKey -> timestamps of recent runs
+  const read = (v, fallback) => {
+    const n = Number(typeof v === 'function' ? v() : v);
+    return Number.isFinite(n) && n >= 0 ? n : fallback;
+  };
+
+  /** Record a run and report whether the project is still under its cap. */
+  function underRateCap(apiKey, t) {
+    const cap = read(maxRuns, DEFAULT_RATE_MAX_RUNS);
+    if (cap === 0) return true;
+    const window = read(windowMs, DEFAULT_RATE_WINDOW_MS);
+    const recent = (runTimes.get(apiKey) ?? []).filter((ts) => t - ts < window);
+    if (recent.length >= cap) { runTimes.set(apiKey, recent); return false; }
+    recent.push(t);
+    runTimes.set(apiKey, recent);
+    return true;
+  }
+
   const lastFired = new Map();  // `${apiKey}:${ruleId}` -> ts
   const chains = new Map();     // apiKey -> { rootId, depth, lastAt }
   let untap = null;
@@ -100,6 +129,11 @@ export function createCueActionDispatcher({
     if (causation.depth > maxDepth) {
       chains.set(apiKey, { rootId: causation.rootId, depth: parent.depth, lastAt: t }); // keep the window open while the loop keeps trying
       skipped(apiKey, data, run, 'loop_guard');
+      return null;
+    }
+
+    if (!underRateCap(apiKey, t)) {
+      skipped(apiKey, data, run, 'rate_limit');
       return null;
     }
 

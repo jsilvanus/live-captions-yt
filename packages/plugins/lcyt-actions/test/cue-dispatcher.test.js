@@ -164,3 +164,30 @@ describe('CueActionDispatcher — ambient causation and device cooldown', () => 
     assert.equal(opts.deviceCooldown, true);
   });
 });
+
+describe('CueActionDispatcher — rate cap', () => {
+  it('refuses runs past the per-project cap and recovers after the window', async () => {
+    const t = setup({ maxRuns: 3, windowMs: 10_000 });
+    for (let i = 0; i < 5; i++) {
+      t.state.clock += 100;
+      await t.fire(cue({ ruleId: `rule-${i}` }));
+    }
+    assert.equal(t.runs.length, 3);
+    const skipped = t.events.filter((e) => e.topic === 'action.skipped');
+    assert.deepEqual(skipped.map((e) => e.data.reason), ['rate_limit', 'rate_limit']);
+    t.state.clock += 10_000;
+    await t.fire(cue({ ruleId: 'rule-9' }));
+    assert.equal(t.runs.length, 4);
+  });
+
+  it('counts per project, and 0 disables the cap; values may be getters', async () => {
+    const t = setup({ maxRuns: () => 1 });
+    await t.fire(cue({ ruleId: 'a' }), 'k');
+    await t.fire(cue({ ruleId: 'b' }), 'k');
+    await t.fire(cue({ ruleId: 'c' }), 'other');
+    assert.equal(t.runs.length, 2);
+    const off = setup({ maxRuns: 0 });
+    for (let i = 0; i < 50; i++) await off.fire(cue({ ruleId: `r${i}` }));
+    assert.equal(off.runs.length, 50);
+  });
+});

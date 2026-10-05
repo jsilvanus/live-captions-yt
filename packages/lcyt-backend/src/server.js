@@ -480,6 +480,8 @@ const _actionAuthoringGuard = createAuthoringGuard({ executor: _actionExecutor, 
 // disarmed projects skip device steps (plan_backend_actions.md, db/arming.js).
 const _cueActionDispatcher = createCueActionDispatcher({
   eventBus, executor: _actionExecutor, isArmed: (apiKey) => isArmed(db, apiKey),
+  maxRuns: () => settings.get('production.action_rate_max_runs'),
+  windowMs: () => settings.get('production.action_rate_window_s') * 1000,
 });
 _cueActionDispatcher.start();
 

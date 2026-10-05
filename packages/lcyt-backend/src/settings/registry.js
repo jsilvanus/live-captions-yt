@@ -195,6 +195,8 @@ const TIER_B = [
   { key: 'music.classifier_url', env: 'MUSIC_CLASSIFIER_URL', type: 'string', default: '', category: 'music', apply: 'hot', description: 'External classifier hook URL for music/speech/silence detection.' },
 
   // --- Production control ---------------------------------------------
+  { key: 'production.action_rate_max_runs', env: 'ACTION_RATE_MAX_RUNS', type: 'int', default: 20, category: 'production', apply: 'hot', description: 'Hard cap on cue-started action runs per project in each rate window (0 = no cap). Bounds feedback loops that per-rule and per-device cooldowns miss; refused runs are reported as action.skipped (rate_limit).' },
+  { key: 'production.action_rate_window_s', env: 'ACTION_RATE_WINDOW_S', type: 'int', default: 60, category: 'production', apply: 'hot', description: 'Length in seconds of the sliding window for production.action_rate_max_runs.' },
   { key: 'production.camera_preview_base_url', env: 'CAMERA_PREVIEW_BASE_URL', type: 'string', default: '', category: 'production', apply: 'restart', description: "Base URL lcyt-production's camera-thumbnail capture fetches /preview/:key/incoming from; falls back to http://localhost:$PORT. Not in the original lcyt-backend/CLAUDE.md table (documented only in lcyt-production's own CLAUDE.md) — resolved once at createProductionRouter() construction via SettingsService, restart-tier." },
 
   // --- Metrics ---------------------------------------------------------
