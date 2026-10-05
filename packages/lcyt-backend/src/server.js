@@ -423,14 +423,26 @@ const _actionExecutor = createActionExecutor({
   handlers: {
     // deviceKey names the physical device so the executor's per-device cooldown
     // spans atoms (`mixer:` and `obs:` both move the same mixer).
-    camera: { device: true, deviceKey: (value) => `camera:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
-    mixer: { device: true, deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    camera: { device: true, toIds: (k, v) => productionCommands.cameraAtomToIds(k, v), toLabels: (k, v) => productionCommands.cameraAtomToLabels(k, v), deviceKey: (value) => `camera:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
+    mixer: { device: true, toIds: (k, v) => productionCommands.mixerAtomToIds(k, v), toLabels: (k, v) => productionCommands.mixerAtomToLabels(k, v), deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
     // `obs:<mixer>.<scene>` is the mixer atom with a scene written by name.
-    obs: { device: true, deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    obs: { device: true, toIds: (k, v) => productionCommands.mixerAtomToIds(k, v), toLabels: (k, v) => productionCommands.mixerAtomToLabels(k, v), deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
     // `crop:<preset>` by preset id or by name slug.
     crop: {
       device: true,
       deviceKey: () => 'crop',
+      toIds: (apiKey, value) => {
+        const presets = listCropPresets(db, apiKey);
+        if (presets.some((p) => p.id === value)) return null;
+        const found = presets.filter((p) => slugifyLabel(p.name) === slugifyLabel(value));
+        return found.length === 1 ? found[0].id : null;
+      },
+      toLabels: (apiKey, value) => {
+        const presets = listCropPresets(db, apiKey);
+        const preset = presets.find((p) => p.id === value);
+        const slug = preset && slugifyLabel(preset.name);
+        return slug && presets.filter((p) => slugifyLabel(p.name) === slug).length === 1 ? slug : null;
+      },
       run: (apiKey, value) => {
         const slug = slugifyLabel(value);
         const presets = listCropPresets(db, apiKey);
@@ -786,7 +798,7 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings, platforms: platformDeps }, scopedAuth));
-app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard }));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`

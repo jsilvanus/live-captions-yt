@@ -164,3 +164,32 @@ describe('lcyt-actions — device authoring guard', () => {
     assert.equal(await send('PUT', '/actions/a', { definition: 'camera:pulpit.wide' }), 200);
   });
 });
+
+describe('lcyt-actions — device ids behind the scenes', () => {
+  let server, baseUrl, db;
+  before(async () => {
+    db = new Database(':memory:');
+    initActions(db);
+    // Stand-in executor: label `pulpit` <-> id `cam-1`.
+    const executor = {
+      isDeviceAtom: () => false,
+      rewriteDeviceRefs: (_k, expr, dir) => (dir === 'ids' ? expr.replace('pulpit', 'cam-1') : expr.replace('cam-1', 'pulpit')),
+    };
+    const app = express();
+    app.use(express.json());
+    app.use('/actions', createActionsRouter(db, (req, _res, next) => { req.session = { apiKey: 'key1' }; next(); }, { executor }));
+    await new Promise((resolve) => { server = app.listen(0, () => resolve()); });
+    baseUrl = `http://127.0.0.1:${server.address().port}`;
+  });
+  after(() => new Promise((resolve) => server.close(resolve)));
+
+  it('stores ids, returns labels', async () => {
+    const res = await fetch(`${baseUrl}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Go', slug: 'go', definition: 'camera:pulpit.wide' }) });
+    assert.equal((await res.json()).action.definition, 'camera:pulpit.wide');
+    assert.equal(db.prepare("SELECT definition FROM action_defs WHERE slug = 'go'").get().definition, 'camera:cam-1.wide');
+    const got = await (await fetch(`${baseUrl}/actions/go`)).json();
+    assert.equal(got.action.definition, 'camera:pulpit.wide');
+    const list = await (await fetch(`${baseUrl}/actions`)).json();
+    assert.equal(list.actions[0].definition, 'camera:pulpit.wide');
+  });
+});

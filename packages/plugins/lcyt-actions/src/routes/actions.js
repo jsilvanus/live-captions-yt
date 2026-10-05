@@ -32,6 +32,15 @@ export function createActionsRouter(db, auth, opts = {}) {
   const guard = createAuthoringGuard({ executor, checkProjectRole });
   const router = Router();
 
+  // Saved definitions keep camera/mixer/preset ids so a rename cannot break
+  // them; responses show the current labels again (executor.rewriteDeviceRefs).
+  const toIds = (apiKey, expr) => executor?.rewriteDeviceRefs?.(apiKey, expr, 'ids') ?? expr;
+  const present = (apiKey, row) => {
+    const out = serializeActionDef(row);
+    if (out && executor?.rewriteDeviceRefs) out.definition = executor.rewriteDeviceRefs(apiKey, out.definition, 'labels');
+    return out;
+  };
+
   // Same operator+ gate as the DSK activate routes: session/device callers pass,
   // user JWT callers need the 'production' tier.
   function requireProduction(req, res, next) {
@@ -59,7 +68,7 @@ export function createActionsRouter(db, auth, opts = {}) {
   router.get('/', auth, (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    res.json({ actions: listActionDefs(db, apiKey).map(serializeActionDef) });
+    res.json({ actions: listActionDefs(db, apiKey).map((r) => present(apiKey, r)) });
   });
 
   router.post('/', auth, (req, res) => {
@@ -71,8 +80,8 @@ export function createActionsRouter(db, auth, opts = {}) {
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (!isValidSlug(slug)) return res.status(400).json({ error: 'slug must be lowercase alphanumeric with hyphens' });
     if (getActionDefBySlug(db, apiKey, slug)) return res.status(409).json({ error: `Action slug already in use: ${slug}` });
-    const row = createActionDef(db, apiKey, { id: crypto.randomUUID(), name, slug, definition, description });
-    res.status(201).json({ action: serializeActionDef(row) });
+    const row = createActionDef(db, apiKey, { id: crypto.randomUUID(), name, slug, definition: toIds(apiKey, definition), description });
+    res.status(201).json({ action: present(apiKey, row) });
   });
 
   router.get('/:slug', auth, (req, res) => {
@@ -80,7 +89,7 @@ export function createActionsRouter(db, auth, opts = {}) {
     if (!apiKey) return;
     const row = getActionDefBySlug(db, apiKey, req.params.slug);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    res.json({ action: serializeActionDef(row) });
+    res.json({ action: present(apiKey, row) });
   });
 
   router.put('/:slug', auth, (req, res) => {
@@ -95,8 +104,8 @@ export function createActionsRouter(db, auth, opts = {}) {
     if (slug !== undefined && slug !== existing.slug && getActionDefBySlug(db, apiKey, slug)) {
       return res.status(409).json({ error: `Action slug already in use: ${slug}` });
     }
-    const row = updateActionDef(db, existing.id, { name, slug, definition, description });
-    res.json({ action: serializeActionDef(row) });
+    const row = updateActionDef(db, existing.id, { name, slug, definition: toIds(apiKey, definition), description });
+    res.json({ action: present(apiKey, row) });
   });
 
   router.delete('/:slug', auth, (req, res) => {

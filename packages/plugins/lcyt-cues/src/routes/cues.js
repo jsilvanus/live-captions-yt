@@ -204,8 +204,18 @@ function normalizeInlineCue(rawCue, index, apiKey) {
  * @param {import('../cue-engine.js').CueEngine} engine
  * @returns {import('express').Router}
  */
-export function createCueRouter(db, auth, engine, { authoringGuard = null } = {}) {
+export function createCueRouter(db, auth, engine, { authoringGuard = null, rewriteRun = null } = {}) {
   const router = Router();
+
+  /**
+   * `rewriteRun(apiKey, run, 'ids'|'labels')` (from lcyt-actions via the
+   * composition root) stores device ids in `action.run` so renaming a camera
+   * or mixer cannot break a saved rule, and shows labels again on read.
+   */
+  function withRun(apiKey, action, direction) {
+    if (!rewriteRun || !action || typeof action !== 'object' || typeof action.run !== 'string') return action;
+    return { ...action, run: rewriteRun(apiKey, action.run, direction) };
+  }
 
   /**
    * A rule whose `action.run` moves devices needs the Setup tier to save
@@ -263,7 +273,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null } = {}
     // Parse action/condition_tree JSON for the response
     const parsed = rules.map(r => ({
       ...r,
-      action: (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(),
+      action: withRun(apiKey, (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(), 'labels'),
       condition_tree: safeParseJSON(r.condition_tree, null),
     }));
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
@@ -315,7 +325,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null } = {}
       name,
       match_type: resolvedMatchType,
       pattern: pattern ?? '',
-      action: action || {},
+      action: withRun(apiKey, action, 'ids') || {},
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
       cooldown_ms: cooldown_ms !== undefined && cooldown_ms !== null ? cooldown_ms : defaultCooldownFor(resolvedMatchType, condition_tree, name => resolveNamedConditionTree(apiKey, name)),
       fuzzy_threshold: fuzzy_threshold ?? 0.75,
@@ -382,7 +392,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null } = {}
     }
 
     updateCueRule(db, req.params.id, {
-      name, match_type, pattern, action,
+      name, match_type, pattern, action: withRun(apiKey, action, 'ids'),
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : undefined,
       cooldown_ms: resolvedCooldown,
       fuzzy_threshold,

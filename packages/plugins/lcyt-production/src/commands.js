@@ -272,5 +272,68 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
     return switchMixer(apiKey, mix.mixer.id, input, meta);
   }
 
-  return { callCameraPreset, switchMixer, resolveCamera, resolveMixer, runCameraAtom, runMixerAtom };
+  // ── Id <-> label rewriting for saved atoms ──────────────────────────────────
+  // A saved action stores ids so renaming a camera, mixer or preset does not
+  // break it; editors load the current label slugs again. `labelRef` only
+  // returns a slug that resolves back to the same device, else the id.
+
+  const cameraSlug = (c) => slugifyLabel(c.label) || slugifyLabel(c.name);
+  const presetSlug = (p) => slugifyLabel(p.label) || slugifyLabel(p.name)
+    || (p.presetNumber != null ? String(p.presetNumber) : '');
+  const findPreset = (cam, ref) => {
+    const presets = cam.controlConfig?.presets ?? [];
+    const slug = slugifyLabel(ref);
+    return presets.find((p) => p.id === ref)
+      ?? presets.find((p) => slugifyLabel(p.label) === slug || slugifyLabel(p.name) === slug)
+      ?? presets.find((p) => p.presetNumber != null && String(p.presetNumber) === ref);
+  };
+
+  /** `camera:<camera>.<preset>` with ids; null when it does not resolve. */
+  function cameraAtomToIds(apiKey, value) {
+    const parts = splitAtom(value);
+    if (!parts) return null;
+    const cam = resolveCamera(apiKey, parts[0]);
+    if (!cam.ok) return null;
+    const preset = findPreset(cam.camera, parts[1]);
+    if (!preset) return null;
+    return `${cam.camera.id}.${preset.id}`;
+  }
+
+  /** `camera:<camera>.<preset>` with the current label slugs; null when it does not resolve. */
+  function cameraAtomToLabels(apiKey, value) {
+    const parts = splitAtom(value);
+    if (!parts) return null;
+    const cam = resolveCamera(apiKey, parts[0]);
+    if (!cam.ok) return null;
+    const preset = findPreset(cam.camera, parts[1]);
+    if (!preset) return null;
+    const camRef = cameraSlug(cam.camera);
+    const camOut = camRef && resolveCamera(apiKey, camRef).camera?.id === cam.camera.id ? camRef : cam.camera.id;
+    const presetRef = presetSlug(preset);
+    const presetOut = presetRef && findPreset(cam.camera, presetRef)?.id === preset.id ? presetRef : preset.id;
+    return `${camOut}.${presetOut}`;
+  }
+
+  /** `mixer:<mixer>.<input>` / `obs:<mixer>.<scene>` with the mixer as id; the input part is kept as written. */
+  function mixerAtomToIds(apiKey, value) {
+    const parts = splitAtom(value);
+    if (!parts) return null;
+    const mix = resolveMixer(apiKey, parts[0]);
+    return mix.ok ? `${mix.mixer.id}.${parts[1]}` : null;
+  }
+
+  function mixerAtomToLabels(apiKey, value) {
+    const parts = splitAtom(value);
+    if (!parts) return null;
+    const mix = resolveMixer(apiKey, parts[0]);
+    if (!mix.ok) return null;
+    const ref = slugifyLabel(mix.mixer.name);
+    const out = ref && resolveMixer(apiKey, ref).mixer?.id === mix.mixer.id ? ref : mix.mixer.id;
+    return `${out}.${parts[1]}`;
+  }
+
+  return {
+    callCameraPreset, switchMixer, resolveCamera, resolveMixer, runCameraAtom, runMixerAtom,
+    cameraAtomToIds, cameraAtomToLabels, mixerAtomToIds, mixerAtomToLabels,
+  };
 }

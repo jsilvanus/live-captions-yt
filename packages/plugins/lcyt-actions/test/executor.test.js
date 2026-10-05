@@ -35,6 +35,29 @@ describe('parseWaitMs', () => {
   });
 });
 
+describe('rewriteDeviceRefs', () => {
+  it('rewrites hooked atoms only, keeps @refs, waits and other atoms verbatim', () => {
+    const { executor } = setup({
+      camera: {
+        device: true, run: async () => ({ ok: true }),
+        toIds: (k, v) => (v === 'pulpit.wide' ? 'cam-1.p1' : null),
+        toLabels: (k, v) => (v === 'cam-1.p1' ? 'pulpit.wide' : null),
+      },
+    });
+    const typed = 'camera:pulpit.wide | wait:2s | @intro | audio:start | camera:ghost.x';
+    const stored = executor.rewriteDeviceRefs('k', typed, 'ids');
+    assert.equal(stored, 'camera:cam-1.p1 | wait:2s | @intro | audio:start | camera:ghost.x');
+    assert.equal(executor.rewriteDeviceRefs('k', stored, 'labels'), typed);
+    assert.equal(executor.rewriteDeviceRefs('k', 'wait:1s', 'ids'), 'wait:1s');
+    assert.equal(executor.rewriteDeviceRefs('k', '', 'ids'), '');
+  });
+
+  it('a throwing hook leaves the atom as written', () => {
+    const { executor } = setup({ camera: { device: true, run: async () => ({ ok: true }), toIds: () => { throw new Error('x'); } } });
+    assert.equal(executor.rewriteDeviceRefs('k', 'camera:a.b', 'ids'), 'camera:a.b');
+  });
+});
+
 describe('ActionExecutor', () => {
   let t;
   beforeEach(() => { t = setup(); });
