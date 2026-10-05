@@ -439,9 +439,13 @@ that ran it and the tail of ffmpeg's stderr (`[rtmp] ffmpeg exited with code …
 the stream route `GET /stream` returns `lastExit { at, code, reason, workerId }` while no
 relay is running, and the relay panel shows it as "Relay stopped with an error". Callers of
 `spawnFfmpeg` get the same text on the fake process's `stderr` and as `proc.failure`.
-The fleet returns an empty stderr tail for streamed jobs that run to a clean end; only the
-error code and message are available for jobs that fail before ffmpeg starts
-(`WORKER_LOST`, no worker with the required capabilities, …).
+With fffleet 2.1 or later a *running* job also reports ffmpeg's newest stderr lines: the runner
+exposes them as `runner.stderrTail` (event `stderrTail`; `proc.stderrTail` on a `spawnFfmpeg`
+process), `GET /stream` returns `stderrTail` while a relay runs, and the relay panel shows it
+under "Worker log" (refreshed every 5 s). A local ffmpeg has no such field. The fleet returns an
+empty stderr tail for streamed jobs that run to a clean end; only the error code and message are
+available for jobs that fail before ffmpeg starts (`WORKER_LOST`, no worker with the required
+capabilities, …).
 
 ### `FFMPEG_WRAPPER`
 

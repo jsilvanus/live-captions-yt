@@ -334,6 +334,7 @@ export default {
       live: 'Live',
       inactive: 'Inactive',
       lastExit: 'Relay stopped with an error',
+      workerLog: 'Worker log (ffmpeg stderr)',
       start: 'Activate relay',
       stop: 'Stop relay',
       stopAll: 'Stop all',

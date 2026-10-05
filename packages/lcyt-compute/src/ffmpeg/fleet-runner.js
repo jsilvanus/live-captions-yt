@@ -77,6 +77,8 @@ export class FleetFfmpegRunner extends EventEmitter {
     this.stderr = null;
     /** Why the job failed (fleet error code and message, ffmpeg's stderr tail, worker), or null. Set when it closes. */
     this.failure = null;
+    /** Newest stderr lines of the running job (fffleet >= 2.1), or null. Emitted as 'stderrTail' as it changes. */
+    this.stderrTail = null;
     this._closed = false;
   }
 
@@ -105,6 +107,13 @@ export class FleetFfmpegRunner extends EventEmitter {
     this.job = job;
     this.jobId = job.id;
     this.where = job.where;
+    // A running stream job that never exits can still be diagnosed from its latest stderr lines.
+    if (typeof job.on === 'function') {
+      job.on('stderr', (tail) => {
+        this.stderrTail = tail;
+        this.emit('stderrTail', tail);
+      });
+    }
 
     if (this._stdoutMode === 'pipe') {
       // Raw ffmpeg stdout (PCM, ...) from the fleet, as a plain Readable like a child process's.

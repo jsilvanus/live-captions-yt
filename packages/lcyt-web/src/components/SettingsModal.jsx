@@ -98,6 +98,16 @@ export function SettingsModal({ isOpen, onClose, inline }) {
 
   useEscapeKey(onClose, isOpen);
 
+  // While a relay runs, refresh its status so the worker log (fleet stderr) stays current.
+  const relayRunning = (relayStatus?.runningSlots?.length ?? 0) > 0;
+  useEffect(() => {
+    if (!isOpen || !relayRunning || !session.connected) return undefined;
+    const timer = setInterval(() => {
+      session.getRelayStatus().then(setRelayStatus).catch(() => {});
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [isOpen, relayRunning, session]);
+
   // Keep credential state in sync with external changes (e.g. from CCModal)
   useEffect(() => {
     function onCredChanged() { setCredentialState(getGoogleCredential()); }

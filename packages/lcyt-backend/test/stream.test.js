@@ -36,7 +36,10 @@ function makeMockRelayManager({ runningKeys = [], publishingKeys = [] } = {}) {
     _stopCalls: stopCalls,
     isRunning:        (key) => running.has(key),
     isPublishing:     (key) => publishing.has(key),
-    runningSlots:     (key) => [],
+    _slots: [],
+    _stderr: null,
+    runningSlots:     function () { return this._slots; },
+    liveStderr:       function () { return this._stderr; },
     start:            async (key, relays) => { startCalls.push({ key, relays }); running.add(key); },
     startAll:         async (key, relays) => { startCalls.push({ key, relays }); running.add(key); },
     stop:             async (key) => { stopCalls.push(key); running.delete(key); },
@@ -325,6 +328,17 @@ describe('GET /stream — list slots', () => {
     assert.ok(Array.isArray(body.relays));
     assert.equal(body.relays.length, 0);
     assert.ok(Array.isArray(body.runningSlots));
+  });
+
+  it('returns the live fleet stderr only while a relay runs', async () => {
+    mockRelay._stderr = 'frame=  10\nConnection refused';
+    let body = await (await streamFetch('/')).json();
+    assert.equal(body.stderrTail, null, 'no running slot, no tail');
+    mockRelay._slots = [1];
+    body = await (await streamFetch('/')).json();
+    assert.equal(body.stderrTail, 'frame=  10\nConnection refused');
+    mockRelay._slots = [];
+    mockRelay._stderr = null;
   });
 
   it('lists configured slots', async () => {

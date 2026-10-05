@@ -310,6 +310,7 @@ export default {
       live: 'Live',
       inactive: 'Ei aktiivinen',
       lastExit: 'Välitys päättyi virheeseen',
+      workerLog: 'Työntekijän loki (ffmpeg stderr)',
       start: 'Käynnistä relay',
       stop: 'Pysäytä relay',
       stopAll: 'Pysäytä kaikki',

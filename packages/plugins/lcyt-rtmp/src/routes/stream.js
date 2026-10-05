@@ -187,7 +187,8 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
     const runningSlots = relayManager.runningSlots(req.session.apiKey);
     const active = isRelayActive(db, req.session.apiKey);
     const lastExit = runningSlots.length === 0 ? (relayManager.lastExit?.(req.session.apiKey) ?? null) : null;
-    return res.status(200).json({ relays, runningSlots, active, lastExit });
+    const stderrTail = runningSlots.length > 0 ? (relayManager.liveStderr?.(req.session.apiKey) ?? null) : null;
+    return res.status(200).json({ relays, runningSlots, active, lastExit, stderrTail });
   });
 
   // GET /stream/history — per-stream usage history for this key
