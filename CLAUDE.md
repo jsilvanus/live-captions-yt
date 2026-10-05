@@ -64,7 +64,7 @@ live-captions-yt/
 ├── docker-compose.orchestrator.yml # Compose stack with orchestrator + worker daemon
 ├── PORTS.md                    # Port assignment reference
 ├── TODO.md                     # Outstanding work items
-├── CONSIDER.md                 # Skipped code-review/simplify findings, logged for a future pass
+├── CONSIDER.md                 # Open skipped code-review/simplify findings (resolved ones live in docs/CONSIDER-archive.md)
 ├── package.json                # Root workspace manifest
 └── CLAUDE.md                   # This file
 ```
@@ -175,7 +175,7 @@ All packages define a typed exception hierarchy: `LCYTError` (base) → `ConfigE
 Backend route handlers should stay thin and delegate SQL/data-access work to `packages/lcyt-backend/src/db/*.js` modules. New query logic, row shaping, and write-path helpers belong there, not inline inside route files. This applies to the org/team routes and should be treated as the default pattern for future backend work.
 
 ### Skipped Review Findings
-When a `/code-review` or `/simplify` pass surfaces a real finding that is deliberately **not** fixed (too invasive for the current diff, out of scope, requires a wider API change, or the "fix" wouldn't actually be simpler), log it in `CONSIDER.md` at the repo root instead of letting it evaporate at the end of the turn — what was found, why it was skipped, and where. Don't silently drop skipped findings from a review summary; either fix them or write them down.
+When a `/code-review` or `/simplify` pass surfaces a real finding that is deliberately **not** fixed (too invasive for the current diff, out of scope, requires a wider API change, or the "fix" wouldn't actually be simpler), log it in `CONSIDER.md` at the repo root instead of letting it evaporate at the end of the turn — what was found, why it was skipped, and where. Don't silently drop skipped findings from a review summary; either fix them or write them down. When one is resolved, move its entry to `docs/CONSIDER-archive.md` so `CONSIDER.md` stays short enough to reread.
 
 ### Artifacts
 Whenever a Claude Artifact is published from work in this repo (screenshots, reports, demos), add a row to `Artifacts.md` at the repo root — link, which plan/project it documents, and a short description. Don't let a published link exist only in chat history.
