@@ -133,6 +133,7 @@ function AdminMetricsContent({ backendUrl }) {
     ? [
         `${fleet.slotsUsed}/${fleet.slots} slots`,
         fleet.draining ? `${fleet.draining} draining` : null,
+        fleet.burstVms ? `${fleet.burstVms} burst VMs` : null,
         fleet.autoscalerCreates ? `autoscaler: ${fleet.autoscalerCreates} started, ${fleet.autoscalerCreateFailures} failed` : null,
         fleet.workersLost ? `${fleet.workersLost} lost` : null,
         fleet.dispatchFailures ? `${fleet.dispatchFailures} dispatch failures` : null,

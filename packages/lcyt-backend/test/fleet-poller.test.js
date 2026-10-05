@@ -74,4 +74,25 @@ describe('fleet poller', () => {
     assert.equal(tokens[0], 'Bearer tok1');
     assert.equal(tokens[1], 'Bearer tok2');
   });
+
+  it('accounts burst VM seconds and created VMs into usage metrics', async () => {
+    const counts = [];
+    const metrics = { count: (name, n) => counts.push([name, n]) };
+    let body = `fffleet_autoscaler_instances{pool="h",state="ready"} 2
+fffleet_autoscaler_instances{pool="h",state="removing"} 1
+fffleet_autoscaler_creates_total{pool="h",result="ok"} 2
+`;
+    const f = async () => ({ ok: true, status: 200, text: async () => body });
+    const p = createFleetPoller({ metrics, env: { FFFLEET_URL: 'http://x', FFFLEET_TOKEN: 't' }, fetch: f, intervalMs: 10_000 });
+    await new Promise(r => setTimeout(r, 20));
+    counts.length = 0;
+    await new Promise(r => setTimeout(r, 1100));
+    body = body.replace('result="ok"} 2', 'result="ok"} 3');
+    const snap = await p.poll();
+    p.stop();
+    assert.equal(snap.burstVms, 2);
+    const secs = counts.filter(c => c[0] === 'compute.burst_vm_seconds').reduce((a, c) => a + c[1], 0);
+    assert.ok(secs >= 2 && secs <= 6, `vm seconds ${secs}`);
+    assert.deepEqual(counts.filter(c => c[0] === 'compute.burst_vms_created'), [['compute.burst_vms_created', 1]]);
+  });
 });

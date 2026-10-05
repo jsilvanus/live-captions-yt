@@ -45,6 +45,8 @@ export function summarizeFleet(samples) {
     queued: Object.values(queueByClass).reduce((a, b) => a + b, 0),
     queueByClass,
     autoscalerInstances: instances,
+    // VMs the autoscaler is paying for right now (everything not yet removed).
+    burstVms: Object.entries(instances).filter(([st]) => st !== 'removing').reduce((a, [, n]) => a + n, 0),
     autoscalerCreates: sum(samples, 'fffleet_autoscaler_creates_total'),
     autoscalerCreateFailures: sum(samples, 'fffleet_autoscaler_creates_total', l => l.result && l.result !== 'ok' && l.result !== 'success'),
     autoscalerDestroys: sum(samples, 'fffleet_autoscaler_destroys_total'),
@@ -53,9 +55,12 @@ export function summarizeFleet(samples) {
   };
 }
 
-export function createFleetPoller({ env = process.env, fetch: f = globalThis.fetch, intervalMs = 15_000, createTokenProvider = null } = {}) {
+export function createFleetPoller({ metrics = null, env = process.env, fetch: f = globalThis.fetch, intervalMs = 15_000, createTokenProvider = null } = {}) {
   const base = (env.FFFLEET_URL || env.COMPUTE_URL || '').replace(/\/+$/, '');
   if (!base) return null;
+  // Burst VM accounting: VMs alive x time between polls, and created-VM deltas (counter-reset safe).
+  let lastTs = null;
+  let lastCreated = null;
   let latest = { ok: false, error: 'not polled yet', ts: 0 };
   let provider = null;
 
@@ -82,7 +87,21 @@ export function createFleetPoller({ env = process.env, fetch: f = globalThis.fet
   async function poll() {
     try {
       const text = await scrape(false);
-      latest = { ok: true, ...summarizeFleet(parsePrometheus(text)), ts: Date.now() };
+      const ts = Date.now();
+      latest = { ok: true, ...summarizeFleet(parsePrometheus(text)), ts };
+      if (metrics) {
+        if (lastTs !== null) {
+          const seconds = Math.min(ts - lastTs, intervalMs * 2) / 1000; // a long gap (backend paused) is not billed
+          if (latest.burstVms > 0) metrics.count('compute.burst_vm_seconds', Math.round(latest.burstVms * seconds));
+        }
+        const created = latest.autoscalerCreates - latest.autoscalerCreateFailures;
+        if (lastCreated !== null) {
+          const delta = created < lastCreated ? created : created - lastCreated; // orchestrator restart resets counters
+          if (delta > 0) metrics.count('compute.burst_vms_created', delta);
+        }
+        lastCreated = created;
+        lastTs = ts;
+      }
     } catch (err) {
       latest = { ok: false, error: err.message, ts: Date.now() };
       logger.warn(`[metrics] fleet poll failed: ${err.message}`);

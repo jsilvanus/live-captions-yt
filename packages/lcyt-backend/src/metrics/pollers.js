@@ -77,7 +77,7 @@ export function createStorageGaugePoller({ db, metrics, intervalMs = 300_000 }) 
 export function startMetricsPollers({ db, metrics, mediamtxClient = null }) {
   const pollers = { storage: createStorageGaugePoller({ db, metrics }) };
   if (mediamtxClient) pollers.mediamtxEgress = createMediaMtxEgressPoller({ metrics, mediamtxClient });
-  const fleet = createFleetPoller();
+  const fleet = createFleetPoller({ metrics });
   if (fleet) pollers.fleet = fleet;
   return pollers;
 }
