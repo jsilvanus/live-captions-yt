@@ -1,0 +1,4299 @@
+{
+ "source": "YouTube auto-generated captions (manual copy)",
+ "videoId": "73zWKvjmv1Q",
+ "title": "Messu su 27.9.2026 klo 10 Keskuskirkosta",
+ "language": "fi",
+ "cues": [
+  {
+   "start": 252,
+   "end": 259,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 259,
+   "end": 267,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 267,
+   "end": 278,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 278,
+   "end": 289,
+   "text": "Jeesus Kristus suuri ihmeen toivon kiinuu.",
+   "raw": "Jeesus Kristus suuri ihmeen toivon kiinuu.",
+   "music": false
+  },
+  {
+   "start": 289,
+   "end": 295,
+   "text": "Ole vasta me kosta.",
+   "raw": "Ole vasta [laulu] me kosta.",
+   "music": true
+  },
+  {
+   "start": 295,
+   "end": 299,
+   "text": "Elämämme uudistu.",
+   "raw": "Elämämme [laulu] uudistu.",
+   "music": true
+  },
+  {
+   "start": 299,
+   "end": 305,
+   "text": "Elämämme uudistuu.",
+   "raw": "[laulu] Elämämme uudistuu. [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 305,
+   "end": 310,
+   "text": "Kädet täynnä rakkautta.",
+   "raw": "Kädet täynnä [laulu] rakkautta.",
+   "music": true
+  },
+  {
+   "start": 310,
+   "end": 311,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 311,
+   "end": 320,
+   "text": "Saan täynnä armoa ruumiseesä",
+   "raw": "Saan täynnä armoa ruumiseesä [laulu]",
+   "music": true
+  },
+  {
+   "start": 320,
+   "end": 332,
+   "text": "särkyneitä heikkoja särkyneitä heikkoja.",
+   "raw": "[musiikkia] särkyneitä [laulu] heikkoja [musiikkia] särkyneitä [laulu] heikkoja.",
+   "music": true
+  },
+  {
+   "start": 332,
+   "end": 341,
+   "text": "Kutsut meidät kontoroivan tahtoasi seuraamaan.",
+   "raw": "Kutsut meidät [laulu] kontoroivan tahtoasi seuraamaan.",
+   "music": true
+  },
+  {
+   "start": 341,
+   "end": 343,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 343,
+   "end": 351,
+   "text": "Menet ka jo pienet ohjat suutaan oikeaan.",
+   "raw": "Menet [musiikkia] ka jo pienet ohjat suutaan oikeaan. [laulu]",
+   "music": true
+  },
+  {
+   "start": 351,
+   "end": 354,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 354,
+   "end": 356,
+   "text": "Ohjat suuntaan oikeaan.",
+   "raw": "Ohjat suuntaan oikeaan.",
+   "music": false
+  },
+  {
+   "start": 356,
+   "end": 360,
+   "text": "",
+   "raw": "[laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 360,
+   "end": 371,
+   "text": "Jumala henki suuri valo kirkas luomaton.",
+   "raw": "Jumala [laulu] henki suuri [musiikkia] valo [laulu] kirkas luomaton.",
+   "music": true
+  },
+  {
+   "start": 371,
+   "end": 380,
+   "text": "Anna voima eläksemme niin kuin sanan kutsu",
+   "raw": "Anna voima [musiikkia] [laulu] eläksemme niin kuin sanan kutsu [laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 380,
+   "end": 391,
+   "text": "on niin kuin sanan kutsu",
+   "raw": "on niin kuin sanan kutsu [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 391,
+   "end": 402,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 402,
+   "end": 414,
+   "text": "Isän ja Pojan ja Pyhän Hengen nimeen. Aamen. Aamen.",
+   "raw": "Isän ja Pojan ja Pyhän Hengen nimeen. Aamen. [laulu] Aamen.",
+   "music": true
+  },
+  {
+   "start": 414,
+   "end": 421,
+   "text": "Herra olkoon teidän kanssanne myös sinun henkösi",
+   "raw": "Herra olkoon teidän kanssanne myös [laulu][musiikkia] sinun henkösi",
+   "music": true
+  },
+  {
+   "start": 421,
+   "end": 430,
+   "text": "kansa ja olet oikein sydämellisesti tervetullut tähän yhteiseen aurinkoiseen messuumme.",
+   "raw": "kansa ja olet oikein sydämellisesti tervetullut tähän yhteiseen aurinkoiseen messuumme.",
+   "music": false
+  },
+  {
+   "start": 430,
+   "end": 436,
+   "text": "Tämä aurinko on ihan tilattu nyt viikon sateen jälkeen.",
+   "raw": "Tämä aurinko on ihan tilattu nyt viikon sateen jälkeen.",
+   "music": false
+  },
+  {
+   "start": 436,
+   "end": 442,
+   "text": "Mitä sinulle tulee mieleen sanasta vapaus?",
+   "raw": "Mitä sinulle tulee mieleen sanasta vapaus?",
+   "music": false
+  },
+  {
+   "start": 442,
+   "end": 451,
+   "text": "Tai tänään aivan erityisesti kysymme, mitä mitä ajattelet sanasta kristityn vapaus.",
+   "raw": "Tai tänään aivan erityisesti kysymme, mitä mitä ajattelet sanasta kristityn vapaus.",
+   "music": false
+  },
+  {
+   "start": 451,
+   "end": 455,
+   "text": "Paavali kirjoittaa, että vapauteen Kristus vapautti meidät.",
+   "raw": "Paavali kirjoittaa, että vapauteen Kristus vapautti meidät.",
+   "music": false
+  },
+  {
+   "start": 455,
+   "end": 462,
+   "text": "Älkää antako sitoa itsenne orjuuden ikeeseen.",
+   "raw": "Älkää antako sitoa itsenne orjuuden ikeeseen.",
+   "music": false
+  },
+  {
+   "start": 462,
+   "end": 469,
+   "text": "Kirkkokäsien kirja sanoo puolestaan, että usko",
+   "raw": "Kirkkokäsien kirja sanoo puolestaan, että usko",
+   "music": false
+  },
+  {
+   "start": 469,
+   "end": 478,
+   "text": "usko kristilliseen vapaus usko Kristukseen vapauttaa ihmisen perustamasta elämäänsä",
+   "raw": "usko kristilliseen vapaus usko Kristukseen vapauttaa ihmisen perustamasta elämäänsä",
+   "music": false
+  },
+  {
+   "start": 478,
+   "end": 485,
+   "text": "omien tekojen, perinäissääntöjen ja toisten ihmisten mielipiteiden varaan.",
+   "raw": "omien tekojen, perinäissääntöjen ja toisten ihmisten mielipiteiden varaan.",
+   "music": false
+  },
+  {
+   "start": 485,
+   "end": 489,
+   "text": "ytimekkäästi sanottu.",
+   "raw": "ytimekkäästi sanottu.",
+   "music": false
+  },
+  {
+   "start": 489,
+   "end": 498,
+   "text": "Eräs itseäni viisaampi on tiivistänyt tämän ajatuksen, että kristityn vapaus on ennen kaikkea",
+   "raw": "Eräs itseäni viisaampi on tiivistänyt tämän ajatuksen, että kristityn vapaus on ennen kaikkea",
+   "music": false
+  },
+  {
+   "start": 498,
+   "end": 503,
+   "text": "vapautta palvelemaan. Vapautta palvelemaan.",
+   "raw": "vapautta palvelemaan. Vapautta palvelemaan.",
+   "music": false
+  },
+  {
+   "start": 503,
+   "end": 512,
+   "text": "Aivan kuten Kristuskin. Hän luopui oikeuksistaan meidän tähtemme, sinun ja minun ja jätti meille näin esimerkin",
+   "raw": "Aivan kuten Kristuskin. Hän luopui oikeuksistaan meidän tähtemme, sinun ja minun ja jätti meille näin esimerkin",
+   "music": false
+  },
+  {
+   "start": 512,
+   "end": 519,
+   "text": "lähimmäisten kohtaamisesta ja oman vapauden käyttämisestä.",
+   "raw": "lähimmäisten kohtaamisesta ja oman vapauden käyttämisestä.",
+   "music": false
+  },
+  {
+   "start": 519,
+   "end": 532,
+   "text": "Mutta koska me olemme ainoastaan ja vain ihmisiä ja käytämme usein omaa vapauttamme valikoiden usein kohdisten itseemme.",
+   "raw": "Mutta koska me olemme ainoastaan ja vain ihmisiä ja käytämme usein omaa vapauttamme valikoiden usein kohdisten itseemme.",
+   "music": false
+  },
+  {
+   "start": 532,
+   "end": 535,
+   "text": "Meiltä jää huomaamatta se, mitä ympärillämme tapahtuu.",
+   "raw": "Meiltä jää huomaamatta se, mitä ympärillämme tapahtuu.",
+   "music": false
+  },
+  {
+   "start": 535,
+   "end": 541,
+   "text": "Emme näe, emme kuule, emmekä malta pysähtyä.",
+   "raw": "Emme näe, emme kuule, emmekä malta pysähtyä.",
+   "music": false
+  },
+  {
+   "start": 541,
+   "end": 548,
+   "text": "Sillä tavalla emme toteuta tuota lähimmäisen rakkauden ajatusta.",
+   "raw": "Sillä tavalla emme toteuta tuota lähimmäisen rakkauden ajatusta.",
+   "music": false
+  },
+  {
+   "start": 548,
+   "end": 555,
+   "text": "Mutta tänään meillä on yhdessä sama etuoikeus, että me saamme tässä hetkessä",
+   "raw": "Mutta tänään meillä on yhdessä sama etuoikeus, että me saamme tässä hetkessä",
+   "music": false
+  },
+  {
+   "start": 555,
+   "end": 563,
+   "text": "tunnustaa oman vajavaisuutemme ja syntimme. Pyytää sitä Jumalalta nöyrästi anteeksi. Ja siihen me turvaudumme nyt",
+   "raw": "tunnustaa oman vajavaisuutemme ja syntimme. Pyytää sitä Jumalalta nöyrästi anteeksi. Ja siihen me turvaudumme nyt",
+   "music": false
+  },
+  {
+   "start": 563,
+   "end": 571,
+   "text": "tuon tutun 704 704 sanoin.",
+   "raw": "tuon tutun 704 704 sanoin.",
+   "music": false
+  },
+  {
+   "start": 571,
+   "end": 579,
+   "text": "Taivaallinen Isä, sain kasteen sinun lapseksi. Sinä siirsit minut pimeydestä",
+   "raw": "Taivaallinen Isä, sain kasteen sinun lapseksi. Sinä siirsit minut pimeydestä",
+   "music": false
+  },
+  {
+   "start": 579,
+   "end": 583,
+   "text": "valoon kadotuksen alta taivaan perilliseksi.",
+   "raw": "valoon kadotuksen alta taivaan perilliseksi.",
+   "music": false
+  },
+  {
+   "start": 583,
+   "end": 590,
+   "text": "En ole kuitenkaan elänyt niin kuin lapsellesi sopii. En ole kuunnellut",
+   "raw": "En ole kuitenkaan elänyt niin kuin lapsellesi sopii. En ole kuunnellut",
+   "music": false
+  },
+  {
+   "start": 590,
+   "end": 597,
+   "text": "ääntäsi. Enkä totuut tahtoasi. Jumala, armahda minua. Poikasi Jeesuksen",
+   "raw": "ääntäsi. Enkä totuut tahtoasi. Jumala, armahda minua. Poikasi Jeesuksen",
+   "music": false
+  },
+  {
+   "start": 597,
+   "end": 607,
+   "text": "Kristuksen tähden. Pese minut puhtaaksi ja anna kaikki syntini anteeksi.",
+   "raw": "Kristuksen tähden. Pese minut puhtaaksi ja anna kaikki syntini anteeksi.",
+   "music": false
+  },
+  {
+   "start": 607,
+   "end": 611,
+   "text": "Näin sanoo Herra: \"Älä pelkää.",
+   "raw": "Näin sanoo Herra: \"Älä pelkää.",
+   "music": false
+  },
+  {
+   "start": 611,
+   "end": 617,
+   "text": "Minä olen lunastanut sinut. Minä olen sinut nimeltä kutsunut.",
+   "raw": "Minä olen lunastanut sinut. Minä olen sinut nimeltä kutsunut.",
+   "music": false
+  },
+  {
+   "start": 617,
+   "end": 623,
+   "text": "Sinä olet minun.\" Vaikka vuoret järkkyisivät ja kukkulat horjuisivat, minun rakkauteni sinun ei",
+   "raw": "Sinä olet minun.\" Vaikka vuoret järkkyisivät ja kukkulat horjuisivat, minun rakkauteni sinun ei",
+   "music": false
+  },
+  {
+   "start": 623,
+   "end": 629,
+   "text": "järky. Eikä minun rauhanliittoni horju, sanoo Herra.",
+   "raw": "järky. Eikä minun rauhanliittoni horju, sanoo Herra.",
+   "music": false
+  },
+  {
+   "start": 629,
+   "end": 638,
+   "text": "Tähän luotta me saamme uskoa syntimme anteeksi tänäänkin isän ja pojan ja Pyhän Hengen nimeen.",
+   "raw": "Tähän luotta me saamme uskoa syntimme anteeksi tänäänkin isän ja pojan ja Pyhän Hengen nimeen.",
+   "music": false
+  },
+  {
+   "start": 638,
+   "end": 648,
+   "text": "Aamen. Aamen. Aamen. Kiittäen rukoilemme.",
+   "raw": "Aamen. Aamen. [laulu] Aamen. Kiittäen rukoilemme.",
+   "music": true
+  },
+  {
+   "start": 648,
+   "end": 655,
+   "text": "Jumala, Isämme, me kiitämme sinua siitä, että Jeesus Kristus on avannut tien",
+   "raw": "Jumala, Isämme, me kiitämme sinua siitä, että Jeesus Kristus on avannut tien",
+   "music": false
+  },
+  {
+   "start": 655,
+   "end": 663,
+   "text": "sinun luoksesi. vahvista uskoamme, lisää toivoamme ja uudistaa rakkauttamme.",
+   "raw": "sinun luoksesi. vahvista uskoamme, lisää toivoamme ja uudistaa rakkauttamme.",
+   "music": false
+  },
+  {
+   "start": 663,
+   "end": 673,
+   "text": "Aamen. Nyt me saamme kuulla tuon päivän psalmin esittämänä. Sinun sanasi on,",
+   "raw": "Aamen. Nyt me saamme kuulla tuon päivän psalmin esittämänä. Sinun sanasi on,",
+   "music": false
+  },
+  {
+   "start": 673,
+   "end": 683,
+   "text": "jokaisee askeleni se on valo minun matkaan.",
+   "raw": "jokaisee askeleni se on valo minun matkaan.",
+   "music": false
+  },
+  {
+   "start": 683,
+   "end": 693,
+   "text": "Kuinka rakastankaan sinun lakiasti kaiken painava minä sinä",
+   "raw": "Kuinka rakastankaan sinun lakiasti kaiken painava minä sinä",
+   "music": false
+  },
+  {
+   "start": 693,
+   "end": 703,
+   "text": "sinun käskysiani tekevät minut vihollisia ismaaksi",
+   "raw": "sinun käskysiani tekevät minut vihollisia ismaaksi",
+   "music": false
+  },
+  {
+   "start": 703,
+   "end": 712,
+   "text": "olemat pimeät kuin kaikki olet kunnutkin sinun liikkosi säädöksiä",
+   "raw": "olemat pimeät kuin kaikki olet kunnutkin sinun liikkosi säädöksiä",
+   "music": false
+  },
+  {
+   "start": 712,
+   "end": 721,
+   "text": "Olen viisampi kuin kansankin kun nou sinun suksiäsi.",
+   "raw": "Olen viisampi kuin kansankin kun nou sinun [musiikkia] suksiäsi.",
+   "music": true
+  },
+  {
+   "start": 721,
+   "end": 730,
+   "text": "Ahanellä ja allani astu. Minä tahdon totella sinun sanasi.",
+   "raw": "Ahanellä ja allani astu. Minä tahdon totella sinun sanasi.",
+   "music": false
+  },
+  {
+   "start": 730,
+   "end": 740,
+   "text": "Sinun päätöksistäsi en kaikkea synty sillä sinulta minä olen saanut.",
+   "raw": "Sinun päätöksistäsi en kaikkea synty sillä sinulta minä olen saanut.",
+   "music": false
+  },
+  {
+   "start": 740,
+   "end": 749,
+   "text": "Miten suat ovat sinun sanasi? Ne maistuvat hunajaa makeaan.",
+   "raw": "Miten suat ovat sinun sanasi? Ne maistuvat hunajaa makeaan.",
+   "music": false
+  },
+  {
+   "start": 749,
+   "end": 754,
+   "text": "Sinun saadaksesi anat minulle ympäristä.",
+   "raw": "Sinun saadaksesi anat minulle ympäristä.",
+   "music": false
+  },
+  {
+   "start": 754,
+   "end": 764,
+   "text": "Sen tahden minä vihaan kaikkia vente kunni isalle ja pojalle",
+   "raw": "Sen tahden minä vihaan kaikkia vente kunni isalle ja pojalle",
+   "music": false
+  },
+  {
+   "start": 764,
+   "end": 773,
+   "text": "ja pyhälle hengelle niin kuin oli alussa nyt on ja aika",
+   "raw": "ja pyhälle hengelle niin kuin oli alussa nyt on ja aika",
+   "music": false
+  },
+  {
+   "start": 773,
+   "end": 784,
+   "text": "iankaikkisesta iankaikkisen sinun saadasi",
+   "raw": "iankaikkisesta iankaikkisen sinun saadasi",
+   "music": false
+  },
+  {
+   "start": 784,
+   "end": 803,
+   "text": "joka paisee askeleen se on minun matkaan",
+   "raw": "joka paisee askeleen se on minun matkaan",
+   "music": false
+  },
+  {
+   "start": 803,
+   "end": 805,
+   "text": "",
+   "raw": "[musiikkia][laulu]",
+   "music": true
+  },
+  {
+   "start": 805,
+   "end": 813,
+   "text": "meitä kristus Su armahdat",
+   "raw": "meitä kristus Su armahdat [laulu]",
+   "music": true
+  },
+  {
+   "start": 813,
+   "end": 820,
+   "text": "meitä herra",
+   "raw": "meitä herra [musiikkia][laulu]",
+   "music": true
+  },
+  {
+   "start": 820,
+   "end": 827,
+   "text": "armah meitä",
+   "raw": "armah meitä [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 827,
+   "end": 836,
+   "text": "kunnia Jumalalle korkeuksan maan pää rauhaa",
+   "raw": "kunnia Jumalalle korkeuksan maan pää [musiikkia] rauhaa [laulu]",
+   "music": true
+  },
+  {
+   "start": 836,
+   "end": 850,
+   "text": "ihmisillä joita Hän rakastaa",
+   "raw": "ihmisillä joita Hän [musiikkia] rakastaa",
+   "music": true
+  },
+  {
+   "start": 850,
+   "end": 861,
+   "text": "sinulle kiitos kunnia, oi Herra Jumalamme.",
+   "raw": "sinulle kiitos [musiikkia] kunnia, [laulu] oi Herra Jumalamme. [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 861,
+   "end": 865,
+   "text": "Me ylistämme",
+   "raw": "[laulu] Me ylistämme [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 865,
+   "end": 867,
+   "text": "sinua.",
+   "raw": "sinua.",
+   "music": false
+  },
+  {
+   "start": 867,
+   "end": 875,
+   "text": "Avomme ruhatamme sinulle",
+   "raw": "Avomme ruhatamme [laulu][musiikkia] sinulle",
+   "music": true
+  },
+  {
+   "start": 875,
+   "end": 883,
+   "text": "taivaan kuningas ja isän kaikkias",
+   "raw": "taivaan [laulu][musiikkia] kuningas ja isän [musiikkia] kaikkias",
+   "music": true
+  },
+  {
+   "start": 883,
+   "end": 890,
+   "text": "me luomme kiitoksemme.",
+   "raw": "me luomme [laulu][musiikkia] kiitoksemme.",
+   "music": true
+  },
+  {
+   "start": 890,
+   "end": 899,
+   "text": "Voi Kristuska Jumalan itsesi meille",
+   "raw": "Voi Kristuska [musiikkia] [laulu] Jumalan itsesi meille [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 899,
+   "end": 907,
+   "text": "annan ja uhrin tieltä kallitan",
+   "raw": "annan ja [laulu] uhrin [musiikkia] tieltä kallitan",
+   "music": true
+  },
+  {
+   "start": 907,
+   "end": 913,
+   "text": "maailman synnit kantaa.",
+   "raw": "[laulu] maailman synnit kantaa.",
+   "music": true
+  },
+  {
+   "start": 913,
+   "end": 921,
+   "text": "Voi Jeesus meitä armahda ja isän luona",
+   "raw": "Voi [musiikkia][laulu] Jeesus meitä armahda [musiikkia] ja [laulu] isän luona",
+   "music": true
+  },
+  {
+   "start": 921,
+   "end": 931,
+   "text": "taivaassa pyytme ota vastaan.",
+   "raw": "taivaassa pyytme [musiikkia] ota [laulu] vastaan.",
+   "music": true
+  },
+  {
+   "start": 931,
+   "end": 936,
+   "text": "Vain sinä Herra ainoa,",
+   "raw": "Vain sinä [musiikkia][laulu] Herra ainoa,",
+   "music": true
+  },
+  {
+   "start": 936,
+   "end": 944,
+   "text": "vain sinä yksin pyhä ja sinä",
+   "raw": "vain sinä [laulu][musiikkia] yksin pyhä ja [laulu] sinä [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 944,
+   "end": 953,
+   "text": "korkein kaikista, jotkaat meitä yhä",
+   "raw": "korkein kaikista, jotkaat [laulu] meitä [musiikkia] yhä",
+   "music": true
+  },
+  {
+   "start": 953,
+   "end": 956,
+   "text": "nyt kunniassa",
+   "raw": "nyt kunniassa",
+   "music": false
+  },
+  {
+   "start": 956,
+   "end": 957,
+   "text": "",
+   "raw": "[laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 957,
+   "end": 966,
+   "text": "isäsi ja hengen kansain hallitse",
+   "raw": "isäsi ja hengen [musiikkia] kansain hallitse [laulu]",
+   "music": true
+  },
+  {
+   "start": 966,
+   "end": 992,
+   "text": "Herra Jeesus",
+   "raw": "Herra [musiikkia] Jeesus",
+   "music": true
+  },
+  {
+   "start": 992,
+   "end": 996,
+   "text": "Rukoilkaamme.",
+   "raw": "Rukoilkaamme.",
+   "music": false
+  },
+  {
+   "start": 996,
+   "end": 1005,
+   "text": "Kauppias Jumala, poikasi Jeesus Kristus viitoitti tien elämään, jota ohjaa rakkaus.",
+   "raw": "Kauppias Jumala, poikasi Jeesus Kristus viitoitti tien elämään, jota ohjaa rakkaus.",
+   "music": false
+  },
+  {
+   "start": 1005,
+   "end": 1011,
+   "text": "Opeta meille hänen esimerkkinsä avulla kuuliaisuutta sanallesi.",
+   "raw": "Opeta meille hänen esimerkkinsä avulla kuuliaisuutta sanallesi.",
+   "music": false
+  },
+  {
+   "start": 1011,
+   "end": 1022,
+   "text": "Vapauta meidät toimimaan rakkauden mielellä ja torjumaan kaikki, mikä sitoo meidät tahtosi vastaisiin asenteisiin ja elämäntapaan.",
+   "raw": "Vapauta meidät toimimaan rakkauden mielellä ja torjumaan kaikki, mikä sitoo meidät tahtosi vastaisiin asenteisiin ja elämäntapaan.",
+   "music": false
+  },
+  {
+   "start": 1022,
+   "end": 1029,
+   "text": "Kuule meitä poikasi Jeesuksen Kristuksen, meidän herramme tähden.",
+   "raw": "Kuule meitä poikasi Jeesuksen Kristuksen, meidän herramme tähden.",
+   "music": false
+  },
+  {
+   "start": 1029,
+   "end": 1034,
+   "text": "",
+   "raw": "[laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1034,
+   "end": 1038,
+   "text": "Kuulemme nyt Jumalan sanaa.",
+   "raw": "Kuulemme nyt Jumalan sanaa.",
+   "music": false
+  },
+  {
+   "start": 1038,
+   "end": 1048,
+   "text": "[korskahdus]",
+   "raw": "[korskahdus]",
+   "music": false
+  },
+  {
+   "start": 1048,
+   "end": 1055,
+   "text": "Ensimmäinen lukukappale on Aamoksen kirjasta luvusta viisi.",
+   "raw": "Ensimmäinen lukukappale on Aamoksen kirjasta luvusta viisi.",
+   "music": false
+  },
+  {
+   "start": 1055,
+   "end": 1065,
+   "text": "Herra Jumala Sebebaut sanoo näin: \"Minä vihaan teidän juhlianne. Minä inhoan niitä. Minä en voi sietää juhlakokouksianne.",
+   "raw": "Herra Jumala Sebebaut sanoo näin: \"Minä vihaan teidän juhlianne. Minä inhoan niitä. Minä en voi sietää juhlakokouksianne.",
+   "music": false
+  },
+  {
+   "start": 1065,
+   "end": 1072,
+   "text": "Kun te tuotte minulle polttouhrejanne ja ruokauhrejanne, minä en ota niitä vastaan.",
+   "raw": "Kun te tuotte minulle polttouhrejanne ja ruokauhrejanne, minä en ota niitä vastaan.",
+   "music": false
+  },
+  {
+   "start": 1072,
+   "end": 1080,
+   "text": "Juottovasikoihin, joita te tuotte alttariuhriksi, minä en katsahdakaan. Vie pois minun luotani virsiesi, pauhu.",
+   "raw": "Juottovasikoihin, joita te tuotte alttariuhriksi, minä en katsahdakaan. Vie pois minun luotani virsiesi, pauhu.",
+   "music": false
+  },
+  {
+   "start": 1080,
+   "end": 1087,
+   "text": "En halua kuulla sinun harppujesi helinää, mutta oikeus virratkoon kuin vesi ja",
+   "raw": "En halua kuulla sinun harppujesi helinää, mutta oikeus virratkoon kuin vesi ja",
+   "music": false
+  },
+  {
+   "start": 1087,
+   "end": 1097,
+   "text": "vanhurskaus kuin ehtymätön puro. Tämä on Jumalan sana.",
+   "raw": "vanhurskaus kuin ehtymätön puro. Tämä on Jumalan sana.",
+   "music": false
+  },
+  {
+   "start": 1097,
+   "end": 1104,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1104,
+   "end": 1114,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1114,
+   "end": 1123,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1123,
+   "end": 1129,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1129,
+   "end": 1134,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1134,
+   "end": 1141,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1141,
+   "end": 1161,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1161,
+   "end": 1169,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1169,
+   "end": 1178,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1178,
+   "end": 1187,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1187,
+   "end": 1194,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1194,
+   "end": 1201,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1201,
+   "end": 1220,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1220,
+   "end": 1224,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1224,
+   "end": 1234,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1234,
+   "end": 1249,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1249,
+   "end": 1255,
+   "text": "Toinen lukukappale on kirjasta Kolosolaisille luvusta kolme, luvusta kaksi.",
+   "raw": "Toinen lukukappale on kirjasta Kolosolaisille luvusta kolme, luvusta kaksi.",
+   "music": false
+  },
+  {
+   "start": 1255,
+   "end": 1262,
+   "text": "Kukaan ei saa tuomita teitä siitä, mitä syötte tai juotte tai miten noudatte juhla-aikoja ja uuden kunnon ja sapatin",
+   "raw": "Kukaan ei saa tuomita teitä siitä, mitä syötte tai juotte tai miten noudatte juhla-aikoja ja uuden kunnon ja sapatin",
+   "music": false
+  },
+  {
+   "start": 1262,
+   "end": 1269,
+   "text": "päiviä. Ne ovat vain sen varjoa, mikä on tulossa. Todellista on Kristuksen ruumissa.",
+   "raw": "päiviä. Ne ovat vain sen varjoa, mikä on tulossa. Todellista on Kristuksen ruumissa.",
+   "music": false
+  },
+  {
+   "start": 1269,
+   "end": 1279,
+   "text": "Heidän voittajan palkintoanne ei saa riistaa teitä kukaan, joka nöydyttää itseään kieltämyksin, vajoa näkyinsä ja palvoo enkeleitä.",
+   "raw": "Heidän voittajan palkintoanne ei saa riistaa teitä kukaan, joka nöydyttää itseään kieltämyksin, vajoa näkyinsä ja palvoo enkeleitä.",
+   "music": false
+  },
+  {
+   "start": 1279,
+   "end": 1287,
+   "text": "Sellaisen ihmisen tekevät hänen omat tyhjät ajatuksensa ylpeäksi, eikä hänellä ole yhdettä Kristukseen päähän,",
+   "raw": "Sellaisen ihmisen tekevät hänen omat tyhjät ajatuksensa ylpeäksi, eikä hänellä ole yhdettä Kristukseen päähän,",
+   "music": false
+  },
+  {
+   "start": 1287,
+   "end": 1298,
+   "text": "joka huolehtii koko ruumiista ja pitää sitä nivelten ja jänteiden avulla koossa niin, että se kasvaa Jumalan tarkoittamalla tavalla.",
+   "raw": "joka huolehtii koko ruumiista ja pitää sitä nivelten ja jänteiden avulla koossa niin, että se kasvaa Jumalan tarkoittamalla tavalla.",
+   "music": false
+  },
+  {
+   "start": 1298,
+   "end": 1307,
+   "text": "Jos kerran olette yhdessään Ristuksen kanssa kuolleet pois maailman alkuvoimien ulottuvilta, miksi yhä käyttäyd tämän maailman mukaisesti ja",
+   "raw": "Jos kerran olette yhdessään Ristuksen kanssa kuolleet pois maailman alkuvoimien ulottuvilta, miksi yhä käyttäyd tämän maailman mukaisesti ja",
+   "music": false
+  },
+  {
+   "start": 1307,
+   "end": 1314,
+   "text": "alistutte sellaisiin sääntöihin kuin älä tartu, älä maista, älä kosketa.",
+   "raw": "alistutte sellaisiin sääntöihin kuin älä tartu, älä maista, älä kosketa.",
+   "music": false
+  },
+  {
+   "start": 1314,
+   "end": 1323,
+   "text": "Tämä kaikkihan koskee sellaista, mikä käytön jälkeen häviää. Kysymys on vain ihmisten käskyistä ja opista.",
+   "raw": "Tämä kaikkihan koskee sellaista, mikä käytön jälkeen häviää. Kysymys on vain ihmisten käskyistä ja opista.",
+   "music": false
+  },
+  {
+   "start": 1323,
+   "end": 1330,
+   "text": "Nämä omatekoista hurskautta, nöyryyden harjoitusta ja ruumiin kurittamista vaativat käskyt tosin näyttävät",
+   "raw": "Nämä omatekoista hurskautta, nöyryyden harjoitusta ja ruumiin kurittamista vaativat käskyt tosin näyttävät",
+   "music": false
+  },
+  {
+   "start": 1330,
+   "end": 1346,
+   "text": "viisailta, mutta todellisuudessa ne ovat arvottomia ja tyydyttyvät vain ihmisen ylpeyttä. Tämä on Jumalan sana.",
+   "raw": "viisailta, mutta todellisuudessa ne ovat arvottomia ja tyydyttyvät vain ihmisen ylpeyttä. Tämä on Jumalan sana.",
+   "music": false
+  },
+  {
+   "start": 1346,
+   "end": 1351,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1351,
+   "end": 1356,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1356,
+   "end": 1361,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1361,
+   "end": 1369,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1369,
+   "end": 1378,
+   "text": "käskien hallitse Kristus et vaati ukuksella",
+   "raw": "käskien [laulu] hallitse [musiikkia] Kristus et [laulu] vaati ukuksella",
+   "music": true
+  },
+  {
+   "start": 1378,
+   "end": 1379,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1379,
+   "end": 1381,
+   "text": "lapeudella",
+   "raw": "lapeudella",
+   "music": false
+  },
+  {
+   "start": 1381,
+   "end": 1382,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 1382,
+   "end": 1387,
+   "text": "koskea rohkaiset lauteudella",
+   "raw": "koskea [musiikkia] rohkaiset lauteudella",
+   "music": true
+  },
+  {
+   "start": 1387,
+   "end": 1391,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 1391,
+   "end": 1399,
+   "text": "miekalla työhösi tai painosta",
+   "raw": "miekalla [laulu] työhösi [musiikkia] tai painosta [laulu]",
+   "music": true
+  },
+  {
+   "start": 1399,
+   "end": 1406,
+   "text": "alla katsesi alla taiumme",
+   "raw": "alla katsesi [musiikkia] alla taiumme [laulu]",
+   "music": true
+  },
+  {
+   "start": 1406,
+   "end": 1407,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1407,
+   "end": 1414,
+   "text": "katseesi alla säytä",
+   "raw": "katseesi alla säytä [laulu]",
+   "music": true
+  },
+  {
+   "start": 1414,
+   "end": 1417,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1417,
+   "end": 1424,
+   "text": "velkolet kuts kun vastut täytän",
+   "raw": "velkolet kuts kun vastut [musiikkia] täytän",
+   "music": true
+  },
+  {
+   "start": 1424,
+   "end": 1433,
+   "text": "riulla täytyä toivon ja riulla",
+   "raw": "riulla [musiikkia] täytyä [laulu] toivon ja riulla",
+   "music": true
+  },
+  {
+   "start": 1433,
+   "end": 1439,
+   "text": "täydä puhkaileneet",
+   "raw": "täydä puhkaileneet [laulu]",
+   "music": true
+  },
+  {
+   "start": 1439,
+   "end": 1439,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1439,
+   "end": 1446,
+   "text": "varjele hengestäjallisesta",
+   "raw": "varjele hengestäjallisesta",
+   "music": false
+  },
+  {
+   "start": 1446,
+   "end": 1446,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1446,
+   "end": 1462,
+   "text": "taivauksesta lähden merkelle taivauksesta",
+   "raw": "taivauksesta [laulu] lähden merkelle taivauksesta [laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1462,
+   "end": 1468,
+   "text": "Nousimme kuulemaan pyhää evankeliumia.",
+   "raw": "Nousimme kuulemaan pyhää evankeliumia.",
+   "music": false
+  },
+  {
+   "start": 1468,
+   "end": 1475,
+   "text": "Halleluja. Halleluja.",
+   "raw": "Halleluja. [musiikkia][laulu] Halleluja.",
+   "music": true
+  },
+  {
+   "start": 1475,
+   "end": 1488,
+   "text": "Halleluja. Markuksen evankeliumin toisesta luvusta.",
+   "raw": "Halleluja. [laulu][musiikkia] Markuksen evankeliumin toisesta luvusta.",
+   "music": true
+  },
+  {
+   "start": 1488,
+   "end": 1493,
+   "text": "Johanneksen opetuslapset ja [kurkun selvittäminen] fariseukset paastosivat.",
+   "raw": "Johanneksen opetuslapset ja [kurkun selvittäminen] fariseukset paastosivat.",
+   "music": false
+  },
+  {
+   "start": 1493,
+   "end": 1505,
+   "text": "Jeesukselta tultiin kysymään, miksi sinun opetuslapsesi eivät paastoa, kun kerran Johanneksen opetuslapset ja fariseusten opetuslapset paastoivat.",
+   "raw": "Jeesukselta tultiin kysymään, miksi sinun opetuslapsesi eivät paastoa, kun kerran Johanneksen opetuslapset ja fariseusten opetuslapset paastoivat.",
+   "music": false
+  },
+  {
+   "start": 1505,
+   "end": 1514,
+   "text": "Jeesus vastasi: \"Eivätkai häävieraat voi paastota silloin, kun sulhanen vielä on heidän kanssaan.",
+   "raw": "Jeesus vastasi: \"Eivätkai häävieraat voi paastota silloin, kun sulhanen vielä on heidän kanssaan.",
+   "music": false
+  },
+  {
+   "start": 1514,
+   "end": 1520,
+   "text": "Niin kauan kuin sulhanen on heidän joukossaan, he eivät voi paastota.\"",
+   "raw": "Niin kauan kuin sulhanen on heidän joukossaan, he eivät voi paastota.\"",
+   "music": false
+  },
+  {
+   "start": 1520,
+   "end": 1531,
+   "text": "Ei kukaan ompele. Vielä tulee sekin aika, jolloin sulhanen on poissa ja silloin sinä päivänä he paastoavat.",
+   "raw": "Ei kukaan ompele. Vielä tulee sekin aika, jolloin sulhanen on poissa ja silloin sinä päivänä he paastoavat.",
+   "music": false
+  },
+  {
+   "start": 1531,
+   "end": 1537,
+   "text": "Ei kukaan ompele kutistamattomasta kankaasta paikkaa vanhaan viittaan.",
+   "raw": "Ei kukaan ompele kutistamattomasta kankaasta paikkaa vanhaan viittaan.",
+   "music": false
+  },
+  {
+   "start": 1537,
+   "end": 1544,
+   "text": "Silloinhan vanha viitta repeää uuden paikan vierestä ja reikä on entistä pahempi.",
+   "raw": "Silloinhan vanha viitta repeää uuden paikan vierestä ja reikä on entistä pahempi.",
+   "music": false
+  },
+  {
+   "start": 1544,
+   "end": 1549,
+   "text": "Eikä kukaan laske uutta viiniä vanhoihin leileihin.",
+   "raw": "Eikä kukaan laske uutta viiniä vanhoihin leileihin.",
+   "music": false
+  },
+  {
+   "start": 1549,
+   "end": 1560,
+   "text": "Silloinhan viini rikkoo ne ja sekä viini että leili menevät hukkaan. Ei, uusi viini on laskettava uusiin leileihin.",
+   "raw": "Silloinhan viini rikkoo ne ja sekä viini että leili menevät hukkaan. Ei, uusi viini on laskettava uusiin leileihin.",
+   "music": false
+  },
+  {
+   "start": 1560,
+   "end": 1565,
+   "text": "Tämä on pyhä evankeliumi. Kristus.",
+   "raw": "Tämä on pyhä evankeliumi. Kristus.",
+   "music": false
+  },
+  {
+   "start": 1565,
+   "end": 1571,
+   "text": "Halleluja. Halleluja.",
+   "raw": "Halleluja. [musiikkia] Halleluja.",
+   "music": true
+  },
+  {
+   "start": 1571,
+   "end": 1572,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1572,
+   "end": 1576,
+   "text": "Halleluja.",
+   "raw": "[laulu] Halleluja.",
+   "music": true
+  },
+  {
+   "start": 1576,
+   "end": 1581,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 1581,
+   "end": 1587,
+   "text": "Ja pyhäkoulu alkaa Sakastissa aivan [yskäisy] johtaa.",
+   "raw": "Ja pyhäkoulu alkaa Sakastissa aivan [yskäisy] johtaa.",
+   "music": false
+  },
+  {
+   "start": 1587,
+   "end": 1593,
+   "text": "[korskahdus]",
+   "raw": "[korskahdus]",
+   "music": false
+  },
+  {
+   "start": 1593,
+   "end": 1598,
+   "text": "Mukavaa pyhäkoulua.",
+   "raw": "Mukavaa pyhäkoulua.",
+   "music": false
+  },
+  {
+   "start": 1598,
+   "end": 1604,
+   "text": "Oletko joskus kuullut lauseen ennen oli kaikki paremmin?",
+   "raw": "Oletko joskus kuullut lauseen ennen oli kaikki paremmin?",
+   "music": false
+  },
+  {
+   "start": 1604,
+   "end": 1609,
+   "text": "Entä oletko joskus itse viljellyt tuota ajatusta?",
+   "raw": "Entä oletko joskus itse viljellyt tuota ajatusta?",
+   "music": false
+  },
+  {
+   "start": 1609,
+   "end": 1614,
+   "text": "Usein ihminen saattaa romantisoida menneitä aikoja.",
+   "raw": "Usein ihminen saattaa romantisoida menneitä aikoja.",
+   "music": false
+  },
+  {
+   "start": 1614,
+   "end": 1618,
+   "text": "Joskus puhutaan myös sukupolvien välisestä kuilusta.",
+   "raw": "Joskus puhutaan myös sukupolvien välisestä kuilusta.",
+   "music": false
+  },
+  {
+   "start": 1618,
+   "end": 1626,
+   "text": "Vanhat ja nuoret eivät aina ymmärrä ehkä toisiaan, koska eletään niin erilaisessa ajassa.",
+   "raw": "Vanhat ja nuoret eivät aina ymmärrä ehkä toisiaan, koska eletään niin erilaisessa ajassa.",
+   "music": false
+  },
+  {
+   "start": 1626,
+   "end": 1633,
+   "text": "Ehkä jotkut asiat olivatkin ennen paremmin, mutta eivät suinkaan kaikki.",
+   "raw": "Ehkä jotkut asiat olivatkin ennen paremmin, mutta eivät suinkaan kaikki.",
+   "music": false
+  },
+  {
+   "start": 1633,
+   "end": 1644,
+   "text": "Pienenä esimerkkinä voisin vaikka kysellä, että kaipaatko sinä vielä sitä aikaa, kun pankkikonttorin tiskille piti jonottaa, jotta saisi käteistä rahaa.",
+   "raw": "Pienenä esimerkkinä voisin vaikka kysellä, että kaipaatko sinä vielä sitä aikaa, kun pankkikonttorin tiskille piti jonottaa, jotta saisi käteistä rahaa.",
+   "music": false
+  },
+  {
+   "start": 1644,
+   "end": 1646,
+   "text": "Minä en.",
+   "raw": "Minä en.",
+   "music": false
+  },
+  {
+   "start": 1646,
+   "end": 1652,
+   "text": "Kehitys on tuonut mukanaan myös jotain hyvää.",
+   "raw": "Kehitys on tuonut mukanaan myös jotain hyvää.",
+   "music": false
+  },
+  {
+   "start": 1652,
+   "end": 1657,
+   "text": "Vanhan ja uuden yhteensovittaminen on aina hankalaa.",
+   "raw": "Vanhan ja uuden yhteensovittaminen on aina hankalaa.",
+   "music": false
+  },
+  {
+   "start": 1657,
+   "end": 1663,
+   "text": "Ihminen ehkä luonnostaan haluaa takertua vanhaan, koska sen hän tuntee.",
+   "raw": "Ihminen ehkä luonnostaan haluaa takertua vanhaan, koska sen hän tuntee.",
+   "music": false
+  },
+  {
+   "start": 1663,
+   "end": 1673,
+   "text": "Ohimmiltaan me taidamme olla hyvin turvallisuushakuisia ja se minkä tunnemme on turvallista, vaikka se ei aina olisi hyvää.",
+   "raw": "Ohimmiltaan me taidamme olla hyvin turvallisuushakuisia ja se minkä tunnemme on turvallista, vaikka se ei aina olisi hyvää.",
+   "music": false
+  },
+  {
+   "start": 1673,
+   "end": 1681,
+   "text": "Joku saattaa elää vuosia huonossa parisuhteessa, jossa voi olla jopa väkivaltaa.",
+   "raw": "Joku saattaa elää vuosia huonossa parisuhteessa, jossa voi olla jopa väkivaltaa.",
+   "music": false
+  },
+  {
+   "start": 1681,
+   "end": 1685,
+   "text": "Miksi et lähde? Joku vierestä kyselee.",
+   "raw": "Miksi et lähde? Joku vierestä kyselee.",
+   "music": false
+  },
+  {
+   "start": 1685,
+   "end": 1692,
+   "text": "Uuteen astuminen ei kuitenkaan ole helppoa, koska silloin ei tiedä mitä on edessä.",
+   "raw": "Uuteen astuminen ei kuitenkaan ole helppoa, koska silloin ei tiedä mitä on edessä.",
+   "music": false
+  },
+  {
+   "start": 1692,
+   "end": 1701,
+   "text": "Joskus ehkä itse huomaamme, että se asia, jota kov kovasti olemme odottaneet, joku uusi ehkä uusi työ,",
+   "raw": "Joskus ehkä itse huomaamme, että se asia, jota kov kovasti olemme odottaneet, joku uusi ehkä uusi työ,",
+   "music": false
+  },
+  {
+   "start": 1701,
+   "end": 1708,
+   "text": "uusi asuinpaikka tuntuukin sitten [korskahdus] kuitenkin melko vaikealta.",
+   "raw": "uusi asuinpaikka tuntuukin sitten [korskahdus] kuitenkin melko vaikealta.",
+   "music": false
+  },
+  {
+   "start": 1708,
+   "end": 1711,
+   "text": "Uuteen on aina sopeutuminen.",
+   "raw": "Uuteen on aina sopeutuminen.",
+   "music": false
+  },
+  {
+   "start": 1711,
+   "end": 1720,
+   "text": "Joskus saatamme joutua kriisiin siitä, että esiin tulee lähinpiirissä jotain ihan uutta.",
+   "raw": "Joskus saatamme joutua kriisiin siitä, että esiin tulee lähinpiirissä jotain ihan uutta.",
+   "music": false
+  },
+  {
+   "start": 1720,
+   "end": 1728,
+   "text": "Ehkä sairas ihminen paranee tai hänen kuntonsa kohenee. Ja me olemme hämillämme ilon lisäksi. Mikä tai kuka",
+   "raw": "Ehkä sairas ihminen paranee tai hänen kuntonsa kohenee. Ja me olemme hämillämme ilon lisäksi. Mikä tai kuka",
+   "music": false
+  },
+  {
+   "start": 1728,
+   "end": 1738,
+   "text": "tuo ihminen meille on nyt terveenä toisenlaisena ja mikä on minun roolini tässä tilanteessa?",
+   "raw": "tuo ihminen meille on nyt terveenä toisenlaisena ja mikä on minun roolini tässä tilanteessa?",
+   "music": false
+  },
+  {
+   "start": 1738,
+   "end": 1746,
+   "text": "Joku on sanonut, että ainoa pysyvä on muutos ja niin se taitaa olla.",
+   "raw": "Joku on sanonut, että ainoa pysyvä on muutos ja niin se taitaa olla.",
+   "music": false
+  },
+  {
+   "start": 1746,
+   "end": 1749,
+   "text": "Meistä kukin muuttuu kaiken aikaa.",
+   "raw": "Meistä kukin muuttuu kaiken aikaa.",
+   "music": false
+  },
+  {
+   "start": 1749,
+   "end": 1758,
+   "text": "Me vanhenemme. Meidän kykymme ja taitomme muuttuvat. Meidän ajatuksemmekin ehkä asenteemmekin.",
+   "raw": "Me vanhenemme. Meidän kykymme ja taitomme muuttuvat. Meidän ajatuksemmekin ehkä asenteemmekin.",
+   "music": false
+  },
+  {
+   "start": 1758,
+   "end": 1768,
+   "text": "Ihminen, ihmisen sisäinen ja ulkoinen muutos on kuitenkin hidasta, mutta vääjäämätöntä.",
+   "raw": "Ihminen, ihmisen sisäinen ja ulkoinen muutos on kuitenkin hidasta, mutta vääjäämätöntä.",
+   "music": false
+  },
+  {
+   "start": 1768,
+   "end": 1775,
+   "text": "Meistä ehkä saattaa sen sijaan tuntua, että maailma ympärillämme muuttuu hyvin nopeasti.",
+   "raw": "Meistä ehkä saattaa sen sijaan tuntua, että maailma ympärillämme muuttuu hyvin nopeasti.",
+   "music": false
+  },
+  {
+   "start": 1775,
+   "end": 1781,
+   "text": "Toisinaan on vaikea pysä perässä ja se tuo epävarmuutta ja pelkoa.",
+   "raw": "Toisinaan on vaikea pysä perässä ja se tuo epävarmuutta ja pelkoa.",
+   "music": false
+  },
+  {
+   "start": 1781,
+   "end": 1785,
+   "text": "Putoanko kelkasta? Selviänkö minä?",
+   "raw": "Putoanko kelkasta? Selviänkö minä?",
+   "music": false
+  },
+  {
+   "start": 1785,
+   "end": 1790,
+   "text": "Olenko jo vähän niinku menneen talven lumia?",
+   "raw": "Olenko jo vähän niinku menneen talven lumia?",
+   "music": false
+  },
+  {
+   "start": 1790,
+   "end": 1800,
+   "text": "Voisi ehkä todeta, että uudet kaupan kuvastot putoavat postiluukusta, vaikka vanhaa tavaraakin on kaapit pullollaan.",
+   "raw": "Voisi ehkä todeta, että uudet kaupan kuvastot putoavat postiluukusta, vaikka vanhaa tavaraakin on kaapit pullollaan.",
+   "music": false
+  },
+  {
+   "start": 1800,
+   "end": 1808,
+   "text": "tuntuu siltä, että uutta pitäisi haluta vaikka väkisin.",
+   "raw": "tuntuu siltä, että uutta pitäisi haluta vaikka väkisin.",
+   "music": false
+  },
+  {
+   "start": 1808,
+   "end": 1818,
+   "text": "Maailman muutoksen ja epävarmuuden keskellä me haluamme usein turvaa, haluaa tarttua johonkin muuttumattomaan.",
+   "raw": "Maailman muutoksen ja epävarmuuden keskellä me haluamme usein turvaa, haluaa tarttua johonkin muuttumattomaan.",
+   "music": false
+  },
+  {
+   "start": 1818,
+   "end": 1823,
+   "text": "Kenties siksi me olemme tänään täällä kirkossa.",
+   "raw": "Kenties siksi me olemme tänään täällä kirkossa.",
+   "music": false
+  },
+  {
+   "start": 1823,
+   "end": 1834,
+   "text": "Usko, hengelliset asiat, rukous, rituaalit, ehtoollinen. Koetaan usein lohtua ja turvaa tuovina.",
+   "raw": "Usko, hengelliset asiat, rukous, rituaalit, ehtoollinen. Koetaan usein lohtua ja turvaa tuovina.",
+   "music": false
+  },
+  {
+   "start": 1834,
+   "end": 1839,
+   "text": "Ja niinhän ne ovatkin.",
+   "raw": "Ja niinhän ne ovatkin.",
+   "music": false
+  },
+  {
+   "start": 1839,
+   "end": 1844,
+   "text": "Uskonnollisuus voi olla kantava voima ihmisen elämässä.",
+   "raw": "Uskonnollisuus voi olla kantava voima ihmisen elämässä.",
+   "music": false
+  },
+  {
+   "start": 1844,
+   "end": 1853,
+   "text": "Joskus kuitenkin mietin, että ajaudutaanko hengellisellä kentällä liian kapeisiin raameihin.",
+   "raw": "Joskus kuitenkin mietin, että ajaudutaanko hengellisellä kentällä liian kapeisiin raameihin.",
+   "music": false
+  },
+  {
+   "start": 1853,
+   "end": 1858,
+   "text": "Saanko minä olla ja ajatella vapaasti kristillisessä yhteisössä?",
+   "raw": "Saanko minä olla ja ajatella vapaasti kristillisessä yhteisössä?",
+   "music": false
+  },
+  {
+   "start": 1858,
+   "end": 1867,
+   "text": "Saanko uskoa omalla tavallani vai pitääkö minun sulloa itseni johonkin muottiin? Kelpaanko tällaisena?",
+   "raw": "Saanko uskoa omalla tavallani vai pitääkö minun sulloa itseni johonkin muottiin? Kelpaanko tällaisena?",
+   "music": false
+  },
+  {
+   "start": 1867,
+   "end": 1873,
+   "text": "Saanko seksuaalivähemmistöön kuuluvana olla kirkon täysivaltainen jäsen?",
+   "raw": "Saanko seksuaalivähemmistöön kuuluvana olla kirkon täysivaltainen jäsen?",
+   "music": false
+  },
+  {
+   "start": 1873,
+   "end": 1878,
+   "text": "Ja joskus mietin, saanko naisena olla pappi.",
+   "raw": "Ja joskus mietin, saanko naisena olla pappi.",
+   "music": false
+  },
+  {
+   "start": 1878,
+   "end": 1883,
+   "text": "Tällaisia kysymyksiä me kohtaamme hengellisissä yhteisöissä.",
+   "raw": "Tällaisia kysymyksiä me kohtaamme hengellisissä yhteisöissä.",
+   "music": false
+  },
+  {
+   "start": 1883,
+   "end": 1895,
+   "text": "Hengellistä kenttää haastetaan ehkä myös tarkastelemaan omaa toimintaansa ja joskus ehkä uudistumaan.",
+   "raw": "Hengellistä kenttää haastetaan ehkä myös tarkastelemaan omaa toimintaansa ja joskus ehkä uudistumaan.",
+   "music": false
+  },
+  {
+   "start": 1895,
+   "end": 1904,
+   "text": "Tämän päivän evankeliumitekstissä eletään vanhan ja uuden murroksen hankauspisteessä.",
+   "raw": "Tämän päivän evankeliumitekstissä eletään vanhan ja uuden murroksen hankauspisteessä.",
+   "music": false
+  },
+  {
+   "start": 1904,
+   "end": 1917,
+   "text": "Tämä teksti kuuluu evankeliumeissa kiistakeskusteluiden sarjaan. Ja useinhan Jeesus joutui kahsiin valtaeliitin kanssa.",
+   "raw": "Tämä teksti kuuluu evankeliumeissa kiistakeskusteluiden sarjaan. Ja useinhan Jeesus joutui kahsiin valtaeliitin kanssa.",
+   "music": false
+  },
+  {
+   "start": 1917,
+   "end": 1925,
+   "text": "Evankeliumissa kysytään Jeesukselta, miksi hänen opetuslapsensa eivät paastoa.",
+   "raw": "Evankeliumissa kysytään Jeesukselta, miksi hänen opetuslapsensa eivät paastoa.",
+   "music": false
+  },
+  {
+   "start": 1925,
+   "end": 1936,
+   "text": "Juutalaisten kulmakivenä olivat erilaiset ruokasäädökset ja juhlakalenterin, kuten sapatin, vietto ja paastosäädökset.",
+   "raw": "Juutalaisten kulmakivenä olivat erilaiset ruokasäädökset ja juhlakalenterin, kuten sapatin, vietto ja paastosäädökset.",
+   "music": false
+  },
+  {
+   "start": 1936,
+   "end": 1949,
+   "text": "Me emme oikeastaan tiedä kovin paljoon Jeesuksen paastosta. Ainakin silloin hän näytti paastoavan, kun oli Johannes Kastajan aika.",
+   "raw": "Me emme oikeastaan tiedä kovin paljoon Jeesuksen paastosta. Ainakin silloin hän näytti paastoavan, kun oli Johannes Kastajan aika.",
+   "music": false
+  },
+  {
+   "start": 1949,
+   "end": 1957,
+   "text": "Pikemminkin Jeesusta kuvataan syömäriksi ja juomariksi, syntisten ja tullimiesten ystäväksi.",
+   "raw": "Pikemminkin Jeesusta kuvataan syömäriksi ja juomariksi, syntisten ja tullimiesten ystäväksi.",
+   "music": false
+  },
+  {
+   "start": 1957,
+   "end": 1964,
+   "text": "Jeesus vastaa, että silloin kun sulhanen on paikalla, niin silloin ei paastota.",
+   "raw": "Jeesus vastaa, että silloin kun sulhanen on paikalla, niin silloin ei paastota.",
+   "music": false
+  },
+  {
+   "start": 1964,
+   "end": 1969,
+   "text": "Silloin kun on ilojuhla, niin ei ole mitään syytä paastoon.",
+   "raw": "Silloin kun on ilojuhla, niin ei ole mitään syytä paastoon.",
+   "music": false
+  },
+  {
+   "start": 1969,
+   "end": 1977,
+   "text": "myöhemmin kun hän on kuollut on paaston aika.",
+   "raw": "myöhemmin kun hän on kuollut on paaston aika.",
+   "music": false
+  },
+  {
+   "start": 1977,
+   "end": 1991,
+   "text": "Jeesus ei siis itse kovinkaan paljoa puhunut paastosta, mutta edelleenhän me kristityt paastoamme. Tämä käytäntö on meille jäänyt.",
+   "raw": "Jeesus ei siis itse kovinkaan paljoa puhunut paastosta, mutta edelleenhän me kristityt paastoamme. Tämä käytäntö on meille jäänyt.",
+   "music": false
+  },
+  {
+   "start": 1991,
+   "end": 1999,
+   "text": "Vanhan ja uuden täydellistä yhteensovittamattomuutta kuvastaa myös kangas ja leilivertaus.",
+   "raw": "Vanhan ja uuden täydellistä yhteensovittamattomuutta kuvastaa myös kangas ja leilivertaus.",
+   "music": false
+  },
+  {
+   "start": 1999,
+   "end": 2007,
+   "text": "Jos vanhaan vaatteeseen tulee reikä ja siihen laittaa paikan kankaasta, joka ei",
+   "raw": "Jos vanhaan vaatteeseen tulee reikä ja siihen laittaa paikan kankaasta, joka ei",
+   "music": false
+  },
+  {
+   "start": 2007,
+   "end": 2017,
+   "text": "ole vielä kutistunut, niin silloin usein tuo paikkaus on aivan turhaa, koska reikä repeää ja tulee entistä suuremmaksi.",
+   "raw": "ole vielä kutistunut, niin silloin usein tuo paikkaus on aivan turhaa, koska reikä repeää ja tulee entistä suuremmaksi.",
+   "music": false
+  },
+  {
+   "start": 2017,
+   "end": 2021,
+   "text": "Korjaustyö oli turha juttu.",
+   "raw": "Korjaustyö oli turha juttu.",
+   "music": false
+  },
+  {
+   "start": 2021,
+   "end": 2030,
+   "text": "Leili oli yleensä eläimen vuota, joka oli nyljetty halkaisematta leileessä. säilytettiin viinin lisäksi",
+   "raw": "Leili oli yleensä eläimen vuota, joka oli nyljetty halkaisematta leileessä. säilytettiin viinin lisäksi",
+   "music": false
+  },
+  {
+   "start": 2030,
+   "end": 2038,
+   "text": "usein vettä tai öljyä. Aika tietenkin kulutti leilejä ja kun uusi viini kävi, niin se rikkoi",
+   "raw": "usein vettä tai öljyä. Aika tietenkin kulutti leilejä ja kun uusi viini kävi, niin se rikkoi",
+   "music": false
+  },
+  {
+   "start": 2038,
+   "end": 2050,
+   "text": "vanhat ja rapistuneet leilit. Hukkaan menivät siis sekä viini että leili, jos laittoi uuden viinin vanhaan.",
+   "raw": "vanhat ja rapistuneet leilit. Hukkaan menivät siis sekä viini että leili, jos laittoi uuden viinin vanhaan.",
+   "music": false
+  },
+  {
+   "start": 2050,
+   "end": 2055,
+   "text": "Uusi ja vanha eivät siis sovi yhteen.",
+   "raw": "Uusi ja vanha eivät siis sovi yhteen.",
+   "music": false
+  },
+  {
+   "start": 2055,
+   "end": 2066,
+   "text": "Jeesus otti kantaa rituaalikäytäntöihin siihen, mitä saa syödä, mitä saa juoda, mitä saa koskettaa.",
+   "raw": "Jeesus otti kantaa rituaalikäytäntöihin siihen, mitä saa syödä, mitä saa juoda, mitä saa koskettaa.",
+   "music": false
+  },
+  {
+   "start": 2066,
+   "end": 2074,
+   "text": "Sen sijaan etiikkaa hän edelleen kyllä Mooseksen etiikkaa kehotti noudattamaan,",
+   "raw": "Sen sijaan etiikkaa hän edelleen kyllä Mooseksen etiikkaa kehotti noudattamaan,",
+   "music": false
+  },
+  {
+   "start": 2074,
+   "end": 2079,
+   "text": "mutta rituaalikäytännöihin hän otti kantaa.",
+   "raw": "mutta rituaalikäytännöihin hän otti kantaa.",
+   "music": false
+  },
+  {
+   "start": 2079,
+   "end": 2088,
+   "text": "Päivän epistolassa, jonka Pirjo luki, sanotaan ytimekkäästi, että syömissäännöt ja juhlapäivien noudattamiset ovat vain sen varjo, mikä",
+   "raw": "Päivän epistolassa, jonka Pirjo luki, sanotaan ytimekkäästi, että syömissäännöt ja juhlapäivien noudattamiset ovat vain sen varjo, mikä",
+   "music": false
+  },
+  {
+   "start": 2088,
+   "end": 2099,
+   "text": "on tulossa. Todellista on Kristuksen ruumis esi eli uusi tuleva yhteisö, kristillinen seurakunta.",
+   "raw": "on tulossa. Todellista on Kristuksen ruumis esi eli uusi tuleva yhteisö, kristillinen seurakunta.",
+   "music": false
+  },
+  {
+   "start": 2099,
+   "end": 2107,
+   "text": "Mikä siis kristillisessä seurakunnassa on pysyvää Jumalan antamaa tuntomerkkiä",
+   "raw": "Mikä siis kristillisessä seurakunnassa on pysyvää Jumalan antamaa tuntomerkkiä",
+   "music": false
+  },
+  {
+   "start": 2107,
+   "end": 2117,
+   "text": "ja mikä on ehkä ihmisten keksimää käytäntöä, joka voisi ehkä joskus muuttuakin?",
+   "raw": "ja mikä on ehkä ihmisten keksimää käytäntöä, joka voisi ehkä joskus muuttuakin?",
+   "music": false
+  },
+  {
+   "start": 2117,
+   "end": 2125,
+   "text": "Näiden kysymyksen äärellä kirkko tänäkin päivänä on ja jokainen yhteisö.",
+   "raw": "Näiden kysymyksen äärellä kirkko tänäkin päivänä on ja jokainen yhteisö.",
+   "music": false
+  },
+  {
+   "start": 2125,
+   "end": 2133,
+   "text": "Meidän seurakuntamme strategiassa on ajatus, että me olemme kynnyksetön yhteisö.",
+   "raw": "Meidän seurakuntamme strategiassa on ajatus, että me olemme kynnyksetön yhteisö.",
+   "music": false
+  },
+  {
+   "start": 2133,
+   "end": 2140,
+   "text": "Mitä se tarkoittaa, että olemme kynnyksetön yhteisö?",
+   "raw": "Mitä se tarkoittaa, että olemme kynnyksetön yhteisö?",
+   "music": false
+  },
+  {
+   "start": 2140,
+   "end": 2147,
+   "text": "Ajattelen, että kaikki se mikä palvelee elämää, minkä Jumala on meille",
+   "raw": "Ajattelen, että kaikki se mikä palvelee elämää, minkä Jumala on meille",
+   "music": false
+  },
+  {
+   "start": 2147,
+   "end": 2159,
+   "text": "lahjoittanut ja puolustaa ihmistä tukee sitä, että olemme kynnyksettömiä.",
+   "raw": "lahjoittanut ja puolustaa ihmistä tukee sitä, että olemme kynnyksettömiä.",
+   "music": false
+  },
+  {
+   "start": 2159,
+   "end": 2167,
+   "text": "Monet tavat palvelevat hartautta, syventymistä ja kääntävät katseemme kohti Kristusta.",
+   "raw": "Monet tavat palvelevat hartautta, syventymistä ja kääntävät katseemme kohti Kristusta.",
+   "music": false
+  },
+  {
+   "start": 2167,
+   "end": 2177,
+   "text": "Mutta jos on asioita, jotka sulkevat toiset ulospäin, niin silloin ehkä voimme tarkistaa suuntaa.",
+   "raw": "Mutta jos on asioita, jotka sulkevat toiset ulospäin, niin silloin ehkä voimme tarkistaa suuntaa.",
+   "music": false
+  },
+  {
+   "start": 2177,
+   "end": 2183,
+   "text": "Kaiken keskus on kuitenkin Kristus.",
+   "raw": "Kaiken keskus on kuitenkin Kristus.",
+   "music": false
+  },
+  {
+   "start": 2183,
+   "end": 2191,
+   "text": "Tänään Kari viittasi jo tuohon kristityn vapa vapauteen",
+   "raw": "Tänään Kari viittasi jo tuohon kristityn vapa vapauteen",
+   "music": false
+  },
+  {
+   "start": 2191,
+   "end": 2196,
+   "text": "ja oikeastaan se on ehkä luterilaisen kirkkomme kauneinta antia.",
+   "raw": "ja oikeastaan se on ehkä luterilaisen kirkkomme kauneinta antia.",
+   "music": false
+  },
+  {
+   "start": 2196,
+   "end": 2204,
+   "text": "taju siitä, että pelastuksen pelastus on täysin lahjaa.",
+   "raw": "taju siitä, että pelastuksen pelastus on täysin lahjaa.",
+   "music": false
+  },
+  {
+   "start": 2204,
+   "end": 2213,
+   "text": "Kirjassaan kristityn vapaudesta Luther tekee selväksi, että pelastus on lahja ja yksin usko voi tehdä hurskaaksi.",
+   "raw": "Kirjassaan kristityn vapaudesta Luther tekee selväksi, että pelastus on lahja ja yksin usko voi tehdä hurskaaksi.",
+   "music": false
+  },
+  {
+   "start": 2213,
+   "end": 2221,
+   "text": "Pelastus on ilmainen pyyteetön lahja ja tässä on meidän kristittyjen vapaus.",
+   "raw": "Pelastus on ilmainen pyyteetön lahja ja tässä on meidän kristittyjen vapaus.",
+   "music": false
+  },
+  {
+   "start": 2221,
+   "end": 2232,
+   "text": "Samalla Luther muistuttaa, että uskossa saatu vanhurskaus näkyy kiitollisuudesta nousevina rakkauden tekoina.",
+   "raw": "Samalla Luther muistuttaa, että uskossa saatu vanhurskaus näkyy kiitollisuudesta nousevina rakkauden tekoina.",
+   "music": false
+  },
+  {
+   "start": 2232,
+   "end": 2243,
+   "text": "Rakkauden rakkautemme toisiamme kohtaan kumpuaa siitä, että Kristus on ensin rakastanut meitä.",
+   "raw": "Rakkauden rakkautemme toisiamme kohtaan kumpuaa siitä, että Kristus on ensin rakastanut meitä.",
+   "music": false
+  },
+  {
+   "start": 2243,
+   "end": 2253,
+   "text": "Nousemme tunnustamaan yhteisen uskomme.",
+   "raw": "Nousemme tunnustamaan yhteisen uskomme.",
+   "music": false
+  },
+  {
+   "start": 2253,
+   "end": 2262,
+   "text": "Minä uskon Jumalaan, Isän kaikkivaltiaaseen, taivaan ja maan luojaan ja Jeesukseen",
+   "raw": "Minä uskon Jumalaan, Isän kaikkivaltiaaseen, taivaan ja maan luojaan ja Jeesukseen",
+   "music": false
+  },
+  {
+   "start": 2262,
+   "end": 2271,
+   "text": "Kristukseen, Jumalan ainoaan poikaan, meidän Herramme, joka sikisi pyhästä hengessä.",
+   "raw": "Kristukseen, Jumalan ainoaan poikaan, meidän Herramme, joka sikisi pyhästä hengessä.",
+   "music": false
+  },
+  {
+   "start": 2271,
+   "end": 2282,
+   "text": "Syntyi neitsytys Mariassa, kärsi Pontius Pilatuksen aikana. Ristiin naulittiin, kuoli ja haudattiin.",
+   "raw": "Syntyi neitsytys Mariassa, kärsi Pontius Pilatuksen aikana. Ristiin naulittiin, kuoli ja haudattiin.",
+   "music": false
+  },
+  {
+   "start": 2282,
+   "end": 2290,
+   "text": "astui alas tuonelaan, nous kolmantena päivänä kuolleista, astui ylös taivaisiin,",
+   "raw": "astui alas tuonelaan, nous kolmantena päivänä kuolleista, astui ylös taivaisiin,",
+   "music": false
+  },
+  {
+   "start": 2290,
+   "end": 2297,
+   "text": "istuu Jumalan isän kaikkivaltiaan oikealla puolella ja on sieltä tuleva",
+   "raw": "istuu Jumalan isän kaikkivaltiaan oikealla puolella ja on sieltä tuleva",
+   "music": false
+  },
+  {
+   "start": 2297,
+   "end": 2305,
+   "text": "tuomitsemaan eläviä ja kuolleita ja Pyhään Henkeen, Pyhän yhteisen",
+   "raw": "tuomitsemaan eläviä ja kuolleita ja Pyhään Henkeen, Pyhän yhteisen",
+   "music": false
+  },
+  {
+   "start": 2305,
+   "end": 2332,
+   "text": "seurakunnan, pyhäin yhteyden, syntien anteeksiantamisen ruumiin ylösnousemisen ja iankaikkisen elämän.",
+   "raw": "seurakunnan, pyhäin yhteyden, syntien anteeksiantamisen ruumiin ylösnousemisen ja iankaikkisen elämän.",
+   "music": false
+  },
+  {
+   "start": 2332,
+   "end": 2341,
+   "text": "Ennen kuin me käymme yhteiseen esirukoukseen, niin ilmoitamme kastetuista. Ja jos täällä nyt on viime viikonloppuna kastettujen vanhempia,",
+   "raw": "Ennen kuin me käymme yhteiseen esirukoukseen, niin ilmoitamme kastetuista. Ja jos täällä nyt on viime viikonloppuna kastettujen vanhempia,",
+   "music": false
+  },
+  {
+   "start": 2341,
+   "end": 2348,
+   "text": "niin tuolla on se lintu tai lehti. Siinä on tuo kastepuu, johon voi laittaa sen",
+   "raw": "niin tuolla on se lintu tai lehti. Siinä on tuo kastepuu, johon voi laittaa sen",
+   "music": false
+  },
+  {
+   "start": 2348,
+   "end": 2356,
+   "text": "oman lapsensa lehden. Mutta täällä pyhässä kasteessa seurakuntamme jäsenyyyteen on liitetty",
+   "raw": "oman lapsensa lehden. Mutta täällä pyhässä kasteessa seurakuntamme jäsenyyyteen on liitetty",
+   "music": false
+  },
+  {
+   "start": 2356,
+   "end": 2369,
+   "text": "seuraavat seuraavat lapset. Heitä ovat Leonardo Hugo, Sebastian Eghart,",
+   "raw": "seuraavat seuraavat lapset. Heitä ovat Leonardo Hugo, Sebastian Eghart,",
+   "music": false
+  },
+  {
+   "start": 2369,
+   "end": 2383,
+   "text": "Onni Maion Heikkinen, Dominik Sulo, Aleksi Kariniemi Siinä ne olivatkin.",
+   "raw": "Onni Maion Heikkinen, Dominik Sulo, Aleksi Kariniemi Siinä ne olivatkin.",
+   "music": false
+  },
+  {
+   "start": 2383,
+   "end": 2391,
+   "text": "Rukoilemme heidän puolestaan. Herra siunaa ja varile näitä lapsia, jotka on nyt kasteessa liitetty seurakuntasi jäsenyyyteen. Auta heidän kummejaan ja",
+   "raw": "Rukoilemme heidän puolestaan. Herra siunaa ja varile näitä lapsia, jotka on nyt kasteessa liitetty seurakuntasi jäsenyyyteen. Auta heidän kummejaan ja",
+   "music": false
+  },
+  {
+   "start": 2391,
+   "end": 2397,
+   "text": "vanhempia luomaan heille hyvä ja turvallinen koti.",
+   "raw": "vanhempia luomaan heille hyvä ja turvallinen koti.",
+   "music": false
+  },
+  {
+   "start": 2397,
+   "end": 2406,
+   "text": "Ajasta jäisyyteen on taivan isä kutsunut seuraavat seurakuntamme jäsenet ja heille. Me sytytämme kynttilän tuonne alttarille.",
+   "raw": "Ajasta jäisyyteen on taivan isä kutsunut seuraavat seurakuntamme jäsenet ja heille. Me sytytämme kynttilän tuonne alttarille.",
+   "music": false
+  },
+  {
+   "start": 2406,
+   "end": 2414,
+   "text": "Heitä ovat Raili, Maria Töyräs 90 vuoden iässä.",
+   "raw": "Heitä ovat Raili, Maria Töyräs 90 vuoden iässä.",
+   "music": false
+  },
+  {
+   "start": 2414,
+   "end": 2421,
+   "text": "Ritva Anneli Mankinen 89 vuoden iässä",
+   "raw": "Ritva Anneli Mankinen 89 vuoden iässä",
+   "music": false
+  },
+  {
+   "start": 2421,
+   "end": 2427,
+   "text": "Pirjo Anneli Jalonen 82 vuoden iässä",
+   "raw": "Pirjo Anneli Jalonen 82 vuoden iässä",
+   "music": false
+  },
+  {
+   "start": 2427,
+   "end": 2435,
+   "text": "Eero Kalevi Helsteen 77 vuoden iässä sekä Jaana Kristiina",
+   "raw": "Eero Kalevi Helsteen 77 vuoden iässä sekä Jaana Kristiina",
+   "music": false
+  },
+  {
+   "start": 2435,
+   "end": 2449,
+   "text": "Lehtonen 70 vuoden iässä.",
+   "raw": "Lehtonen 70 vuoden iässä.",
+   "music": false
+  },
+  {
+   "start": 2449,
+   "end": 2451,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2451,
+   "end": 2454,
+   "text": "onesin",
+   "raw": "onesin",
+   "music": false
+  },
+  {
+   "start": 2454,
+   "end": 2454,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2454,
+   "end": 2465,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 2465,
+   "end": 2466,
+   "text": "leon",
+   "raw": "leon [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2466,
+   "end": 2470,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 2470,
+   "end": 2478,
+   "text": "Jeesuksen hellonista",
+   "raw": "Jeesuksen hellonista",
+   "music": false
+  },
+  {
+   "start": 2478,
+   "end": 2483,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2483,
+   "end": 2483,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2483,
+   "end": 2489,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 2489,
+   "end": 2505,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2505,
+   "end": 2506,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2506,
+   "end": 2514,
+   "text": "ja puhta laonnit",
+   "raw": "ja puhta laonnit [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2514,
+   "end": 2523,
+   "text": "Auki tai virt",
+   "raw": "Auki tai virt",
+   "music": false
+  },
+  {
+   "start": 2523,
+   "end": 2525,
+   "text": "enkelt",
+   "raw": "enkelt",
+   "music": false
+  },
+  {
+   "start": 2525,
+   "end": 2526,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 2526,
+   "end": 2531,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2531,
+   "end": 2534,
+   "text": "kyllä toimii",
+   "raw": "kyllä [laulu] toimii",
+   "music": true
+  },
+  {
+   "start": 2534,
+   "end": 2535,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2535,
+   "end": 2541,
+   "text": "ruun kesaltaan",
+   "raw": "ruun kesaltaan",
+   "music": false
+  },
+  {
+   "start": 2541,
+   "end": 2548,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2548,
+   "end": 2557,
+   "text": "kunen",
+   "raw": "kunen",
+   "music": false
+  },
+  {
+   "start": 2557,
+   "end": 2560,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2560,
+   "end": 2567,
+   "text": "käy on",
+   "raw": "käy on",
+   "music": false
+  },
+  {
+   "start": 2567,
+   "end": 2569,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2569,
+   "end": 2575,
+   "text": "Jeen.",
+   "raw": "Jeen.",
+   "music": false
+  },
+  {
+   "start": 2575,
+   "end": 2583,
+   "text": "Jumala, Isämme, me kiitämme sinua armostasi ja rakkaudestasi, jota olet osoittanut heille.",
+   "raw": "Jumala, Isämme, me kiitämme sinua armostasi ja rakkaudestasi, jota olet osoittanut heille.",
+   "music": false
+  },
+  {
+   "start": 2583,
+   "end": 2587,
+   "text": "Uskomme heidät nyt sinun haltuusi.",
+   "raw": "Uskomme heidät nyt sinun haltuusi.",
+   "music": false
+  },
+  {
+   "start": 2587,
+   "end": 2593,
+   "text": "Ole surevien omaisten tukena ja lohtuna.",
+   "raw": "Ole surevien omaisten tukena ja lohtuna.",
+   "music": false
+  },
+  {
+   "start": 2593,
+   "end": 2602,
+   "text": "Me jatkamme yhdessä tuota esirukousta sillä tavalla, että se on rytmitetty hiljaisuuden laulujen",
+   "raw": "Me jatkamme yhdessä tuota esirukousta sillä tavalla, että se on rytmitetty hiljaisuuden laulujen",
+   "music": false
+  },
+  {
+   "start": 2602,
+   "end": 2613,
+   "text": "esirukouslaululla muistan niitä ja jotka hiljaa ja niin edelleen. Jos tunnet tämän laulun sanat, voit laula toki mukana, mutta voit myös hiljentyä kuuntelemaan.",
+   "raw": "esirukouslaululla muistan niitä ja jotka hiljaa ja niin edelleen. Jos tunnet tämän laulun sanat, voit laula toki mukana, mutta voit myös hiljentyä kuuntelemaan.",
+   "music": false
+  },
+  {
+   "start": 2613,
+   "end": 2622,
+   "text": "Näitten säkeistöjen jälkeen sanon muutamia asioita ja sen jälkeen annan sinulle mahdollisuuden rukoilla mielessäsi omin ajatuksin näiden",
+   "raw": "Näitten säkeistöjen jälkeen sanon muutamia asioita ja sen jälkeen annan sinulle mahdollisuuden rukoilla mielessäsi omin ajatuksin näiden",
+   "music": false
+  },
+  {
+   "start": 2622,
+   "end": 2634,
+   "text": "ihmisten puolesta, jotka tässä tämän teeman alla mielessäsi ovat. Ja nyt me kuulemme tuon ensimmäisen säkeistön. Muista niitä.",
+   "raw": "ihmisten puolesta, jotka tässä tämän teeman alla mielessäsi ovat. Ja nyt me kuulemme tuon ensimmäisen säkeistön. Muista niitä.",
+   "music": false
+  },
+  {
+   "start": 2634,
+   "end": 2636,
+   "text": "Muistan niitä,",
+   "raw": "Muistan niitä, [laulu]",
+   "music": true
+  },
+  {
+   "start": 2636,
+   "end": 2637,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2637,
+   "end": 2641,
+   "text": "jotka hiljaa.",
+   "raw": "jotka hiljaa.",
+   "music": false
+  },
+  {
+   "start": 2641,
+   "end": 2648,
+   "text": "Muistan niitä, jotka hiljaa,",
+   "raw": "Muistan niitä, [laulu] jotka hiljaa,",
+   "music": true
+  },
+  {
+   "start": 2648,
+   "end": 2656,
+   "text": "jotka hiljaa kärsivät.",
+   "raw": "jotka hiljaa [laulu] kärsivät.",
+   "music": true
+  },
+  {
+   "start": 2656,
+   "end": 2664,
+   "text": "Hiljaa kärsivät.",
+   "raw": "[laulu] Hiljaa kärsivät.",
+   "music": true
+  },
+  {
+   "start": 2664,
+   "end": 2669,
+   "text": "Herra, tuomme etesi tämän kärsivän maailmamme.",
+   "raw": "Herra, tuomme etesi tämän kärsivän maailmamme.",
+   "music": false
+  },
+  {
+   "start": 2669,
+   "end": 2677,
+   "text": "Näet kaikki ne rukoukset, kuivatut kyyneleet ja huulille kuittuneet rukoukset",
+   "raw": "Näet kaikki ne rukoukset, kuivatut kyyneleet ja huulille kuittuneet rukoukset",
+   "music": false
+  },
+  {
+   "start": 2677,
+   "end": 2683,
+   "text": "niistä avuinhuudista, jotka maailmamme kantaa sisällään.",
+   "raw": "niistä avuinhuudista, jotka maailmamme kantaa sisällään.",
+   "music": false
+  },
+  {
+   "start": 2683,
+   "end": 2705,
+   "text": "Nyt saat hiljaa itse rukoilla kärsivien puolesta.",
+   "raw": "Nyt saat hiljaa itse rukoilla kärsivien puolesta.",
+   "music": false
+  },
+  {
+   "start": 2705,
+   "end": 2709,
+   "text": "Herra armahda meitä ja kuule rukouksemme.",
+   "raw": "Herra armahda meitä ja kuule rukouksemme.",
+   "music": false
+  },
+  {
+   "start": 2709,
+   "end": 2720,
+   "text": "Muista niitä, jotka hiljaa muistan niitä.",
+   "raw": "Muista [laulu] niitä, jotka hiljaa muistan [laulu] niitä.",
+   "music": true
+  },
+  {
+   "start": 2720,
+   "end": 2731,
+   "text": "Jotkaa hiljaa, jotka hiljaa tai",
+   "raw": "Jotkaa hiljaa, [musiikkia] jotka hiljaa [laulu] tai",
+   "music": true
+  },
+  {
+   "start": 2731,
+   "end": 2739,
+   "text": "hiljaa kaipaa vaan.",
+   "raw": "hiljaa [laulu] kaipaa vaan.",
+   "music": true
+  },
+  {
+   "start": 2739,
+   "end": 2742,
+   "text": "Herra, sinä näet maailmassamme.",
+   "raw": "Herra, sinä näet maailmassamme.",
+   "music": false
+  },
+  {
+   "start": 2742,
+   "end": 2749,
+   "text": "Kaikki ne miljoonat ja miljoonat kaipaavat sydämeet, Herra. Monet kaipaavat,",
+   "raw": "Kaikki ne miljoonat ja miljoonat kaipaavat sydämeet, Herra. Monet kaipaavat,",
+   "music": false
+  },
+  {
+   "start": 2749,
+   "end": 2757,
+   "text": "että joku huomaisi heidät, että joku pysähtyisi hänen vierelleen,",
+   "raw": "että joku huomaisi heidät, että joku pysähtyisi hänen vierelleen,",
+   "music": false
+  },
+  {
+   "start": 2757,
+   "end": 2784,
+   "text": "että joku tulisi tarjoisi hänelle ruokaa ja vaatteita, että joku armahtaisi ja näkisi hänessä ihmisen.",
+   "raw": "että joku tulisi tarjoisi hänelle ruokaa ja vaatteita, että joku armahtaisi ja näkisi hänessä ihmisen.",
+   "music": false
+  },
+  {
+   "start": 2784,
+   "end": 2789,
+   "text": "Herra armahda ja kuule meidän rukouksemme.",
+   "raw": "Herra armahda ja kuule meidän rukouksemme.",
+   "music": false
+  },
+  {
+   "start": 2789,
+   "end": 2796,
+   "text": "Muista niitä, jotka hiljaa.",
+   "raw": "Muista niitä, jotka hiljaa. [laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 2796,
+   "end": 2803,
+   "text": "Muistan niitä, jotka hiljaa,",
+   "raw": "Muistan niitä, jotka hiljaa, [laulu]",
+   "music": true
+  },
+  {
+   "start": 2803,
+   "end": 2813,
+   "text": "jotka hiljaa toivoo, hiljaa",
+   "raw": "jotka hiljaa toivoo, hiljaa [laulu]",
+   "music": true
+  },
+  {
+   "start": 2813,
+   "end": 2823,
+   "text": "toivoa Herra toivottomuuden hetkillä sen",
+   "raw": "toivoa [musiikkia] Herra toivottomuuden hetkillä sen",
+   "music": true
+  },
+  {
+   "start": 2823,
+   "end": 2828,
+   "text": "näyttäytyessämme käännymme sinun puoleesi.",
+   "raw": "näyttäytyessämme käännymme sinun puoleesi.",
+   "music": false
+  },
+  {
+   "start": 2828,
+   "end": 2834,
+   "text": "Emme aina itsekään ymmärrä elämäämme ja kaikkea sitä se mihin se meitä kuljettaa.",
+   "raw": "Emme aina itsekään ymmärrä elämäämme ja kaikkea sitä se mihin se meitä kuljettaa.",
+   "music": false
+  },
+  {
+   "start": 2834,
+   "end": 2840,
+   "text": "Vahvista meitä. Anna meille rohkeutta ja luottamusta sinuun.",
+   "raw": "Vahvista meitä. Anna meille rohkeutta ja luottamusta sinuun.",
+   "music": false
+  },
+  {
+   "start": 2840,
+   "end": 2850,
+   "text": "Sinä tunnet koko elämämme ja lupauksesi mukaan kuljet meidän kanssamme joka päivä.",
+   "raw": "Sinä tunnet koko elämämme ja lupauksesi mukaan kuljet meidän kanssamme joka päivä.",
+   "music": false
+  },
+  {
+   "start": 2850,
+   "end": 2857,
+   "text": "Herra, vielä me rukoilemme lopuksi tulevien seurakuntavaalien puolesta, piispan tarkastuksen puolesta",
+   "raw": "Herra, vielä me rukoilemme lopuksi tulevien seurakuntavaalien puolesta, piispan tarkastuksen puolesta",
+   "music": false
+  },
+  {
+   "start": 2857,
+   "end": 2869,
+   "text": "ja kirkkoherran vaalien vaalin puolesta johdata seurakuntaamme tahtoisin mukaisia luottamushenkilöitä ja työntekijöitä.",
+   "raw": "ja kirkkoherran vaalien vaalin puolesta johdata seurakuntaamme tahtoisin mukaisia luottamushenkilöitä ja työntekijöitä.",
+   "music": false
+  },
+  {
+   "start": 2869,
+   "end": 2879,
+   "text": "Siunaa myös nimikkolähettjämme ja seurakuntamme tekemään lähetystyötä ja tukemaa työtä eri puolilla maailmaa.",
+   "raw": "Siunaa myös nimikkolähettjämme ja seurakuntamme tekemään lähetystyötä ja tukemaa työtä eri puolilla maailmaa.",
+   "music": false
+  },
+  {
+   "start": 2879,
+   "end": 2894,
+   "text": "Kuule vielä ihan oma hiljainen rukoukseni.",
+   "raw": "Kuule vielä ihan oma hiljainen rukoukseni.",
+   "music": false
+  },
+  {
+   "start": 2894,
+   "end": 2903,
+   "text": "Kiitos, että yhä tänään tänäänkin olet rukouksia kuuleva Jumala. Aamen.",
+   "raw": "Kiitos, että yhä tänään tänäänkin olet rukouksia kuuleva Jumala. Aamen.",
+   "music": false
+  },
+  {
+   "start": 2903,
+   "end": 2911,
+   "text": "Aamen. No niin, muutama tiedotus. Ensi sunnuntaina 4.0",
+   "raw": "Aamen. No niin, muutama tiedotus. Ensi sunnuntaina 4.0",
+   "music": false
+  },
+  {
+   "start": 2911,
+   "end": 2921,
+   "text": "on kaikille avoin perhepäivä kello 10-14 täällä kirkkopuistossa ja sen ympäristössä.",
+   "raw": "on kaikille avoin perhepäivä kello 10-14 täällä kirkkopuistossa ja sen ympäristössä.",
+   "music": false
+  },
+  {
+   "start": 2921,
+   "end": 2934,
+   "text": "Täällä on tuota niin lounasta, sit on erilaista toimintaa, toimintapisteitä, kasvumaalausta ja täällä on jopa paloauto pitää tulla.",
+   "raw": "Täällä on tuota niin lounasta, sit on erilaista toimintaa, toimintapisteitä, kasvumaalausta ja täällä on jopa paloauto pitää tulla.",
+   "music": false
+  },
+  {
+   "start": 2934,
+   "end": 2938,
+   "text": "Jos ei mitään muuta, niin sen takia jo yksistään.",
+   "raw": "Jos ei mitään muuta, niin sen takia jo yksistään.",
+   "music": false
+  },
+  {
+   "start": 2938,
+   "end": 2945,
+   "text": "Siellä on komeita palomiehiä sanoisi vaimoni.",
+   "raw": "Siellä on komeita palomiehiä sanoisi vaimoni.",
+   "music": false
+  },
+  {
+   "start": 2945,
+   "end": 2958,
+   "text": "Meillä ei ole kyllä sitä palomiesten kalenteria. No niin ja perhemessu on siis klo 13 eikä klo 10. Klo 13 on täällä sitten kaikille avoin perhemessu.",
+   "raw": "Meillä ei ole kyllä sitä palomiesten kalenteria. No niin ja perhemessu on siis klo 13 eikä klo 10. Klo 13 on täällä sitten kaikille avoin perhemessu.",
+   "music": false
+  },
+  {
+   "start": 2958,
+   "end": 2960,
+   "text": "Miesten aamukahvit seuraavat ovat 10.",
+   "raw": "Miesten aamukahvit seuraavat ovat 10.",
+   "music": false
+  },
+  {
+   "start": 2960,
+   "end": 2969,
+   "text": "päivä tiistaina 6. päiv10 ja siellä on Pentti Saavalainen. Hänen aiheenaan kolme polkua.",
+   "raw": "päivä tiistaina 6. päiv10 ja siellä on Pentti Saavalainen. Hänen aiheenaan kolme polkua.",
+   "music": false
+  },
+  {
+   "start": 2969,
+   "end": 2975,
+   "text": "Sitten meillä on myös tuo hengellisen matkakumppanuiden ryhmä sen jälkeen.",
+   "raw": "Sitten meillä on myös tuo hengellisen matkakumppanuiden ryhmä sen jälkeen.",
+   "music": false
+  },
+  {
+   "start": 2975,
+   "end": 2981,
+   "text": "Mutta sitten meillä on kerran vuodessa tämmöönen suurempi miestpahtuma.",
+   "raw": "Mutta sitten meillä on kerran vuodessa tämmöönen suurempi miestpahtuma.",
+   "music": false
+  },
+  {
+   "start": 2981,
+   "end": 2990,
+   "text": "Mitäs vartin päivin meille on naistapahtumaa, niin tulee aina välillä kritiikkiä, että miksi vain miehille ja kuulemma miesten",
+   "raw": "Mitäs vartin päivin meille on naistapahtumaa, niin tulee aina välillä kritiikkiä, että miksi vain miehille ja kuulemma miesten",
+   "music": false
+  },
+  {
+   "start": 2990,
+   "end": 3002,
+   "text": "iltapala on halvempi kuin naisten päiväkahvittymään 7€o No niin, mutta miestpahtuma on sunnuntaina 11. päivä 10. Täällä on klämessu.",
+   "raw": "iltapala on halvempi kuin naisten päiväkahvittymään 7€o No niin, mutta miestpahtuma on sunnuntaina 11. päivä 10. Täällä on klämessu.",
+   "music": false
+  },
+  {
+   "start": 3002,
+   "end": 3005,
+   "text": "Meitä saattelee tänne sisään Tuuba.",
+   "raw": "Meitä saattelee tänne sisään Tuuba.",
+   "music": false
+  },
+  {
+   "start": 3005,
+   "end": 3010,
+   "text": "Eilen harjoittelin, mä otin pienen klipin tässä näin. Tuuban soittaja.",
+   "raw": "Eilen harjoittelin, mä otin pienen klipin tässä näin. Tuuban soittaja.",
+   "music": false
+  },
+  {
+   "start": 3010,
+   "end": 3017,
+   "text": "Pyysin häntä tähän solistiksi. Hän sanoi, että ei, mutta sitten lupautui, kun häntä ahdisti.",
+   "raw": "Pyysin häntä tähän solistiksi. Hän sanoi, että ei, mutta sitten lupautui, kun häntä ahdisti.",
+   "music": false
+  },
+  {
+   "start": 3017,
+   "end": 3022,
+   "text": "Kello 10 t on siis toi äijämessu ja tuota saarnaa silloin Jussi Rytkönen.",
+   "raw": "Kello 10 t on siis toi äijämessu ja tuota saarnaa silloin Jussi Rytkönen.",
+   "music": false
+  },
+  {
+   "start": 3022,
+   "end": 3034,
+   "text": "Hän on rovasti. Hän on väitöstutkija, kotimaalinen toimittaja ja perheen isä ja niin edelleen. 12 on luontoja, luentoja, lohisoppaa.",
+   "raw": "Hän on rovasti. Hän on väitöstutkija, kotimaalinen toimittaja ja perheen isä ja niin edelleen. 12 on luontoja, luentoja, lohisoppaa.",
+   "music": false
+  },
+  {
+   "start": 3034,
+   "end": 3047,
+   "text": "Tää on kaikille avoin tilaisuus, vaikka tää nyt on erityisesti kulkee tällä nimellä äijä messu sitten.",
+   "raw": "Tää on kaikille avoin tilaisuus, vaikka tää nyt on erityisesti kulkee tällä nimellä äijä messu sitten.",
+   "music": false
+  },
+  {
+   "start": 3047,
+   "end": 3055,
+   "text": "Joo. Kolehti. Kolehti menee tänään ilmastokriisin vaikutusten lievittämiseen. Ilmastokriisin",
+   "raw": "Joo. Kolehti. Kolehti menee tänään ilmastokriisin vaikutusten lievittämiseen. Ilmastokriisin",
+   "music": false
+  },
+  {
+   "start": 3055,
+   "end": 3075,
+   "text": "vaikutusten lievittämiseen. Se menee kirkon ulkomaan avun kautta. Taivaan isä siitkoon tämä lava",
+   "raw": "vaikutusten lievittämiseen. Se menee kirkon ulkomaan avun kautta. Taivaan isä siitkoon tämä lava",
+   "music": false
+  },
+  {
+   "start": 3075,
+   "end": 3081,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3081,
+   "end": 3082,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3082,
+   "end": 3091,
+   "text": "löytä aina odottaa. Hän",
+   "raw": "löytä aina odottaa. [musiikkia] Hän",
+   "music": true
+  },
+  {
+   "start": 3091,
+   "end": 3099,
+   "text": "ja leivä meilläkin tarjoa.",
+   "raw": "ja [musiikkia] leivä meilläkin tarjoa. [laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3099,
+   "end": 3108,
+   "text": "Hän kutsuu syömän kaikki ei torju",
+   "raw": "Hän kutsuu syömän [musiikkia] kaikki ei torju [laulu]",
+   "music": true
+  },
+  {
+   "start": 3108,
+   "end": 3116,
+   "text": "hän aja purta tuomalon.",
+   "raw": "hän aja [musiikkia] purta tuomalon.",
+   "music": true
+  },
+  {
+   "start": 3116,
+   "end": 3120,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3120,
+   "end": 3129,
+   "text": "maan äärissä hän kutsu rikkaita pyhiä.",
+   "raw": "maan äärissä [musiikkia][laulu] hän kutsu rikkaita [laulu] pyhiä.",
+   "music": true
+  },
+  {
+   "start": 3129,
+   "end": 3130,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3130,
+   "end": 3137,
+   "text": "Hän luoki kaikki kansat samassa",
+   "raw": "Hän luoki kaikki kansat [musiikkia] [laulu] samassa",
+   "music": true
+  },
+  {
+   "start": 3137,
+   "end": 3146,
+   "text": "pöydässään ja välkäisimmän kutsu",
+   "raw": "pöydässään ja välkäisimmän [musiikkia] kutsu",
+   "music": true
+  },
+  {
+   "start": 3146,
+   "end": 3153,
+   "text": "hän aivan vierelle. Kyllä",
+   "raw": "hän [laulu] aivan vierelle. [musiikkia] Kyllä [laulu]",
+   "music": true
+  },
+  {
+   "start": 3153,
+   "end": 3162,
+   "text": "armot hylkä jää ulos yksikseen.",
+   "raw": "armot hylkä jää ulos [musiikkia][laulu] yksikseen.",
+   "music": true
+  },
+  {
+   "start": 3162,
+   "end": 3174,
+   "text": "Jos käymme saavat näytä ei mikään era.",
+   "raw": "Jos käymme [musiikkia] [laulu] saavat näytä ei mikään [musiikkia][laulu] era.",
+   "music": true
+  },
+  {
+   "start": 3174,
+   "end": 3177,
+   "text": "Toinen toisellemme",
+   "raw": "Toinen toisellemme [laulu]",
+   "music": true
+  },
+  {
+   "start": 3177,
+   "end": 3179,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3179,
+   "end": 3189,
+   "text": "kuulut Herrassa niin Herran yksi",
+   "raw": "kuulut [laulu] Herrassa niin [musiikkia] Herran yksi [laulu]",
+   "music": true
+  },
+  {
+   "start": 3189,
+   "end": 3193,
+   "text": "saa sanan ravinot",
+   "raw": "[musiikkia] saa sanan ravinot",
+   "music": true
+  },
+  {
+   "start": 3193,
+   "end": 3195,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3195,
+   "end": 3200,
+   "text": "kaikissa jäsenissä",
+   "raw": "kaikissa [musiikkia] jäsenissä",
+   "music": true
+  },
+  {
+   "start": 3200,
+   "end": 3202,
+   "text": "hän itsellä",
+   "raw": "[laulu] hän itsellä [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3202,
+   "end": 3210,
+   "text": "tässä on ja Jeesus meitä",
+   "raw": "tässä on ja [laulu] Jeesus meitä [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3210,
+   "end": 3216,
+   "text": "on edessä matkalleen",
+   "raw": "on edessä matkalleen [laulu]",
+   "music": true
+  },
+  {
+   "start": 3216,
+   "end": 3217,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3217,
+   "end": 3223,
+   "text": "hän rauhan meidä raivtamme",
+   "raw": "hän rauhan meidä [laulu] raivtamme",
+   "music": true
+  },
+  {
+   "start": 3223,
+   "end": 3225,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3225,
+   "end": 3233,
+   "text": "kaikille on kortti aika Aika lauki",
+   "raw": "kaikille on kortti [musiikkia] aika [laulu] Aika lauki",
+   "music": true
+  },
+  {
+   "start": 3233,
+   "end": 3237,
+   "text": "myös tulevaisuuteen.",
+   "raw": "myös tulevaisuuteen. [laulu]",
+   "music": true
+  },
+  {
+   "start": 3237,
+   "end": 3239,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3239,
+   "end": 3265,
+   "text": "Huomenna Herra siuna taas meidän tunteelle.",
+   "raw": "Huomenna Herra siuna [musiikkia] taas meidän tunteelle.",
+   "music": true
+  },
+  {
+   "start": 3265,
+   "end": 3271,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3271,
+   "end": 3279,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3279,
+   "end": 3284,
+   "text": "Herra olkoon teidän kanssanne.",
+   "raw": "Herra olkoon teidän kanssanne.",
+   "music": false
+  },
+  {
+   "start": 3284,
+   "end": 3291,
+   "text": "Niin myös sinun henkesi katsoa.",
+   "raw": "Niin [musiikkia] myös sinun [laulu] henkesi katsoa.",
+   "music": true
+  },
+  {
+   "start": 3291,
+   "end": 3295,
+   "text": "Ylentäkää sydämenne.",
+   "raw": "Ylentäkää sydämenne.",
+   "music": false
+  },
+  {
+   "start": 3295,
+   "end": 3301,
+   "text": "Ylentäämme Herran huolen.",
+   "raw": "Ylentäämme [musiikkia][laulu] Herran huolen.",
+   "music": true
+  },
+  {
+   "start": 3301,
+   "end": 3315,
+   "text": "Kiittäkäämme Herra Jumalamme oikein ja armollis.",
+   "raw": "Kiittäkäämme Herra Jumalamme oikein [laulu][musiikkia] ja armollis.",
+   "music": true
+  },
+  {
+   "start": 3315,
+   "end": 3324,
+   "text": "Totisesti on oikein ja arvollista, että me kiitämme sinua aina ja kaikkialla, pyhä Herra, kaikkivaltias",
+   "raw": "Totisesti on oikein ja arvollista, että me kiitämme sinua aina ja kaikkialla, pyhä Herra, kaikkivaltias",
+   "music": false
+  },
+  {
+   "start": 3324,
+   "end": 3331,
+   "text": "Isä, iankaikkinen Jumala, Jeesuksen Kristuksen, meidän Herramme kautta.",
+   "raw": "Isä, iankaikkinen Jumala, Jeesuksen Kristuksen, meidän Herramme kautta.",
+   "music": false
+  },
+  {
+   "start": 3331,
+   "end": 3338,
+   "text": "Hänet sinä olet antanut kuolemaan ja herättänyt kuolleista, että me pelastuisimme synnin ja kuoleman",
+   "raw": "Hänet sinä olet antanut kuolemaan ja herättänyt kuolleista, että me pelastuisimme synnin ja kuoleman",
+   "music": false
+  },
+  {
+   "start": 3338,
+   "end": 3343,
+   "text": "vallasta ja saisimme iankaikkisen elämän.",
+   "raw": "vallasta ja saisimme iankaikkisen elämän.",
+   "music": false
+  },
+  {
+   "start": 3343,
+   "end": 3354,
+   "text": "Me kiitämme sinua tästä taivaan lahjasta ja laulamme sinulle ylistystä enkelien ja kaikkien pyhien kanssa.",
+   "raw": "Me kiitämme sinua tästä taivaan lahjasta ja laulamme sinulle ylistystä enkelien ja kaikkien pyhien kanssa.",
+   "music": false
+  },
+  {
+   "start": 3354,
+   "end": 3358,
+   "text": "Pyhä pyhä",
+   "raw": "Pyhä [musiikkia] pyhä",
+   "music": true
+  },
+  {
+   "start": 3358,
+   "end": 3359,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3359,
+   "end": 3366,
+   "text": "pyhä Herra se on",
+   "raw": "pyhä Herra se [musiikkia] on",
+   "music": true
+  },
+  {
+   "start": 3366,
+   "end": 3375,
+   "text": "taivas ja maa on täynnä sinun kirkkauttasian",
+   "raw": "taivas [laulu] ja maa [musiikkia] on täynnä [laulu] sinun kirkkauttasian",
+   "music": true
+  },
+  {
+   "start": 3375,
+   "end": 3377,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3377,
+   "end": 3383,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3383,
+   "end": 3386,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3386,
+   "end": 3389,
+   "text": "siunattu",
+   "raw": "siunattu",
+   "music": false
+  },
+  {
+   "start": 3389,
+   "end": 3391,
+   "text": "olkoon hän",
+   "raw": "[musiikkia] olkoon hän [laulu]",
+   "music": true
+  },
+  {
+   "start": 3391,
+   "end": 3402,
+   "text": "joka tulee Herranessä osiuksissa",
+   "raw": "joka tulee Herranessä [musiikkia] [musiikkia] osiuksissa",
+   "music": true
+  },
+  {
+   "start": 3402,
+   "end": 3417,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3417,
+   "end": 3424,
+   "text": "Taivaallinen Isä, kaiken luoja, me muistamme kiitollisina, mitä olet tehnyt puolestamme.",
+   "raw": "Taivaallinen Isä, kaiken luoja, me muistamme kiitollisina, mitä olet tehnyt puolestamme.",
+   "music": false
+  },
+  {
+   "start": 3424,
+   "end": 3434,
+   "text": "Sinä lähetit poikasi pelastamaan maailman. Hän tuli ihmiseksi, oli yksi meistä, mutta ilman syntiä.",
+   "raw": "Sinä lähetit poikasi pelastamaan maailman. Hän tuli ihmiseksi, oli yksi meistä, mutta ilman syntiä.",
+   "music": false
+  },
+  {
+   "start": 3434,
+   "end": 3443,
+   "text": "Hän täytti tahtosi kaikessa ja suostui kärsimykseen ja kuolemaan lunastaakseen meidät vapaiksi.",
+   "raw": "Hän täytti tahtosi kaikessa ja suostui kärsimykseen ja kuolemaan lunastaakseen meidät vapaiksi.",
+   "music": false
+  },
+  {
+   "start": 3443,
+   "end": 3456,
+   "text": "Herramme Jeesus Kristus sinä yönä, jona hänet kavallettiin, otti leivän, siunasi,",
+   "raw": "Herramme Jeesus Kristus sinä yönä, jona hänet kavallettiin, otti leivän, siunasi,",
+   "music": false
+  },
+  {
+   "start": 3456,
+   "end": 3464,
+   "text": "mursi ja antoi sen opetuslapsilleen sanoen: \"Ottakaa ja syökää. Tämä on minun ruumiini, joka annetaan teidän",
+   "raw": "mursi ja antoi sen opetuslapsilleen sanoen: \"Ottakaa ja syökää. Tämä on minun ruumiini, joka annetaan teidän",
+   "music": false
+  },
+  {
+   "start": 3464,
+   "end": 3474,
+   "text": "puolestanne. Tehkää se minun muistokseni.",
+   "raw": "puolestanne. Tehkää se minun muistokseni.",
+   "music": false
+  },
+  {
+   "start": 3474,
+   "end": 3484,
+   "text": "Samoin hän otti maljan, kiitti ja sanoi:",
+   "raw": "Samoin hän otti maljan, kiitti ja sanoi:",
+   "music": false
+  },
+  {
+   "start": 3484,
+   "end": 3491,
+   "text": "\"Ottakaa ja juokaa tästä te kaikki. Tämä malja on uusi liitto minun veressäni.",
+   "raw": "\"Ottakaa ja juokaa tästä te kaikki. Tämä malja on uusi liitto minun veressäni.",
+   "music": false
+  },
+  {
+   "start": 3491,
+   "end": 3497,
+   "text": "joka vuodatetaan teidän puolestanne syntien anteeksiantamiseksi.",
+   "raw": "joka vuodatetaan teidän puolestanne syntien anteeksiantamiseksi.",
+   "music": false
+  },
+  {
+   "start": 3497,
+   "end": 3512,
+   "text": "Niin usein kun te siitä juotte, tehkää se minun muistokseni.",
+   "raw": "Niin usein kun te siitä juotte, tehkää se minun muistokseni.",
+   "music": false
+  },
+  {
+   "start": 3512,
+   "end": 3519,
+   "text": "Armollinen Isä, me tahdomme täyttää tämän käskyn [kurkun selvittäminen] ja viettää pyhää ehtoollista poikasi",
+   "raw": "Armollinen Isä, me tahdomme täyttää tämän käskyn [kurkun selvittäminen] ja viettää pyhää ehtoollista poikasi",
+   "music": false
+  },
+  {
+   "start": 3519,
+   "end": 3525,
+   "text": "muistoksi. ja niin julistaa hänen kuolemaansa, kunnes hän tulee.",
+   "raw": "muistoksi. ja niin julistaa hänen kuolemaansa, kunnes hän tulee.",
+   "music": false
+  },
+  {
+   "start": 3525,
+   "end": 3532,
+   "text": "Näin julistamme hänen kuolemansa.",
+   "raw": "Näin julistamme [laulu] hänen [musiikkia] kuolemansa.",
+   "music": true
+  },
+  {
+   "start": 3532,
+   "end": 3538,
+   "text": "Me todistamme hänen ylösnous.",
+   "raw": "Me [laulu] todistamme hänen [musiikkia] ylösnous.",
+   "music": true
+  },
+  {
+   "start": 3538,
+   "end": 3544,
+   "text": "Me odotamme hänen tulemissa kunassa.",
+   "raw": "Me odotamme [musiikkia][laulu] hänen tulemissa kunassa.",
+   "music": true
+  },
+  {
+   "start": 3544,
+   "end": 3550,
+   "text": "",
+   "raw": "[musiikkia][laulu]",
+   "music": true
+  },
+  {
+   "start": 3550,
+   "end": 3559,
+   "text": "Me rukoilemme sinua. Lähetä pyhä henkesi niin, että luotamme lupaukseen syntien anteeksiantamisesta",
+   "raw": "Me rukoilemme sinua. Lähetä pyhä henkesi niin, että luotamme lupaukseen syntien anteeksiantamisesta",
+   "music": false
+  },
+  {
+   "start": 3559,
+   "end": 3567,
+   "text": "ja otamme uskossa vastaan poikasi ruumiin ja veren pelastukseksemme, kunnes kerran saamme kohdata hänet",
+   "raw": "ja otamme uskossa vastaan poikasi ruumiin ja veren pelastukseksemme, kunnes kerran saamme kohdata hänet",
+   "music": false
+  },
+  {
+   "start": 3567,
+   "end": 3575,
+   "text": "valtakunnassen kauttaan, hänen kanssaan ja hänessä kuuluu sinulle kaikkivaltias Isä Pyhän",
+   "raw": "valtakunnassen kauttaan, hänen kanssaan ja hänessä kuuluu sinulle kaikkivaltias Isä Pyhän",
+   "music": false
+  },
+  {
+   "start": 3575,
+   "end": 3582,
+   "text": "Hengen yhteydessä kunnia ja kirkkaus aina ja ikuisesti.",
+   "raw": "Hengen yhteydessä kunnia ja kirkkaus aina ja ikuisesti.",
+   "music": false
+  },
+  {
+   "start": 3582,
+   "end": 3591,
+   "text": "Aamen. Aamen. Aamen. Rukoilkaamme.",
+   "raw": "Aamen. Aamen. [laulu] Aamen. [musiikkia] Rukoilkaamme.",
+   "music": true
+  },
+  {
+   "start": 3591,
+   "end": 3601,
+   "text": "Isä meidän, joka olet taivaissa, pyhitetty olkoon sinun nimesi. Tulkoon sinun valtakuntasi.",
+   "raw": "Isä meidän, joka olet taivaissa, pyhitetty olkoon sinun nimesi. Tulkoon sinun valtakuntasi.",
+   "music": false
+  },
+  {
+   "start": 3601,
+   "end": 3608,
+   "text": "Tapahtukoon sinun tahtosi myös maan päällä niin kuin taivaassa.",
+   "raw": "Tapahtukoon sinun tahtosi myös maan päällä niin kuin taivaassa.",
+   "music": false
+  },
+  {
+   "start": 3608,
+   "end": 3614,
+   "text": "Anna meille tänä päivänä meidän jokapäiväinen leipämme ja anna meille",
+   "raw": "Anna meille tänä päivänä meidän jokapäiväinen leipämme ja anna meille",
+   "music": false
+  },
+  {
+   "start": 3614,
+   "end": 3621,
+   "text": "meidän syntimme anteeksi niin kuin mekin anteeksi annamme niille, jotka ovat",
+   "raw": "meidän syntimme anteeksi niin kuin mekin anteeksi annamme niille, jotka ovat",
+   "music": false
+  },
+  {
+   "start": 3621,
+   "end": 3628,
+   "text": "meitä vastaan rikkoneet. Äläkä saata meitä kiusaukseen, vaan päästä meidät",
+   "raw": "meitä vastaan rikkoneet. Äläkä saata meitä kiusaukseen, vaan päästä meidät",
+   "music": false
+  },
+  {
+   "start": 3628,
+   "end": 3636,
+   "text": "pahasta. sillä sinun on valtakunta ja voima ja kunnia iankaikkisesti.",
+   "raw": "pahasta. sillä sinun on valtakunta ja voima ja kunnia iankaikkisesti.",
+   "music": false
+  },
+  {
+   "start": 3636,
+   "end": 3649,
+   "text": "Amen.",
+   "raw": "Amen.",
+   "music": false
+  },
+  {
+   "start": 3649,
+   "end": 3654,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3654,
+   "end": 3662,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3662,
+   "end": 3669,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3669,
+   "end": 3675,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3675,
+   "end": 3684,
+   "text": "Herran rauha olkoon teidän kanssanne, niin myös sinun henkesi",
+   "raw": "Herran rauha olkoon [laulu] teidän kanssanne, niin [musiikkia] myös sinun henkesi",
+   "music": true
+  },
+  {
+   "start": 3684,
+   "end": 3692,
+   "text": "kanssa. Jumalan",
+   "raw": "kanssa. [laulu] Jumalan",
+   "music": true
+  },
+  {
+   "start": 3692,
+   "end": 3695,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3695,
+   "end": 3696,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3696,
+   "end": 3702,
+   "text": "joka tai vaan synnin,",
+   "raw": "joka [laulu] tai vaan synnin,",
+   "music": true
+  },
+  {
+   "start": 3702,
+   "end": 3702,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3702,
+   "end": 3708,
+   "text": "armahda meitä Jumalan",
+   "raw": "armahda meitä Jumalan [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3708,
+   "end": 3709,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3709,
+   "end": 3718,
+   "text": "kanssa joka kannat maailman synnin.",
+   "raw": "kanssa joka kannat maailman [musiikkia] synnin.",
+   "music": true
+  },
+  {
+   "start": 3718,
+   "end": 3721,
+   "text": "Armahda meitä",
+   "raw": "Armahda [laulu] meitä",
+   "music": true
+  },
+  {
+   "start": 3721,
+   "end": 3723,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3723,
+   "end": 3735,
+   "text": "Jumalan karitsa, joka kannat maailman synnin.",
+   "raw": "Jumalan [laulu] karitsa, joka [musiikkia] kannat maailman [laulu] synnin.",
+   "music": true
+  },
+  {
+   "start": 3735,
+   "end": 3742,
+   "text": "Anna meille rauha",
+   "raw": "Anna meille [musiikkia] rauha",
+   "music": true
+  },
+  {
+   "start": 3742,
+   "end": 3757,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3757,
+   "end": 3769,
+   "text": "tulkaa ottakaa vastaan Kristuksen ruumis. Tulkaa juokaa kuolemattomuuden lähteestä.",
+   "raw": "tulkaa ottakaa vastaan Kristuksen ruumis. Tulkaa juokaa kuolemattomuuden lähteestä.",
+   "music": false
+  },
+  {
+   "start": 3769,
+   "end": 3780,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3780,
+   "end": 3786,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3786,
+   "end": 3789,
+   "text": "Vaiti kaikki valvkaamen.",
+   "raw": "Vaiti kaikki valvkaamen.",
+   "music": false
+  },
+  {
+   "start": 3789,
+   "end": 3794,
+   "text": "",
+   "raw": "[laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3794,
+   "end": 3799,
+   "text": "Saisutta Kristuksen.",
+   "raw": "Saisutta [laulu] Kristuksen.",
+   "music": true
+  },
+  {
+   "start": 3799,
+   "end": 3802,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3802,
+   "end": 3807,
+   "text": "Hän on tullut käskellämmeä.",
+   "raw": "Hän on tullut käskellämmeä.",
+   "music": false
+  },
+  {
+   "start": 3807,
+   "end": 3809,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3809,
+   "end": 3812,
+   "text": "Laisty huolinen.",
+   "raw": "Laisty huolinen. [laulu]",
+   "music": true
+  },
+  {
+   "start": 3812,
+   "end": 3817,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3817,
+   "end": 3826,
+   "text": "Kristus tunnin alla",
+   "raw": "Kristus [laulu] tunnin [musiikkia] alla [laulu]",
+   "music": true
+  },
+  {
+   "start": 3826,
+   "end": 3827,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3827,
+   "end": 3829,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3829,
+   "end": 3834,
+   "text": "ja taivaen",
+   "raw": "ja taivaen",
+   "music": false
+  },
+  {
+   "start": 3834,
+   "end": 3837,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3837,
+   "end": 3844,
+   "text": "ihmiseksi tänne syntyi",
+   "raw": "ihmiseksi [laulu] tänne syntyi [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3844,
+   "end": 3849,
+   "text": "kuningasten kuningas",
+   "raw": "kuningasten [laulu] kuningas",
+   "music": true
+  },
+  {
+   "start": 3849,
+   "end": 3852,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3852,
+   "end": 3860,
+   "text": "itsensä nyt meille antaa",
+   "raw": "itsensä [laulu] nyt meille [musiikkia] antaa",
+   "music": true
+  },
+  {
+   "start": 3860,
+   "end": 3868,
+   "text": "Jeesus Herrautios",
+   "raw": "Jeesus Herrautios [laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3868,
+   "end": 3869,
+   "text": "",
+   "raw": "[musiikkia][laulu]",
+   "music": true
+  },
+  {
+   "start": 3869,
+   "end": 3878,
+   "text": "leipää lapsille en",
+   "raw": "leipää lapsille en",
+   "music": false
+  },
+  {
+   "start": 3878,
+   "end": 3885,
+   "text": "Multa kaikki valtias",
+   "raw": "Multa [musiikkia] kaikki valtias",
+   "music": true
+  },
+  {
+   "start": 3885,
+   "end": 3887,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3887,
+   "end": 3895,
+   "text": "taistelunsa Kristus päivät",
+   "raw": "taistelunsa [laulu] Kristus [musiikkia] päivät",
+   "music": true
+  },
+  {
+   "start": 3895,
+   "end": 3902,
+   "text": "seuravyyt on.",
+   "raw": "seuravyyt on.",
+   "music": false
+  },
+  {
+   "start": 3902,
+   "end": 3905,
+   "text": "Hän on palauden",
+   "raw": "[laulu] Hän on palauden",
+   "music": true
+  },
+  {
+   "start": 3905,
+   "end": 3910,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3910,
+   "end": 3916,
+   "text": "rauhan lähde",
+   "raw": "rauhan [laulu][musiikkia] lähde",
+   "music": true
+  },
+  {
+   "start": 3916,
+   "end": 3918,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3918,
+   "end": 3922,
+   "text": "voimalsa Kristus",
+   "raw": "voimalsa [laulu] Kristus",
+   "music": true
+  },
+  {
+   "start": 3922,
+   "end": 3923,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3923,
+   "end": 3938,
+   "text": "kurskaas alla työ kurvi",
+   "raw": "kurskaas alla työ [musiikkia] kurvi",
+   "music": true
+  },
+  {
+   "start": 3938,
+   "end": 3939,
+   "text": "Kerit",
+   "raw": "Kerit",
+   "music": false
+  },
+  {
+   "start": 3939,
+   "end": 3940,
+   "text": "",
+   "raw": "[laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3940,
+   "end": 3948,
+   "text": "sivilmäsä verhoan",
+   "raw": "sivilmäsä verhoan [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3948,
+   "end": 3957,
+   "text": "kasv kristuksellekkaatta",
+   "raw": "[laulu] kasv kristuksellekkaatta",
+   "music": true
+  },
+  {
+   "start": 3957,
+   "end": 3958,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3958,
+   "end": 3964,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 3964,
+   "end": 3972,
+   "text": "kiitosta halleluja",
+   "raw": "kiitosta [laulu][musiikkia] halleluja",
+   "music": true
+  },
+  {
+   "start": 3972,
+   "end": 3973,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 3973,
+   "end": 3983,
+   "text": "halleluja aen aen",
+   "raw": "halleluja aen [laulu] aen",
+   "music": true
+  },
+  {
+   "start": 3983,
+   "end": 4010,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4010,
+   "end": 4023,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4023,
+   "end": 4029,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4029,
+   "end": 4040,
+   "text": "Jeesus Kristus elämä",
+   "raw": "Jeesus Kristus elämä",
+   "music": false
+  },
+  {
+   "start": 4040,
+   "end": 4040,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4040,
+   "end": 4045,
+   "text": "ja synte",
+   "raw": "ja synte",
+   "music": false
+  },
+  {
+   "start": 4045,
+   "end": 4048,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4048,
+   "end": 4052,
+   "text": "suostui ristin kuolemaan",
+   "raw": "suostui ristin kuolemaan",
+   "music": false
+  },
+  {
+   "start": 4052,
+   "end": 4055,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4055,
+   "end": 4064,
+   "text": "kuolevun voitti kuulessa",
+   "raw": "kuolevun voitti [musiikkia] kuulessa",
+   "music": true
+  },
+  {
+   "start": 4064,
+   "end": 4066,
+   "text": "valahtaa",
+   "raw": "valahtaa",
+   "music": false
+  },
+  {
+   "start": 4066,
+   "end": 4068,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4068,
+   "end": 4074,
+   "text": "ja muistaaksen Me saame",
+   "raw": "[musiikkia] ja muistaaksen Me saame [laulu]",
+   "music": true
+  },
+  {
+   "start": 4074,
+   "end": 4077,
+   "text": "jälleen ruoksemme",
+   "raw": "jälleen ruoksemme",
+   "music": false
+  },
+  {
+   "start": 4077,
+   "end": 4078,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4078,
+   "end": 4082,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4082,
+   "end": 4091,
+   "text": "Herrativässä verän",
+   "raw": "Herrativässä verän",
+   "music": false
+  },
+  {
+   "start": 4091,
+   "end": 4103,
+   "text": "kalli viinissä lohduttaa",
+   "raw": "kalli [musiikkia] viinissä lohduttaa [musiikkia][laulu]",
+   "music": true
+  },
+  {
+   "start": 4103,
+   "end": 4105,
+   "text": "pöydäsä",
+   "raw": "pöydäsä",
+   "music": false
+  },
+  {
+   "start": 4105,
+   "end": 4109,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4109,
+   "end": 4110,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4110,
+   "end": 4112,
+   "text": "henkellä.",
+   "raw": "henkellä.",
+   "music": false
+  },
+  {
+   "start": 4112,
+   "end": 4117,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4117,
+   "end": 4126,
+   "text": "Minussa on lunastus syän",
+   "raw": "Minussa [musiikkia] on lunastus [laulu] syän",
+   "music": true
+  },
+  {
+   "start": 4126,
+   "end": 4136,
+   "text": "täysin sovitus",
+   "raw": "[laulu][musiikkia] täysin sovitus",
+   "music": true
+  },
+  {
+   "start": 4136,
+   "end": 4137,
+   "text": "tänne",
+   "raw": "tänne [laulu]",
+   "music": true
+  },
+  {
+   "start": 4137,
+   "end": 4138,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4138,
+   "end": 4142,
+   "text": "käydessänsä",
+   "raw": "käydessänsä",
+   "music": false
+  },
+  {
+   "start": 4142,
+   "end": 4145,
+   "text": "koetelkoon",
+   "raw": "[musiikkia] koetelkoon [laulu]",
+   "music": true
+  },
+  {
+   "start": 4145,
+   "end": 4149,
+   "text": "itseänsä",
+   "raw": "itseänsä",
+   "music": false
+  },
+  {
+   "start": 4149,
+   "end": 4152,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4152,
+   "end": 4161,
+   "text": "itse varman mahdoton turvana",
+   "raw": "itse varman mahdoton [musiikkia][laulu] turvana",
+   "music": true
+  },
+  {
+   "start": 4161,
+   "end": 4169,
+   "text": "Herran armonen",
+   "raw": "[laulu][musiikkia] Herran armonen",
+   "music": true
+  },
+  {
+   "start": 4169,
+   "end": 4171,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4171,
+   "end": 4180,
+   "text": "saapu synti Isenä täytyyvänä",
+   "raw": "saapu [musiikkia] synti Isenä täytyyvänä",
+   "music": true
+  },
+  {
+   "start": 4180,
+   "end": 4182,
+   "text": "nälkäisen",
+   "raw": "nälkäisen",
+   "music": false
+  },
+  {
+   "start": 4182,
+   "end": 4184,
+   "text": "",
+   "raw": "[laulu][musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4184,
+   "end": 4191,
+   "text": "elä Herran luokse tullassa",
+   "raw": "elä Herran luokse [musiikkia] tullassa",
+   "music": true
+  },
+  {
+   "start": 4191,
+   "end": 4192,
+   "text": "",
+   "raw": "[laulu]",
+   "music": true
+  },
+  {
+   "start": 4192,
+   "end": 4199,
+   "text": "sa Kristus",
+   "raw": "sa Kristus [musiikkia][laulu]",
+   "music": true
+  },
+  {
+   "start": 4199,
+   "end": 4212,
+   "text": "armahta Jeesus",
+   "raw": "armahta Jeesus",
+   "music": false
+  },
+  {
+   "start": 4212,
+   "end": 4229,
+   "text": "armuksen juruksen",
+   "raw": "armuksen juruksen [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4229,
+   "end": 4240,
+   "text": "vissiin kuol syniki",
+   "raw": "vissiin kuol syniki",
+   "music": false
+  },
+  {
+   "start": 4240,
+   "end": 4249,
+   "text": "kristusoi lupauksen meille",
+   "raw": "kristusoi lupauksen meille",
+   "music": false
+  },
+  {
+   "start": 4249,
+   "end": 4262,
+   "text": "antoi syntinen luokseni",
+   "raw": "antoi syntinen luokseni",
+   "music": false
+  },
+  {
+   "start": 4262,
+   "end": 4273,
+   "text": "sä syisin häen",
+   "raw": "sä syisin häen [musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4273,
+   "end": 4285,
+   "text": "armö tässä armon",
+   "raw": "armö tässä armon",
+   "music": false
+  },
+  {
+   "start": 4285,
+   "end": 4296,
+   "text": "Herra annajasi suurta",
+   "raw": "Herra annajasi suurta",
+   "music": false
+  },
+  {
+   "start": 4296,
+   "end": 4306,
+   "text": "nauttia va",
+   "raw": "nauttia va",
+   "music": false
+  },
+  {
+   "start": 4306,
+   "end": 4318,
+   "text": "itselläsi Ri tässä ystävää",
+   "raw": "itselläsi Ri tässä ystävää",
+   "music": false
+  },
+  {
+   "start": 4318,
+   "end": 4326,
+   "text": "sinulle me kunnia",
+   "raw": "sinulle me kunnia",
+   "music": false
+  },
+  {
+   "start": 4326,
+   "end": 4363,
+   "text": "hyvä",
+   "raw": "[musiikkia] hyvä",
+   "music": true
+  },
+  {
+   "start": 4363,
+   "end": 4372,
+   "text": "Me olemme ottaneet vastaan Herran Jeesuksen Kristuksen. Hän varjelkoon meidät iankaikkiseen elämään.",
+   "raw": "Me olemme ottaneet vastaan Herran Jeesuksen Kristuksen. Hän varjelkoon meidät iankaikkiseen elämään.",
+   "music": false
+  },
+  {
+   "start": 4372,
+   "end": 4401,
+   "text": "Amen.",
+   "raw": "Amen.",
+   "music": false
+  },
+  {
+   "start": 4401,
+   "end": 4404,
+   "text": "Rukoilkaamme.",
+   "raw": "Rukoilkaamme.",
+   "music": false
+  },
+  {
+   "start": 4404,
+   "end": 4413,
+   "text": "Taivaallinen Isä, me kiitämme sinua ehtoollisen lahjasta, jolla vahvistat uskoamme sinuun.",
+   "raw": "Taivaallinen Isä, me kiitämme sinua ehtoollisen lahjasta, jolla vahvistat uskoamme sinuun.",
+   "music": false
+  },
+  {
+   "start": 4413,
+   "end": 4425,
+   "text": "Liitä meidät rakkaudessa toinen toiseemme ja säilytä meissä ikuisen elämän toivo. Kuule rukouksemme poikasi Jeesuksen Kristuksen tähden.",
+   "raw": "Liitä meidät rakkaudessa toinen toiseemme ja säilytä meissä ikuisen elämän toivo. Kuule rukouksemme poikasi Jeesuksen Kristuksen tähden.",
+   "music": false
+  },
+  {
+   "start": 4425,
+   "end": 4430,
+   "text": "Aamen. Aamen.",
+   "raw": "Aamen. [laulu][musiikkia] Aamen.",
+   "music": true
+  },
+  {
+   "start": 4430,
+   "end": 4431,
+   "text": "[korskahdus]",
+   "raw": "[korskahdus]",
+   "music": false
+  },
+  {
+   "start": 4431,
+   "end": 4446,
+   "text": "Nousemme laulemaan ylistysvirreet.",
+   "raw": "Nousemme laulemaan ylistysvirreet.",
+   "music": false
+  },
+  {
+   "start": 4446,
+   "end": 4451,
+   "text": "Minun sydämeni onollinen.",
+   "raw": "Minun sydämeni [musiikkia][laulu] onollinen.",
+   "music": true
+  },
+  {
+   "start": 4451,
+   "end": 4456,
+   "text": "Minun kieleni on tyyli.",
+   "raw": "Minun kieleni on tyyli.",
+   "music": false
+  },
+  {
+   "start": 4456,
+   "end": 4461,
+   "text": "Minun sydämeni on lehollinen.",
+   "raw": "Minun sydämeni [laulu][musiikkia] on lehollinen.",
+   "music": true
+  },
+  {
+   "start": 4461,
+   "end": 4471,
+   "text": "Minun mielen on tyyni. Minä tahdon laula ja soita",
+   "raw": "Minun mielen [laulu] on tyyni. [musiikkia] Minä tahdon laula ja soita",
+   "music": true
+  },
+  {
+   "start": 4471,
+   "end": 4476,
+   "text": "Herra lylänisi soi.",
+   "raw": "Herra [laulu] lylänisi [musiikkia] soi.",
+   "music": true
+  },
+  {
+   "start": 4476,
+   "end": 4483,
+   "text": "Minä tahdon herättä uskon",
+   "raw": "Minä tahdon [laulu] herättä uskon",
+   "music": true
+  },
+  {
+   "start": 4483,
+   "end": 4492,
+   "text": "sydämeni, minun sydämeni on levollinen.",
+   "raw": "[laulu][musiikkia] sydämeni, minun sydämeni on [musiikkia][laulu] levollinen.",
+   "music": true
+  },
+  {
+   "start": 4492,
+   "end": 4502,
+   "text": "Minun mieleni on tyyni. Minun sydämeni onen.",
+   "raw": "Minun mieleni on tyyni. [musiikkia] Minun sydämeni [laulu] onen.",
+   "music": true
+  },
+  {
+   "start": 4502,
+   "end": 4512,
+   "text": "Minun mielenki on tyyni. Minä tahdon ylistää luoja.",
+   "raw": "Minun mielenki [laulu] on tyyni. [musiikkia] Minä tahdon ylistää luoja.",
+   "music": true
+  },
+  {
+   "start": 4512,
+   "end": 4517,
+   "text": "Tahdon laulaa kiitostani.",
+   "raw": "Tahdon [laulu] laulaa [musiikkia] kiitostani.",
+   "music": true
+  },
+  {
+   "start": 4517,
+   "end": 4524,
+   "text": "Ylös pilviin ulottuu kunniansa valo",
+   "raw": "Ylös pilviin [laulu][musiikkia] ulottuu kunniansa valo [laulu]",
+   "music": true
+  },
+  {
+   "start": 4524,
+   "end": 4532,
+   "text": "ylitseman. Ottakaa vastaan siunaus.",
+   "raw": "ylitseman. [musiikkia] Ottakaa vastaan siunaus.",
+   "music": true
+  },
+  {
+   "start": 4532,
+   "end": 4541,
+   "text": "Herra siunatkoon teitä ja varjelkoon teitä. Herra kirkastakoon kasvonsa teille ja olkoon teille armollinen.",
+   "raw": "Herra siunatkoon teitä ja varjelkoon teitä. Herra kirkastakoon kasvonsa teille ja olkoon teille armollinen.",
+   "music": false
+  },
+  {
+   "start": 4541,
+   "end": 4552,
+   "text": "Herra kääntäköön kasvonsa teidän puoleenne ja antakoon teille rauhan Isän ja Pojan ja Pyhän Hengen nimeen.",
+   "raw": "Herra kääntäköön kasvonsa teidän puoleenne ja antakoon teille rauhan Isän ja Pojan ja Pyhän Hengen nimeen.",
+   "music": false
+  },
+  {
+   "start": 4552,
+   "end": 4554,
+   "text": "Aamen. Aamen.",
+   "raw": "Aamen. Aamen. [laulu]",
+   "music": true
+  },
+  {
+   "start": 4554,
+   "end": 4555,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4555,
+   "end": 4567,
+   "text": "Aen Amen.",
+   "raw": "Aen Amen.",
+   "music": false
+  },
+  {
+   "start": 4567,
+   "end": 4577,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4577,
+   "end": 4587,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4587,
+   "end": 4594,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4594,
+   "end": 4604,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4604,
+   "end": 4612,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4612,
+   "end": 4617,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4617,
+   "end": 4626,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4626,
+   "end": 4633,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4633,
+   "end": 4641,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4641,
+   "end": 4653,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4653,
+   "end": 4661,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4661,
+   "end": 4666,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4666,
+   "end": 4678,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4678,
+   "end": 4685,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4685,
+   "end": 4693,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4693,
+   "end": 4698,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4698,
+   "end": 4708,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4708,
+   "end": 4718,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4718,
+   "end": 4727,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4727,
+   "end": 4733,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4733,
+   "end": 4739,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4739,
+   "end": 4747,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4747,
+   "end": 4756,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4756,
+   "end": 4773,
+   "text": "",
+   "raw": "[musiikkia]",
+   "music": true
+  },
+  {
+   "start": 4773,
+   "end": 4781,
+   "text": "Kiitos yhteisestä messina todellakin tervetuloa kirkkoon klo 13",
+   "raw": "Kiitos yhteisestä messina todellakin tervetuloa kirkkoon klo 13",
+   "music": false
+  },
+  {
+   "start": 4781,
+   "end": 4789,
+   "text": "perhemessuun. Saatte vähän semmosen hitaan aamun, kun ei tarvitse kymmeneksi nousta kirkkoon.",
+   "raw": "perhemessuun. Saatte vähän semmosen hitaan aamun, kun ei tarvitse kymmeneksi nousta kirkkoon.",
+   "music": false
+  },
+  {
+   "start": 4789,
+   "end": 4794,
+   "text": "Lähtekää nyt rauhassa ja palvelkaa Herraa iloiten.",
+   "raw": "Lähtekää nyt rauhassa ja palvelkaa Herraa iloiten.",
+   "music": false
+  }
+ ]
+}
