@@ -10,9 +10,29 @@ import {
   listVariables, setConnectorVariable, getApiKeyOrgId,
   materializeExpired, serializeVariableRow,
 } from './db.js';
-import { interpolate, interpolatePairs } from './interpolate.js';
-import { evaluateJsonPath } from './json-path.js';
-import { checkUrlAllowed } from './network-guard.js';
+import { fireRequest as varfetchFire, buildRequest } from 'varfetch';
+import { checkUrlAllowed, loadNetworkPolicy, toNetworkOptions } from './network-guard.js';
+
+/** DB rows -> the camelCase connector/request shapes varfetch takes. */
+function toConnector(row) {
+  return {
+    baseUrl: row.base_url,
+    auth: { type: row.auth_type, ...JSON.parse(row.auth_config || '{}') },
+    headers: JSON.parse(row.headers || '[]'),
+  };
+}
+
+function toRequest(row, mappings) {
+  return {
+    method: row.method,
+    path: row.path,
+    query: JSON.parse(row.query_params || '[]'),
+    bodyType: row.body_type === 'raw' ? 'none' : row.body_type,
+    body: row.body_content,
+    responseType: row.response_type,
+    mappings: mappings.map((m) => ({ jsonPath: m.json_path, variable: m.variable_name, skipIfNull: !!m.skip_if_null })),
+  };
+}
 
 /**
  * @param {object} deps
@@ -36,88 +56,19 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
     return snapshot;
   }
 
-  function buildAuthHeaders(connector) {
-    const authConfig = JSON.parse(connector.auth_config || '{}');
-    switch (connector.auth_type) {
-      case 'bearer':
-        return authConfig.token ? { Authorization: `Bearer ${authConfig.token}` } : {};
-      case 'api_key':
-        return authConfig.headerName ? { [authConfig.headerName]: authConfig.value ?? '' } : {};
-      case 'basic': {
-        if (!authConfig.username) return {};
-        const raw = `${authConfig.username}:${authConfig.password ?? ''}`;
-        return { Authorization: `Basic ${Buffer.from(raw).toString('base64')}` };
-      }
-      case 'custom':
-        return authConfig.headers && typeof authConfig.headers === 'object' ? authConfig.headers : {};
-      default:
-        return {};
-    }
+  /** Store an image/binary response in files storage and point every mapped variable at it. */
+  async function storeBinaryResponse(apiKey, request, mappings, response, contentType) {
+    if (!filesControl) throw new Error('image/binary response mapping requires files storage, not configured');
+    const buffer = Buffer.from(await response.arrayBuffer());
+    const storage = await filesControl.resolveStorage(apiKey);
+    const objectKey = `connector-variables/${request.id}-${Date.now()}`;
+    const { storedKey } = await storage.putObject(apiKey, objectKey, buffer, contentType || 'application/octet-stream');
+    const ref = storage.publicUrl(apiKey, objectKey) || storedKey;
+    return mappings.map((mapping) => setConnectorVariable(db, apiKey, mapping.variable_name, ref, request.id));
   }
 
-  function buildUrl(connector, request, snapshot) {
-    const base = connector.base_url.replace(/\/+$/, '');
-    const path = interpolate(request.path || '', snapshot);
-    const url = new URL(base + (path.startsWith('/') ? path : `/${path}`));
-    const queryParams = interpolatePairs(JSON.parse(request.query_params || '[]'), snapshot);
-    for (const { key, value } of queryParams) {
-      if (key) url.searchParams.append(key, value ?? '');
-    }
-    return url;
-  }
-
-  function buildBody(request, snapshot) {
-    if (request.body_type === 'raw' || !request.body_content) return undefined;
-    return interpolate(request.body_content, snapshot);
-  }
-
-  async function applyMappings(apiKey, request, response, contentType) {
-    const mappings = listMappings(db, request.id);
-    if (mappings.length === 0) return [];
-
-    let parsedBody;
-    const isJson = request.response_type === 'json'
-      || (request.response_type === 'auto' && /json/i.test(contentType || ''));
-
-    if (request.response_type === 'image' || request.response_type === 'binary') {
-      if (!filesControl) throw new Error('image/binary response mapping requires files storage, not configured');
-      const buffer = Buffer.from(await response.arrayBuffer());
-      const storage = await filesControl.resolveStorage(apiKey);
-      const objectKey = `connector-variables/${request.id}-${Date.now()}`;
-      const { storedKey } = await storage.putObject(apiKey, objectKey, buffer, contentType || 'application/octet-stream');
-      const ref = storage.publicUrl(apiKey, objectKey) || storedKey;
-      const updated = [];
-      for (const mapping of mappings) {
-        const row = setConnectorVariable(db, apiKey, mapping.variable_name, ref, request.id);
-        updated.push(row);
-      }
-      return updated;
-    }
-
-    if (isJson) {
-      const text = await response.text();
-      try {
-        parsedBody = text ? JSON.parse(text) : null;
-      } catch {
-        parsedBody = null;
-      }
-    } else {
-      parsedBody = await response.text();
-    }
-
-    const updated = [];
-    for (const mapping of mappings) {
-      const extracted = evaluateJsonPath(parsedBody, mapping.json_path);
-      if (extracted === undefined || extracted === null) {
-        if (mapping.skip_if_null) continue;
-      }
-      const value = typeof extracted === 'string' ? extracted
-        : extracted === undefined || extracted === null ? null
-        : JSON.stringify(extracted);
-      const row = setConnectorVariable(db, apiKey, mapping.variable_name, value, request.id);
-      updated.push(row);
-    }
-    return updated;
+  function writeValues(apiKey, request, values) {
+    return Object.entries(values).map(([name, value]) => setConnectorVariable(db, apiKey, name, value, request.id));
   }
 
   /**
@@ -125,37 +76,51 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
    * @returns {Promise<{ ok: boolean, variables: Array<object>, error?: string }>}
    */
   async function fireRequest(apiKey, connectorSlug, requestSlug) {
-    const connector = getConnectorBySlug(db, apiKey, connectorSlug);
-    if (!connector) return { ok: false, variables: [], error: `Unknown connector: ${connectorSlug}` };
-    const request = getRequestBySlug(db, connector.id, requestSlug);
-    if (!request) return { ok: false, variables: [], error: `Unknown request: ${connectorSlug}.${requestSlug}` };
+    const connectorRow = getConnectorBySlug(db, apiKey, connectorSlug);
+    if (!connectorRow) return { ok: false, variables: [], error: `Unknown connector: ${connectorSlug}` };
+    const requestRow = getRequestBySlug(db, connectorRow.id, requestSlug);
+    if (!requestRow) return { ok: false, variables: [], error: `Unknown request: ${connectorSlug}.${requestSlug}` };
 
     const snapshot = snapshotVariables(apiKey);
-    const url = buildUrl(connector, request, snapshot);
+    const mappingRows = listMappings(db, requestRow.id);
+    const connector = toConnector(connectorRow);
+    const request = toRequest(requestRow, mappingRows);
+
+    let built;
+    try {
+      built = buildRequest(connector, request, snapshot);
+    } catch (err) {
+      return { ok: false, variables: [], error: `Invalid request: ${err.message}` };
+    }
 
     const orgId = getApiKeyOrgId(db, apiKey);
-    const guard = await checkUrlAllowed(db, url, orgId);
+    // First hop is checked here so the error names the org/site rule layer;
+    // varfetch re-checks it and every redirect hop with the merged lists.
+    const guard = await checkUrlAllowed(db, built.url, orgId);
     if (!guard.allowed) {
       return { ok: false, variables: [], error: guard.reason };
     }
 
-    const headers = {
-      ...Object.fromEntries(interpolatePairs(JSON.parse(connector.headers || '[]'), snapshot).map(({ key, value }) => [key, value])),
-      ...buildAuthHeaders(connector),
-    };
-    const body = buildBody(request, snapshot);
-    if (body !== undefined && request.body_type === 'json' && !headers['Content-Type'] && !headers['content-type']) {
-      headers['Content-Type'] = 'application/json';
-    }
-
     try {
-      const response = await fetch(url, { method: request.method, headers, body });
-      const contentType = response.headers.get('content-type');
-      const updated = await applyMappings(apiKey, request, response, contentType);
+      let updated;
+      let result = { ok: true };
+      if (requestRow.response_type === 'image' || requestRow.response_type === 'binary') {
+        if (mappingRows.length === 0) return { ok: true, variables: [] };
+        const response = await fetch(built.url, { method: built.method, headers: built.headers, body: built.body });
+        const contentType = response.headers.get('content-type');
+        updated = await storeBinaryResponse(apiKey, requestRow, mappingRows, response, contentType);
+        result = { ok: response.ok, error: response.ok ? undefined : `HTTP ${response.status}` };
+      } else {
+        result = await varfetchFire({
+          connector, request, variables: snapshot,
+          network: toNetworkOptions(loadNetworkPolicy(db, orgId)),
+        });
+        updated = writeValues(apiKey, requestRow, result.values);
+      }
       for (const row of updated) {
         bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
       }
-      return { ok: response.ok, variables: updated, error: response.ok ? undefined : `HTTP ${response.status}` };
+      return { ok: result.ok, variables: updated, error: result.ok ? undefined : result.error };
     } catch (err) {
       return { ok: false, variables: [], error: err.message };
     }
