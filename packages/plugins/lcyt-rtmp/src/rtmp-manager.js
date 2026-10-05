@@ -754,6 +754,9 @@ export class RtmpRelayManager {
         logger.error(`[rtmp] ffmpeg error for ${apiKey.slice(0, 8)}: ${err.message}`);
       });
 
+      // fffleet >= 2.1: the newest ffmpeg stderr lines of a running relay (a local ffmpeg never emits this).
+      runner.on?.('stderrTail', (tail) => { meta.stderrTail = tail; });
+
       runner.on('close', (info) => {
         if (this._procs.get(apiKey) === handle) this._procs.delete(apiKey);
         if (this._meta.get(apiKey) === meta) this._meta.delete(apiKey);
@@ -1211,6 +1214,11 @@ export class RtmpRelayManager {
   /** Why the last relay of this key ended with an error, or null (cleared when a relay starts). */
   lastExit(apiKey) {
     return this._lastExit.get(apiKey) ?? null;
+  }
+
+  /** Newest ffmpeg stderr lines of the running relay on a fleet worker, or null (also null for a local ffmpeg). */
+  liveStderr(apiKey) {
+    return this._meta.get(apiKey)?.stderrTail ?? null;
   }
 
   isRunning(apiKey) {

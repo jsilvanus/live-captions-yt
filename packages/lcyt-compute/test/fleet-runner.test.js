@@ -72,3 +72,16 @@ test('failureOf: null for success and cancel, readable for failures', () => {
 test('the removed worker runner fails with a pointer to fleet', () => {
   assert.throws(() => createFfmpegRunner({ runner: 'worker', args: [] }), /FFMPEG_RUNNER=fleet/);
 });
+
+test('live stderr from the job is exposed and emitted while it runs', async () => {
+  const { EventEmitter } = await import('node:events');
+  const job = Object.assign(new EventEmitter(), { id: 'j1', where: 'w1', state: 'running', done: new Promise(() => {}), cancel: async () => {} });
+  const r = new FleetFfmpegRunner({ fleet: { submit: async () => job }, args: [], purpose: 'test' });
+  await r.start();
+  assert.equal(r.stderrTail, null);
+  const seen = [];
+  r.on('stderrTail', (t) => seen.push(t));
+  job.emit('stderr', 'frame=  10 fps=25\nConnection refused');
+  assert.equal(r.stderrTail, 'frame=  10 fps=25\nConnection refused');
+  assert.deepEqual(seen, ['frame=  10 fps=25\nConnection refused']);
+});

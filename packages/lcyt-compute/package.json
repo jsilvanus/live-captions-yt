@@ -28,7 +28,7 @@
     "directory": "packages/lcyt-compute"
   },
   "dependencies": {
-    "fffleet": "^2.0.0"
+    "fffleet": "^2.1.1"
   },
   "optionalDependencies": {
     "onnxruntime-node": "^1.30.0"

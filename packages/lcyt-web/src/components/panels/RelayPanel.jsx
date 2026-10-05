@@ -93,6 +93,13 @@ export function RelayPanel({ relayList = [], onRelayListChange, relayStatus = nu
         </div>
       )}
 
+      {relayStatus?.stderrTail && (
+        <details style={{ marginTop: 8 }}>
+          <summary>{t('settings.relay.workerLog')}</summary>
+          <pre style={{ fontSize: 11, whiteSpace: 'pre-wrap', maxHeight: 160, overflow: 'auto' }}>{relayStatus.stderrTail}</pre>
+        </details>
+      )}
+
       {relayError && <div className="settings-error">{relayError}</div>}
 
       {backendUrl && apiKey && (

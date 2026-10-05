@@ -314,6 +314,7 @@ export default {
       live: 'Live',
       inactive: 'Inaktiv',
       lastExit: 'Vidarebefordran avslutades med fel',
+      workerLog: 'Arbetarens logg (ffmpeg stderr)',
       start: 'Aktivera relay',
       stop: 'Stoppa relay',
       stopAll: 'Stoppa alla',

@@ -33,6 +33,7 @@ class FleetProcess extends EventEmitter {
     this.exitCode = null;
     this.signalCode = null;
     this.failure = null;
+    this.stderrTail = null; // live: newest stderr lines of the running job, see 'stderrTail'
     const wantsStdin = stdio[0] === 'pipe';
     const wantsStdout = stdio[1] === 'pipe';
     this.stdout = wantsStdout ? new PassThrough() : null;
@@ -78,6 +79,7 @@ class FleetProcess extends EventEmitter {
       t.unref?.();
       out.once('end', () => { clearTimeout(t); close(); });
     };
+    runner.on('stderrTail', (tail) => { this.stderrTail = tail; this.emit('stderrTail', tail); });
     runner.on('close', (info) => finish(info?.code ?? null, info?.signal ?? null));
     runner.on('error', (err) => {
       // Like spawn: an unstarted job reports 'error'; an unlistened one must not throw.
