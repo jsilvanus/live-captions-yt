@@ -27,7 +27,7 @@ export function createPerceptionJob(plan, jobId, { fetchImpl = fetch, onJobError
       const res = await fetchImpl(plan.callbackUrl, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ apiKey: plan.apiKey, feedKind: plan.feedKind, ...detection }),
+        body: JSON.stringify({ apiKey: plan.apiKey, feedKind: plan.feedKind, jobId, ...detection }),
       });
       if (!res.ok) {
         console.error(`perception job ${jobId} callback rejected: ${res.status}`);

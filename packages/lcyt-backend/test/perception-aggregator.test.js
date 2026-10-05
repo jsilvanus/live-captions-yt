@@ -191,4 +191,36 @@ describe('perception aggregator: boxes, regions and ordering (contract v2)', () 
     aggregator.ingest('key1', { cameraId: 'cam-1', ts: 9, objects: [], visible: true });
     assert.equal(sceneState.getState('key1').cameras['cam-1'].subjects.length, 0);
   });
+  it('sweeper marks a camera that stopped reporting as not visible, once, and clears the cue union', () => {
+    let clock = 1000;
+    const published = [];
+    const events = [];
+    const store = { getByApiKey: () => ({ emitter: { emit: (_n, e) => events.push(e) } }) };
+    const sceneState = makeSceneState();
+    const aggregator = createPerceptionAggregator({
+      store, sceneState, staleMs: 5000, now: () => clock, eventBus: { publish: (...a) => published.push(a) },
+    });
+    aggregator.ingest('key1', { cameraId: 'cam-1', ts: clock, objects: [person(0.4, 't1')], visible: true });
+    clock = 4000;
+    assert.equal(aggregator.sweep(), 0); // still fresh
+    clock = 7000;
+    assert.equal(aggregator.sweep(), 1); // 6 s of silence
+    assert.equal(sceneState.getState('key1').cameras['cam-1'].visible, false);
+    const last = published[published.length - 1];
+    assert.equal(last[2].visible, false);
+    assert.equal(last[2].stale, true);
+    assert.deepEqual(events[events.length - 1].data.labels, []);
+    clock = 20000;
+    assert.equal(aggregator.sweep(), 0); // already not visible
+  });
+
+  it('a camera that keeps reporting is never swept', () => {
+    let clock = 0;
+    const aggregator = createPerceptionAggregator({ store: makeStore({}), staleMs: 1000, now: () => clock });
+    for (let i = 0; i < 5; i++) {
+      clock += 800;
+      aggregator.ingest('key1', { cameraId: 'cam-1', ts: clock, objects: [], visible: true });
+      assert.equal(aggregator.sweep(), 0);
+    }
+  });
 });

@@ -296,3 +296,113 @@ describe('createPerceptionManager stream url', () => {
     assert.equal(fleet.submitted[0].spec.perception.streamUrl, 'rtsp://mediamtx:8554/key1');
   });
 });
+
+describe('createPerceptionManager — per-job token, persistence, re-adoption', () => {
+  const base = { previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend' };
+
+  function fakeFleet() {
+    const submitted = [];
+    const jobs = new Map();
+    return {
+      submitted,
+      async submit(spec) {
+        submitted.push(spec);
+        let h = jobs.get(spec.id);
+        if (!h) {
+          let resolve; let reject;
+          const done = new Promise((res, rej) => { resolve = res; reject = rej; });
+          done.catch(() => {});
+          h = { id: spec.id, done, resolve, reject, cancel: async () => { h.resolve({ state: 'cancelled' }); } };
+          jobs.set(spec.id, h);
+        }
+        return h;
+      },
+      jobs,
+    };
+  }
+
+  async function newDb() {
+    const { default: Database } = await import('better-sqlite3');
+    const { runMigrations } = await import('../src/db.js');
+    const db = new Database(':memory:'); runMigrations(db); return db;
+  }
+
+  it('mints a token scoped to this job and verifyIngest checks it', async () => {
+    const calls = [];
+    const mgr = createPerceptionManager({
+      ...base, env: { WORKER_DAEMON_URL: 'http://worker' }, tokenSecret: 'sek',
+      fetchImpl: async (url, init) => { calls.push(JSON.parse(init.body)); return { ok: true }; },
+    });
+    await mgr.start('key1', CAMERA);
+    const plan = calls[0];
+    assert.ok(plan.internalToken && plan.internalToken.length >= 32);
+    const scope = { apiKey: 'key1', cameraId: 'cam-1', feedKind: 'dedicated', jobId: plan.jobId };
+    assert.equal(mgr.verifyIngest(scope, plan.internalToken), true);
+    assert.equal(mgr.verifyIngest({ ...scope, cameraId: 'cam-2' }, plan.internalToken), false);
+    assert.equal(mgr.verifyIngest({ ...scope, apiKey: 'other' }, plan.internalToken), false);
+    assert.equal(mgr.verifyIngest(scope, 'nope'), false);
+  });
+
+  it('without a secret the shared token is used and verifyIngest is false', async () => {
+    const calls = [];
+    const mgr = createPerceptionManager({
+      ...base, env: { WORKER_DAEMON_URL: 'http://worker', BACKEND_INTERNAL_TOKEN: 'shared' }, tokenSecret: null,
+      fetchImpl: async (url, init) => { calls.push(JSON.parse(init.body)); return { ok: true }; },
+    });
+    await mgr.start('key1', CAMERA);
+    assert.equal(calls[0].internalToken, 'shared');
+    assert.equal(mgr.verifyIngest({ apiKey: 'key1', jobId: 'x' }, 'shared'), false);
+  });
+
+  it('fleet jobs are recorded, forgotten on stop, and the spec carries jobId', async () => {
+    const db = await newDb(); const fleet = fakeFleet();
+    const mgr = createPerceptionManager({ ...base, env: { FFFLEET_URL: 'http://fleet' }, getFleetImpl: async () => fleet, db });
+    const { jobId } = await mgr.start('key1', CAMERA);
+    assert.equal(fleet.submitted[0].perception.jobId, jobId);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 1);
+    assert.equal(await mgr.stop('cam-1'), true);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 0);
+  });
+
+  it('adopt() after a restart re-attaches with the same id: no duplicate job, no new id', async () => {
+    const db = await newDb(); const fleet = fakeFleet();
+    const first = createPerceptionManager({ ...base, env: { FFFLEET_URL: 'http://fleet' }, getFleetImpl: async () => fleet, db });
+    const { jobId } = await first.start('key1', CAMERA);
+    // "restart": a new manager over the same db and the same (still running) fleet
+    const second = createPerceptionManager({ ...base, env: { FFFLEET_URL: 'http://fleet' }, getFleetImpl: async () => fleet, db });
+    assert.equal(second.status('cam-1'), null);
+    assert.deepEqual(await second.adopt(), { adopted: 1, dropped: 0 });
+    assert.equal(second.status('cam-1').jobId, jobId);
+    assert.equal(fleet.jobs.size, 1); // same job id, one job on the fleet
+    // starting again is idempotent
+    assert.equal((await second.start('key1', CAMERA)).alreadyRunning, true);
+  });
+
+  it('losing track of a job (shutdown) keeps its record; a job that ends by itself drops it', async () => {
+    const db = await newDb(); const fleet = fakeFleet();
+    const mgr = createPerceptionManager({ ...base, env: { FFFLEET_URL: 'http://fleet' }, getFleetImpl: async () => fleet, db });
+    const { jobId } = await mgr.start('key1', CAMERA);
+    fleet.jobs.get(jobId).reject(new Error('stopped following'));
+    fleet.jobs.delete(jobId); // the fleet hands out a fresh follower when we re-attach
+    await new Promise((r) => setImmediate(r));
+    assert.equal(mgr.status('cam-1'), null);
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 1);
+
+    await mgr.adopt();
+    fleet.jobs.get(jobId).resolve({ state: 'done' });
+    await new Promise((r) => setImmediate(r));
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 0);
+  });
+
+  it('adopt() on the legacy path stops the old job best-effort and forgets it', async () => {
+    const db = await newDb();
+    const calls = [];
+    const fetchImpl = async (url, init) => { calls.push([init?.method ?? 'GET', url]); return { ok: true }; };
+    const first = createPerceptionManager({ ...base, env: { WORKER_DAEMON_URL: 'http://worker' }, fetchImpl, db });
+    const { jobId } = await first.start('key1', CAMERA);
+    const second = createPerceptionManager({ ...base, env: { WORKER_DAEMON_URL: 'http://worker' }, fetchImpl, db });
+    assert.deepEqual(await second.adopt(), { adopted: 0, dropped: 1 });
+    assert.ok(calls.some(([m, u]) => m === 'DELETE' && u === `http://worker/jobs/${jobId}`));
+    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 0);
+  });
+});

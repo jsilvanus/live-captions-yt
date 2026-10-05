@@ -119,6 +119,27 @@ export function runMigrations(db) {
     PRIMARY KEY (camera_id, preset_id)
   )`);
 
+  // Perception auto-start (plan_perception_completion.md Phase 3): a camera with perception_enabled = 1
+  // gets its perception job started while its feed is live and stopped when it goes quiet.
+  const cameraColsP = db.prepare("PRAGMA table_info(prod_cameras)").all().map(c => c.name);
+  if (!cameraColsP.includes('perception_enabled')) {
+    db.exec('ALTER TABLE prod_cameras ADD COLUMN perception_enabled INTEGER NOT NULL DEFAULT 0');
+  }
+  // Project-level switch for the shared (program) feed job, plus the record of dispatched jobs so a
+  // restarted backend can re-attach to them instead of starting duplicates.
+  db.exec(`CREATE TABLE IF NOT EXISTS prod_perception_settings (
+    api_key        TEXT PRIMARY KEY,
+    shared_enabled INTEGER NOT NULL DEFAULT 0
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS prod_perception_jobs (
+    job_key    TEXT PRIMARY KEY,
+    api_key    TEXT NOT NULL,
+    job_id     TEXT NOT NULL,
+    mode       TEXT NOT NULL,
+    spec       TEXT NOT NULL,
+    started_at TEXT NOT NULL
+  )`);
+
   // owner_api_key: the project (api_keys.key) that created this camera, set
   // automatically from the now-real session/device auth on the CRUD routes
   // (plan_ingest_feeds.md's cross-tenant sourceCameraId review finding).

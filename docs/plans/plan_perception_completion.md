@@ -169,7 +169,7 @@ Phase 2b: feed attribution (IMPLEMENTED: per-preset thumbnails, matcher, backend
 
 Phase 2 status: implemented 2026-10-05 on the Phase 1 branch (JS tracker with Hungarian matching and a weak-detection second pass, rule-based framing score, `capturedAt` ordering and boxes, tracks and framing in World State and `camera.track_state`, `label@place` cue patterns). Ids stay stable through crossings in tests; no real-service footage yet, so tracker and framing thresholds are untuned.
 
-Phase 3: reliability
+Phase 3: reliability (IMPLEMENTED 2026-10-05: staleness sweeper, per-job HMAC ingest token, job record + re-adoption by resubmitting the same fleet job id, auto-start/stop reconciler with per-camera and shared-feed switches, capture-time guard from the attributor. Not yet exercised against a real fleet or media server.)
 - Staleness sweeper, job re-adoption on boot, auto-start/stop by feed, per-job ingest token, shared-feed capture-time guard.
 - Acceptance: kill the worker mid-job and see `visible: false` within the timeout; restart the backend and see no duplicate or orphaned job.
 

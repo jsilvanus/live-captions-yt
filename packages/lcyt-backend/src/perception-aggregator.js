@@ -31,8 +31,8 @@ export function regionOf(bbox) {
 /**
  * @param {{ store: import('./store.js').SessionStore, eventBus?: object, sceneState?: object }} deps
  */
-export function createPerceptionAggregator({ store, eventBus, sceneState }) {
-  /** @type {Map<string, Map<string, { labels: object[], visible: boolean, lastSeenAt: number, capturedAt: number }>>} */
+export function createPerceptionAggregator({ store, eventBus, sceneState, staleMs = Number(process.env.PERCEPTION_STALE_MS ?? 6000), now = () => Date.now() }) {
+  /** @type {Map<string, Map<string, { labels: object[], visible: boolean, lastSeenAt: number, receivedAt: number, capturedAt: number }>>} */
   const byProject = new Map();
 
   function _projectCameras(apiKey) {
@@ -73,10 +73,11 @@ export function createPerceptionAggregator({ store, eventBus, sceneState }) {
     const objects = detection.objects || [];
     const framing = detection.framing || null;
     const visible = detection.visible !== false;
+    const stale = detection.stale === true;
     const labels = objects.map((o) => (o.bbox ? { label: o.label, confidence: o.confidence, region: regionOf(o.bbox) } : { label: o.label, confidence: o.confidence }));
     const subjects = objects.filter((o) => o.bbox).map((o) => ({ trackId: o.trackId ?? o.id ?? null, label: o.label, confidence: o.confidence, bbox: o.bbox }));
 
-    cameras.set(cameraId, { labels, visible, lastSeenAt: ts, capturedAt: detection.capturedAt ?? previous?.capturedAt ?? null });
+    cameras.set(cameraId, { labels, visible, lastSeenAt: ts, receivedAt: now(), capturedAt: detection.capturedAt ?? previous?.capturedAt ?? null });
 
     // 1. Per-camera detail → World State + camera.track_state. Never
     // touches the cue engine (see module doc).
@@ -86,7 +87,7 @@ export function createPerceptionAggregator({ store, eventBus, sceneState }) {
       snapshot.updatedAt = new Date().toISOString();
     }
     if (eventBus) {
-      eventBus.publish(apiKey, 'camera.track_state', { cameraId, ts, labels: labels.map(({ label, confidence }) => ({ label, confidence })), visible, subjects, framing });
+      eventBus.publish(apiKey, 'camera.track_state', { cameraId, ts, labels: labels.map(({ label, confidence }) => ({ label, confidence })), visible, subjects, framing, ...(stale ? { stale: true } : {}) });
     }
 
     // 2. Project-level aggregate → the cue engine's existing, previously
@@ -101,6 +102,34 @@ export function createPerceptionAggregator({ store, eventBus, sceneState }) {
   }
 
   /**
+   * Staleness sweeper: a camera that is marked visible but has not reported for
+   * `staleMs` (worker killed, network cut, job ended without a final "gone"
+   * post) is silence, not "still there". Mark it not visible exactly like a
+   * confirmed-absent post would, so cues and World State do not keep a ghost.
+   * Uses the arrival time on this server, not the worker's clock.
+   * @returns {number} how many cameras were marked stale
+   */
+  function sweep(at = now()) {
+    let n = 0;
+    for (const [apiKey, cameras] of byProject) {
+      for (const [cameraId, cam] of cameras) {
+        if (!cam.visible || at - (cam.receivedAt ?? 0) < staleMs) continue;
+        ingest(apiKey, { cameraId, ts: at, objects: [], visible: false, stale: true });
+        n += 1;
+      }
+    }
+    return n;
+  }
+
+  let sweepTimer = null;
+  function startSweeper(intervalMs = Math.max(500, Math.floor(staleMs / 3))) {
+    if (sweepTimer) return;
+    sweepTimer = setInterval(() => { try { sweep(); } catch (err) { console.warn(`[perception] sweep failed: ${err.message}`); } }, intervalMs);
+    sweepTimer.unref?.();
+  }
+  function stopSweeper() { if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = null; } }
+
+  /**
    * Drop a project's tracked cameras — for use when the project itself is
    * deleted (code-review fix: `byProject` had no eviction, so every project
    * that ever had a perception job report a detection would keep a
@@ -111,5 +140,5 @@ export function createPerceptionAggregator({ store, eventBus, sceneState }) {
     byProject.delete(apiKey);
   }
 
-  return { ingest, clearProject };
+  return { ingest, clearProject, sweep, startSweeper, stopSweeper };
 }

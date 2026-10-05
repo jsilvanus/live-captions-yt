@@ -357,6 +357,18 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     }
   });
 
+  // POST /production/cameras/:id/perception/auto { enabled } — keep this camera's perception job running
+  // while its feed is live (started and stopped by the auto-start reconciler)
+  router.post('/:id/perception/auto', (req, res) => {
+    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
+    const enabled = req.body?.enabled;
+    if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+    if (enabled && !row.camera_key) return res.status(400).json({ error: 'camera has no cameraKey (dedicated-feed cameras only)' });
+    db.prepare('UPDATE prod_cameras SET perception_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, req.params.id);
+    res.json({ ok: true, perceptionEnabled: enabled });
+  });
+
   // POST /production/cameras/:id/perception/stop
   router.post('/:id/perception/stop', async (req, res) => {
     if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
