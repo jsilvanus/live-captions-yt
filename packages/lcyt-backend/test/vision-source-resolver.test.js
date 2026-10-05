@@ -30,3 +30,38 @@ describe('vision source resolver', () => {
     assert.equal(r.cameraContext('k2', 'a'), null);
   });
 });
+
+describe('vision source resolver - detector hints', () => {
+  const db = new Database(':memory:'); runMigrations(db);
+  let clock = 100000;
+  const cams = {};
+  const sceneState = { getState: () => ({ cameras: cams }) };
+  const labelled = [];
+  const r = createVisionSourceResolver({
+    db, attributor: {}, sceneState, now: () => clock, aggregator: { labelTrack: (...a) => { labelled.push(a); return true; } },
+  });
+
+  it('describes fresh subjects with place, track and role; framing notes for the tracker get the trackId request', () => {
+    cams.c = { visible: true, lastSeenAt: clock - 1000, framingNotes: ['head cut off'],
+      subjects: [{ trackId: 't1', label: 'person', bbox: { x: 0.05, y: 0.0, w: 0.2, h: 0.4 }, role: 'preacher' }, { trackId: 't2', label: 'person', bbox: { x: 0.75, y: 0.6, w: 0.2, h: 0.3 } }] };
+    const d = r.detectorHints('k', 'c', 'describer');
+    assert.match(d, /sees 2 people: track t1 \(top left, already identified as preacher\); track t2 \(bottom right\)/);
+    assert.match(d, /Framing notes: head cut off/);
+    assert.doesNotMatch(d, /trackId/);
+    assert.match(r.detectorHints('k', 'c', 'tracker'), /include its "trackId"/);
+  });
+
+  it('says so when no people are seen, and gives nothing for stale or unknown cameras', () => {
+    cams.c = { visible: true, lastSeenAt: clock, subjects: [] };
+    assert.match(r.detectorHints('k', 'c', 'describer'), /sees no people/);
+    cams.c = { visible: true, lastSeenAt: clock - 60000, subjects: [{ trackId: 't', label: 'person', bbox: { x: 0, y: 0, w: 1, h: 1 } }] };
+    assert.equal(r.detectorHints('k', 'c', 'describer'), null);
+    assert.deepEqual(r.subjectsFor('k', 'c'), []);
+    assert.equal(r.detectorHints('k', 'unknown', 'describer'), null);
+  });
+
+  it('labelTrack delegates to the aggregator', () => {
+    r.labelTrack('k', 'c', 't1', 'preacher', 0.9);
+    assert.deepEqual(labelled[0], ['k', 'c', 't1', 'preacher', 0.9]);
+  });
+});

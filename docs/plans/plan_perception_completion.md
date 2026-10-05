@@ -173,7 +173,7 @@ Phase 3: reliability (IMPLEMENTED 2026-10-05: staleness sweeper, per-job HMAC in
 - Staleness sweeper, job re-adoption on boot, auto-start/stop by feed, per-job ingest token, shared-feed capture-time guard.
 - Acceptance: kill the worker mid-job and see `visible: false` within the timeout; restart the backend and see no duplicate or orphaned job.
 
-Phase 3b: LLM hand-off
+Phase 3b: LLM hand-off (IMPLEMENTED 2026-10-05 without the frame upload route and without a `FrameProvider` interface, per decision 8: interest events trigger the Describer/Tracker, detector hints go into their prompts, Tracker objects bind to track ids and named roles flow back into cue labels; Describer text into World State per camera is still open)
 - `FrameProvider` interface, perception frame upload route with per-job token, interest events, detector hints in the Describer and Tracker prompts, Tracker labels bound to track ids.
 - Acceptance: with a perception job running, Describer calls use the job's frame and camera tag and fire on a scripted person-entry event; with no job, behaviour matches today plus the attribution tag.
 

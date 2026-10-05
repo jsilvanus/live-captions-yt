@@ -484,3 +484,81 @@ describe('VisionRoleManager — camera scope', () => {
     assert.equal(payload.cameraId, null);
   });
 });
+
+describe('VisionRoleManager — detector hand-off', () => {
+  const settings = { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' };
+  const trackerReply = { choices: [{ message: { content: JSON.stringify({ objects: [
+    { label: 'preacher', confidence: 0.9, bbox: { x: 0.12, y: 0.2, w: 0.2, h: 0.6 } },
+    { label: 'person', confidence: 0.8, bbox: { x: 0.7, y: 0.2, w: 0.2, h: 0.6 } },
+    { label: 'dog', confidence: 0.5, bbox: { x: 0.45, y: 0.8, w: 0.1, h: 0.1 } },
+  ] }) } }] };
+
+  function resolver(extra = {}) {
+    const labelled = [];
+    return {
+      labelled,
+      tagForCapture: () => ({ feedKind: 'shared', cameraId: 'choir', confidence: 0.9, method: 'visual-match' }),
+      tagForCamera: (id) => ({ feedKind: 'dedicated', cameraId: id, confidence: 1, method: 'feed-key' }),
+      subjectsFor: () => [
+        { trackId: 't1', label: 'person', bbox: { x: 0.1, y: 0.2, w: 0.2, h: 0.6 } },
+        { trackId: 't2', label: 'person', bbox: { x: 0.7, y: 0.2, w: 0.2, h: 0.6 } },
+      ],
+      labelTrack: (...a) => { labelled.push(a); return true; },
+      detectorHints: (k, id, role) => `HINT(${id},${role})`,
+      ...extra,
+    };
+  }
+
+  test('tracker objects are bound to detector tracks by overlap, and named targets stick to the track', async () => {
+    mockPreviewAndVisionApi({ visionResponse: trackerReply });
+    const { bus, events } = makeBusSpy('k', 'tracker');
+    const manager = new VisionRoleManager(bus);
+    const r = resolver();
+    manager.setSourceResolver(r);
+    manager.start('k', 'tracker', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 15 } });
+    await new Promise((res) => setTimeout(res, 60));
+    manager.stop('k', 'tracker');
+    const payload = JSON.parse(events.find((e) => e.includes('tracker_update')).match(/data: (.+)\n\n/)[1]);
+    const by = Object.fromEntries(payload.objects.map((o) => [o.label, o.trackId]));
+    assert.equal(by.preacher, 't1');
+    assert.equal(by.person, 't2');
+    assert.equal(by.dog, null);
+    // only the named target (not generic "person", not an unmatched object) is bound to a track
+    assert.deepEqual(r.labelled[0].slice(0, 5), ['k', 'choir', 't1', 'preacher', 0.9]);
+    assert.ok(r.labelled.every((a) => a[3] === 'preacher'));
+  });
+
+  test('the detector hint is appended to the prompt', async () => {
+    mockPreviewAndVisionApi({ visionResponse: trackerReply });
+    const { bus } = makeBusSpy('k', 'tracker');
+    const manager = new VisionRoleManager(bus);
+    manager.setSourceResolver(resolver());
+    manager.start('k', 'tracker', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 15 } });
+    await new Promise((res) => setTimeout(res, 60));
+    manager.stop('k', 'tracker');
+    assert.ok(manager.getCaptures('k', 'tracker')[0].prompt.endsWith('HINT(choir,tracker)'));
+  });
+
+  test('trigger() polls started sessions at once, rate-limited, and only for the camera on the shared feed', async () => {
+    let fetches = 0;
+    global.fetch = async (url) => {
+      if (String(url).includes('/preview/')) { fetches += 1; return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('j') }; }
+      return { ok: true, json: async () => ({ choices: [{ message: { content: 'text' } }] }) };
+    };
+    const manager = new VisionRoleManager(new RolesBus());
+    manager._minTriggerGapMs = 100;
+    manager.setSourceResolver(resolver());
+    manager.start('k', 'describer', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 60000 } });
+    await new Promise((res) => setTimeout(res, 20));
+    const before = fetches;
+    assert.equal(manager.trigger('k', 'describer', { cameraId: 'choir' }), 1);   // feed shows choir
+    assert.equal(manager.trigger('k', 'describer', { cameraId: 'choir' }), 0);   // rate limited
+    assert.equal(manager.trigger('k', 'describer', { cameraId: 'altar' }), 0);   // feed shows another camera
+    assert.equal(manager.trigger('k', 'tracker', { cameraId: 'choir' }), 0);     // no tracker session
+    await new Promise((res) => setTimeout(res, 30));
+    assert.equal(fetches, before + 1);
+    await new Promise((res) => setTimeout(res, 100));
+    assert.equal(manager.trigger('k', 'describer', { cameraId: 'choir' }), 1);   // gap over
+    manager.stop('k', 'describer');
+  });
+});

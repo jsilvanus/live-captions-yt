@@ -45,6 +45,33 @@ function buildPrompt(roleCode, harnessConfig) {
   return harnessConfig.outputMode === 'json' ? DESCRIBER_PROMPT_JSON : DESCRIBER_PROMPT_DEFAULT;
 }
 
+const GENERIC_LABELS = new Set(['person', 'people', 'unknown', 'human']);
+
+function boxIou(a, b) {
+  const x1 = Math.max(a.x, b.x); const y1 = Math.max(a.y, b.y);
+  const x2 = Math.min(a.x + a.w, b.x + b.w); const y2 = Math.min(a.y + a.h, b.y + b.h);
+  const inter = Math.max(0, x2 - x1) * Math.max(0, y2 - y1);
+  const union = a.w * a.h + b.w * b.h - inter;
+  return union > 0 ? inter / union : 0;
+}
+
+/**
+ * The detector track a model-reported object belongs to: its own `trackId` when it names a real subject, else the
+ * subject with the best box overlap (IoU 0.3 or more). Null when nothing matches.
+ */
+function bindTrack(obj, subjects) {
+  if (!subjects.length) return obj.trackId ?? null;
+  if (obj.trackId && subjects.some((s) => String(s.trackId) === String(obj.trackId))) return String(obj.trackId);
+  if (!obj.bbox) return null;
+  let best = null; let bestIou = 0.3;
+  for (const s of subjects) {
+    if (!s.bbox || s.trackId == null) continue;
+    const v = boxIou(obj.bbox, s.bbox);
+    if (v >= bestIou) { best = s.trackId; bestIou = v; }
+  }
+  return best != null ? String(best) : null;
+}
+
 export class VisionRoleManager {
   /**
    * @param {import('./roles-bus.js').RolesBus} rolesBus
@@ -63,6 +90,39 @@ export class VisionRoleManager {
      * @type {Map<string, Array<object>>}
      */
     this._captures = new Map();
+    /** Minimum gap between event-triggered calls per session, to bound model cost. */
+    this._minTriggerGapMs = Number(process.env.VISION_TRIGGER_GAP_MS ?? 5000);
+  }
+
+  /**
+   * An interest event (a person entered, framing dropped, ...) is a reason to look now instead of waiting for the
+   * next timed poll. Only sessions the operator has started are called, at most once per `_minTriggerGapMs`.
+   * A project-scoped session looks at the shared feed, so it is only called when that feed currently shows `cameraId`.
+   * @param {string} apiKey
+   * @param {string} roleCode
+   * @param {{ cameraId?: string|null }} [opts]
+   * @returns {number} how many sessions were called
+   */
+  trigger(apiKey, roleCode, { cameraId = null } = {}) {
+    const now = Date.now();
+    const candidates = [];
+    if (cameraId) {
+      const own = this._sessions.get(this._key(apiKey, roleCode, cameraId));
+      if (own) candidates.push(own);
+    }
+    const shared = this._sessions.get(this._key(apiKey, roleCode));
+    if (shared) {
+      const onFeed = !cameraId || !this._resolver?.tagForCapture || this._resolver.tagForCapture(apiKey, now)?.cameraId === cameraId;
+      if (onFeed) candidates.push(shared);
+    }
+    let fired = 0;
+    for (const s of candidates) {
+      if (now - (s.lastTriggerAt ?? 0) < this._minTriggerGapMs) continue;
+      s.lastTriggerAt = now;
+      s.fetcher.pollNow();
+      fired += 1;
+    }
+    return fired;
   }
 
   /**
@@ -214,7 +274,11 @@ export class VisionRoleManager {
       const sourceCameraId = source?.cameraId ?? null;
       let context = null;
       if (sourceCameraId) { try { context = this._resolver?.cameraContext?.(apiKey, sourceCameraId) ?? null; } catch { context = null; } }
-      const prompt = context && !harnessConfig.systemPromptOverride ? `${basePrompt} ${context}` : basePrompt;
+      // What the fast detector sees right now (person boxes, track ids, framing) rides along as a hint.
+      let hints = null;
+      if (sourceCameraId) { try { hints = this._resolver?.detectorHints?.(apiKey, sourceCameraId, roleCode) ?? null; } catch { hints = null; } }
+      const extra = [context, hints].filter(Boolean).join(' ');
+      const prompt = extra && !harnessConfig.systemPromptOverride ? `${basePrompt} ${extra}` : basePrompt;
       const capture = {
         id: randomUUID(), ts: capturedAt, prompt, frame: buf, outputMode, jsonSchema,
         cameraId: sourceCameraId, source,
@@ -227,12 +291,20 @@ export class VisionRoleManager {
         capture.result = { text: result.text ?? null, json: result.json ?? null };
 
         if (roleCode === 'tracker') {
+          const subjects = (sourceCameraId && this._resolver?.subjectsFor?.(apiKey, sourceCameraId)) || [];
           const objects = Array.isArray(result.json?.objects) ? result.json.objects.map((o) => ({
             id: o.id ?? randomUUID(),
             label: o.label ?? 'unknown',
             confidence: typeof o.confidence === 'number' ? o.confidence : 0,
             bbox: o.bbox ?? { x: 0, y: 0, w: 0, h: 0 },
+            trackId: bindTrack(o, subjects),
           })) : [];
+          // A named target (not the generic person/unknown label) sticks to its detector track while it lasts.
+          for (const o of objects) {
+            if (o.trackId && sourceCameraId && !GENERIC_LABELS.has(String(o.label).toLowerCase())) {
+              try { this._resolver?.labelTrack?.(apiKey, sourceCameraId, o.trackId, o.label, o.confidence); } catch { /* best effort */ }
+            }
+          }
           this._rolesBus.emit(apiKey, 'tracker', 'tracker_update', { apiKey, ts: session.lastUpdateAt, capturedAt, cameraId: sourceCameraId, source, objects });
         } else {
           this._rolesBus.emit(apiKey, 'describer', 'describer_update', {

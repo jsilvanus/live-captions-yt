@@ -206,7 +206,7 @@ describe('perception aggregator: boxes, regions and ordering (contract v2)', () 
     clock = 7000;
     assert.equal(aggregator.sweep(), 1); // 6 s of silence
     assert.equal(sceneState.getState('key1').cameras['cam-1'].visible, false);
-    const last = published[published.length - 1];
+    const last = published.filter((e) => e[1] === 'camera.track_state').pop();
     assert.equal(last[2].visible, false);
     assert.equal(last[2].stale, true);
     assert.deepEqual(events[events.length - 1].data.labels, []);
@@ -222,5 +222,35 @@ describe('perception aggregator: boxes, regions and ordering (contract v2)', () 
       aggregator.ingest('key1', { cameraId: 'cam-1', ts: clock, objects: [], visible: true });
       assert.equal(aggregator.sweep(), 0);
     }
+  });
+  it('publishes perception.interest when a person enters, and person_left when the camera goes silent', () => {
+    let clock = 0;
+    const published = [];
+    const aggregator = createPerceptionAggregator({ store: makeStore({}), staleMs: 1000, now: () => clock, eventBus: { publish: (...a) => published.push(a) } });
+    aggregator.ingest('key1', { cameraId: 'cam-1', ts: 10, objects: [person(0.4, 't1')], visible: true });
+    const interest = () => published.filter((e) => e[1] === 'perception.interest').map((e) => `${e[2].kind}:${e[2].cameraId}:${e[2].trackId}`);
+    assert.deepEqual(interest(), ['person_entered:cam-1:t1']);
+    clock = 5000; aggregator.sweep();
+    assert.deepEqual(interest(), ['person_entered:cam-1:t1', 'person_left:cam-1:t1']);
+  });
+
+  it('labelTrack binds a role to a track: subject role, cue label at its place, dropped when the track is gone', () => {
+    const sceneState = makeSceneState();
+    const events = [];
+    const store = { getByApiKey: () => ({ emitter: { emit: (_n, e) => events.push(e) } }) };
+    const aggregator = createPerceptionAggregator({ store, sceneState });
+    aggregator.ingest('key1', { cameraId: 'cam-1', ts: 1, objects: [person(0.1, 't1'), person(0.8, 't2')], visible: true });
+    assert.equal(aggregator.labelTrack('key1', 'cam-1', 't1', 'preacher', 0.9), true);
+    aggregator.ingest('key1', { cameraId: 'cam-1', ts: 2, objects: [person(0.1, 't1'), person(0.8, 't2')], visible: true });
+    const subjects = sceneState.getState('key1').cameras['cam-1'].subjects;
+    assert.equal(subjects.find((s) => s.trackId === 't1').role, 'preacher');
+    assert.equal(subjects.find((s) => s.trackId === 't2').role, undefined);
+    const union = events[events.length - 1].data.labels;
+    assert.ok(union.some((l) => l.label === 'preacher' && l.region.zone === 'left'));
+    assert.ok(union.some((l) => l.label === 'person' && l.region.zone === 'right'));
+    aggregator.ingest('key1', { cameraId: 'cam-1', ts: 3, objects: [person(0.8, 't2')], visible: true }); // t1 gone
+    aggregator.ingest('key1', { cameraId: 'cam-1', ts: 4, objects: [person(0.1, 't1')], visible: true }); // a new t1? same id, role must not return
+    assert.equal(sceneState.getState('key1').cameras['cam-1'].subjects[0].role, undefined);
+    assert.equal(aggregator.labelTrack('key1', 'cam-1', null, 'x'), false);
   });
 });

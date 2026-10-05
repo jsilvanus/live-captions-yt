@@ -8,9 +8,20 @@
 
 /**
  * @param {{ db: import('better-sqlite3').Database,
- *           attributor: { tagForCapture: Function, tagForCamera: Function } }} deps
+ *           attributor: { tagForCapture: Function, tagForCamera: Function },
+ *           sceneState?: { getState: (apiKey: string) => object },
+ *           aggregator?: { labelTrack: Function },
+ *           now?: () => number }} deps
  */
-export function createVisionSourceResolver({ db, attributor }) {
+const FRESH_MS = 10000;
+
+function place(bbox) {
+  const cx = bbox.x + bbox.w / 2; const cy = bbox.y + bbox.h / 2;
+  const third = (v, names) => (v < 1 / 3 ? names[0] : v > 2 / 3 ? names[2] : names[1]);
+  return `${third(cy, ['top', 'middle', 'bottom'])} ${third(cx, ['left', 'center', 'right'])}`;
+}
+
+export function createVisionSourceResolver({ db, attributor, sceneState = null, aggregator = null, now = () => Date.now() }) {
   function row(cameraId) {
     return db.prepare('SELECT id, name, label, zone, camera_key, owner_api_key, overlap_links FROM prod_cameras WHERE id = ?').get(cameraId) ?? null;
   }
@@ -26,6 +37,31 @@ export function createVisionSourceResolver({ db, attributor }) {
     cameraAllowed(apiKey, cameraId) {
       const r = row(cameraId);
       return !!r && (!r.owner_api_key || r.owner_api_key === apiKey);
+    },
+
+    /** Current person subjects of a camera from the fast detector, or [] when stale/unknown. */
+    subjectsFor(apiKey, cameraId) {
+      const cam = sceneState?.getState(apiKey)?.cameras?.[cameraId];
+      if (!cam || !cam.visible || now() - (cam.lastSeenAt ?? 0) > FRESH_MS) return [];
+      return cam.subjects || [];
+    },
+
+    /** Bind a model-given role (e.g. "preacher") to a detector track. */
+    labelTrack(apiKey, cameraId, trackId, role, confidence) {
+      return aggregator?.labelTrack?.(apiKey, cameraId, trackId, role, confidence) ?? false;
+    },
+
+    /** What the fast detector sees right now, as prompt text for a vision role. Null when there is nothing fresh. */
+    detectorHints(apiKey, cameraId, roleCode) {
+      const cam = sceneState?.getState(apiKey)?.cameras?.[cameraId];
+      if (!cam || !cam.visible || now() - (cam.lastSeenAt ?? 0) > FRESH_MS) return null;
+      const people = (cam.subjects || []).filter((s) => s.label === 'person' && s.bbox);
+      if (!people.length) return 'A fast detector currently sees no people in this frame.';
+      const list = people.map((s) => `${s.trackId != null ? `track ${s.trackId}` : 'a person'} (${place(s.bbox)}${s.role ? `, already identified as ${s.role}` : ''})`).join('; ');
+      let text = `A fast detector currently sees ${people.length} ${people.length === 1 ? 'person' : 'people'}: ${list}.`;
+      if (cam.framingNotes?.length) text += ` Framing notes: ${[].concat(cam.framingNotes).join(', ')}.`;
+      if (roleCode === 'tracker' && people.some((s) => s.trackId != null)) text += ' When you report a person that matches one of these tracks, include its "trackId" in that object.';
+      return text;
     },
 
     /** One short sentence for the prompt: which camera this is, where it sits, what it overlaps with. */

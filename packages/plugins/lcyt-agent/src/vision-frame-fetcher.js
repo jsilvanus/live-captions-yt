@@ -50,6 +50,11 @@ export class VisionFrameFetcher extends EventEmitter {
     this._timer = null;
   }
 
+  /** Fetch a frame now, outside the timer (an interest event); skipped while a fetch is in flight. */
+  pollNow() {
+    if (this._running) void this._poll();
+  }
+
   get running() {
     return this._running;
   }

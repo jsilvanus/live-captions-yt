@@ -28,12 +28,36 @@ export function regionOf(bbox) {
   return { zone: third(cx, ['left', 'center', 'right']), vertical: third(cy, ['top', 'middle', 'bottom']), x: bbox.x, y: bbox.y, w: bbox.w, h: bbox.h };
 }
 
+import { createInterestDetector } from 'lcyt-compute/perception/interest';
+
 /**
  * @param {{ store: import('./store.js').SessionStore, eventBus?: object, sceneState?: object }} deps
  */
 export function createPerceptionAggregator({ store, eventBus, sceneState, staleMs = Number(process.env.PERCEPTION_STALE_MS ?? 6000), now = () => Date.now() }) {
   /** @type {Map<string, Map<string, { labels: object[], visible: boolean, lastSeenAt: number, receivedAt: number, capturedAt: number }>>} */
   const byProject = new Map();
+  /** @type {Map<string, Map<string, ReturnType<typeof createInterestDetector>>>} apiKey -> cameraId -> detector */
+  const interestByProject = new Map();
+  /** @type {Map<string, Map<string, Map<string, { role: string, confidence: number }>>>} apiKey -> cameraId -> trackId -> role */
+  const rolesByProject = new Map();
+
+  function _nested(map, apiKey, cameraId, make) {
+    let cams = map.get(apiKey);
+    if (!cams) { cams = new Map(); map.set(apiKey, cams); }
+    let v = cams.get(cameraId);
+    if (!v) { v = make(); cams.set(cameraId, v); }
+    return v;
+  }
+
+  /**
+   * Bind a role (what a vision model identified, e.g. "preacher") to a detector track. While the track lasts, its
+   * subject carries `role` and the role also joins the cue labels at the track's place, so `preacher@left` rules work.
+   */
+  function labelTrack(apiKey, cameraId, trackId, role, confidence = 0.7) {
+    if (!trackId || !role) return false;
+    _nested(rolesByProject, apiKey, String(cameraId), () => new Map()).set(String(trackId), { role, confidence });
+    return true;
+  }
 
   function _projectCameras(apiKey) {
     if (!byProject.has(apiKey)) byProject.set(apiKey, new Map());
@@ -74,8 +98,24 @@ export function createPerceptionAggregator({ store, eventBus, sceneState, staleM
     const framing = detection.framing || null;
     const visible = detection.visible !== false;
     const stale = detection.stale === true;
-    const labels = objects.map((o) => (o.bbox ? { label: o.label, confidence: o.confidence, region: regionOf(o.bbox) } : { label: o.label, confidence: o.confidence }));
-    const subjects = objects.filter((o) => o.bbox).map((o) => ({ trackId: o.trackId ?? o.id ?? null, label: o.label, confidence: o.confidence, bbox: o.bbox }));
+    // Roles bound to tracks that are no longer in the picture are dropped; the rest decorate subjects and cue labels.
+    const roles = rolesByProject.get(apiKey)?.get(cameraId) ?? null;
+    if (roles?.size) {
+      const present = new Set(objects.map((o) => o.trackId ?? o.id).filter((i) => i != null).map(String));
+      for (const id of [...roles.keys()]) if (!visible || !present.has(id)) roles.delete(id);
+    }
+    const roleOf = (o) => roles?.get(String(o.trackId ?? o.id ?? '')) ?? null;
+    const labels = [];
+    for (const o of objects) {
+      const region = o.bbox ? regionOf(o.bbox) : null;
+      labels.push(region ? { label: o.label, confidence: o.confidence, region } : { label: o.label, confidence: o.confidence });
+      const r = roleOf(o);
+      if (r) labels.push(region ? { label: r.role, confidence: r.confidence, region } : { label: r.role, confidence: r.confidence });
+    }
+    const subjects = objects.filter((o) => o.bbox).map((o) => {
+      const r = roleOf(o);
+      return { trackId: o.trackId ?? o.id ?? null, label: o.label, confidence: o.confidence, bbox: o.bbox, ...(r ? { role: r.role } : {}) };
+    });
 
     cameras.set(cameraId, { labels, visible, lastSeenAt: ts, receivedAt: now(), capturedAt: detection.capturedAt ?? previous?.capturedAt ?? null });
 
@@ -88,6 +128,14 @@ export function createPerceptionAggregator({ store, eventBus, sceneState, staleM
     }
     if (eventBus) {
       eventBus.publish(apiKey, 'camera.track_state', { cameraId, ts, labels: labels.map(({ label, confidence }) => ({ label, confidence })), visible, subjects, framing, ...(stale ? { stale: true } : {}) });
+    }
+
+    // Moments worth a slow model's attention (person enters/leaves, settles in, framing worsens).
+    if (eventBus) {
+      const detector = _nested(interestByProject, apiKey, cameraId, () => createInterestDetector());
+      for (const ev of detector.update({ ts, objects, framing, visible })) {
+        eventBus.publish(apiKey, 'perception.interest', { cameraId, ...ev });
+      }
     }
 
     // 2. Project-level aggregate → the cue engine's existing, previously
@@ -138,7 +186,9 @@ export function createPerceptionAggregator({ store, eventBus, sceneState, staleM
    */
   function clearProject(apiKey) {
     byProject.delete(apiKey);
+    interestByProject.delete(apiKey);
+    rolesByProject.delete(apiKey);
   }
 
-  return { ingest, clearProject, sweep, startSweeper, stopSweeper };
+  return { ingest, clearProject, sweep, startSweeper, stopSweeper, labelTrack };
 }

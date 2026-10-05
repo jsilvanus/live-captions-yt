@@ -885,7 +885,12 @@ const _feedAttributor = createFeedAttributor({
   db, registry: productionRegistry, eventBus,
   previewBaseUrl: _perceptionBackendUrl, thumbnailsDir: DEFAULT_THUMBNAILS_DIR, thumbnailPath,
 });
-_visionRoleManager?.setSourceResolver?.(createVisionSourceResolver({ db, attributor: _feedAttributor }));
+_visionRoleManager?.setSourceResolver?.(createVisionSourceResolver({ db, attributor: _feedAttributor, sceneState: _sceneState, aggregator: _perceptionAggregator }));
+// An interest event (person entered, framing dropped, ...) calls the running Describer/Tracker now instead of at the next timed poll.
+eventBus.tap((e) => {
+  if (e.topic !== 'perception.interest' || !_visionRoleManager) return;
+  for (const role of ['describer', 'tracker']) _visionRoleManager.trigger(e.projectId, role, { cameraId: e.data?.cameraId ?? null });
+});
 const _sharedFeedResolver = createSharedFeedResolver({
   db, registry: productionRegistry, aggregator: _perceptionAggregator, attributor: _feedAttributor,
 });
