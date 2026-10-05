@@ -310,13 +310,11 @@ if (graphicsEnabled) {
   ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics, settings }));
 }
 
-// Background metric pollers: storage gauges, MediaMTX egress deltas, and
-// orchestrator burst-VM accounting (plan_metering_audit §4.2–4.3).
+// Background metric pollers: storage gauges and MediaMTX egress deltas (plan_metering_audit §4.2–4.3).
 const metricsPollers = startMetricsPollers({
   db,
   metrics,
   mediamtxClient: productionMediamtxClient,
-  orchestratorUrl: settings.get('compute.orchestrator_url') || '',
 });
 
 // Inject translation-config + fan-out + caption-file helpers into SttManager
@@ -423,14 +421,26 @@ const _actionExecutor = createActionExecutor({
   handlers: {
     // deviceKey names the physical device so the executor's per-device cooldown
     // spans atoms (`mixer:` and `obs:` both move the same mixer).
-    camera: { device: true, deviceKey: (value) => `camera:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
-    mixer: { device: true, deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    camera: { device: true, toIds: (k, v) => productionCommands.cameraAtomToIds(k, v), toLabels: (k, v) => productionCommands.cameraAtomToLabels(k, v), deviceKey: (value) => `camera:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runCameraAtom(apiKey, value, meta) },
+    mixer: { device: true, toIds: (k, v) => productionCommands.mixerAtomToIds(k, v), toLabels: (k, v) => productionCommands.mixerAtomToLabels(k, v), deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
     // `obs:<mixer>.<scene>` is the mixer atom with a scene written by name.
-    obs: { device: true, deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
+    obs: { device: true, toIds: (k, v) => productionCommands.mixerAtomToIds(k, v), toLabels: (k, v) => productionCommands.mixerAtomToLabels(k, v), deviceKey: (value) => `mixer:${slugifyLabel(String(value).split('.')[0])}`, run: (apiKey, value, meta) => productionCommands.runMixerAtom(apiKey, value, meta) },
     // `crop:<preset>` by preset id or by name slug.
     crop: {
       device: true,
       deviceKey: () => 'crop',
+      toIds: (apiKey, value) => {
+        const presets = listCropPresets(db, apiKey);
+        if (presets.some((p) => p.id === value)) return null;
+        const found = presets.filter((p) => slugifyLabel(p.name) === slugifyLabel(value));
+        return found.length === 1 ? found[0].id : null;
+      },
+      toLabels: (apiKey, value) => {
+        const presets = listCropPresets(db, apiKey);
+        const preset = presets.find((p) => p.id === value);
+        const slug = preset && slugifyLabel(preset.name);
+        return slug && presets.filter((p) => slugifyLabel(p.name) === slug).length === 1 ? slug : null;
+      },
       run: (apiKey, value) => {
         const slug = slugifyLabel(value);
         const presets = listCropPresets(db, apiKey);
@@ -468,6 +478,8 @@ const _actionAuthoringGuard = createAuthoringGuard({ executor: _actionExecutor, 
 // disarmed projects skip device steps (plan_backend_actions.md, db/arming.js).
 const _cueActionDispatcher = createCueActionDispatcher({
   eventBus, executor: _actionExecutor, isArmed: (apiKey) => isArmed(db, apiKey),
+  maxRuns: () => settings.get('production.action_rate_max_runs'),
+  windowMs: () => settings.get('production.action_rate_window_s') * 1000,
 });
 _cueActionDispatcher.start();
 
@@ -786,7 +798,7 @@ app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
 app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings, platforms: platformDeps }, scopedAuth));
-app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard }));
+app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
@@ -852,15 +864,14 @@ app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, cre
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // fps30 tracker subsystem (plan_video_perception.md Phase 2/3): job dispatch
 // (start/stop a per-camera or shared-feed perception job on the
-// orchestrator/worker daemon) and the ingest side (a worker POSTs
+// fffleet fleet) and the ingest side (a worker POSTs
 // detections back here, fanning into the cue engine's track_state contract
 // + World State's camera.track_state — see perception-aggregator.js's
 // module doc for why this composition-root module, not a plugin, owns that
 // fan-out). The shared-feed resolver (Phase 3) re-tags mixer-only cameras'
 // detections with whichever camera DeviceRegistry says is currently on
 // program before they reach the aggregator.
-// A perception job may run on a remote worker (ORCHESTRATOR_URL/
-// WORKER_DAEMON_URL, the whole point of the compute-orchestration layer),
+// A perception job runs on an fffleet worker (FFFLEET_URL),
 // so its frameUrl/callbackUrl must resolve to this backend's real,
 // externally-reachable URL — BACKEND_URL, the same env var routes/video.js
 // hands out to the DSK renderer for the same reason — not

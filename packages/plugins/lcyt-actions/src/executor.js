@@ -68,7 +68,7 @@ export function parseWaitMs(value) {
  * @param {object} deps
  * @param {import('better-sqlite3').Database} deps.db
  * @param {import('lcyt/event-bus').EventBus|null} [deps.eventBus]
- * @param {Record<string, Function | { run: Function, device?: boolean }>} [deps.handlers]
+ * @param {Record<string, Function | { run: Function, device?: boolean, toIds?: Function, toLabels?: Function }>} [deps.handlers]
  * @param {number} [deps.stepTimeoutMs]
  */
 export function createActionExecutor({
@@ -224,5 +224,39 @@ export function createActionExecutor({
     return { ok, runId, steps, clientAtoms, warnings, durationMs };
   }
 
-  return { run, resolve, isServerAtom, isDeviceAtom };
+  /**
+   * Rewrite the device references of an expression: 'ids' stores camera/mixer/
+   * preset ids (what a save persists, so renaming a device cannot break it),
+   * 'labels' shows the current label slugs again (what an editor loads).
+   * Handlers opt in with `toIds(apiKey, value)` / `toLabels(apiKey, value)`
+   * returning the new value, or null/undefined to leave the atom as written
+   * (unknown or ambiguous references still fail at run time, as before).
+   * `@name` refs, wait steps and atoms without a hook are kept verbatim.
+   * @param {string} apiKey
+   * @param {string} expr
+   * @param {'ids'|'labels'} direction
+   * @returns {string}
+   */
+  function rewriteDeviceRefs(apiKey, expr, direction) {
+    if (typeof expr !== 'string' || !expr.trim()) return expr;
+    const hook = direction === 'ids' ? 'toIds' : 'toLabels';
+    let changed = false;
+    const parts = expr.split('|').map((part) => {
+      const p = part.trim();
+      const colon = p.indexOf(':');
+      if (!p || p.startsWith('@') || colon <= 0) return p;
+      const key = p.slice(0, colon).trim();
+      const handler = table.get(baseKey(key.toLowerCase()));
+      if (typeof handler?.[hook] !== 'function') return p;
+      const value = p.slice(colon + 1).trim();
+      let next;
+      try { next = handler[hook](apiKey, value); } catch { next = null; }
+      if (typeof next !== 'string' || !next || next === value) return p;
+      changed = true;
+      return `${key}:${next}`;
+    });
+    return changed ? parts.filter(Boolean).join(' | ') : expr;
+  }
+
+  return { run, resolve, isServerAtom, isDeviceAtom, rewriteDeviceRefs };
 }

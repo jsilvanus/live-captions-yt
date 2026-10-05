@@ -262,6 +262,8 @@ export class RtmpRelayManager {
      * @type {Map<string, { slots: Array, startedAt: Date, hasCea708: boolean, srtSeq: number, cea708DelayMs: number }>}
      */
     this._meta = new Map();
+    /** apiKey -> why the last relay process ended with an error (cleared when a relay starts). */
+    this._lastExit = new Map();
 
     /**
      * Server-side DSK overlay state: ordered image paths to composite on the relay stream.
@@ -347,6 +349,7 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   async start(apiKey, relays, { cea708DelayMs = 0 } = {}) {
+      this._lastExit.delete(apiKey);
       // Crop-view slots (sourceView: 'crop') forward the {key}-crop vertical
       // rendition instead of the raw ingest — they are fanned out by MediaMTX
       // from that path and never participate in the CEA-708/transcode/DSK
@@ -775,7 +778,11 @@ export class RtmpRelayManager {
           }
 
         if (info && info.code !== undefined && info.code !== null) {
-          logger.warn(`[rtmp] ffmpeg exited with code ${info.code} for key ${apiKey.slice(0, 8)}`);
+          const f = info.failure;
+          logger.warn(`[rtmp] ffmpeg exited with code ${info.code} for key ${apiKey.slice(0, 8)}${f ? `: ${f.code ? `[${f.code}] ` : ''}${f.message}${f.workerId ? ` (worker ${f.workerId})` : ''}${f.stderrTail ? `\n${f.stderrTail}` : ''}` : ''}`);
+          if (info.code !== 0 && !this._procs.has(apiKey)) {
+            this._lastExit.set(apiKey, { at: endedAt.toISOString(), code: info.code, reason: f ? `${f.message}${f.stderrTail ? ` — ${f.stderrTail.split('\n').filter(Boolean).slice(-2).join(' / ').slice(0, 300)}` : ''}` : `ffmpeg exited with code ${info.code}`, workerId: f?.workerId ?? null });
+          }
         } else {
           logger.info(`[rtmp] Relay ended for key ${apiKey.slice(0, 8)}`);
         }
@@ -1201,6 +1208,11 @@ export class RtmpRelayManager {
    * @param {string} apiKey
    * @returns {boolean}
    */
+  /** Why the last relay of this key ended with an error, or null (cleared when a relay starts). */
+  lastExit(apiKey) {
+    return this._lastExit.get(apiKey) ?? null;
+  }
+
   isRunning(apiKey) {
     return this._procs.has(apiKey) || this._mediamtxRelays.has(apiKey) || this._cropRelays.has(apiKey) || this._cameraRelays.has(apiKey);
   }

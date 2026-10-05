@@ -16,8 +16,6 @@ Per-package test coverage detail (covered / gaps) now lives alongside each packa
 | `packages/plugins/lcyt-platforms` | ~1,400 | ~1,600 | Good | Medium | **Nothing is verified against the live YouTube API** — by explicit scope decision, all tests stub `fetch` and assert request shapes against the published Data API v3 / Analytics v2 contracts. A real-channel smoke test is still owed. No test covers a real OAuth round-trip. |
 | `packages/plugins/lcyt-agent` | ~3,600 | ~2,850 | Good | Medium | Bridge-relayed provider support for the `agentic_chat` turn loop and vision adapters (direct providers only today); `<AgentChatPanel>`/`useGuidedAction` frontend not built |
 | `packages/lcyt-tools` | ~500 | ~300 | Good | Low | External MCP transport wiring (`lcyt-mcp-stdio`/`lcyt-mcp-http`) not built — only the in-process bridge is tested/consumed today |
-| `packages/lcyt-orchestrator` | ~400 | ~200 | Moderate | Low | `autoscaler.js`, full burst-provisioning E2E |
-| `packages/lcyt-worker-daemon` | ~200 | ~150 | Moderate | Low | `uploader.js`, S3 upload errors |
 | `packages/lcyt-bridge` | 490 | ~400 | Good | Low | `tray.js` (desktop-only), entry-point env-var validation |
 | `packages/lcyt-mcp-stdio` | 272 | ~300 | Good | Low | Edge cases only |
 | `packages/lcyt-mcp-http` | 1,083 | ~450 | Good | Low | Full MCP tool-call flow via Streamable HTTP (requires MCP client harness) |
@@ -44,4 +42,3 @@ Items marked ✅ were completed 2026-03-16 or 2026-03-17.
 10. **`packages/lcyt-backend/src/index.js`** *(Low)* — graceful shutdown (SIGTERM/SIGINT) not tested; tightly coupled to process signals and server startup.
 11. **`packages/plugins/lcyt-rtmp` STT gRPC path** *(Medium)* — `GoogleSttAdapter` gRPC streaming (requires `@google-cloud/speech` installed) not covered by CI.
 12. **`packages/lcyt-backend/src/routes/stt.js`** *(Medium)* — server-side STT HTTP routes untested.
-13. **`packages/lcyt-orchestrator` autoscaler** *(Low)* — `autoscaler.js` not covered; burst provisioning E2E requires Hetzner mock server.

@@ -56,7 +56,7 @@ data:
 
   # ── ffmpeg runner ─────────────────────────────────────────────────────────────
   # 'spawn'  — local ffmpeg binary (default)
-  # 'worker' — delegate to lcyt-orchestrator (distributed mode)
+  # 'fleet'  — fffleet fleet (set FFFLEET_URL)
   FFMPEG_RUNNER: "spawn"
   FFMPEG_IMAGE: "lcyt-ffmpeg:latest"
 

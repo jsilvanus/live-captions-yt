@@ -75,6 +75,8 @@ export class FleetFfmpegRunner extends EventEmitter {
     this.stdin = null;
     this.stdout = null;
     this.stderr = null;
+    /** Why the job failed (fleet error code and message, ffmpeg's stderr tail, worker), or null. Set when it closes. */
+    this.failure = null;
     this._closed = false;
   }
 
@@ -138,7 +140,8 @@ export class FleetFfmpegRunner extends EventEmitter {
     const state = snap?.state ?? this.job?.state;
     const code = snap?.exitCode ?? (state === 'succeeded' ? 0 : state === 'cancelled' ? null : 1);
     this.finalSnapshot = snap;
-    this.emit('close', { code, signal: state === 'cancelled' ? 'SIGTERM' : null });
+    this.failure = failureOf(snap ?? this.job?.snapshot?.(), code);
+    this.emit('close', { code, signal: state === 'cancelled' ? 'SIGTERM' : null, ...(this.failure && { failure: this.failure }) });
   }
 
   async stop(timeoutMs = 3000) {
@@ -206,6 +209,29 @@ export class FleetFfmpegRunner extends EventEmitter {
   isRunning() {
     return !!this.job && !this._closed;
   }
+}
+
+/**
+ * The reason a fleet job did not succeed, from its final snapshot: the fleet's error code and
+ * message (e.g. WORKER_LOST, FFMPEG_EXIT, a requirement no worker met), the tail of ffmpeg's
+ * stderr when the worker returned one, and the worker that ran it. Null for a clean exit or a
+ * cancelled job.
+ * @param {object|null|undefined} snap
+ * @param {number|null} code
+ * @returns {{ state: string, code: string|null, message: string, stderrTail: string|null, workerId: string|null }|null}
+ */
+export function failureOf(snap, code) {
+  const state = snap?.state;
+  if (!snap || state === 'cancelled' || (state === 'succeeded' && !snap.error)) return null;
+  if (!snap.error && !(code > 0) && state !== 'failed') return null;
+  const err = snap.error || {};
+  return {
+    state: state ?? 'failed',
+    code: err.code ?? null,
+    message: err.message || (code > 0 ? `ffmpeg exited with code ${code}` : 'job failed'),
+    stderrTail: snap.stderrTail ?? null,
+    workerId: snap.workerId ?? null,
+  };
 }
 
 function srtTime(ms) {

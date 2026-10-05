@@ -37,4 +37,14 @@ for (const runner of ['spawn', 'fleet']) {
   });
 }
 
+test('fleet: a failing job writes the reason to stderr and exposes it as failure', { skip }, async () => {
+  const proc = spawnFfmpeg(['-v', 'error', '-i', '/no/such/file', '-f', 'null', '-'], { runner: 'fleet', stdio: ['ignore', 'ignore', 'pipe'] });
+  const closed = new Promise((resolve) => proc.once('close', (code) => resolve(code)));
+  const err = (await readAll(proc.stderr)).toString();
+  assert.notEqual(await closed, 0);
+  assert.equal(proc.failure?.code, 'FFMPEG_EXIT');
+  assert.match(err, /FFMPEG_EXIT/);
+  assert.match(err, /No such file/);
+});
+
 test('closeFleet', async () => { await closeFleet(); });

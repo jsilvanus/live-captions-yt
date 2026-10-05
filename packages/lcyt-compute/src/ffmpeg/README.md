@@ -1,7 +1,7 @@
 FFmpeg runners
 ================
 
-This folder contains pluggable FFmpeg runner implementations shared by `lcyt-backend` (and its plugins) and `lcyt-worker-daemon`.
+This folder contains pluggable FFmpeg runner implementations shared by `lcyt-backend` (and its plugins).
 
 Files
 - `index.js` — factory `createFfmpegRunner({ runner, ...opts })` which selects the runner implementation based on `FFMPEG_RUNNER` and passed options.

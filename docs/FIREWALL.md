@@ -13,8 +13,7 @@ This document lists every port used by LCYT services, whether it needs to be pub
 | 1935 | TCP | RTMP ingest (nginx-rtmp or MediaMTX) | **Yes** (RTMP clients) | No — direct |
 | 3000 | TCP | lcyt-backend API | No — loopback only | **Yes** (nginx) |
 | 3001 | TCP | lcyt-mcp-http | No — loopback only | **Yes** (nginx, if exposed) |
-| 4000 | TCP | lcyt-orchestrator | No — loopback only | No (internal) |
-| 5000 | TCP | lcyt-worker-daemon | No — loopback only | No (internal) |
+| 5000 | TCP | fffleet-orchestrator (default port) | No — internal | No (internal) |
 | 8080 | TCP | MediaMTX HLS / metrics HTTP | No — loopback only | **Yes** (nginx proxy_pass for `/r/`) |
 | 9997 | TCP | MediaMTX REST API | No — loopback only | No (internal only) |
 
@@ -54,15 +53,9 @@ All of the following are bound to `127.0.0.1` in `docker-compose.yml` and must *
 - Configured by: `PORT` env var in the MCP Streamable HTTP process (default `3001`).
 - nginx proxy target: `http://127.0.0.1:3001`
 
-### Port 4000 — lcyt-orchestrator
-- Job scheduler and Hetzner VM lifecycle manager. Internal only.
-- Configured by: `PORT` env var (default `4000`).
-- Not proxied externally; backend reaches it via `COMPUTE_ORCHESTRATOR_URL`.
-
-### Port 5000 — lcyt-worker-daemon
-- ffmpeg / DSK renderer worker. Internal only.
-- Configured by: `PORT` env var (default `5000`).
-- Backend reaches it via `WORKER_DAEMON_URL` (default `http://127.0.0.1:5000`).
+### Port 5000 — fffleet orchestrator
+- Schedules ffmpeg and perception jobs on fffleet workers. Internal only; not part of this repo (https://github.com/jsilvanus/fffleet).
+- Backend reaches it via `FFFLEET_URL`. Workers must be able to reach the RTMP/HLS/preview URLs used in the jobs (see `docs/DEPLOY.md`).
 
 ### Port 8080 — MediaMTX HLS / metrics
 - Serves HLS playlists and segments for audio/video streams.

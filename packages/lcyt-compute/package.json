@@ -2,7 +2,7 @@
   "name": "lcyt-compute",
   "version": "0.1.0",
   "private": true,
-  "description": "ffmpeg runners and job dispatch shared by lcyt-backend, lcyt-worker-daemon and lcyt-orchestrator",
+  "description": "ffmpeg runners and job dispatch shared by lcyt-backend and its plugins",
   "type": "module",
   "main": "src/index.js",
   "exports": {

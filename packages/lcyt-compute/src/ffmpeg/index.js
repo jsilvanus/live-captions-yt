@@ -1,6 +1,5 @@
 import { LocalFfmpegRunner } from './local-runner.js';
 import { DockerFfmpegRunner } from './docker-runner.js';
-import { WorkerFfmpegRunner } from './worker-runner.js';
 import { FleetFfmpegRunner } from './fleet-runner.js';
 
 /**
@@ -80,8 +79,9 @@ function wrapRunnerAccounting(runner, purpose, apiKey) {
 export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', apiKey = '', ...opts } = {}) {
   const withAccounting = (instance) => wrapRunnerAccounting(instance, purpose, apiKey);
 
-  // Backwards-compatible: if a wrapper command is provided via env, prefer it
-  if (!opts.cmd && ENV_WRAPPER) {
+  // Backwards-compatible: if a wrapper command is provided via env, prefer it (callers that
+  // pass the plain 'ffmpeg' still get the wrapper; only a custom cmd overrides it)
+  if ((!opts.cmd || opts.cmd === 'ffmpeg') && ENV_WRAPPER) {
     return withAccounting(new LocalFfmpegRunner(Object.assign({}, opts, { cmd: ENV_WRAPPER })));
   }
 
@@ -95,12 +95,12 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
     case 'fleet':
       return withAccounting(new FleetFfmpegRunner(opts));
     case 'worker':
-      return withAccounting(new WorkerFfmpegRunner(opts));
+      throw new Error("FFMPEG_RUNNER=worker was removed together with lcyt-worker-daemon and lcyt-orchestrator; use FFMPEG_RUNNER=fleet with FFFLEET_URL (https://github.com/jsilvanus/fffleet)");
     default:
       throw new Error(`Unknown ffmpeg runner: ${runner}`);
   }
 }
 
-export { LocalFfmpegRunner, DockerFfmpegRunner, WorkerFfmpegRunner, FleetFfmpegRunner };
+export { LocalFfmpegRunner, DockerFfmpegRunner, FleetFfmpegRunner };
 export { getFleet, closeFleet } from './fleet-runner.js';
 export { spawnFfmpeg } from './spawn.js';

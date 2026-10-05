@@ -302,6 +302,36 @@ describe('action atoms (label addressing)', () => {
   });
 });
 
+describe('action atoms (id <-> label rewriting)', () => {
+  const presets = [{ id: 'p-wide', label: 'Wide', presetNumber: 1 }, { id: 'p-alt', name: 'Altar', presetNumber: 2 }];
+
+  it('stores ids for a camera atom and shows labels again, surviving a rename', () => {
+    const id = insertCamera({ name: 'Cam A', control_config: { presets }, owner_api_key: 'key1' });
+    db.prepare('UPDATE prod_cameras SET label = ? WHERE id = ?').run('Pulpit', id);
+    const stored = commands.cameraAtomToIds('key1', 'pulpit.wide');
+    assert.equal(stored, `${id}.p-wide`);
+    db.prepare('UPDATE prod_cameras SET label = ? WHERE id = ?').run('Lectern', id);
+    assert.equal(commands.cameraAtomToLabels('key1', stored), 'lectern.wide');
+    assert.equal(commands.cameraAtomToIds('key1', 'lectern.2'), `${id}.p-alt`);
+  });
+
+  it('leaves unresolvable atoms alone and falls back to the id for an ambiguous label', () => {
+    const a = insertCamera({ name: 'A', control_config: { presets }, owner_api_key: 'key1' });
+    const b = insertCamera({ name: 'B', control_config: { presets }, owner_api_key: 'key1' });
+    db.prepare('UPDATE prod_cameras SET label = ? WHERE id IN (?, ?)').run('Same', a, b);
+    assert.equal(commands.cameraAtomToIds('key1', 'nope.wide'), null);
+    assert.equal(commands.cameraAtomToIds('key1', 'same.wide'), null); // ambiguous
+    assert.equal(commands.cameraAtomToLabels('key1', `${a}.p-wide`), `${a}.wide`);
+  });
+
+  it('rewrites only the mixer part of a mixer atom', () => {
+    const id = insertMixer({ name: 'Main', owner_api_key: 'key1' });
+    assert.equal(commands.mixerAtomToIds('key1', 'main.stream'), `${id}.stream`);
+    assert.equal(commands.mixerAtomToLabels('key1', `${id}.2`), 'main.2');
+    assert.equal(commands.mixerAtomToIds('key1', 'ghost.2'), null);
+  });
+});
+
 describe('slugifyLabel', () => {
   it('lowercases and collapses non-alphanumerics', () => {
     assert.equal(slugifyLabel('  Pulpit — Wide!  '), 'pulpit-wide');

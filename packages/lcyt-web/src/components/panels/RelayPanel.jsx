@@ -87,6 +87,12 @@ export function RelayPanel({ relayList = [], onRelayListChange, relayStatus = nu
         </div>
       )}
 
+      {relayStatus?.lastExit && (
+        <div className="settings-error" role="alert">
+          {t('settings.relay.lastExit')}: {relayStatus.lastExit.reason}
+        </div>
+      )}
+
       {relayError && <div className="settings-error">{relayError}</div>}
 
       {backendUrl && apiKey && (

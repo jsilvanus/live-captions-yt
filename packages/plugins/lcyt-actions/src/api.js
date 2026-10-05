@@ -15,7 +15,7 @@
 import { runActionsMigrations } from './db.js';
 
 export { createActionsRouter } from './routes/actions.js';
-export { createCueActionDispatcher, DEFAULT_COOLDOWN_MS, DEFAULT_CHAIN_WINDOW_MS, DEFAULT_MAX_DEPTH } from './cue-dispatcher.js';
+export { createCueActionDispatcher, DEFAULT_COOLDOWN_MS, DEFAULT_CHAIN_WINDOW_MS, DEFAULT_MAX_DEPTH, DEFAULT_RATE_MAX_RUNS, DEFAULT_RATE_WINDOW_MS } from './cue-dispatcher.js';
 export { createAuthoringGuard } from './authoring-guard.js';
 export { createActionExecutor, currentCausation, parseWaitMs, MAX_WAIT_MS, DEFAULT_DEVICE_COOLDOWN_MS } from './executor.js';
 export * from './db.js';

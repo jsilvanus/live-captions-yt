@@ -38,12 +38,9 @@ Welcome to the LCYT documentation. This is your navigation hub for all guides, A
 - [**PORTS.md**](../PORTS.md) — Port assignment reference
 - [**TODO.md**](../TODO.md) — Outstanding work items
 - [**env-vars.md**](./env-vars.md) — Complete environment variable reference
-- [**docker-compose setup**](./compose_orchestrator.md) — Orchestrator deployment
-- [**Distributed compute architecture**](./distributed-compute.md) — Backend → orchestrator → worker-daemon tiers, runner selection, Hetzner autoscaling
+- [**Distributed compute (fffleet)**](./DEPLOY.md#distributed-mode-fffleet) — `FFMPEG_RUNNER=fleet`, FFFLEET_URL
 
 ### Platform-Specific
-- [Hetzner snapshot setup](./hetzner_snapshot.md) — VM image preparation
-- [Hetzner operations runbook](./hetzner_runbook.md) — Maintenance guide
 - [ffmpeg Docker usage](./ffmpeg-docker-usage.md) — FFmpeg container guide
 
 ## 📖 API Reference
@@ -151,7 +148,7 @@ All plans in [docs/plans/](./plans/) — See [PLANS.md](./PLANS.md) for full ind
 - [plan_backend_split.md](./plans/plan_backend_split.md) — Microservices split
 - [plan_cache.md](./plans/plan_cache.md) — Caching strategy
 - [plan_cloudfleet.md](./plans/plan_cloudfleet.md) — Kubernetes deployment
-- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) — Docker ffmpeg runner → distributed Hetzner compute (implemented; see [distributed-compute.md](./distributed-compute.md))
+- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) — Docker ffmpeg runner → distributed Hetzner compute (implemented, then superseded by the external fffleet project; the orchestrator and worker daemon were retired 2026-10-05)
 - [plan_mediamtx.md](./plans/plan_mediamtx.md) — MediaMTX integration
 - [plan_metacode_refactor.md](./plans/plan_metacode_refactor.md) — Metacode system refactor
 
@@ -171,11 +168,9 @@ All plans in [docs/plans/](./plans/) — See [PLANS.md](./PLANS.md) for full ind
 | **lcyt-backend** | [packages/lcyt-backend/README.md](../packages/lcyt-backend/README.md) |
 | **lcyt-web** | [packages/lcyt-web/README.md](../packages/lcyt-web/README.md) |
 | **lcyt-bridge** | [packages/lcyt-bridge/README.md](../packages/lcyt-bridge/README.md) |
-| **lcyt-orchestrator** | [packages/lcyt-orchestrator/README.md](../packages/lcyt-orchestrator/README.md) |
 | **lcyt-site** | [packages/lcyt-site/README.md](../packages/lcyt-site/README.md) |
 | **lcyt-mcp-stdio** | [packages/lcyt-mcp-stdio/README.md](../packages/lcyt-mcp-stdio/README.md) |
 | **lcyt-mcp-http** | [packages/lcyt-mcp-http/README.md](../packages/lcyt-mcp-http/README.md) |
-| **lcyt-worker-daemon** | [packages/lcyt-worker-daemon/README.md](../packages/lcyt-worker-daemon/README.md) |
 
 ### Plugin Packages
 
@@ -219,10 +214,6 @@ docs/
 ├── METACODE.md                 ← Metacode system
 ├── env-vars.md                 ← Environment variables
 ├── ffmpeg-docker-usage.md      ← Docker ffmpeg
-├── compose_orchestrator.md     ← Orchestrator compose
-├── distributed-compute.md      ← Distributed ffmpeg compute architecture
-├── hetzner_snapshot.md         ← VM preparation
-├── hetzner_runbook.md          ← Operations runbook
 │
 ├── api/                        ← API endpoint docs
 │   ├── README.md

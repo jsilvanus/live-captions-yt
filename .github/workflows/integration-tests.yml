@@ -261,10 +261,6 @@ jobs:
         include:
           - name: lcyt-compute
             dir: packages/lcyt-compute
-          - name: lcyt-orchestrator
-            dir: packages/lcyt-orchestrator
-          - name: lcyt-worker-daemon
-            dir: packages/lcyt-worker-daemon
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -352,7 +348,6 @@ jobs:
       - name: Validate Docker Compose configs
         run: |
           docker compose -f docker-compose.yml config --quiet
-          docker compose -f docker-compose.orchestrator.yml config --quiet
         env:
           JWT_SECRET: ci-placeholder
           BACKEND_INTERNAL_TOKEN: ci-placeholder

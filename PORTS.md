@@ -14,8 +14,6 @@
 | **9997** | HTTP | MediaMTX — REST API | internal | `MEDIAMTX_API_URL` |
 | **9998** | HTTP | MediaMTX — Prometheus metrics | internal | — (`docker/mediamtx.yml` `metricsAddress`) |
 | **5560+** | ZeroMQ | Vertical-crop live repositioning (`CropManager`, one port per running crop renderer) | internal (loopback only) | `CROP_ZMQ_PORT_BASE` |
-| **4000** | HTTP | lcyt-orchestrator | internal | `PORT` |
-| **5000** | HTTP | lcyt-worker-daemon | internal | `PORT` |
 | **8090** | HTTP | Self-hosted STT inference (faster-whisper) — now deployed from the sibling `liturgos-auditor` repo | internal | service-specific, see that repo |
 | **9090** | HTTP | Prometheus (docker-compose.monitoring.yml) | internal | — |
 | **80 / 443** | HTTP/HTTPS | nginx reverse proxy | inbound (public) | — |
@@ -150,8 +148,6 @@ TCP  8889  MediaMTX WebRTC
 
 # Internal — loopback / private network only
 TCP  3000  lcyt-backend
-TCP  4000  lcyt-orchestrator
-TCP  5000  lcyt-worker-daemon
 TCP  8090  Self-hosted STT inference (now deployed from liturgos-auditor, if used)
 TCP  8080  MediaMTX HLS
 TCP  8554  MediaMTX RTSP

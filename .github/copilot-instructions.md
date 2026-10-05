@@ -34,7 +34,7 @@ Purpose
   - Web UI: `packages/lcyt-web/` (Vite + React + wouter; many contexts/hooks)
   - MCP servers: `packages/lcyt-mcp-stdio/` (stdio transport) and `packages/lcyt-mcp-http/` (streamable HTTP/SSE)
   - Plugins: `packages/plugins/*` (feature plugins imported by backend)
-  - Orchestrator / Worker: `packages/lcyt-orchestrator/`, `packages/lcyt-worker-daemon/` (ffmpeg jobs, autoscaling)
+  - Compute: `packages/lcyt-compute/` (ffmpeg runners; remote execution via the external fffleet package)
   - Python mirrors: `python-packages/` (Flask backend and Python library)
   - Android TV viewer: `android/lcyt-tv/`
 

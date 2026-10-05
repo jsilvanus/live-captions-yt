@@ -1,12 +1,8 @@
 /**
  * Perception job dispatch (plan_video_perception.md Phase 2 Stream B,
  * lcyt-production half): starts/stops the fps30 tracker job for a
- * dedicated-feed camera on the existing compute orchestration layer.
- * Reuses the same two dispatch knobs `FFMPEG_RUNNER=worker` already uses
- * (`ORCHESTRATOR_URL`, else `WORKER_DAEMON_URL`) rather than inventing a
- * third config surface — see `lcyt-worker-daemon/src/perception/runner.js`'s
- * module doc for why there's no 'local'/'docker' mode here (the runner is
- * pure JS with a stub detector, nothing to containerize yet).
+ * dedicated-feed camera as an fffleet job (`FFFLEET_URL`; workers run the
+ * `perception` job type from `lcyt-compute/perception/fffleet-executor`).
  *
  * Frame source: a dedicated-feed camera's `cameraKey` IS its own MediaMTX
  * path name (verified against `lcyt-rtmp`'s `rtmp-manager.js` camera-sourced
@@ -33,7 +29,7 @@
 import { mintIngestToken, verifyIngestToken } from 'lcyt-compute/perception/ingest-token';
 
 export function isPerceptionDispatchAvailable(env = process.env) {
-  return !!(env.FFFLEET_URL || env.ORCHESTRATOR_URL || env.WORKER_DAEMON_URL);
+  return !!env.FFFLEET_URL;
 }
 
 /**
@@ -47,35 +43,12 @@ export function isPerceptionDispatchAvailable(env = process.env) {
  */
 export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetchImpl = fetch, env = process.env, getFleetImpl = null, db = null, tokenSecret = env.PERCEPTION_INGEST_SECRET || null } = {}) {
   // FFFLEET_URL: perception is an fffleet job type (workers started with
-  // FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor). Otherwise the old orchestrator / worker daemon.
+  // FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor).
   const fleetUrl = env.FFFLEET_URL || null;
-  const orchestratorUrl = env.ORCHESTRATOR_URL || null;
-  const orchestratorToken = env.ORCHESTRATOR_INTERNAL_TOKEN || env.BACKEND_INTERNAL_TOKEN || null;
-  const workerDaemonUrl = env.WORKER_DAEMON_URL || null;
   const workerToken = env.BACKEND_INTERNAL_TOKEN || null;
 
   /** @type {Map<string, { jobId: string, apiKey: string, startedAt: number }>} */
   const running = new Map();
-
-  function _headers(token, headerName) {
-    const h = { 'Content-Type': 'application/json' };
-    if (token) h[headerName] = token;
-    return h;
-  }
-
-  async function _post(path, body) {
-    if (orchestratorUrl) {
-      return fetchImpl(`${orchestratorUrl}${path}`, { method: 'POST', headers: _headers(orchestratorToken, 'X-Internal-Auth'), body: JSON.stringify(body) });
-    }
-    return fetchImpl(`${workerDaemonUrl}${path}`, { method: 'POST', headers: _headers(workerToken, 'X-Worker-Auth'), body: JSON.stringify(body) });
-  }
-
-  async function _delete(path) {
-    if (orchestratorUrl) {
-      return fetchImpl(`${orchestratorUrl}${path}`, { method: 'DELETE', headers: _headers(orchestratorToken, 'X-Internal-Auth') });
-    }
-    return fetchImpl(`${workerDaemonUrl}${path}`, { method: 'DELETE', headers: _headers(workerToken, 'X-Worker-Auth') });
-  }
 
   // PERCEPTION_STREAM_BASE_URL: where a perception worker can read the media server's streams (e.g.
   // rtsp://mediamtx:8554). Unset = snapshot polling only. A remote worker must be able to reach it.
@@ -103,8 +76,8 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     // {ok:true, alreadyRunning:true}` guard in lcyt-agent.
     const existing = running.get(key);
     if (existing) return { jobId: existing.jobId, alreadyRunning: true };
-    if (!fleetUrl && !orchestratorUrl && !workerDaemonUrl) {
-      const err = new Error('perception runner not configured (set FFFLEET_URL, ORCHESTRATOR_URL or WORKER_DAEMON_URL)');
+    if (!fleetUrl) {
+      const err = new Error('perception runner not configured (set FFFLEET_URL)');
       err.code = 'NOT_CONFIGURED';
       throw err;
     }
@@ -126,24 +99,11 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
       emitIntervalMs: emitIntervalMs || (streamUrl ? 200 : 1000),
     };
 
-    if (fleetUrl) {
-      const { id, type: _type, ...payload } = plan;
-      const spec = { id, kind: 'stream', type: 'perception', owner: apiKey, labels: { purpose: 'perception' }, perception: { ...payload, jobId: id } };
-      await _attachFleet(key, apiKey, spec);
-      _persist(key, apiKey, id, 'fleet', spec);
-      return { jobId: id };
-    }
-
-    const path = orchestratorUrl ? '/compute/jobs' : '/jobs';
-    const res = await _post(path, plan);
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`perception dispatch failed: ${res.status} ${text}`);
-    }
-
-    running.set(key, { jobId, apiKey, startedAt: Date.now() });
-    _persist(key, apiKey, jobId, 'legacy', { ...plan, jobId });
-    return { jobId };
+    const { id, type: _type, ...payload } = plan;
+    const spec = { id, kind: 'stream', type: 'perception', owner: apiKey, labels: { purpose: 'perception' }, perception: { ...payload, jobId: id } };
+    await _attachFleet(key, apiKey, spec);
+    _persist(key, apiKey, id, 'fleet', spec);
+    return { jobId: id };
   }
 
   // ── persistence + re-adoption ────────────────────────────────────────────
@@ -179,8 +139,8 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
   /**
    * After a backend restart: re-attach to the jobs recorded before it. A fleet job is resubmitted with the same id,
    * which the fleet answers with the job it already runs (or runs afresh when it no longer knows the id), so no
-   * duplicate and no orphan is left. Jobs on the legacy orchestrator/worker daemon cannot be re-attached: they are
-   * stopped best-effort and forgotten, and auto-start (or the operator) starts a new one.
+   * duplicate and no orphan is left. Records from the retired orchestrator/worker daemon (mode 'legacy') cannot be
+   * re-attached: they are forgotten, and auto-start (or the operator) starts a new job.
    * @returns {Promise<{ adopted: number, dropped: number }>}
    */
   async function adopt() {
@@ -195,9 +155,6 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
           console.warn(`[perception] could not re-attach job ${row.job_id}: ${err.message}`);
         }
       } else {
-        if (row.mode === 'legacy' && (orchestratorUrl || workerDaemonUrl)) {
-          try { await _delete(orchestratorUrl ? `/compute/jobs/${row.job_id}` : `/jobs/${row.job_id}`); } catch { /* best effort */ }
-        }
         _forget(row.job_key); dropped += 1;
       }
     }
@@ -225,20 +182,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
       _forget(key);
       return true;
     }
-    try {
-      const path = orchestratorUrl ? `/compute/jobs/${entry.jobId}` : `/jobs/${entry.jobId}`;
-      const res = await _delete(path);
-      if (!res.ok && res.status !== 404) {
-        console.error(`perception stop dispatch failed for ${key}: ${res.status}`);
-        return false;
-      }
-    } catch (err) {
-      console.error(`perception stop dispatch failed for ${key}:`, err && err.message);
-      return false;
-    }
-    running.delete(key);
-    _forget(key);
-    return true;
+    return false;
   }
 
   /**
