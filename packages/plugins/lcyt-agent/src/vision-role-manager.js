@@ -65,12 +65,28 @@ export class VisionRoleManager {
     this._captures = new Map();
   }
 
-  _key(apiKey, roleCode) {
-    return `${apiKey}:${roleCode}`;
+  /**
+   * Source resolver (camera scope, plan_perception_completion.md §5.5), set by
+   * the composition root once the feed attributor exists:
+   *   tagForCapture(apiKey, ts)   source tag of the shared feed at capture time
+   *   tagForCamera(cameraId)      tag for a camera's own (dedicated) feed
+   *   cameraContext(apiKey, id)   short prompt text about a camera (label, zone, overlaps) or null
+   *   feedKeyFor(cameraId)        the camera's own preview key (camera_key) or null
+   *   cameraAllowed(apiKey, id)   false when the camera belongs to another project
+   * Without one, every session stays project-scoped exactly as before.
+   * @param {object|null} resolver
+   */
+  setSourceResolver(resolver) {
+    this._resolver = resolver;
   }
 
-  _recordCapture(apiKey, roleCode, entry) {
-    const key = this._key(apiKey, roleCode);
+  /** Session key: `apiKey:role` (project scope) or `apiKey:cameraId:role` (camera scope). */
+  _key(apiKey, roleCode, cameraId = null) {
+    return cameraId ? `${apiKey}:${cameraId}:${roleCode}` : `${apiKey}:${roleCode}`;
+  }
+
+  _recordCapture(apiKey, roleCode, entry, cameraId = null) {
+    const key = this._key(apiKey, roleCode, cameraId);
     let list = this._captures.get(key);
     if (!list) { list = []; this._captures.set(key, list); }
     list.push(entry);
@@ -83,16 +99,20 @@ export class VisionRoleManager {
    * browse-list response small).
    * @returns {Array<object>}
    */
-  getCaptures(apiKey, roleCode) {
-    const list = this._captures.get(this._key(apiKey, roleCode)) || [];
+  getCaptures(apiKey, roleCode, cameraId = null) {
+    const list = this._captures.get(this._key(apiKey, roleCode, cameraId)) || [];
     return list.map(({ frame, ...meta }) => meta).reverse();
   }
 
   /**
    * @returns {object|null} the full capture entry (including `frame`), or null
    */
-  getCapture(apiKey, roleCode, captureId) {
-    const list = this._captures.get(this._key(apiKey, roleCode)) || [];
+  getCapture(apiKey, roleCode, captureId, cameraId = null) {
+    let list = this._captures.get(this._key(apiKey, roleCode, cameraId)) || [];
+    if (!list.length && !cameraId) {
+      // A capture id is unique: look through the project's camera-scoped buffers too
+      for (const [k, l] of this._captures) if (k.startsWith(`${apiKey}:`) && k.endsWith(`:${roleCode}`)) list = list.concat(l);
+    }
     return list.find((c) => c.id === captureId) || null;
   }
 
@@ -110,8 +130,8 @@ export class VisionRoleManager {
    * @param {{ apiSettings: object, vendor: string, promptOverride?: string }} opts
    * @returns {Promise<{ ok: boolean, error?: string, original?: object, replay?: object }>}
    */
-  async replay(apiKey, roleCode, captureId, { apiSettings, vendor, promptOverride }) {
-    const capture = this.getCapture(apiKey, roleCode, captureId);
+  async replay(apiKey, roleCode, captureId, { apiSettings, vendor, promptOverride, cameraId = null }) {
+    const capture = this.getCapture(apiKey, roleCode, captureId, cameraId);
     if (!capture) return { ok: false, error: 'Capture not found' };
 
     let adapter;
@@ -144,11 +164,26 @@ export class VisionRoleManager {
    * @param {{ apiUrl: string, apiKey: string, model: string }} opts.apiSettings
    * @param {string} opts.vendor — provider vendor for adapter selection
    * @param {object} opts.harnessConfig
+   * @param {string} [opts.cameraId] — camera scope: analyse that camera's own feed and tag events with it
    * @returns {{ ok: boolean, error?: string }}
    */
-  start(apiKey, roleCode, { apiSettings, vendor, harnessConfig = {} }) {
-    const key = this._key(apiKey, roleCode);
+  start(apiKey, roleCode, { apiSettings, vendor, harnessConfig = {}, cameraId = null }) {
+    const key = this._key(apiKey, roleCode, cameraId);
     if (this._sessions.has(key)) return { ok: true, alreadyRunning: true };
+
+    // Camera scope needs a feed of its own: a mixer-input-only camera has none,
+    // it is only ever seen on the shared feed, where the project-scoped session
+    // tags each frame with whichever camera was on at capture time.
+    let feedKey = apiKey;
+    if (cameraId) {
+      if (this._resolver?.cameraAllowed && !this._resolver.cameraAllowed(apiKey, cameraId)) {
+        return { ok: false, error: 'Camera not found' };
+      }
+      feedKey = this._resolver?.feedKeyFor?.(cameraId) ?? null;
+      if (!feedKey) {
+        return { ok: false, error: 'This camera has no feed of its own; start the project-scoped session instead (it is tagged with the camera on program)' };
+      }
+    }
 
     let adapter;
     try {
@@ -158,17 +193,31 @@ export class VisionRoleManager {
     }
 
     const previewBaseUrl = this._settings ? (this._settings.get('ai.vision_preview_base_url') || `http://localhost:${process.env.PORT || 3000}`) : undefined;
-    const fetcher = new VisionFrameFetcher({ apiKey, pollIntervalMs: harnessConfig.pollIntervalMs, previewBaseUrl });
-    const session = { fetcher, adapter, roleCode, lastUpdateAt: null, lastError: null };
+    const fetcher = new VisionFrameFetcher({ apiKey: feedKey, pollIntervalMs: harnessConfig.pollIntervalMs, previewBaseUrl });
+    const session = { fetcher, adapter, roleCode, cameraId, lastUpdateAt: null, lastError: null };
     this._sessions.set(key, session);
 
-    const prompt = buildPrompt(roleCode, harnessConfig);
+    const basePrompt = buildPrompt(roleCode, harnessConfig);
     const outputMode = roleCode === 'tracker' ? 'json' : (harnessConfig.outputMode ?? 'text');
     const jsonSchema = harnessConfig.jsonSchema;
 
     fetcher.on('frame', async (buf) => {
+      const capturedAt = Date.now();
+      // Attribute at capture time, before the (slow) analysis, so a cut during
+      // inference cannot move this result onto the next camera.
+      let source = null;
+      try {
+        source = cameraId
+          ? (this._resolver?.tagForCamera?.(cameraId) ?? { feedKind: 'dedicated', cameraId, confidence: 1, method: 'feed-key' })
+          : (this._resolver?.tagForCapture?.(apiKey, capturedAt) ?? null);
+      } catch { source = null; }
+      const sourceCameraId = source?.cameraId ?? null;
+      let context = null;
+      if (sourceCameraId) { try { context = this._resolver?.cameraContext?.(apiKey, sourceCameraId) ?? null; } catch { context = null; } }
+      const prompt = context && !harnessConfig.systemPromptOverride ? `${basePrompt} ${context}` : basePrompt;
       const capture = {
-        id: randomUUID(), ts: Date.now(), prompt, frame: buf, outputMode, jsonSchema,
+        id: randomUUID(), ts: capturedAt, prompt, frame: buf, outputMode, jsonSchema,
+        cameraId: sourceCameraId, source,
         result: null, error: null,
       };
       try {
@@ -184,10 +233,10 @@ export class VisionRoleManager {
             confidence: typeof o.confidence === 'number' ? o.confidence : 0,
             bbox: o.bbox ?? { x: 0, y: 0, w: 0, h: 0 },
           })) : [];
-          this._rolesBus.emit(apiKey, 'tracker', 'tracker_update', { apiKey, ts: session.lastUpdateAt, objects });
+          this._rolesBus.emit(apiKey, 'tracker', 'tracker_update', { apiKey, ts: session.lastUpdateAt, capturedAt, cameraId: sourceCameraId, source, objects });
         } else {
           this._rolesBus.emit(apiKey, 'describer', 'describer_update', {
-            apiKey, ts: session.lastUpdateAt, text: result.text, json: result.json,
+            apiKey, ts: session.lastUpdateAt, capturedAt, cameraId: sourceCameraId, source, text: result.text, json: result.json,
           });
         }
       } catch (err) {
@@ -195,7 +244,7 @@ export class VisionRoleManager {
         capture.error = err.message;
         logger.warn(`[agent] ${roleCode} vision analysis failed for ${apiKey}: ${err.message}`);
       } finally {
-        this._recordCapture(apiKey, roleCode, capture);
+        this._recordCapture(apiKey, roleCode, capture, cameraId);
       }
     });
 
@@ -213,8 +262,8 @@ export class VisionRoleManager {
    * @param {string} roleCode
    * @returns {boolean} — false if no session was running
    */
-  stop(apiKey, roleCode) {
-    const key = this._key(apiKey, roleCode);
+  stop(apiKey, roleCode, cameraId = null) {
+    const key = this._key(apiKey, roleCode, cameraId);
     const session = this._sessions.get(key);
     if (!session) return false;
     session.fetcher.stop();
@@ -250,12 +299,27 @@ export class VisionRoleManager {
   }
 
   /**
+   * Running sessions of a project, project-scoped and per camera.
+   * @param {string} apiKey
+   * @returns {Array<{ roleCode: string, cameraId: string|null, running: boolean, lastUpdateAt: number|null, lastError: string|null }>}
+   */
+  listSessions(apiKey) {
+    const prefix = `${apiKey}:`;
+    const out = [];
+    for (const [key, s] of this._sessions) {
+      if (!key.startsWith(prefix)) continue;
+      out.push({ roleCode: s.roleCode, cameraId: s.cameraId ?? null, running: s.fetcher.running, lastUpdateAt: s.lastUpdateAt, lastError: s.lastError });
+    }
+    return out;
+  }
+
+  /**
    * @param {string} apiKey
    * @param {string} roleCode
    * @returns {{ running: boolean, lastUpdateAt: number|null, lastError: string|null }}
    */
-  status(apiKey, roleCode) {
-    const session = this._sessions.get(this._key(apiKey, roleCode));
+  status(apiKey, roleCode, cameraId = null) {
+    const session = this._sessions.get(this._key(apiKey, roleCode, cameraId));
     if (!session) return { running: false, lastUpdateAt: null, lastError: null };
     return { running: session.fetcher.running, lastUpdateAt: session.lastUpdateAt, lastError: session.lastError };
   }

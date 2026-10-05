@@ -162,7 +162,7 @@ Phase 2: tracker, framing score, contract v2
 - JS ByteTrack, framing rules, `trackId`/`seq`/`capturedAt`/`frame`, aggregator region derivation and pass-through to World State.
 - Acceptance: stable id across a scripted crossing; `track:person` region rule fires in a backend test.
 
-Phase 2b: feed attribution (IMPLEMENTED: per-preset thumbnails, matcher, backend attributor, routes, resolver; camera-scoped vision roles pending) (can start in parallel with Phase 1; useful without any detector)
+Phase 2b: feed attribution (IMPLEMENTED: per-preset thumbnails, matcher, backend attributor, routes, resolver; camera-scoped vision roles; Describer output into World State per camera is left for 3b) (can start in parallel with Phase 1; useful without any detector)
 - Per-preset reference thumbnails (see decision 7), source tag type, `feed.source_changed` EventBus event published by `DeviceRegistry`, attributor job (cut detection, reference capture, hash match, hysteresis, operator override), resolver switched to capture-time tagging.
 - Camera scope for the vision roles: session keys, `cameraId` on events, camera label in the prompt.
 - Acceptance: scripted cuts between fixture clips are attributed correctly with and without mixer signals; an unmatched shot yields `unknown`, not a guess; no flicker on a held shot.

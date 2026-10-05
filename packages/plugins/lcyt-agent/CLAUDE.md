@@ -85,3 +85,7 @@ app.use('/scene', createSceneRouter(auth, sceneState));
 ---
 
 `computeEmbeddings()` and `evaluateEventCue()` here are the delegation targets for `packages/plugins/lcyt-cues`'s `semantic` and `event_cue` match types — see its `CLAUDE.md`. The shared tool registry consumed by the `agentic_chat` roles lives in `packages/lcyt-tools` — see its `CLAUDE.md`.
+
+## Camera-scoped vision roles (plan_perception_completion.md §5.5)
+
+`VisionRoleManager` sessions are keyed `apiKey:role` (project scope, unchanged) or `apiKey:cameraId:role` when `start()` gets a `cameraId`. A camera-scoped session polls that camera's own preview key (`camera_key`); a camera with no feed of its own is refused (409), a camera of another project is 404. `setSourceResolver()` (set by lcyt-backend) tags every frame at capture time: `tracker_update`/`describer_update` and capture entries carry `cameraId` and `source` (the feed attributor's tag), and the camera's label/zone/overlaps are appended to the prompt (not when `systemPromptOverride` is set). Without a resolver nothing changes (`cameraId: null`). Routes: `start` body `{ cameraId }`, `stop`/`status`/`captures`/`replay` take `?cameraId=`, `GET /roles/sessions` lists a project's sessions. Per-camera World State storage of Describer output is not done yet (Phase 3b).

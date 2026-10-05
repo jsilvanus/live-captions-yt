@@ -409,3 +409,78 @@ describe('VisionRoleManager — error resilience', () => {
     assert.ok(call > 1, 'more than one analysis attempt happened');
   });
 });
+
+describe('VisionRoleManager — camera scope', () => {
+  const settings = { apiUrl: 'https://api.openai.com', apiKey: 'sk-x', model: 'gpt-4o-mini' };
+  const visionResponse = { choices: [{ message: { content: '{"objects":[]}' } }] };
+
+  function resolver(overrides = {}) {
+    return {
+      tagForCapture: () => ({ feedKind: 'shared', cameraId: 'choir', confidence: 0.8, method: 'visual-match' }),
+      tagForCamera: (id) => ({ feedKind: 'dedicated', cameraId: id, confidence: 1, method: 'feed-key' }),
+      cameraContext: (k, id) => `This frame is from camera "${id}".`,
+      feedKeyFor: (id) => (id === 'cam-a' ? 'cam-a-key' : null),
+      cameraAllowed: (k, id) => id !== 'foreign',
+      ...overrides,
+    };
+  }
+
+  test('project-scoped session tags events with the camera on the shared feed at capture time', async () => {
+    mockPreviewAndVisionApi({ visionResponse });
+    const { bus, events } = makeBusSpy('key1', 'tracker');
+    const manager = new VisionRoleManager(bus);
+    manager.setSourceResolver(resolver());
+    manager.start('key1', 'tracker', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 15 } });
+    await new Promise((r) => setTimeout(r, 60));
+    manager.stop('key1', 'tracker');
+    const payload = JSON.parse(events.find((e) => e.includes('tracker_update')).match(/data: (.+)\n\n/)[1]);
+    assert.equal(payload.cameraId, 'choir');
+    assert.equal(payload.source.method, 'visual-match');
+    assert.ok(manager.getCaptures('key1', 'tracker')[0].prompt.includes('camera "choir"'));
+  });
+
+  test('camera-scoped session polls the camera feed key, has its own key and tags events', async () => {
+    const urls = [];
+    global.fetch = async (url) => {
+      urls.push(String(url));
+      if (String(url).includes('/preview/')) return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('jpeg') };
+      return { ok: true, json: async () => visionResponse };
+    };
+    const { bus, events } = makeBusSpy('key1', 'describer');
+    const manager = new VisionRoleManager(bus);
+    manager.setSourceResolver(resolver());
+    assert.equal(manager.start('key1', 'describer', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 15 }, cameraId: 'cam-a' }).ok, true);
+    // a project-scoped session of the same role can run beside it
+    assert.equal(manager.start('key1', 'describer', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 15 } }).alreadyRunning, undefined);
+    await new Promise((r) => setTimeout(r, 60));
+    assert.equal(manager.status('key1', 'describer', 'cam-a').running, true);
+    assert.equal(manager.listSessions('key1').length, 2);
+    manager.stop('key1', 'describer', 'cam-a');
+    assert.equal(manager.status('key1', 'describer', 'cam-a').running, false);
+    assert.equal(manager.status('key1', 'describer').running, true);
+    manager.stop('key1', 'describer');
+    assert.ok(urls.some((u) => u.includes('/preview/cam-a-key/')));
+    const payload = JSON.parse(events.find((e) => e.includes('describer_update')).match(/data: (.+)\n\n/)[1]);
+    assert.ok(['cam-a', 'choir'].includes(payload.cameraId));
+  });
+
+  test('camera without its own feed, or from another project, is refused', () => {
+    const manager = new VisionRoleManager(new RolesBus());
+    manager.setSourceResolver(resolver());
+    const noFeed = manager.start('key1', 'tracker', { apiSettings: settings, vendor: 'openai', cameraId: 'cam-b' });
+    assert.equal(noFeed.ok, false); assert.match(noFeed.error, /no feed of its own/);
+    const foreign = manager.start('key1', 'tracker', { apiSettings: settings, vendor: 'openai', cameraId: 'foreign' });
+    assert.equal(foreign.error, 'Camera not found');
+  });
+
+  test('without a resolver behaviour is unchanged (cameraId null in events)', async () => {
+    mockPreviewAndVisionApi({ visionResponse });
+    const { bus, events } = makeBusSpy('key2', 'tracker');
+    const manager = new VisionRoleManager(bus);
+    manager.start('key2', 'tracker', { apiSettings: settings, vendor: 'openai', harnessConfig: { pollIntervalMs: 15 } });
+    await new Promise((r) => setTimeout(r, 60));
+    manager.stop('key2', 'tracker');
+    const payload = JSON.parse(events.find((e) => e.includes('tracker_update')).match(/data: (.+)\n\n/)[1]);
+    assert.equal(payload.cameraId, null);
+  });
+});

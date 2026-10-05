@@ -99,6 +99,7 @@ import { createCaptionFanout } from './caption-fanout.js';
 import { createPerceptionAggregator } from './perception-aggregator.js';
 import { createSharedFeedResolver } from './shared-feed-resolver.js';
 import { createFeedAttributor } from './feed-attributor.js';
+import { createVisionSourceResolver } from './vision-source-resolver.js';
 import { createAttributionRouter } from './routes/attribution.js';
 import { createPerceptionRouter } from './routes/perception.js';
 import { composeCaptionText } from './caption-files.js';
@@ -871,6 +872,7 @@ const _feedAttributor = createFeedAttributor({
   db, registry: productionRegistry, eventBus,
   previewBaseUrl: _perceptionBackendUrl, thumbnailsDir: DEFAULT_THUMBNAILS_DIR, thumbnailPath,
 });
+_visionRoleManager?.setSourceResolver?.(createVisionSourceResolver({ db, attributor: _feedAttributor }));
 const _sharedFeedResolver = createSharedFeedResolver({
   db, registry: productionRegistry, aggregator: _perceptionAggregator, attributor: _feedAttributor,
 });
