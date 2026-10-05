@@ -34,12 +34,7 @@ describe('resolution engine', () => {
 
     globalThis.fetch = async (url) => {
       assert.equal(String(url), 'https://example.com/current');
-      return {
-        ok: true,
-        status: 200,
-        headers: { get: () => 'application/json' },
-        text: async () => JSON.stringify({ temp: 21 }),
-      };
+      return new Response(JSON.stringify({ temp: 21 }), { status: 200, headers: { 'content-type': 'application/json' } });
     };
 
     const events = [];
@@ -67,7 +62,7 @@ describe('resolution engine', () => {
     let requestedUrl;
     globalThis.fetch = async (url) => {
       requestedUrl = String(url);
-      return { ok: true, status: 200, headers: { get: () => 'text/plain' }, text: async () => 'ok' };
+      return new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } });
     };
 
     const bus = new VariablesBus();
@@ -91,7 +86,7 @@ describe('resolution engine', () => {
     createConnector(db, 'key1', { id: 'c1', name: 'API', slug: 'api', baseUrl: 'https://example.com' });
     createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/x', responseType: 'json' });
 
-    globalThis.fetch = async () => ({ ok: false, status: 404, headers: { get: () => 'application/json' }, text: async () => '{}' });
+    globalThis.fetch = async () => new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
 
     const bus = new VariablesBus();
     const engine = createResolutionEngine({ db, bus });
@@ -111,7 +106,7 @@ describe('resolution engine', () => {
     let seenHeaders;
     globalThis.fetch = async (_url, opts) => {
       seenHeaders = opts.headers;
-      return { ok: true, status: 200, headers: { get: () => 'text/plain' }, text: async () => 'ok' };
+      return new Response('ok', { status: 200, headers: { 'content-type': 'text/plain' } });
     };
 
     const bus = new VariablesBus();
@@ -119,5 +114,29 @@ describe('resolution engine', () => {
     await engine.fireRequest('key1', 'api', 'get');
 
     assert.equal(seenHeaders.Authorization, 'Bearer sekret');
+  });
+
+  test('image responses are stored through filesControl and the variable holds the reference', async () => {
+    const db = createDb();
+    createConnector(db, 'key1', { id: 'c1', name: 'Img', slug: 'img', baseUrl: 'https://example.com' });
+    createRequest(db, 'c1', { id: 'r1', name: 'Logo', slug: 'logo', method: 'GET', path: '/logo.png', responseType: 'image' });
+    createMapping(db, 'r1', { id: 'm1', jsonPath: '$', variableName: 'logo' });
+
+    globalThis.fetch = async () => new Response(Buffer.from([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } });
+
+    const stored = [];
+    const filesControl = {
+      resolveStorage: async () => ({
+        putObject: async (_key, objectKey, buffer, type) => { stored.push({ objectKey, bytes: [...buffer], type }); return { storedKey: objectKey }; },
+        publicUrl: () => 'https://files.example/logo.png',
+      }),
+    };
+    const engine = createResolutionEngine({ db, bus: new VariablesBus(), filesControl });
+    const result = await engine.fireRequest('key1', 'img', 'logo');
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(stored[0].bytes, [1, 2, 3]);
+    assert.equal(stored[0].type, 'image/png');
+    assert.equal(getVariable(db, 'key1', 'logo').current_value, 'https://files.example/logo.png');
   });
 });

@@ -39,7 +39,7 @@ export { createTtlScheduler } from './ttl-scheduler.js';
 export { createPollScheduler } from './poll-scheduler.js';
 export { checkUrlAllowed } from './network-guard.js';
 export * from './db.js';
-export { interpolate, interpolatePairs, extractVariableNames } from './interpolate.js';
+export { interpolate, interpolatePairs, extractVariableNames } from 'varfetch';
 export { parseValueTtl } from './ttl.js';
 
 /**

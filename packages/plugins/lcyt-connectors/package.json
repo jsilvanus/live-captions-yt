@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "express": "^4.21",
-    "jsonwebtoken": "^9.0"
+    "jsonwebtoken": "^9.0",
+    "varfetch": "^0.2.0"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "",
