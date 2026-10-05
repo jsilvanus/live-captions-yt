@@ -16,6 +16,7 @@ const AUDIO_SOURCES = [
   { value: 'hls',  label: 'HLS (MediaMTX)' },
   { value: 'rtmp', label: 'RTMP (via ffmpeg)' },
   { value: 'whep', label: 'WHEP (WebRTC)' },
+  { value: 'auditor', label: 'Auditor (pulls the stream itself)' },
 ];
 
 export function SttPanel({ config = {}, onChange }) {

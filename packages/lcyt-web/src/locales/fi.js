@@ -104,6 +104,7 @@ export default {
       audioSourceHls: 'HLS (MediaMTX — suositeltu)',
       audioSourceRtmp: 'RTMP (ffmpeg)',
       audioSourceWhep: 'WHEP (ffmpeg ≥ 6.1)',
+      audioSourceAuditor: 'Auditor (hakee virran itse)',
       audioSourceHint: 'HLS hakee fMP4-segmentit suoraan MediaMTX:stä — ffmpegiä ei tarvita. RTMP ja WHEP käyttävät ffmpeg-aliprosessia äänen dekoodaamiseen raakaan PCM-muotoon.',
       whepUnavailable: 'WHEP vaatii ffmpeg ≥ 6.1 — ei saatavilla tällä palvelimella',
       autoStart: 'Käynnistä automaattisesti istunnon alussa',

@@ -20,6 +20,7 @@ import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
 import { OpenAiAdapter } from './stt-adapters/openai.js';
+import { AuditorLiveAdapter } from './stt-adapters/auditor-live.js';
 import { translateText, isSameLanguage } from './translate-server.js';
 import { getSttConfig } from './db.js';
 import logger from 'lcyt/logger';
@@ -172,7 +173,18 @@ export class SttManager extends EventEmitter {
     // (falling back to raw process.env only when omitted) — settings-resolved
     // values are passed through here rather than widening those classes further.
     let adapter;
-    if (provider === 'google') {
+    if (audioSource === 'auditor') {
+      // Pull type: the auditor service pulls the stream itself, so the provider choice does not apply.
+      provider = 'auditor';
+      adapter = new AuditorLiveAdapter({
+        language,
+        streamKey: effectiveStreamKey,
+        clientRef: `lcyt:${apiKey.slice(0, 8)}`,
+        baseUrl: this._settings ? this._settings.get('stt.auditor_url') || undefined : undefined,
+        apiKey: this._settings ? this._settings.get('stt.auditor_api_key') || undefined : undefined,
+        sourceUrl: this._settings ? this._settings.get('stt.auditor_source_url') || undefined : undefined,
+      });
+    } else if (provider === 'google') {
       adapter = new GoogleSttAdapter({
         language,
         apiKey: this._settings ? this._settings.get('stt.google_stt_key') || undefined : undefined,
@@ -317,9 +329,12 @@ export class SttManager extends EventEmitter {
         }
       });
 
+    } else if (audioSource === 'auditor') {
+      // Nothing to pull here: the adapter's start() (above) already opened the session on the service.
+
     } else {
       this._sessions.delete(apiKey);
-      throw new Error(`SttManager: unsupported audioSource "${audioSource}". Supported: hls, rtmp, whep`);
+      throw new Error(`SttManager: unsupported audioSource "${audioSource}". Supported: hls, rtmp, whep, auditor`);
     }
 
     logger.info(`[stt] Started for key ${apiKey.slice(0, 8)}… provider=${provider} lang=${language} source=${audioSource} stream=${effectiveStreamKey}`);

@@ -31,7 +31,7 @@ import { getMetricsInstance } from '../metrics/index.js';
 import { requireProjectRole } from '../middleware/project-access.js';
 
 const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
-const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
+const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep', 'auditor'];
 
 /** Send an SSE event line to an Express response. */
 function sendEvent(res, eventName, data) {
