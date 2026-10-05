@@ -41,7 +41,9 @@ export async function getFleet(env = process.env) {
   const key = JSON.stringify(opts);
   if (!sharedFleet || sharedKey !== key) {
     sharedFleet?.close().catch(() => {});
-    sharedFleet = createFleet(opts);
+    // Without a URL jobs run on this machine; perception jobs are the one non-ffmpeg type they need.
+    const { runPerception } = await import('../perception/fffleet-executor.js');
+    sharedFleet = createFleet({ ...opts, local: { executors: { perception: runPerception } } });
     sharedKey = key;
   }
   return sharedFleet;

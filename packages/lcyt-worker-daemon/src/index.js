@@ -6,7 +6,7 @@ import { makeFifo, createFifoWriter } from 'lcyt-compute/ffmpeg/pipe-utils';
 
 import createUploader from './uploader.js';
 import { createS3UploadFn } from './s3-uploader.js';
-import { createPerceptionJob } from './perception-job.js';
+import { createPerceptionJob } from 'lcyt-compute/perception/job';
 
 const DEFAULT_PORT = process.env.PORT || 5000;
 const WORKER_ID = process.env.WORKER_ID || 'worker-0';

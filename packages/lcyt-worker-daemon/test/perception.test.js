@@ -4,9 +4,9 @@ import assert from 'node:assert';
 process.env.NODE_ENV = 'test';
 
 const { startServer } = await import('../src/index.js');
-const { createHttpFrameSource } = await import('../src/perception/frame-source.js');
-const { createStubDetector } = await import('../src/perception/stub-backend.js');
-const { createPerceptionRunner } = await import('../src/perception/runner.js');
+const { createHttpFrameSource } = await import('lcyt-compute/perception/frame-source.js');
+const { createStubDetector } = await import('lcyt-compute/perception/stub-backend.js');
+const { createPerceptionRunner } = await import('lcyt-compute/perception/runner.js');
 
 const realFetch = global.fetch;
 

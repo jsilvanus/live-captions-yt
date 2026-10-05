@@ -8,6 +8,8 @@ Shared compute library for `lcyt-backend` (and its plugins), `lcyt-worker-daemon
 
 - `lcyt-compute/ffmpeg` also exports `spawnFfmpeg(args, { purpose, apiKey, stdio, runner })`: `child_process.spawn('ffmpeg')` normally, an fffleet job behind a ChildProcess look-alike (`stdin`/`stdout`/`stderr` streams, `kill()`, `exit`/`close` events) when the runner is `fleet`. Used where callers read ffmpeg's stdout or write its stdin themselves (STT, music analysis, PCM decode, DSK renderer). Needs fffleet >= 1.1 (`stdout: true`, `endStdin()`); fleet stderr is an empty stream.
 
+- `lcyt-compute/perception/*` holds the perception runner, frame source, stub detector and `job.js` (moved here from `lcyt-worker-daemon`), plus `fffleet-executor.js`: `{ type: 'perception', run }` for `FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor` on an fffleet worker. `getFleet()` also registers it for the in-process fallback.
+
 **Source files (`src/ffmpeg/`):** `index.js` (factory + accounting), `local-runner.js`, `docker-runner.js`, `fleet-runner.js` (fffleet: stream jobs, stdin as a Writable, reports `close` when a job ends by itself, local fallback), `spawn.js` (`spawnFfmpeg`), `worker-runner.js` (direct worker or orchestrator dispatch, with `ORCHESTRATOR_FALLBACK`), `pipe-utils.js`, `README.md`.
 
 **Compatibility:** `lcyt-backend/ffmpeg` and `lcyt-backend/ffmpeg/pipe-utils` re-export this package, so older imports keep working. New code imports `lcyt-compute/ffmpeg` directly.

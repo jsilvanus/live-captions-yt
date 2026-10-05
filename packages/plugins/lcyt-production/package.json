@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "atem-connection": "^2.0.0",
+    "lcyt-compute": "*",
     "obs-websocket-js": "^5.0.6"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",

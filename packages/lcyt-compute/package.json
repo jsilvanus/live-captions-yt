@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.js",
     "./ffmpeg": "./src/ffmpeg/index.js",
-    "./ffmpeg/*": "./src/ffmpeg/*.js"
+    "./ffmpeg/*": "./src/ffmpeg/*.js",
+    "./perception/*": "./src/perception/*.js"
   },
   "files": [
     "src"

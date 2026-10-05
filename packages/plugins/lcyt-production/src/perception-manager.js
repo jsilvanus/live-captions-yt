@@ -31,7 +31,7 @@
  */
 
 export function isPerceptionDispatchAvailable(env = process.env) {
-  return !!(env.ORCHESTRATOR_URL || env.WORKER_DAEMON_URL);
+  return !!(env.FFFLEET_URL || env.ORCHESTRATOR_URL || env.WORKER_DAEMON_URL);
 }
 
 /**
@@ -42,7 +42,10 @@ export function isPerceptionDispatchAvailable(env = process.env) {
  *   env?: object,
  * }} opts
  */
-export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetchImpl = fetch, env = process.env } = {}) {
+export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetchImpl = fetch, env = process.env, getFleetImpl = null } = {}) {
+  // FFFLEET_URL: perception is an fffleet job type (workers started with
+  // FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor). Otherwise the old orchestrator / worker daemon.
+  const fleetUrl = env.FFFLEET_URL || null;
   const orchestratorUrl = env.ORCHESTRATOR_URL || null;
   const orchestratorToken = env.ORCHESTRATOR_INTERNAL_TOKEN || env.BACKEND_INTERNAL_TOKEN || null;
   const workerDaemonUrl = env.WORKER_DAEMON_URL || null;
@@ -90,8 +93,8 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     // {ok:true, alreadyRunning:true}` guard in lcyt-agent.
     const existing = running.get(key);
     if (existing) return { jobId: existing.jobId, alreadyRunning: true };
-    if (!orchestratorUrl && !workerDaemonUrl) {
-      const err = new Error('perception runner not configured (set ORCHESTRATOR_URL or WORKER_DAEMON_URL)');
+    if (!fleetUrl && !orchestratorUrl && !workerDaemonUrl) {
+      const err = new Error('perception runner not configured (set FFFLEET_URL, ORCHESTRATOR_URL or WORKER_DAEMON_URL)');
       err.code = 'NOT_CONFIGURED';
       throw err;
     }
@@ -107,6 +110,17 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
       internalToken: workerToken || undefined,
       emitIntervalMs: emitIntervalMs || 1000,
     };
+
+    if (fleetUrl) {
+      const { id, type: _type, ...payload } = plan;
+      const fleet = await (getFleetImpl ? getFleetImpl() : (await import('lcyt-compute/ffmpeg')).getFleet(env));
+      const job = await fleet.submit({ id, kind: 'stream', type: 'perception', owner: apiKey, labels: { purpose: 'perception' }, perception: payload });
+      const entry = { jobId: id, apiKey, startedAt: Date.now(), job };
+      running.set(key, entry);
+      // A job that ends by itself (cancelled elsewhere, worker lost) frees the key.
+      job.done.catch(() => {}).then(() => { if (running.get(key) === entry) running.delete(key); });
+      return { jobId: id };
+    }
 
     const path = orchestratorUrl ? '/compute/jobs' : '/jobs';
     const res = await _post(path, plan);
@@ -129,6 +143,16 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     // (network error, 500, auth mismatch) was silently reported as success
     // with no local record left to retry or re-discover the still-running
     // job by.
+    if (entry.job) {
+      try {
+        await entry.job.cancel();
+      } catch (err) {
+        console.error(`perception stop dispatch failed for ${key}:`, err && err.message);
+        return false;
+      }
+      running.delete(key);
+      return true;
+    }
     try {
       const path = orchestratorUrl ? `/compute/jobs/${entry.jobId}` : `/jobs/${entry.jobId}`;
       const res = await _delete(path);
