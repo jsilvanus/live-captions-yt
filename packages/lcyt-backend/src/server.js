@@ -40,7 +40,7 @@ import {
   initDskControl, createDskRouters,
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
-import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -100,6 +100,9 @@ import { createCaptionFanout } from './caption-fanout.js';
 import { createPerceptionAggregator } from './perception-aggregator.js';
 import { createSharedFeedResolver } from './shared-feed-resolver.js';
 import { createFeedAttributor } from './feed-attributor.js';
+import { createSceneSummary } from './scene-summary.js';
+import { createPerceptionOverview } from './perception-overview.js';
+import { createCropFollowController } from './crop-follow-controller.js';
 import { createVisionSourceResolver } from './vision-source-resolver.js';
 import { createAttributionRouter } from './routes/attribution.js';
 import { createPerceptionRouter } from './routes/perception.js';
@@ -831,7 +834,7 @@ app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleMan
 app.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
-  { listCameras, listMixers, registry: productionRegistry },
+  { listCameras, listMixers, registry: productionRegistry, sceneSummary: (k) => _sceneSummary?.(k) ?? null },
   productionBridgeManager,
 ));
 app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
@@ -891,6 +894,12 @@ eventBus.tap((e) => {
   if (e.topic !== 'perception.interest' || !_visionRoleManager) return;
   for (const role of ['describer', 'tracker']) _visionRoleManager.trigger(e.projectId, role, { cameraId: e.data?.cameraId ?? null });
 });
+// Opt-in (crop_config.auto_follow): keep the vertical crop on the people the detector sees in the camera on program.
+const _cropFollow = createCropFollowController({
+  db, eventBus, cropManager: rtmp.cropManager, attributor: _feedAttributor, getCropConfig,
+  follow: { targetCenter, xNormForCenter, createFollowSmoother },
+});
+const _sceneSummary = createSceneSummary({ db, sceneState: _sceneState, attributor: _feedAttributor });
 const _sharedFeedResolver = createSharedFeedResolver({
   db, registry: productionRegistry, aggregator: _perceptionAggregator, attributor: _feedAttributor,
 });
@@ -906,12 +915,17 @@ onKeyDeleted((apiKey) => {
   _sceneState?.clearProject?.(apiKey);
   _perceptionAggregator?.clearProject?.(apiKey);
   _feedAttributor?.clearProject?.(apiKey);
+  _cropFollow?.clearProject?.(apiKey);
 });
 app.use('/production/attribution', createAttributionRouter(_feedAttributor, { db, auth: scopedAuth('production') }));
 app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
   perceptionManager: _perceptionManager,
   internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
   jobTokensEnabled: !!_perceptionIngestSecret,
+  overview: createPerceptionOverview({
+    db, sceneState: _sceneState, attributor: _feedAttributor, perceptionManager: _perceptionManager,
+    sharedAutostart: { get: (k) => getSharedAutostart(db, k) },
+  }),
   sharedAutostart: { get: (k) => getSharedAutostart(db, k), set: (k, v) => setSharedAutostart(db, k, v) },
   auth: scopedAuth('production'),
 }));

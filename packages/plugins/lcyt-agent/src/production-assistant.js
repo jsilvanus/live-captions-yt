@@ -95,10 +95,11 @@ export class ProductionAssistantManager {
    * @param {Function} opts.callTool
    * @param {'confirm'|'auto'} opts.mode
    * @param {number} [opts.cooldownMs]
+   * @param {string|null} [opts.sceneSummary] — what the detector and feed attribution currently see (read-only context)
    * @returns {Promise<{ ok: boolean, skipped?: string, suggestion?: object, action?: object, reply?: string }>}
    */
   async runTrigger(opts) {
-    const { apiKey, triggerText, agent, apiSettings, systemPrompt, tools, callTool, mode, cooldownMs } = opts;
+    const { apiKey, triggerText, agent, apiSettings, systemPrompt, tools, callTool, mode, cooldownMs, sceneSummary = null } = opts;
 
     if (!this._checkCooldown(apiKey, mode, cooldownMs)) {
       return { ok: true, skipped: 'cooldown' };
@@ -108,7 +109,7 @@ export class ProductionAssistantManager {
 
     const context = agent.getContext(apiKey);
     const contextStr = context.map((e) => `[${e.type}] ${e.text}`).join('\n') || '(no recent context)';
-    const messages = [{ role: 'user', content: `Recent context:\n${contextStr}\n\nDecide whether a camera/mixer change is warranted right now.` }];
+    const messages = [{ role: 'user', content: `Recent context:\n${contextStr}\n\n${sceneSummary ? `Current scene (fast detector and source attribution, read-only):\n${sceneSummary}\n\n` : ''}Decide whether a camera/mixer change is warranted right now.` }];
 
     const result = await runAgenticTurn({
       apiSettings, systemPrompt, messages, tools, callTool, apiKey,

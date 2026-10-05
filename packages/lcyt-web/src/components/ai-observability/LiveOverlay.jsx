@@ -1,6 +1,16 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 const BOX_COLOR = '#3ddc84';
+const DETECTOR_COLOR = '#4aa3ff';
+
+/** One-line description of the feed attributor's tag, e.g. `Camera choir · visual-match 80%`. */
+export function describeSource(tag, cameraNames = {}) {
+  if (!tag) return null;
+  if (!tag.cameraId) return 'Source unknown';
+  const name = cameraNames[tag.cameraId] || tag.cameraId;
+  const pct = typeof tag.confidence === 'number' ? ` ${Math.round(tag.confidence * 100)}%` : '';
+  return `Camera ${name} · ${tag.method}${pct}`;
+}
 
 /**
  * Client-side canvas overlay over the existing polled preview-JPEG feed
@@ -8,8 +18,11 @@ const BOX_COLOR = '#3ddc84';
  * composites `describer_update` text/JSON on top. No new backend — both
  * events already stream via the role.tracker and role.describer topics on
  * /events/stream; this component only renders what arrives.
+ *
+ * Perception additions: `detectorSubjects` (blue boxes from the fast detector, labelled with track id and any role a
+ * vision model bound to the track) and `sourceTag` (which camera the feed attributor says is on program).
  */
-export function LiveOverlay({ previewUrl, trackerObjects, describerUpdate }) {
+export function LiveOverlay({ previewUrl, trackerObjects, describerUpdate, detectorSubjects, sourceTag, cameraNames }) {
   const containerRef = useRef(null);
   const canvasRef = useRef(null);
   const [imgSize, setImgSize] = useState(null);
@@ -26,6 +39,22 @@ export function LiveOverlay({ previewUrl, trackerObjects, describerUpdate }) {
     ctx.clearRect(0, 0, width, height);
     ctx.lineWidth = 2;
     ctx.font = '11px monospace';
+    for (const sub of detectorSubjects || []) {
+      const bbox = sub.bbox || {};
+      const px = (Number(bbox.x) || 0) * width, py = (Number(bbox.y) || 0) * height;
+      const pw = (Number(bbox.w) || 0) * width, ph = (Number(bbox.h) || 0) * height;
+      ctx.strokeStyle = DETECTOR_COLOR;
+      ctx.setLineDash([5, 3]);
+      ctx.strokeRect(px, py, pw, ph);
+      ctx.setLineDash([]);
+      const label = `${sub.trackId != null ? `#${sub.trackId} ` : ''}${sub.role || sub.label || 'person'}`;
+      const textWidth = ctx.measureText(label).width;
+      const labelY = Math.min(height - 15, py + ph);
+      ctx.fillStyle = 'rgba(0,0,0,.7)';
+      ctx.fillRect(px, labelY, textWidth + 8, 15);
+      ctx.fillStyle = DETECTOR_COLOR;
+      ctx.fillText(label, px + 4, labelY + 11);
+    }
     for (const obj of trackerObjects || []) {
       const bbox = obj.bbox || {};
       const x = Number(bbox.x) || 0, y = Number(bbox.y) || 0, w = Number(bbox.w) || 0, h = Number(bbox.h) || 0;
@@ -41,7 +70,7 @@ export function LiveOverlay({ previewUrl, trackerObjects, describerUpdate }) {
       ctx.fillStyle = BOX_COLOR;
       ctx.fillText(label, px + 4, labelY + 11);
     }
-  }, [trackerObjects]);
+  }, [trackerObjects, detectorSubjects]);
 
   useEffect(() => { draw(); }, [draw, imgSize]);
 
@@ -74,6 +103,11 @@ export function LiveOverlay({ previewUrl, trackerObjects, describerUpdate }) {
       ) : (
         <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#777', fontSize: 12 }}>
           no incoming preview yet
+        </span>
+      )}
+      {describeSource(sourceTag, cameraNames) && (
+        <span data-testid="overlay-source" style={{ position: 'absolute', left: 8, top: 8, background: 'rgba(0,0,0,.72)', color: sourceTag?.cameraId ? '#eee' : '#e8b04a', fontSize: 11, padding: '3px 7px', borderRadius: 5 }}>
+          {describeSource(sourceTag, cameraNames)}
         </span>
       )}
       <canvas ref={canvasRef} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }} />

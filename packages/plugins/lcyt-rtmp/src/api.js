@@ -64,6 +64,7 @@ export { getRadioConfig, setRadioConfig } from './db.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side
 // helpers only; mutation goes through CropManager.applyPosition() itself.
 export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
+export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follow.js';
 
 /**
  * Initialize the RTMP relay plugin.

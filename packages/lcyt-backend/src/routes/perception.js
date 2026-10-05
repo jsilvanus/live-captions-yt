@@ -15,6 +15,7 @@
  *     are re-tagged via the shared-feed resolver before reaching the
  *     aggregator (Phase 3).
  *
+ *   GET  /overview — per-camera job/auto/on-program/detector state, shared-feed job and attribution (status panel).
  *   POST /shared/auto { enabled } — switch the automatic start/stop of the shared-feed job.
  *   POST /shared/start|stop, GET /shared/status — project-scoped (opts.auth),
  *     dispatch/inspect the one shared-feed perception job for this project
@@ -31,7 +32,7 @@ import { Router } from 'express';
  * @param {{ perceptionManager?: object, internalToken?: string|null, auth?: import('express').RequestHandler }} [opts]
  */
 export function createPerceptionRouter(aggregator, resolver, opts = {}) {
-  const { perceptionManager = null, internalToken = null, auth = null, sharedAutostart = null } = opts;
+  const { perceptionManager = null, internalToken = null, auth = null, sharedAutostart = null, overview = null } = opts;
   const router = Router();
 
   router.post('/ingest', (req, res) => {
@@ -92,6 +93,14 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
     res.json({ ok: true, status: perceptionManager.sharedFeedStatus(apiKey), auto: sharedAutostart ? sharedAutostart.get(apiKey) : false });
+  });
+
+  // GET /overview — cameras, shared-feed job and feed attribution in one read (camera status panel)
+  sharedRouter.get('/overview', (req, res) => {
+    if (!overview) return res.status(503).json({ error: 'Perception overview not configured' });
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
+    res.json({ ok: true, ...overview(apiKey) });
   });
 
   // POST /shared/auto { enabled } — run the shared-feed job automatically while the program feed is live

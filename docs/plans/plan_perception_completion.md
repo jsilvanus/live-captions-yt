@@ -1,6 +1,6 @@
 ---
 title: Perception Completion — Real Detector, Feed Attribution, LLM Hand-off
-status: phases 1-2 implemented (real frame source, ONNX person detector, tracker, framing score, contract v2, region cue patterns, benchmark, worker image); phases 2b-4 planned
+status: implemented 2026-10-05 (phases 1-4: detector, tracker, attribution, reliability, LLM hand-off, crop auto-follow, status panel); not yet run against real hardware, a real fleet or real service footage
 related: plan/video_perception, plan/compute_split, plan/ai_roles_framework, plan/vertical_crop, plan/ai_observability
 ---
 
@@ -177,7 +177,7 @@ Phase 3b: LLM hand-off (IMPLEMENTED 2026-10-05 without the frame upload route an
 - `FrameProvider` interface, perception frame upload route with per-job token, interest events, detector hints in the Describer and Tracker prompts, Tracker labels bound to track ids.
 - Acceptance: with a perception job running, Describer calls use the job's frame and camera tag and fire on a scripted person-entry event; with no job, behaviour matches today plus the attribution tag.
 
-Phase 4: consumers and UI
+Phase 4: consumers and UI (IMPLEMENTED 2026-10-05: opt-in crop auto-follow, Production Assistant scene summary, overlay with detector boxes and source badge, camera status panel with `GET /production/perception/overview`, `docs/PERCEPTION.md`. The church-data-protection pass on the privacy text is still open.)
 - Vertical crop follow (opt-in, smoothed), Production Assistant context, observability overlay, camera status panel, docs and `CLAUDE.md` updates, plan_video_perception.md status.
 
 Phases 1-3b are the core and could be separate PRs; phase 4 can be split by consumer. Phase 0 gates the model decision.

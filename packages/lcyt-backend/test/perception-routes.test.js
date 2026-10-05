@@ -213,3 +213,15 @@ describe('POST /production/perception/ingest — per-job tokens', () => {
     assert.equal(calls[0][1].cameraId, 'choir');
   });
 });
+
+describe('GET /production/perception/overview', () => {
+  it('401 without a session, 503 when not configured, otherwise the overview for the session project', async () => {
+    await startApp({ ingest: () => {} }, null, { auth: fakeAuth });
+    assert.equal((await fetch(`${baseUrl}/production/perception/overview`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/production/perception/overview`, { headers: { 'x-api-key': 'k1' } })).status, 503);
+    server.close();
+    await startApp({ ingest: () => {} }, null, { auth: fakeAuth, overview: (k) => ({ for: k, cameras: [] }) });
+    const body = await (await fetch(`${baseUrl}/production/perception/overview`, { headers: { 'x-api-key': 'k1' } })).json();
+    assert.deepEqual(body, { ok: true, for: 'k1', cameras: [] });
+  });
+});
