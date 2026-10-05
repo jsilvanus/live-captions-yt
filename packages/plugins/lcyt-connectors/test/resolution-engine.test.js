@@ -115,4 +115,28 @@ describe('resolution engine', () => {
 
     assert.equal(seenHeaders.Authorization, 'Bearer sekret');
   });
+
+  test('image responses are stored through filesControl and the variable holds the reference', async () => {
+    const db = createDb();
+    createConnector(db, 'key1', { id: 'c1', name: 'Img', slug: 'img', baseUrl: 'https://example.com' });
+    createRequest(db, 'c1', { id: 'r1', name: 'Logo', slug: 'logo', method: 'GET', path: '/logo.png', responseType: 'image' });
+    createMapping(db, 'r1', { id: 'm1', jsonPath: '$', variableName: 'logo' });
+
+    globalThis.fetch = async () => new Response(Buffer.from([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } });
+
+    const stored = [];
+    const filesControl = {
+      resolveStorage: async () => ({
+        putObject: async (_key, objectKey, buffer, type) => { stored.push({ objectKey, bytes: [...buffer], type }); return { storedKey: objectKey }; },
+        publicUrl: () => 'https://files.example/logo.png',
+      }),
+    };
+    const engine = createResolutionEngine({ db, bus: new VariablesBus(), filesControl });
+    const result = await engine.fireRequest('key1', 'img', 'logo');
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(stored[0].bytes, [1, 2, 3]);
+    assert.equal(stored[0].type, 'image/png');
+    assert.equal(getVariable(db, 'key1', 'logo').current_value, 'https://files.example/logo.png');
+  });
 });

@@ -13,6 +13,8 @@ import {
 import { fireRequest as varfetchFire, buildRequest } from 'varfetch';
 import { checkUrlAllowed, loadNetworkPolicy, toNetworkOptions } from './network-guard.js';
 
+const BINARY_TYPES = new Set(['image', 'binary']);
+
 /** DB rows -> the camelCase connector/request shapes varfetch takes. */
 function toConnector(row) {
   return {
@@ -57,9 +59,8 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
   }
 
   /** Store an image/binary response in files storage and point every mapped variable at it. */
-  async function storeBinaryResponse(apiKey, request, mappings, response, contentType) {
+  async function storeBinaryResponse(apiKey, request, mappings, buffer, contentType) {
     if (!filesControl) throw new Error('image/binary response mapping requires files storage, not configured');
-    const buffer = Buffer.from(await response.arrayBuffer());
     const storage = await filesControl.resolveStorage(apiKey);
     const objectKey = `connector-variables/${request.id}-${Date.now()}`;
     const { storedKey } = await storage.putObject(apiKey, objectKey, buffer, contentType || 'application/octet-stream');
@@ -102,19 +103,16 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
     }
 
     try {
-      let updated;
-      let result = { ok: true };
-      if (requestRow.response_type === 'image' || requestRow.response_type === 'binary') {
-        if (mappingRows.length === 0) return { ok: true, variables: [] };
-        const response = await fetch(built.url, { method: built.method, headers: built.headers, body: built.body });
-        const contentType = response.headers.get('content-type');
-        updated = await storeBinaryResponse(apiKey, requestRow, mappingRows, response, contentType);
-        result = { ok: response.ok, error: response.ok ? undefined : `HTTP ${response.status}` };
+      const result = await varfetchFire({
+        connector, request, variables: snapshot,
+        network: toNetworkOptions(loadNetworkPolicy(db, orgId)),
+      });
+      let updated = [];
+      if (result.ok && BINARY_TYPES.has(requestRow.response_type)) {
+        if (mappingRows.length > 0) {
+          updated = await storeBinaryResponse(apiKey, requestRow, mappingRows, result.body, result.contentType);
+        }
       } else {
-        result = await varfetchFire({
-          connector, request, variables: snapshot,
-          network: toNetworkOptions(loadNetworkPolicy(db, orgId)),
-        });
         updated = writeValues(apiKey, requestRow, result.values);
       }
       for (const row of updated) {
