@@ -31,7 +31,7 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
+  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from 'lcyt-production';
@@ -98,6 +98,8 @@ import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
 import { createPerceptionAggregator } from './perception-aggregator.js';
 import { createSharedFeedResolver } from './shared-feed-resolver.js';
+import { createFeedAttributor } from './feed-attributor.js';
+import { createAttributionRouter } from './routes/attribution.js';
 import { createPerceptionRouter } from './routes/perception.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
@@ -865,7 +867,13 @@ const _perceptionManager = createPerceptionManager({
   callbackBaseUrl: _perceptionBackendUrl,
 });
 const _perceptionAggregator = createPerceptionAggregator({ store, eventBus, sceneState: _sceneState });
-const _sharedFeedResolver = createSharedFeedResolver({ db, registry: productionRegistry, aggregator: _perceptionAggregator });
+const _feedAttributor = createFeedAttributor({
+  db, registry: productionRegistry, eventBus,
+  previewBaseUrl: _perceptionBackendUrl, thumbnailsDir: DEFAULT_THUMBNAILS_DIR, thumbnailPath,
+});
+const _sharedFeedResolver = createSharedFeedResolver({
+  db, registry: productionRegistry, aggregator: _perceptionAggregator, attributor: _feedAttributor,
+});
 
 // Release per-project in-memory state (capture buffers, World State
 // snapshots, tracked cameras) when a project is permanently deleted —
@@ -877,7 +885,9 @@ onKeyDeleted((apiKey) => {
   _visionRoleManager?.clearProject?.(apiKey);
   _sceneState?.clearProject?.(apiKey);
   _perceptionAggregator?.clearProject?.(apiKey);
+  _feedAttributor?.clearProject?.(apiKey);
 });
+app.use('/production/attribution', createAttributionRouter(_feedAttributor, { db, auth: scopedAuth('production') }));
 app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
   perceptionManager: _perceptionManager,
   internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
