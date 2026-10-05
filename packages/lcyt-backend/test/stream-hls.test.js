@@ -86,30 +86,17 @@ describe('hls_enabled DB column', () => {
 // ---------------------------------------------------------------------------
 
 describe('HlsManager', () => {
-  let tmpRoot;
   let manager;
 
   before(() => {
-    tmpRoot = join(tmpdir(), `hls-mgr-test-${Date.now()}`);
-    fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new HlsManager({ hlsRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
-  });
-
-  after(() => {
-    fs.rmSync(tmpRoot, { recursive: true, force: true });
-  });
-
-  it('hlsDir returns path inside hlsRoot', () => {
-    const dir = manager.hlsDir('mykey');
-    assert.ok(dir.startsWith(tmpRoot), `expected ${dir} to start with ${tmpRoot}`);
-    assert.ok(dir.includes('mykey'));
+    manager = new HlsManager();
   });
 
   it('isRunning returns false for unstarted key', () => {
     assert.strictEqual(manager.isRunning('nonexistent'), false);
   });
 
-  it('stopAll resolves immediately when no processes are running', async () => {
+  it('stopAll resolves immediately when nothing is running', async () => {
     await assert.doesNotReject(() => manager.stopAll());
   });
 
@@ -117,30 +104,14 @@ describe('HlsManager', () => {
     await assert.doesNotReject(() => manager.stop('nonexistent'));
   });
 
-  it('start creates the HLS output directory', async () => {
-    // ffmpeg won't be available in CI, so we test that it creates the dir
-    // and then cleans up after the process exits (or errors).
-    const key = 'dirtest';
-    const dir = manager.hlsDir(key);
-
-    // If ffmpeg is not available start() will reject via proc.on('error').
-    // Either way the directory should be created before the error.
-    try {
-      await manager.start(key);
-      // If ffmpeg is available it will try to connect; stop it immediately.
-      await manager.stop(key);
-    } catch {
-      // ffmpeg not available — dir should still have been created before spawn failed.
-    }
-    // After stop() or error, the directory may or may not exist
-    // (cleanup runs when ffmpeg exits, not when error fires).
-    // We can only assert that hlsDir() returns the expected path.
-    assert.ok(dir.endsWith(key));
+  it('start marks the key as running (MediaMTX serves the HLS) and stop clears it', async () => {
+    await manager.start('startkey');
+    assert.strictEqual(manager.isRunning('startkey'), true);
+    await manager.stop('startkey');
+    assert.strictEqual(manager.isRunning('startkey'), false);
   });
 });
 
-// ---------------------------------------------------------------------------
-// PreviewManager unit tests — MediaMTX-based (no ffmpeg, no previewPath)
 // ---------------------------------------------------------------------------
 
 describe('PreviewManager', () => {
@@ -185,7 +156,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
     db = initTestDb();
     tmpRoot = join(tmpdir(), `hls-nginx-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new HlsManager({ hlsRoot: tmpRoot, localRtmp: 'rtmp://127.0.0.1:9999', rtmpApp: 'testapp' });
+    manager = new HlsManager();
 
     const app = express();
     app.use('/stream-hls', createStreamHlsRouter(db, manager));
@@ -267,7 +238,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
       });
     });
 
-    manager = new HlsManager({ hlsRoot: tmpRoot });
+    manager = new HlsManager();
     const app = express();
     app.use('/stream-hls', createStreamHlsRouter(db, manager));
     await new Promise(resolve => {
@@ -348,7 +319,7 @@ describe('GET /stream-hls/:key/:segment', () => {
       });
     });
 
-    manager = new HlsManager({ hlsRoot: tmpRoot });
+    manager = new HlsManager();
     const app = express();
     app.use('/stream-hls', createStreamHlsRouter(db, manager));
     await new Promise(resolve => {
@@ -427,7 +398,7 @@ describe('GET /stream-hls/:key/player.js', () => {
     db = initTestDb();
     const tmpRoot = join(tmpdir(), `hls-player-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
-    manager = new HlsManager({ hlsRoot: tmpRoot });
+    manager = new HlsManager();
 
     const app = express();
     app.use('/stream-hls', createStreamHlsRouter(db, manager));

@@ -169,7 +169,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
   } : undefined);
 
   const radioManager   = new RadioManager({ mediamtxClient, nginxManager, settings });
-  const hlsManager     = new HlsManager({ mediamtxClient, resolveStorage, settings });
+  const hlsManager     = new HlsManager({ mediamtxClient, settings });
   const hlsSubsManager = new HlsSubsManager(settings ? {
     segmentDuration: settings.get('media.hls_subs_segment_duration'),
     windowSize: settings.get('media.hls_subs_window_size'),

@@ -87,118 +87,66 @@ function resetCalls() {
 // HlsManager
 // ---------------------------------------------------------------------------
 
-describe('HlsManager — constructor', () => {
-  it('uses provided options', () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://host:1935', rtmpApp: 'app' });
-    assert.equal(m._hlsRoot, '/tmp/hls');
-    assert.equal(m._local, 'rtmp://host:1935');
-    assert.equal(m._app, 'app');
-  });
-
-  it('hlsDir() returns root/key path', () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
-    assert.ok(m.hlsDir('mykey').endsWith('mykey'));
-    const p = path.normalize(m.hlsDir('mykey'));
-    assert.ok(p.includes(path.normalize('/tmp/hls')));
-  });
+describe('HlsManager', () => {
+  beforeEach(() => resetCalls());
 
   it('isRunning() returns false initially', () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+    const m = new HlsManager();
     assert.equal(m.isRunning('anykey'), false);
   });
-});
 
-describe('HlsManager — start()', () => {
-  beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
-
-  it('resolves and marks the key as running', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
+  it('start() marks the key as running and spawns no ffmpeg', async () => {
+    const m = new HlsManager();
     await m.start('key1');
     assert.equal(m.isRunning('key1'), true);
-    assert.equal(spawnCalls.length, 1);
-    assert.equal(spawnCalls[0].cmd, 'ffmpeg');
+    assert.equal(spawnCalls.length, 0);
+    assert.equal(mkdirCalls.length, 0);
   });
 
-  it('creates the HLS output directory', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+  it('start() registers the path in MediaMTX when a client is given', async () => {
+    const added = [];
+    const m = new HlsManager({ mediamtxClient: { addPath: async (key, opts) => { added.push([key, opts]); } } });
     await m.start('key2');
-    assert.ok(mkdirCalls.some(c => String(c.dir).includes('key2')));
+    assert.deepEqual(added, [['key2', { source: 'publisher' }]]);
   });
 
-  it('passes correct ffmpeg args (stream copy mode)', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
-    await m.start('mykey');
-    const args = spawnCalls[0].args;
-    assert.ok(args.includes('-c'));
-    assert.ok(args.includes('copy'));
-    assert.ok(args.includes('-f'));
-    assert.ok(args.includes('hls'));
-    assert.ok(args.some(a => String(a).includes('mykey')));
+  it('start() still activates the key when MediaMTX addPath fails', async () => {
+    const m = new HlsManager({ mediamtxClient: { addPath: async () => { throw new Error('down'); } } });
+    await assert.doesNotReject(() => m.start('key3'));
+    assert.equal(m.isRunning('key3'), true);
   });
 
-  it('stops any existing process before starting a new one', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
+  it('start() twice for the same key keeps it running', async () => {
+    const m = new HlsManager();
+    await m.start('dupkey');
     await m.start('dupkey');
     assert.equal(m.isRunning('dupkey'), true);
-    // Start again for the same key — should spawn a second ffmpeg
-    await m.start('dupkey');
-    // Two spawn calls confirm the restart happened
-    assert.equal(spawnCalls.length, 2);
-    // Allow any pending close-event callbacks to settle
-    await new Promise(r => setImmediate(r));
   });
 
-  it('rejects when the process emits an error (nextTick fires before setImmediate)', async () => {
-    nextProcFactory = () => {
-      const proc = new EventEmitter();
-      proc.stdout = new EventEmitter();
-      proc.stderr = new EventEmitter();
-      proc.stdin = { write() {}, end() {} };
-      proc.kill = () => {};
-      // process.nextTick fires before setImmediate, so the error event
-      // reaches the reject() handler before resolve() is called.
-      process.nextTick(() => proc.emit('error', new Error('ENOENT')));
-      return proc;
-    };
-
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
-    await assert.rejects(() => m.start('errkey'), /ENOENT/);
-  });
-});
-
-describe('HlsManager — stop()', () => {
-  beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
-
-  it('resolves immediately when the key is not running', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+  it('stop() is a no-op when the key is not running', async () => {
+    const m = new HlsManager();
     await assert.doesNotReject(() => m.stop('notrunning'));
   });
 
-  it('kills the process and marks key as not running', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
+  it('stop() marks the key as not running and removes no files', async () => {
+    const m = new HlsManager();
     await m.start('stopkey');
-    assert.equal(m.isRunning('stopkey'), true);
     await m.stop('stopkey');
     assert.equal(m.isRunning('stopkey'), false);
+    assert.equal(rmCalls.length, 0);
   });
-});
 
-describe('HlsManager — stopAll()', () => {
-  beforeEach(() => { resetCalls(); nextProcFactory = () => makeFakeProc(); });
-
-  it('stops all running processes', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls', localRtmp: 'rtmp://127.0.0.1:1935', rtmpApp: 'live' });
+  it('stopAll() stops every running key', async () => {
+    const m = new HlsManager();
     await m.start('key-a');
     await m.start('key-b');
-    assert.equal(m.isRunning('key-a'), true);
-    assert.equal(m.isRunning('key-b'), true);
     await m.stopAll();
     assert.equal(m.isRunning('key-a'), false);
     assert.equal(m.isRunning('key-b'), false);
   });
 
-  it('is a no-op when no processes are running', async () => {
-    const m = new HlsManager({ hlsRoot: '/tmp/hls' });
+  it('stopAll() is a no-op when nothing is running', async () => {
+    const m = new HlsManager();
     await assert.doesNotReject(() => m.stopAll());
   });
 });
