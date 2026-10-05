@@ -13,7 +13,8 @@ import { FleetFfmpegRunner } from './fleet-runner.js';
  * with the child-process signatures. Anything else comes back from `spawn` untouched.
  *
  * Remote workers cannot see this machine: inputs and outputs in `args` (RTMP urls, ...) must be
- * reachable from them. stderr is not carried over the fleet: it is an empty stream there.
+ * reachable from them. stderr is not streamed over the fleet; when a job fails, the tail the fleet
+ * returned is written to it just before it ends, and the reason is on `failure` (see `failureOf`).
  *
  * @param {string[]} args
  * @param {{ purpose?: string, apiKey?: string, stdio?: any[], runner?: string, cmd?: string, env?: object }} [opts]
@@ -31,6 +32,7 @@ class FleetProcess extends EventEmitter {
     this.killed = false;
     this.exitCode = null;
     this.signalCode = null;
+    this.failure = null;
     const wantsStdin = stdio[0] === 'pipe';
     const wantsStdout = stdio[1] === 'pipe';
     this.stdout = wantsStdout ? new PassThrough() : null;
@@ -58,6 +60,8 @@ class FleetProcess extends EventEmitter {
       ended = true;
       this.exitCode = code ?? null;
       this.signalCode = signal ?? null;
+      this.failure = runner.failure;
+      if (this.failure) this.stderr?.write(`${this.failure.code ? `[${this.failure.code}] ` : ''}${this.failure.message}${this.failure.stderrTail ? `\n${this.failure.stderrTail}` : ''}\n`);
       this.stderr?.end();
       this.emit('exit', this.exitCode, this.signalCode);
       // Close once the last output bytes have been handed over.

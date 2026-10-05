@@ -16,7 +16,7 @@ Shared compute library for `lcyt-backend` (and its plugins), `lcyt-worker-daemon
 - **Worker image:** `docker/lcyt-perception-worker/Dockerfile` (fffleet worker + ffmpeg + onnxruntime-node + pinned Apache-2.0 YOLOX tiny + this package, `FFFLEET_EXECUTORS` set so the worker claims `type:perception`). Not built in CI yet.
 - **Benchmark:** `node packages/lcyt-compute/bench/perception-bench.mjs --model m.onnx --video clip.mp4|rtsp://... [--fps 5 --seconds 30 --threads N]` prints decode rate, inference ms and frame age at result (p50/p95/max). `test/perception-onnx.integration.test.js` runs a real model on a clip when `PERCEPTION_MODEL_PATH` and `PERCEPTION_TEST_VIDEO` are set (skipped otherwise).
 
-**Source files (`src/ffmpeg/`):** `index.js` (factory + accounting), `local-runner.js`, `docker-runner.js`, `fleet-runner.js` (fffleet: stream jobs, stdin as a Writable, reports `close` when a job ends by itself, local fallback), `spawn.js` (`spawnFfmpeg`), `worker-runner.js` (direct worker or orchestrator dispatch, with `ORCHESTRATOR_FALLBACK`), `pipe-utils.js`, `README.md`.
+**Source files (`src/ffmpeg/`):** `index.js` (factory + accounting), `local-runner.js`, `docker-runner.js`, `fleet-runner.js` (fffleet: stream jobs, stdin as a Writable, reports `close` when a job ends by itself, local fallback; `close` info and `runner.failure` carry the fleet error code/message, worker and stderr tail via `failureOf`), `spawn.js` (`spawnFfmpeg`), `worker-runner.js` (direct worker or orchestrator dispatch, with `ORCHESTRATOR_FALLBACK`), `pipe-utils.js`, `README.md`.
 
 **Compatibility:** `lcyt-backend/ffmpeg` and `lcyt-backend/ffmpeg/pipe-utils` re-export this package, so older imports keep working. New code imports `lcyt-compute/ffmpeg` directly.
 

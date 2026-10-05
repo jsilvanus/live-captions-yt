@@ -333,6 +333,7 @@ export default {
       status: 'Relay status',
       live: 'Live',
       inactive: 'Inactive',
+      lastExit: 'Relay stopped with an error',
       start: 'Activate relay',
       stop: 'Stop relay',
       stopAll: 'Stop all',

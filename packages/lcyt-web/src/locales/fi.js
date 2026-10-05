@@ -309,6 +309,7 @@ export default {
       status: 'Relaytila',
       live: 'Live',
       inactive: 'Ei aktiivinen',
+      lastExit: 'Välitys päättyi virheeseen',
       start: 'Käynnistä relay',
       stop: 'Pysäytä relay',
       stopAll: 'Pysäytä kaikki',

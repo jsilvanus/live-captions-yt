@@ -313,6 +313,7 @@ export default {
       status: 'Relay-status',
       live: 'Live',
       inactive: 'Inaktiv',
+      lastExit: 'Vidarebefordran avslutades med fel',
       start: 'Aktivera relay',
       stop: 'Stoppa relay',
       stopAll: 'Stoppa alla',

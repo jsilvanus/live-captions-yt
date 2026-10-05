@@ -428,6 +428,30 @@ FFFLEET_CLIENT_SECRET=...
 
 `worker` stays for the perception jobs, which fffleet does not run.
 
+**Network requirements.** A fleet worker is a different machine, so every input and output
+in an ffmpeg command must be reachable *from the worker*, not from the backend:
+
+- **RTMP relay** (`rtmp://…` ingest and the YouTube/target URLs): the worker pulls the
+  stream from your MediaMTX/nginx ingest, so the ingest must listen on an address the worker
+  can reach (a public or VPN address, not `localhost`) and its port must be open to the
+  worker. The backend's `RTMP_LOCAL_*`/`localhost` defaults only work with the local runner.
+- **STT, music analysis, PCM decode:** read the same ingest or HLS URLs, so the same rule applies.
+- **Camera preview/frame URLs for perception:** the worker fetches frames from
+  `CAMERA_PREVIEW_BASE_URL`/the backend's public URL, which therefore must not be
+  `localhost` either.
+- **fffleet itself:** the backend reaches the orchestrator at `FFFLEET_URL`, and the workers
+  reach it for registration; S3 (if used for staged files) must be reachable by both.
+- **HLS manager** stays on the backend machine on purpose (it re-muxes a local stream).
+
+**When a fleet job fails.** The backend logs the fleet's error code and message, the worker
+that ran it and the tail of ffmpeg's stderr (`[rtmp] ffmpeg exited with code … : [FFMPEG_EXIT] …`),
+the stream route `GET /stream` returns `lastExit { at, code, reason, workerId }` while no
+relay is running, and the relay panel shows it as "Relay stopped with an error". Callers of
+`spawnFfmpeg` get the same text on the fake process's `stderr` and as `proc.failure`.
+The fleet returns an empty stderr tail for streamed jobs that run to a clean end; only the
+error code and message are available for jobs that fail before ffmpeg starts
+(`WORKER_LOST`, no worker with the required capabilities, …).
+
 ### `FFMPEG_WRAPPER`
 
 Alternative: set `FFMPEG_WRAPPER` to a path or wrapper script and the
