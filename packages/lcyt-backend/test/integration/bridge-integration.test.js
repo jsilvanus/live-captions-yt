@@ -151,7 +151,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
     }
 
     const txt = await cmdRes.text().catch(() => '<no body>');
-    if (txt.includes('not connected') && attempt < maxRetries) {
+    if ((txt.includes('not connected') || txt.includes('not yet loaded')) && attempt < maxRetries) {
       await new Promise((r) => setTimeout(r, 200));
       continue;
     } else {
