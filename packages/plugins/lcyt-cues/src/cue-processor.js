@@ -146,6 +146,7 @@ export function createCueProcessor({ store, db, engine, eventBus = null }) {
 
     // Evaluate automatic rules from the CueEngine
     if (engine) {
+      if (typeof engine.pushContextLine === 'function') engine.pushContextLine(apiKey, cleanText);
       const fired = engine.evaluate(apiKey, cleanText, codes);
       for (const { rule, matched } of fired) {
         let action = {};

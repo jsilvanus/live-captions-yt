@@ -132,6 +132,38 @@ function cosineSimilarity(a, b) {
   return dot / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
+/** Max caption lines kept per API key for rolling-window semantic matching. */
+export const MAX_CONTEXT_LINES = 20;
+const DEFAULT_CONTEXT_SEGMENTS = 3;
+
+/**
+ * Normalise a rule/leaf's context settings. `line` (default) matches the
+ * current caption only, `window` the last N lines joined, `both` either.
+ * @returns {{ mode: 'line'|'window'|'both', segments: number }}
+ */
+export function readContextSettings(node = {}) {
+  const raw = String(node.context_mode ?? node.contextMode ?? 'line').toLowerCase();
+  const mode = raw === 'window' || raw === 'both' ? raw : 'line';
+  const n = Number(node.context_segments ?? node.contextSegments ?? DEFAULT_CONTEXT_SEGMENTS);
+  const segments = Number.isFinite(n) ? Math.min(MAX_CONTEXT_LINES, Math.max(1, Math.floor(n))) : DEFAULT_CONTEXT_SEGMENTS;
+  return { mode, segments };
+}
+
+/**
+ * Candidate texts a semantic rule is compared against. `recent` already
+ * contains the current line as its last entry (see pushContextLine()); when
+ * it does not (direct engine use), the current text is appended.
+ * @returns {string[]}
+ */
+export function semanticCandidates(text, recent, node) {
+  const { mode, segments } = readContextSettings(node);
+  if (mode === 'line') return [text];
+  const lines = Array.isArray(recent) ? recent.slice() : [];
+  if (lines[lines.length - 1] !== text) lines.push(text);
+  const windowText = lines.slice(-segments).join(' ');
+  return mode === 'window' ? [windowText] : (windowText === text ? [text] : [text, windowText]);
+}
+
 function getValueAtPath(obj, path) {
   if (!obj || !path) return undefined;
   const parts = String(path).split('.').filter(Boolean);
@@ -230,6 +262,38 @@ export class CueEngine {
      * Map<apiKey, { labels: Array<{ label, confidence, region? }>, ts: number }>
      */
     this._trackerState = new Map();
+
+    /**
+     * Rolling buffer of the most recent caption lines per API key, used by
+     * semantic rules with `context_mode` 'window' or 'both'. Map<apiKey, string[]>
+     */
+    this._recentLines = new Map();
+  }
+
+  /** Record a caption line in the rolling context buffer (call once per caption, before evaluating). */
+  pushContextLine(apiKey, text) {
+    const line = String(text || '').trim();
+    if (!line) return;
+    const lines = this._recentLines.get(apiKey) || [];
+    lines.push(line);
+    if (lines.length > MAX_CONTEXT_LINES) lines.splice(0, lines.length - MAX_CONTEXT_LINES);
+    this._recentLines.set(apiKey, lines);
+  }
+
+  /** Forget the rolling context (e.g. at a section change or session end). */
+  clearContext(apiKey) { this._recentLines.delete(apiKey); }
+
+  /** Best semantic similarity between `pattern` and any candidate text; one embedding call. */
+  async _bestSemanticScore(apiKey, pattern, candidates, extra = {}) {
+    const vectors = await Promise.resolve(this._embedFn([String(pattern), ...candidates], { apiKey, ...extra }));
+    if (!Array.isArray(vectors) || !vectors[0]) return null;
+    let best = null;
+    for (let k = 1; k < vectors.length; k++) {
+      if (!vectors[k]) continue;
+      const sim = cosineSimilarity(vectors[0], vectors[k]);
+      if (best === null || sim > best) best = sim;
+    }
+    return best;
   }
 
   /** Invalidate the rule cache for a given API key (call after CRUD). */
@@ -253,6 +317,8 @@ export class CueEngine {
         enabled: cue.enabled !== false,
         cooldown_ms: cue.cooldown_ms ?? cue.cooldownMs ?? 0,
         fuzzy_threshold: cue.fuzzy_threshold ?? cue.fuzzyThreshold ?? 0.75,
+        context_mode: readContextSettings(cue).mode,
+        context_segments: readContextSettings(cue).segments,
         source: 'inline',
         fileName: cue.fileName ?? snapshot.fileName ?? null,
         fileId: cue.fileId ?? snapshot.fileId ?? null,
@@ -434,10 +500,9 @@ export class CueEngine {
         if (!pattern || !text || !this._embedFn) return false;
         const threshold = node.fuzzy_threshold ?? node.threshold ?? 0.75;
         try {
-          const vectors = await Promise.resolve(this._embedFn([String(pattern), text], { apiKey }));
-          const [a, b] = Array.isArray(vectors) ? vectors : [];
-          if (!a || !b) return false;
-          return cosineSimilarity(a, b) >= threshold;
+          const recent = ctx.recent ?? this._recentLines.get(apiKey);
+          const best = await this._bestSemanticScore(apiKey, pattern, semanticCandidates(text, recent, node));
+          return best !== null && best >= threshold;
         } catch (err) {
           logger.warn('[cues] Composite semantic leaf evaluation failed:', err?.message);
           return false;
@@ -691,6 +756,8 @@ export class CueEngine {
 
     const now = Date.now();
     const fired = [];
+    // Freeze the window now: later awaits must not see newer captions.
+    const recent = (this._recentLines.get(apiKey) || []).slice();
 
     for (const rule of rules) {
       if (rule.cooldown_ms > 0) {
@@ -704,22 +771,20 @@ export class CueEngine {
           case 'semantic': {
             const threshold = rule.fuzzy_threshold ?? 0.75;
             if (rule.pattern && text) {
+              const candidates = semanticCandidates(text, recent, rule);
               if (this._embedFn) {
                 try {
-                  const vectors = await Promise.resolve(this._embedFn([rule.pattern, text], { apiKey, rule }));
-                  const first = Array.isArray(vectors) ? vectors[0] : null;
-                  const second = Array.isArray(vectors) ? vectors[1] : null;
-                  if (first && second) {
-                    const similarity = cosineSimilarity(first, second);
-                    if (similarity >= threshold) matched = rule.pattern;
-                  }
+                  const best = await this._bestSemanticScore(apiKey, rule.pattern, candidates, { rule });
+                  if (best !== null && best >= threshold) matched = rule.pattern;
                 } catch (err) {
                   logger.warn(`[cues] Inline semantic eval failed for rule ${rule.id}:`, err?.message);
                 }
               }
               if (matched === null) {
-                const { score } = fuzzyWordMatch(rule.pattern, text || '');
-                if (score >= threshold) matched = rule.pattern;
+                for (const candidate of candidates) {
+                  const { score } = fuzzyWordMatch(rule.pattern, candidate || '');
+                  if (score >= threshold) { matched = rule.pattern; break; }
+                }
               }
             }
             break;
@@ -740,7 +805,7 @@ export class CueEngine {
             const snapshot = this._inlineState.get(apiKey) || { cueDefs: {} };
             const defs = snapshot.cueDefs || {};
             const tree = rule.tree || rule.condition || rule.definition || (rule.cueDef ? { type: 'ref', name: rule.cueDef } : null);
-            const result = await this.evaluateComposite(apiKey, tree, { text, codes, apiKey, rule }, defs);
+            const result = await this.evaluateComposite(apiKey, tree, { text, codes, apiKey, rule, recent }, defs);
             if (result.matched) {
               matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
             }
@@ -829,6 +894,7 @@ export class CueEngine {
   async evaluateCompositeRules(apiKey, text, codes = {}, onFired) {
     const rules = this._loadRules(apiKey);
     const now = Date.now();
+    const recent = (this._recentLines.get(apiKey) || []).slice();
 
     // Rules are independent (each keyed separately in `_lastFired`, each a
     // separate `insertCueEvent` row), so evaluate them concurrently rather
@@ -844,7 +910,7 @@ export class CueEngine {
       }
 
       try {
-        const result = await this.evaluateComposite(apiKey, rule._parsedTree, { text, codes, apiKey, rule }, {});
+        const result = await this.evaluateComposite(apiKey, rule._parsedTree, { text, codes, apiKey, rule, recent }, {});
         if (!result.matched) return null;
 
         this._lastFired.set(rule.id, Date.now());
