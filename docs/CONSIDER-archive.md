@@ -664,3 +664,13 @@ doesn't support the concept at all.
 ---
 
 **Resolved:** option (b): `AssetsPage.jsx` has an Images card (Edit/Delete) and `components/assets/useImageAssets.jsx` registers the `asset.update`/`asset.delete` guided-action dialogs.
+
+---
+
+## ~~`HLS_ROOT` / `bootstrap.hls_root` is now unused~~ — RESOLVED 2026-10-05
+
+**Where:** `packages/lcyt-backend/src/settings/registry.js` (`bootstrap.hls_root`), and the `HLS_ROOT` rows in `packages/lcyt-backend/CLAUDE.md`, `packages/plugins/lcyt-rtmp/README.md`, `docs/DEPLOY.md`, `docs/api/README.md`, `docs/env-vars.md`, `docs/plans/plan_rtmp.md`.
+
+`HlsManager` no longer has an ffmpeg re-mux or a segment directory (the code path was never reachable in production because `initRtmpControl` never passed `localRtmp`), and nothing else reads `HLS_ROOT`. The setting and its documentation rows are left in place in this change because removing a registry key touches the settings UI, its tests and six docs; it deserves its own small PR. `RADIO_HLS_ROOT` is a separate setting and was not examined here.
+
+**Resolved:** the registry key and the documentation rows were removed.

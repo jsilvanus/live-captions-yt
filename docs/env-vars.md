@@ -106,7 +106,6 @@ This document lists environment variables found across the repository, with the 
 - `RTMP_CONTROL_URL` — Optional nginx-rtmp control URL used by RTMP manager.
   - Files: packages/plugins/lcyt-rtmp/src/rtmp-manager.js
 
-- `HLS_ROOT` — Filesystem root for video HLS output.
   - Files: packages/plugins/lcyt-rtmp/src/hls-manager.js, docker-compose.yml
 
 - `HLS_LOCAL_RTMP` — Local RTMP base URL used by HLS/preview ffmpeg pipelines.

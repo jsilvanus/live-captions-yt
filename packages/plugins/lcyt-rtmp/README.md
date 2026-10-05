@@ -156,7 +156,6 @@ PUT    /stt/config
 | `RTMP_CONTROL_URL` | — | nginx-rtmp control URL (legacy) |
 | `HLS_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | nginx-rtmp base URL |
 | `HLS_RTMP_APP` | `live` | RTMP app for HLS output |
-| `HLS_ROOT` | `/tmp/hls-video` | HLS file storage directory |
 | `HLS_SUBS_ROOT` | `/tmp/hls-subs` | WebVTT subtitle storage |
 | `HLS_SUBS_SEGMENT_DURATION` | 6 | Subtitle segment duration (s) |
 | `HLS_SUBS_WINDOW_SIZE` | 10 | Segments to keep per language |

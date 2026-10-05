@@ -252,7 +252,6 @@ Returned by `GET /contact` (public endpoint).
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `RADIO_HLS_SOURCE` | `ffmpeg` | Radio HLS backend: `ffmpeg` (spawn local) or `mediamtx` (no ffmpeg) |
-| `HLS_ROOT` | `/tmp/hls-video` | Directory for video+audio HLS output |
 | `HLS_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local RTMP base URL for HLS pipelines |
 | `HLS_RTMP_APP` | `live` | RTMP application name for HLS |
 | `HLS_SUBS_ROOT` | `/tmp/hls-subs` | Directory for WebVTT subtitle segment files |

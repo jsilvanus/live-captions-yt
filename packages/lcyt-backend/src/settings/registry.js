@@ -65,7 +65,6 @@ const TIER_A = [
   { key: 'bootstrap.files_dir', env: 'FILES_DIR', type: 'string', default: '/data/files', category: 'bootstrap', description: 'Local directory for per-key caption files (local storage adapter).' },
   { key: 'bootstrap.graphics_dir', env: 'GRAPHICS_DIR', type: 'string', default: '/data/images', category: 'bootstrap', description: 'Image storage directory for DSK overlays.' },
   { key: 'bootstrap.hls_subs_root', env: 'HLS_SUBS_ROOT', type: 'string', default: '/tmp/hls-subs', category: 'bootstrap', description: 'Directory for WebVTT subtitle segment files.' },
-  { key: 'bootstrap.hls_root', env: 'HLS_ROOT', type: 'string', default: '/tmp/hls-video', category: 'bootstrap', description: 'HLS output directory for video+audio streams.' },
   { key: 'bootstrap.radio_hls_root', env: 'RADIO_HLS_ROOT', type: 'string', default: '/tmp/hls', category: 'bootstrap', description: 'HLS output directory for audio-only streams (ffmpeg mode).' },
   { key: 'bootstrap.preview_root', env: 'PREVIEW_ROOT', type: 'string', default: '/tmp/previews', category: 'bootstrap', description: 'Directory for JPEG thumbnail files.' },
 ].map(e => ({ ...e, tier: 'env', apply: 'restart' }));

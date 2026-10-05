@@ -53,7 +53,6 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `HLS_SUBS_ROOT` | Directory for WebVTT subtitle segment files | `/tmp/hls-subs` |
 | `HLS_SUBS_SEGMENT_DURATION` | Subtitle segment length in seconds | `6` |
 | `HLS_SUBS_WINDOW_SIZE` | Number of subtitle segments to keep per language | `10` |
-| `HLS_ROOT` | HLS output directory for video+audio streams | `/tmp/hls-video` |
 | `HLS_LOCAL_RTMP` | Local nginx-rtmp base URL for HLS/preview | `rtmp://127.0.0.1:1935` |
 | `HLS_RTMP_APP` | RTMP application name for HLS/preview | `live` |
 | `RADIO_HLS_ROOT` | HLS output directory for audio-only streams (ffmpeg mode) | `/tmp/hls` |

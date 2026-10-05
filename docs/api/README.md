@@ -110,7 +110,6 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `GRAPHICS_MAX_FILE_BYTES` | `5242880` (5 MB) | Maximum size per uploaded image. |
 | `GRAPHICS_MAX_STORAGE_BYTES` | `52428800` (50 MB) | Maximum total image storage per API key. |
 | `ICONS_DIR` | `/data/icons` | Base directory for branding icon storage. |
-| `HLS_ROOT` | `/data/hls` | Directory where HLS playlists and segments are written for `/stream-hls`. |
 | `RADIO_HLS_ROOT` | `/data/radio` | Directory where audio-only HLS playlists and segments are written for `/radio`. |
 | `HLS_SUBS_ROOT` | `/tmp/hls-subs` | Directory where WebVTT subtitle segment files are written for `/video`. |
 | `HLS_SUBS_SEGMENT_DURATION` | `6` | Subtitle segment length in seconds. |
