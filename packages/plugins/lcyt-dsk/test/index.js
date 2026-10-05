@@ -6,3 +6,4 @@ import './dsk-templates-routes.test.js';
 import './dsk-slug-routes.test.js';
 import './renderer-helpers.test.js';
 import './safe-api-key.test.js';
+import './fleet-dsk.test.js';

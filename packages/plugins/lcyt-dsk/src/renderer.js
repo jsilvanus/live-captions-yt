@@ -21,61 +21,19 @@
  */
 
 import { spawnFfmpeg } from 'lcyt-compute/ffmpeg';
-import { existsSync, readdirSync } from 'node:fs';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
 import { chromium } from 'playwright-core';
+import { resolveChromiumExecutable } from './chromium.js';
 import logger from 'lcyt/logger';
 import { viewportPageUrl, resolveCaptureDimensions, resolveCaptureBackground, buildViewportOutputs } from './renderer-helpers.js';
 import { reportFfmpegRun } from './ffmpeg-accounting.js';
+import { fleetRenderingEnabled, createFleetViewportRunner } from './fleet-viewports.js';
+
+// DSK_RENDER_EXECUTOR=fleet (with FFFLEET_URL): per-viewport streams run on a fleet worker (`dsk` job type).
+const _fleetViewports = createFleetViewportRunner();
 
 // ---------------------------------------------------------------------------
 // Chromium executable
 // ---------------------------------------------------------------------------
-
-function resolveChromiumExecutable() {
-  const explicit = (process.env.PLAYWRIGHT_DSK_CHROMIUM || '').trim();
-  if (explicit && existsSync(explicit)) return explicit;
-
-  const candidates = [
-    '/usr/bin/chromium',
-    '/usr/bin/chromium-browser',
-    '/usr/bin/google-chrome',
-    '/usr/bin/google-chrome-stable',
-    '/usr/bin/chrome',
-  ];
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-
-  const cacheRoots = [
-    join(homedir(), '.cache', 'ms-playwright'),
-    '/root/.cache/ms-playwright',
-    '/home/node/.cache/ms-playwright',
-    '/tmp/ms-playwright',
-  ];
-
-  for (const root of cacheRoots) {
-    if (!existsSync(root)) continue;
-    const queue = [root];
-    while (queue.length) {
-      const dir = queue.pop();
-      const entries = readdirSync(dir, { withFileTypes: true });
-      for (const entry of entries) {
-        const fullPath = join(dir, entry.name);
-        if (entry.isDirectory()) {
-          if (entry.name === 'chrome' || entry.name === 'chrome-headless-shell') {
-            return fullPath;
-          }
-          queue.push(fullPath);
-        }
-      }
-    }
-  }
-
-  return null;
-}
 
 const CHROMIUM_EXEC = resolveChromiumExecutable();
 
@@ -630,6 +588,11 @@ function _viewportKey(apiKey, viewport) {
 export async function startViewportStream(apiKey, opts) {
   const { slug = null, viewport, displaySettings = null, rtmpBase, rtmpApp = 'dsk', pushUrls = [] } = opts || {};
   if (!viewport || !rtmpBase) return;
+  if (fleetRenderingEnabled()) {
+    try { await _fleetViewports.start(apiKey, opts); }
+    catch (err) { logger.error(`[dsk-renderer:${apiKey}::${viewport}] fleet dispatch failed: ${err.message}`); }
+    return;
+  }
   try { _ensureBrowser(); }
   catch (err) { logger.warn(`[dsk-renderer:${apiKey}::${viewport}] startViewportStream skipped: ${err.message}`); return; }
 
@@ -703,6 +666,7 @@ export async function startViewportStream(apiKey, opts) {
 
 /** Stop a per-viewport stream and close its page. */
 export async function stopViewportStream(apiKey, viewport) {
+  if (await _fleetViewports.stop(apiKey, viewport).catch((err) => { logger.warn(`[dsk-renderer] fleet stop failed: ${err.message}`); return false; })) return;
   const key = _viewportKey(apiKey, viewport);
   const state = _keys.get(key);
   if (!state) return;
@@ -716,7 +680,7 @@ export async function stopViewportStream(apiKey, viewport) {
 /** List running per-viewport streams for an api key. */
 export function listViewportStreams(apiKey) {
   const prefix = `${apiKey}::`;
-  const out = [];
+  const out = [..._fleetViewports.list(apiKey)];
   for (const [k, state] of _keys) {
     if (k.startsWith(prefix) && state._viewport) {
       out.push({ viewport: state._viewport, running: !!state.capturing });

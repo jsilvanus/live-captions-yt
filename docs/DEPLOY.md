@@ -412,6 +412,8 @@ FFFLEET_CLIENT_SECRET=...
 
 Perception jobs run on the same fleet as the `perception` job type (workers started with
 `FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor`; image `docker/lcyt-perception-worker/`).
+
+**DSK on the fleet.** With `DSK_RENDER_EXECUTOR=fleet` (and `FFFLEET_URL`) per-viewport DSK streams run as `dsk` jobs: a worker started from `docker/lcyt-dsk-worker/` (`FFFLEET_EXECUTORS=lcyt-dsk/fffleet-executor`) opens the viewport's display page in its own Chromium and pushes the encoded stream to the RTMP URLs itself, so the backend no longer runs Chromium for them. Set `DSK_PAGE_BASE_URL` to the backend's public address (a `localhost` value is refused) and make sure the worker can reach the RTMP ingest. A backend restart that starts the stream again re-attaches to the running job. The legacy per-key renderer stays local.
 The Admin → Metrics page shows a Fleet tile (workers, slots, queue, autoscaler) read from the
 orchestrator's `/metrics`; the token or client needs the `metrics` scope (a client login asks for
 it automatically, so the client must be allowed `metrics`).
