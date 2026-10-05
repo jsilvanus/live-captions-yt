@@ -8,13 +8,19 @@ import { join } from 'node:path';
 
 const log = join(mkdtempSync(join(tmpdir(), 'fake-ffmpeg-')), 'launches.jsonl');
 writeFileSync(log, '');
+writeFileSync(`${log}.stdin`, '');
 delete process.env.FFMPEG_RUNNER;
 delete process.env.FFFLEET_URL;
 process.env.FFMPEG_WRAPPER = fileURLToPath(new URL('./fake-ffmpeg.mjs', import.meta.url));
 process.env.FAKE_FFMPEG_LOG = log;
 
-/** Forget the launches so far. */
-export function resetLaunches() { writeFileSync(log, ''); }
+/** Forget the launches (and stdin text) so far. */
+export function resetLaunches() { writeFileSync(log, ''); writeFileSync(`${log}.stdin`, ''); }
+
+/** Text written to the fake ffmpegs' stdin so far. */
+export function stdinWritten() {
+  try { return readFileSync(`${log}.stdin`, 'utf8'); } catch { return ''; }
+}
 
 /** The launches recorded so far (`{ args }`), waiting until at least `n` have started. */
 export async function launched(n = 1, timeoutMs = 3000) {

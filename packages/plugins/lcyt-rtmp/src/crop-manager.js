@@ -9,17 +9,20 @@
  * `{key}-crop` path. Downstream consumption (relay slots with
  * sourceView:'crop', the /stream-hls proxy, thumbnails) reads that path.
  *
- * Crop POSITION changes are applied without restarting the process when the
- * ffmpeg build has the `zmq` filter (ffmpegCaps.hasZmq) and the optional
- * `zeromq` npm package is importable: runtime filter commands
- * (`crop@vcrop x <px>`) land on the next frame — no black gap. Otherwise the
- * manager falls back to a restart per position change (`repositionMode:
- * 'restart'`), relying on MediaMTX to keep serving the path across the swap.
+ * Crop POSITION changes are applied without restarting the process through
+ * ffmpeg's interactive stdin commands: the renderer is started with stdin open
+ * (no `-nostdin`) and `Ccrop@vcrop -1 x <px>` / `Ccrop@vcrop -1 y <px>` lines
+ * written to it retarget the named crop filter on the next frames - no black
+ * gap, no libzmq build, no control port. This needs a runner that exposes
+ * ffmpeg's stdin (the local `spawn` runner and the fffleet
+ * runner do); the docker runner does not, so there (and whenever stdin is
+ * unusable) the manager falls back to a restart per position change
+ * (`repositionMode: 'restart'`), relying on MediaMTX to keep serving the path
+ * across the swap.
  *
  * Environment variables:
  *   MEDIAMTX_RTSP_BASE_URL — RTSP base for reading the raw ingest (default rtsp://127.0.0.1:8554)
  *   MEDIAMTX_RTMP_BASE_URL — RTMP base for publishing {key}-crop (default rtmp://127.0.0.1:1935)
- *   CROP_ZMQ_PORT_BASE     — first 127.0.0.1 port for per-process zmq binds (default 5560)
  *   CROP_OUTPUT_DEFAULT    — delivery size when config out_w/out_h are NULL (default 1080x1920)
  */
 import { spawn } from 'node:child_process';
@@ -29,7 +32,6 @@ import { getCropConfig, resolveCropPresetForSource, resolveCameraIdForMixerInput
 
 const DEFAULT_MEDIAMTX_RTSP = (process.env.MEDIAMTX_RTSP_BASE_URL || 'rtsp://127.0.0.1:8554').replace(/\/$/, '');
 const DEFAULT_MEDIAMTX_RTMP = (process.env.MEDIAMTX_RTMP_BASE_URL || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
-const ZMQ_PORT_BASE = Number(process.env.CROP_ZMQ_PORT_BASE ?? 5560);
 const TRANSITION_TICK_MS = 33;
 
 // ── pure geometry helpers (unit-tested) ─────────────────────────────────────
@@ -122,12 +124,23 @@ export function probeInputResolution(url, { timeoutMs = 8000 } = {}) {
   });
 }
 
+/**
+ * ffmpeg's stdin Writable from a runner handle, or null. The fffleet runner
+ * exposes `handle.stdin`; the local runner keeps its child process on
+ * `handle.proc` (stdin is a pipe because we asked for `stdin: 'pipe'`); the
+ * docker runner starts the container with stdin ignored, so it yields null
+ * and the crop renderer stays restart-only there.
+ */
+function runnerStdin(handle) {
+  return handle?.stdin ?? handle?.proc?.stdin ?? null;
+}
+
 // ── manager ─────────────────────────────────────────────────────────────────
 
 export class CropManager {
   /**
    * @param {{
-   *   ffmpegCaps?: { available?: boolean, hasZmq?: boolean }|null,
+   *   ffmpegCaps?: { available?: boolean, hasLibx264?: boolean }|null,
    *   mediamtxClient?: import('./mediamtx-client.js').MediaMtxClient|null,
    *   probeResolution?: Function,   // test injection; defaults to probeInputResolution
    *   settings?: { get: (key: string) => * },   // lcyt-backend's SettingsService, duck-typed
@@ -142,12 +155,11 @@ export class CropManager {
     /**
      * Per-key session state:
      * { handle, geometry: {inW,inH,cropW,cropH,maxX,maxY}, config, position:
-     *   {xNorm,yNorm}, activePresetId, zmq: {socket,port}|null, startedAt,
+     *   {xNorm,yNorm}, activePresetId, stdin: Writable|null, startedAt,
      *   transitionTimer }
      * @type {Map<string, object>}
      */
     this._sessions = new Map();
-    this._nextZmqOffset = 0;
 
     /**
      * Production-follow state (plan_vertical_crop.md §4), per apiKey:
@@ -159,27 +171,6 @@ export class CropManager {
      * @type {Map<string, { mixerInput: number|null, presetByCamera: Map<string, string|null> }>}
      */
     this._followState = new Map();
-
-    /** null = not checked yet; boolean once the lazy import has settled. */
-    this._zmqModuleAvailable = null;
-    this._zmqLoad = undefined;
-  }
-
-  /**
-   * Lazily import the optional `zeromq` package (memoized). Resolves the
-   * module or null when it is not installed.
-   */
-  _loadZmqModule() {
-    if (this._zmqLoad === undefined) {
-      this._zmqLoad = import('zeromq')
-        .then(m => { this._zmqModuleAvailable = true; return m; })
-        .catch(() => {
-          this._zmqModuleAvailable = false;
-          logger.warn('[crop] optional dependency "zeromq" not installed — position changes will restart the renderer');
-          return null;
-        });
-    }
-    return this._zmqLoad;
   }
 
   /** MediaMTX path name of the crop rendition. */
@@ -188,12 +179,14 @@ export class CropManager {
   isRunning(apiKey) { return this._sessions.has(apiKey); }
 
   /**
-   * `'live'` when position changes go over runtime filter commands,
-   * `'restart'` when they need a process swap. Optimistically 'live' until
-   * the lazy `zeromq` import has settled (first start() resolves it).
+   * `'live'` when position changes go over ffmpeg stdin commands, `'restart'`
+   * when they need a process swap. Manager level: 'live' unless the configured
+   * runner cannot give us ffmpeg's stdin (docker); a running session reports
+   * its own mode in getStatus().
    */
   repositionMode() {
-    return this._ffmpegCaps?.hasZmq && this._zmqModuleAvailable !== false ? 'live' : 'restart';
+    const runner = (this._settings ? this._settings.get('compute.ffmpeg_runner') : process.env.FFMPEG_RUNNER) ?? 'spawn';
+    return runner === 'docker' ? 'restart' : 'live';
   }
 
   getStatus(apiKey) {
@@ -201,7 +194,7 @@ export class CropManager {
     if (!s) return { running: false, repositionMode: this.repositionMode() };
     return {
       running:        true,
-      repositionMode: s.zmq ? 'live' : 'restart',
+      repositionMode: CropManager._stdinUsable(s.stdin) ? 'live' : 'restart',
       activePresetId: s.activePresetId ?? null,
       xNorm:          s.position.xNorm,
       yNorm:          s.position.yNorm,
@@ -265,18 +258,7 @@ export class CropManager {
     const outW = config.outW ?? Number(cropOutputDefault.split('x')[0]);
     const outH = config.outH ?? Number(cropOutputDefault.split('x')[1]);
 
-    // zmq lands in the graph only when both the ffmpeg build and the node
-    // client side are available — a bind without a client would be dead
-    // weight (and a pointless port allocation), so resolve the optional
-    // `zeromq` import BEFORE deciding whether to insert the filter.
-    const zmqMod = this._ffmpegCaps?.hasZmq ? await this._loadZmqModule() : null;
-    const zmqPortBase = this._settings ? this._settings.get('media.crop_zmq_port_base') : ZMQ_PORT_BASE;
-    const zmqPort = zmqMod ? zmqPortBase + (this._nextZmqOffset++ % 1000) : null;
-    let filter = `[0:v]crop@vcrop=${geometry.cropW}:${geometry.cropH}:${x}:${y},scale=${outW}:${outH}`;
-    // Args go through spawn (no shell); only the filtergraph parser needs the
-    // ':' inside the bind address escaped, so a single literal backslash.
-    if (zmqPort) filter += `,zmq=bind_address=tcp\\://127.0.0.1\\:${zmqPort}`;
-    filter += '[v]';
+    const filter = `[0:v]crop@vcrop=${geometry.cropW}:${geometry.cropH}:${x}:${y},scale=${outW}:${outH}[v]`;
 
     const args = [
       '-rtsp_transport', 'tcp', '-i', srcUrl,
@@ -296,7 +278,8 @@ export class CropManager {
       cmd: 'ffmpeg',
       args,
       name: tag,
-      stdin: 'ignore',
+      // Open stdin (and no -nostdin in args): ffmpeg reads `C<target> <time> <cmd> <arg>` lines from it.
+      stdin: 'pipe',
       purpose: 'crop',
       apiKey,
     });
@@ -308,16 +291,15 @@ export class CropManager {
       config,
       position: pos,
       activePresetId,
-      zmq: null,
-      zmqPort,
+      // null for runners that cannot expose ffmpeg's stdin (docker) -> restart mode.
+      stdin: runnerStdin(handle),
       startedAt: new Date(),
       transitionTimer: null,
     };
     this._sessions.set(apiKey, session);
 
-    if (zmqPort) {
-      session.zmq = this._openZmq(apiKey, zmqMod, zmqPort);
-    }
+    // A broken pipe (ffmpeg exiting) must not crash the process; the close event cleans up.
+    session.stdin?.on?.('error', () => {});
 
     if (handle?.stderr) handle.stderr.on('data', d => process.stderr.write(`${tag} ${d}`));
 
@@ -330,11 +312,11 @@ export class CropManager {
       logger.info(`${tag} crop renderer exited${info?.code != null ? ` (code ${info.code})` : ''}`);
     });
 
-    logger.info(`${tag} crop renderer started ${geometry.cropW}x${geometry.cropH}@${x},${y} → ${outW}x${outH} (${session.zmq ? 'live' : 'restart'} repositioning)`);
+    logger.info(`${tag} crop renderer started ${geometry.cropW}x${geometry.cropH}@${x},${y} → ${outW}x${outH} (${CropManager._stdinUsable(session.stdin) ? 'live' : 'restart'} repositioning)`);
   }
 
   /**
-   * Move the crop window. In live mode the change lands on the next frame
+   * Move the crop window. In live mode the change lands within a few frames
    * (optionally eased over transitionMs); in restart mode the renderer is
    * restarted at the new position.
    *
@@ -352,11 +334,12 @@ export class CropManager {
       session.transitionTimer = null;
     }
 
-    if (session.zmq) {
+    if (CropManager._stdinUsable(session.stdin)) {
+     try {
       if (transitionMs > 0) {
         const steps = buildEaseSteps({ ...session.position }, target, transitionMs);
         let i = 0;
-        await this._sendZmqPosition(session, steps.length ? steps[0] : target);
+        await this._sendPosition(session, steps.length ? steps[0] : target);
         session.position = steps.length ? { ...steps[0] } : target;
         i = 1;
         if (steps.length > 1) {
@@ -369,15 +352,20 @@ export class CropManager {
             }
             const step = steps[i++];
             session.position = { ...step };
-            this._sendZmqPosition(session, step).catch(() => {});
+            this._sendPosition(session, step).catch(() => {});
           }, TRANSITION_TICK_MS);
           if (session.transitionTimer.unref) session.transitionTimer.unref();
         }
       } else {
-        await this._sendZmqPosition(session, target);
+        await this._sendPosition(session, target);
         session.position = target;
       }
       return { ok: true, mode: 'live', xNorm: target.xNorm, yNorm: target.yNorm };
+     } catch (err) {
+      // stdin went away (ffmpeg exiting, fleet job ended): swap the process instead.
+      logger.warn(`[crop:${apiKey.slice(0, 8)}] stdin command failed (${err.message}) - restarting renderer`);
+      if (session.transitionTimer) { clearInterval(session.transitionTimer); session.transitionTimer = null; }
+     }
     }
 
     // Restart fallback — MediaMTX keeps the path alive across the swap.
@@ -478,38 +466,23 @@ export class CropManager {
       clearInterval(session.transitionTimer);
       session.transitionTimer = null;
     }
-    if (session.zmq) {
-      try { session.zmq.close(); } catch {}
-      session.zmq = null;
-    }
+  }
+
+  static _stdinUsable(stdin) {
+    return !!stdin && !stdin.destroyed && !stdin.writableEnded && stdin.writable !== false;
   }
 
   /**
-   * Open a ZeroMQ REQ socket to the process's zmq filter. Returns null (and
-   * downgrades the session to restart mode) when socket setup fails.
-   * The module itself was already resolved by start() via _loadZmqModule().
+   * Retarget `crop@vcrop` through ffmpeg's interactive command interface:
+   * `C<target> <time> <command> <argument>`, time -1 = as soon as possible
+   * (the next frame the filter sees). Both axes go in one write.
    */
-  _openZmq(apiKey, zmqMod, port) {
-    try {
-      const socket = new zmqMod.Request({ sendTimeout: 500, receiveTimeout: 500 });
-      socket.connect(`tcp://127.0.0.1:${port}`);
-      return {
-        async send(cmd) {
-          await socket.send(cmd);
-          const [reply] = await socket.receive();
-          return String(reply);
-        },
-        close() { try { socket.close(); } catch {} },
-      };
-    } catch (err) {
-      logger.warn(`[crop:${apiKey.slice(0, 8)}] zmq socket setup failed (${err.message}) — falling back to restart-based repositioning`);
-      return null;
-    }
-  }
-
-  async _sendZmqPosition(session, pos) {
+  _sendPosition(session, pos) {
     const { x, y } = normToPixels(pos, session.geometry);
-    await session.zmq.send(`crop@vcrop x ${x}`);
-    await session.zmq.send(`crop@vcrop y ${y}`);
+    const stdin = session.stdin;
+    if (!CropManager._stdinUsable(stdin)) return Promise.reject(new Error('ffmpeg stdin is not writable'));
+    return new Promise((resolve, reject) => {
+      stdin.write(`Ccrop@vcrop -1 x ${x}\nCcrop@vcrop -1 y ${y}\n`, err => (err ? reject(err) : resolve()));
+    });
   }
 }

@@ -1491,39 +1491,31 @@ export function probeFfmpeg() {
     } else {
       logger.warn('⚠ ffmpeg probe failed:', which.error.message);
     }
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
   }
 
   try {
     const enc = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8', timeout: 3000 });
     const fmts = spawnSync('ffmpeg', ['-hide_banner', '-formats'], { encoding: 'utf8', timeout: 3000 });
     const demux = spawnSync('ffmpeg', ['-hide_banner', '-demuxers'], { encoding: 'utf8', timeout: 3000 });
-    const filters = spawnSync('ffmpeg', ['-hide_banner', '-filters'], { encoding: 'utf8', timeout: 3000 });
 
     const encOut = (enc.stdout || '') + (enc.stderr || '');
     const fmtsOut = (fmts.stdout || '') + (fmts.stderr || '');
     const demuxOut = (demux.stdout || '') + (demux.stderr || '');
-    const filtersOut = (filters.stdout || '') + (filters.stderr || '');
 
     const hasLibx264 = /libx264/i.test(encOut);
     const hasEia608 = /eia-?608|eia_?608|eia608/i.test(encOut);
     const hasSubrip = /subrip/i.test(fmtsOut) || /subrip/i.test(demuxOut);
-    // zmq filter (--enable-libzmq builds) — enables live crop repositioning
-    // via runtime filter commands (plan_vertical_crop.md).
-    const hasZmq = /\szmq\s/.test(filtersOut);
 
     logger.info('✓ ffmpeg found — RTMP relay is available.');
 
     if (!hasLibx264) {
       logger.info('  [i] ffmpeg: libx264 encoder not detected -- CEA-708 embedded captions unavailable (HTTP caption mode will be used).');
     }
-    if (!hasZmq) {
-      logger.info('  [i] ffmpeg: zmq filter not detected -- vertical-crop position changes will restart the renderer (build ffmpeg with --enable-libzmq for gapless repositioning).');
-    }
 
-    return { available: true, hasLibx264, hasEia608, hasSubrip, hasZmq };
+    return { available: true, hasLibx264, hasEia608, hasSubrip };
   } catch (err) {
     logger.warn('⚠ ffmpeg probe failed:', err.message);
-    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
+    return { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
   }
 }
