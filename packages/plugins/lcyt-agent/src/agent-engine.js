@@ -14,6 +14,7 @@
 
 import { getAiConfigRaw, runAiMigrations } from './ai-config.js';
 import { computeEmbeddings, cosineSimilarity, isServerEmbeddingAvailable } from './embeddings.js';
+import { computeDeerEmbeddings } from './deer-embeddings.js';
 import { invokeModelCall } from './agentic-turn.js';
 import logger from 'lcyt/logger';
 
@@ -146,6 +147,12 @@ export class AgentEngine {
       if (cfg) {
         if (cfg.embeddingProvider === 'none') {
           throw new Error('Embedding is disabled for this API key (provider: none)');
+        }
+        if (cfg.embeddingProvider === 'deer') {
+          return computeDeerEmbeddings(texts, {
+            apiUrl: cfg.embeddingApiUrl || this._settings?.get('ai.deer_embed_address'),
+            model: cfg.embeddingModel || this._settings?.get('ai.deer_embed_model'),
+          });
         }
         if (cfg.embeddingProvider === 'openai' || cfg.embeddingProvider === 'custom') {
           opts.apiKey = cfg.embeddingApiKey;

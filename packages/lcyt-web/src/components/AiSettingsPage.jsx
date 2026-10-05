@@ -8,6 +8,7 @@ const PROVIDERS = [
   { value: 'server', label: 'Server-provided' },
   { value: 'openai', label: 'OpenAI' },
   { value: 'custom', label: 'Custom API' },
+  { value: 'deer',   label: 'Local model (deer)' },
 ];
 
 export function AiSettingsPage() {
@@ -87,6 +88,7 @@ export function AiSettingsPage() {
   const provider = config?.embeddingProvider || 'none';
   const showUserFields = provider === 'openai' || provider === 'custom';
   const showServerInfo = provider === 'server';
+  const showDeerFields = provider === 'deer';
 
   return (
     <div className="page-container" style={{ padding: '2rem', maxWidth: 700 }}>
@@ -130,6 +132,31 @@ export function AiSettingsPage() {
               {t('ai.serverModel') || 'Model'}: <strong>{serverStatus.serverEmbeddingModel}</strong>
               <div style={{ opacity: 0.7, marginTop: 4 }}>{t('ai.serverNote') || 'Using the server-configured embedding API. No API key needed.'}</div>
             </div>
+          )}
+
+          {/* deer: local embedding model server (gRPC address + optional model) */}
+          {showDeerFields && (
+            <>
+              <label>{t('ai.deerAddress') || 'Embedding server address'}</label>
+              <input
+                type="text"
+                value={config.embeddingApiUrl || ''}
+                onChange={e => update('embeddingApiUrl', e.target.value)}
+                placeholder="localhost:50051"
+                style={{ padding: '0.5rem', borderRadius: 6, border: '1px solid var(--border, #ccc)' }}
+              />
+              <label>{t('ai.model') || 'Model'}</label>
+              <input
+                type="text"
+                value={config.embeddingModel || ''}
+                onChange={e => update('embeddingModel', e.target.value)}
+                placeholder="onnx-community/gte-multilingual-base"
+                style={{ padding: '0.5rem', borderRadius: 6, border: '1px solid var(--border, #ccc)' }}
+              />
+              <div style={{ opacity: 0.7, fontSize: 12 }}>
+                {t('ai.deerNote') || 'Runs on your own embedeer server (no API key). Leave blank to use the server default.'}
+              </div>
+            </>
           )}
 
           {/* User API fields */}

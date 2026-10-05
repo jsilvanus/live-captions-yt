@@ -76,6 +76,8 @@ export {
   VALID_PROVIDERS,
 } from './ai-config.js';
 
+export { computeDeerEmbeddings, closeDeerEmbeddings } from './deer-embeddings.js';
+
 export {
   computeEmbeddings,
   cosineSimilarity,
