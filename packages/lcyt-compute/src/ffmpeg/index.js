@@ -103,3 +103,4 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
 
 export { LocalFfmpegRunner, DockerFfmpegRunner, WorkerFfmpegRunner, FleetFfmpegRunner };
 export { getFleet, closeFleet } from './fleet-runner.js';
+export { spawnFfmpeg } from './spawn.js';

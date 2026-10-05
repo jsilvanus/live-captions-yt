@@ -39,7 +39,7 @@
  */
 
 import { EventEmitter } from 'node:events';
-import { spawn } from 'node:child_process';
+import { spawnFfmpeg } from 'lcyt-compute/ffmpeg';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { extractPcm, probeFfmpegVersion } from './pcm-extractor.js';
 import { classify } from './analyser/spectral-detector.js';
@@ -219,7 +219,12 @@ export class MusicManager extends EventEmitter {
 
     let proc;
     try {
-      proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+      proc = spawnFfmpeg(ffmpegArgs, {
+        purpose: 'music',
+        apiKey,
+        runner: this._settings ? this._settings.get('compute.ffmpeg_runner') : undefined,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
     } catch (err) {
       this._sessions.delete(apiKey);
       throw new Error(`MusicManager: failed to spawn ffmpeg for rtmp: ${err.message}`);
