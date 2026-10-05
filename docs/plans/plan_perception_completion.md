@@ -1,6 +1,6 @@
 ---
 title: Perception Completion — Real Detector, Feed Attribution, LLM Hand-off
-status: phase 1 implemented (real frame source, ONNX person detector, benchmark, worker image); phases 2-4 planned
+status: phases 1-2 implemented (real frame source, ONNX person detector, tracker, framing score, contract v2, region cue patterns, benchmark, worker image); phases 2b-4 planned
 related: plan/video_perception, plan/compute_split, plan/ai_roles_framework, plan/vertical_crop, plan/ai_observability
 ---
 
@@ -166,6 +166,8 @@ Phase 2b: feed attribution (can start in parallel with Phase 1; useful without a
 - Per-preset reference thumbnails (see decision 7), source tag type, `feed.source_changed` EventBus event published by `DeviceRegistry`, attributor job (cut detection, reference capture, hash match, hysteresis, operator override), resolver switched to capture-time tagging.
 - Camera scope for the vision roles: session keys, `cameraId` on events, camera label in the prompt.
 - Acceptance: scripted cuts between fixture clips are attributed correctly with and without mixer signals; an unmatched shot yields `unknown`, not a guess; no flicker on a held shot.
+
+Phase 2 status: implemented 2026-10-05 on the Phase 1 branch (JS tracker with Hungarian matching and a weak-detection second pass, rule-based framing score, `capturedAt` ordering and boxes, tracks and framing in World State and `camera.track_state`, `label@place` cue patterns). Ids stay stable through crossings in tests; no real-service footage yet, so tracker and framing thresholds are untuned.
 
 Phase 3: reliability
 - Staleness sweeper, job re-adoption on boot, auto-start/stop by feed, per-job ingest token, shared-feed capture-time guard.

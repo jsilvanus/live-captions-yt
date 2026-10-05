@@ -92,3 +92,40 @@ describe('CueEngine — tracker-state cues (match_type: track)', () => {
     assert.deepEqual(fired, []);
   });
 });
+
+describe('CueEngine — track rules with a place (label@place)', () => {
+  let CueEngine, runMigrations, insertCueRule;
+
+  before(async () => {
+    ({ CueEngine } = await import('../src/cue-engine.js'));
+    ({ runMigrations, insertCueRule } = await import('../src/db.js'));
+  });
+
+  function engineWith(pattern) {
+    const db = new Database(':memory:');
+    runMigrations(db);
+    insertCueRule(db, { id: 'r1', api_key: 'key1', name: 'r', match_type: 'track', pattern, action: { type: 'event', label: 'x' } });
+    return new CueEngine(db);
+  }
+  const left = { label: 'person', confidence: 0.9, region: { zone: 'left', vertical: 'middle' } };
+  const right = { label: 'person', confidence: 0.9, region: { zone: 'right', vertical: 'top' } };
+
+  test('person@left fires for a person in the left third, not for one on the right', () => {
+    assert.equal(engineWith('person@left').evaluateTrackerEvent('key1', { labels: [left] }).length, 1);
+    assert.equal(engineWith('person@left').evaluateTrackerEvent('key1', { labels: [right] }).length, 0);
+  });
+
+  test('person@top matches the vertical third; a plain person rule matches anywhere', () => {
+    assert.equal(engineWith('person@top').evaluateTrackerEvent('key1', { labels: [right] }).length, 1);
+    assert.equal(engineWith('person').evaluateTrackerEvent('key1', { labels: [right] }).length, 1);
+  });
+
+  test('an entry without a region never matches a rule that names a place', () => {
+    assert.equal(engineWith('person@left').evaluateTrackerEvent('key1', { labels: [{ label: 'person', confidence: 0.9 }] }).length, 0);
+  });
+
+  test('place match is case-insensitive and still honours the label', () => {
+    assert.equal(engineWith('Person@LEFT').evaluateTrackerEvent('key1', { labels: [left] }).length, 1);
+    assert.equal(engineWith('cross@left').evaluateTrackerEvent('key1', { labels: [left] }).length, 0);
+  });
+});

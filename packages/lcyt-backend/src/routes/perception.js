@@ -39,7 +39,7 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
       }
     }
 
-    const { apiKey, cameraId, feedKind, ts, objects, framing, visible } = req.body || {};
+    const { apiKey, cameraId, feedKind, ts, capturedAt, objects, framing, visible } = req.body || {};
     if (!apiKey) {
       return res.status(400).json({ error: 'apiKey is required' });
     }
@@ -47,7 +47,7 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
       return res.status(400).json({ error: 'cameraId is required for a non-shared detection' });
     }
 
-    let detection = { cameraId, ts, objects, framing, visible };
+    let detection = { cameraId, ts, capturedAt, objects, framing, visible };
     if (feedKind === 'shared') {
       detection = resolver?.tagSharedDetection?.(apiKey, detection) ?? null;
       if (!detection) return res.json({ ok: true, dropped: 'no active camera resolved for this project yet' });

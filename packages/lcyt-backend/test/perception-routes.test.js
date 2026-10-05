@@ -54,6 +54,20 @@ describe('POST /production/perception/ingest', () => {
     assert.equal(calls[0].detection.cameraId, 'cam-1');
   });
 
+  it('passes capturedAt, boxes with track ids and the framing notes through to the aggregator', async () => {
+    const calls = [];
+    await startApp({ ingest: (apiKey, detection) => calls.push(detection) });
+    const objects = [{ id: 't1', trackId: 't1', label: 'person', confidence: 0.9, bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.6 } }];
+    const res = await fetch(`${baseUrl}/production/perception/ingest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'key1', cameraId: 'cam-1', ts: 5, seq: 3, capturedAt: 4, latencyMs: 1, objects, framing: { score: 0.7, notes: 'subject small in frame' }, visible: true }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls[0].capturedAt, 4);
+    assert.deepEqual(calls[0].objects, objects);
+    assert.deepEqual(calls[0].framing, { score: 0.7, notes: 'subject small in frame' });
+  });
+
   it('401s without X-Internal-Auth when an internalToken is configured', async () => {
     await startApp({ ingest: () => {} }, null, { internalToken: 'secret' });
     let res = await fetch(`${baseUrl}/production/perception/ingest`, {

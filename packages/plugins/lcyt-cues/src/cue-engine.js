@@ -147,6 +147,21 @@ function getValueAtPath(obj, path) {
 // CueEngine
 // ---------------------------------------------------------------------------
 
+/**
+ * Does one tracker label entry satisfy a `track:` pattern?
+ * The pattern is a label, optionally followed by `@place`: `person` matches a person anywhere, `person@left`
+ * only one whose `region.zone` (left/center/right) or `region.vertical` (top/middle/bottom) is that place.
+ * An entry with no region never matches a pattern that names a place.
+ */
+function trackEntryMatches(entry, pattern, threshold) {
+  const [label, place] = String(pattern || '').toLowerCase().split('@');
+  if (String(entry?.label || '').toLowerCase() !== label.trim()) return false;
+  if ((entry?.confidence ?? 1) < threshold) return false;
+  if (place === undefined) return true;
+  const want = place.trim();
+  return String(entry?.region?.zone || '').toLowerCase() === want || String(entry?.region?.vertical || '').toLowerCase() === want;
+}
+
 export class CueEngine {
   /**
    * @param {import('better-sqlite3').Database} db
@@ -413,8 +428,7 @@ export class CueEngine {
         const state = this._trackerState.get(apiKey);
         const labels = Array.isArray(state?.labels) ? state.labels : [];
         const threshold = node.fuzzy_threshold ?? node.threshold ?? 0;
-        const target = String(pattern).toLowerCase();
-        return labels.some(entry => String(entry?.label || '').toLowerCase() === target && (entry?.confidence ?? 1) >= threshold);
+        return labels.some(entry => trackEntryMatches(entry, pattern, threshold));
       }
       case 'semantic': {
         if (!pattern || !text || !this._embedFn) return false;
@@ -876,9 +890,8 @@ export class CueEngine {
         if (last && (now - last) < rule.cooldown_ms) continue;
       }
 
-      const target = String(rule.pattern || '').toLowerCase();
       const threshold = rule.fuzzy_threshold ?? 0;
-      const hit = labels.find(entry => String(entry?.label || '').toLowerCase() === target && (entry?.confidence ?? 1) >= threshold);
+      const hit = labels.find(entry => trackEntryMatches(entry, rule.pattern, threshold));
       if (!hit) continue;
 
       this._lastFired.set(rule.id, now);
