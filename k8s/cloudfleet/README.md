@@ -44,8 +44,6 @@ kubectl apply -f k8s/cloudfleet/
 | `21-mediamtx-deployment.yaml` | `mediamtx` Deployment |
 | `22-mediamtx-service.yaml` | `mediamtx` Services (ClusterIP + LoadBalancer for RTMP) |
 | `30-ingress.yaml` | nginx Ingress + TLS (cert-manager) |
-| `40-orchestrator-deployment.yaml` | `lcyt-orchestrator` Deployment (distributed mode only) |
-| `41-orchestrator-service.yaml` | `lcyt-orchestrator` ClusterIP Service |
 
 ## Image configuration
 
@@ -60,10 +58,6 @@ docker push $REGISTRY/lcyt/lcyt-site:latest
 
 docker build -t $REGISTRY/lcyt/lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 docker push $REGISTRY/lcyt/lcyt-ffmpeg:latest
-
-# Distributed mode only (FFMPEG_RUNNER=worker):
-docker build -t $REGISTRY/lcyt/lcyt-worker-daemon:latest packages/lcyt-worker-daemon/
-docker push $REGISTRY/lcyt/lcyt-worker-daemon:latest
 ```
 
 Then update `image:` in `10-backend-deployment.yaml` and
@@ -81,5 +75,5 @@ Then update `image:` in `10-backend-deployment.yaml` and
 ## See also
 
 - `docs/plans/plan_cloudfleet.md` — full hosting mode comparison and plan
-- `docs/DEPLOY.md` — Tier 1 (single VM) and Tier 2 (orchestrator) guides
+- `docs/DEPLOY.md` — Tier 1 (single VM) and Tier 2 (fffleet fleet) guides
 - `.env.example` — complete list of supported environment variables

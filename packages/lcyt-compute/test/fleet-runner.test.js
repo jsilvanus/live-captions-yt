@@ -68,3 +68,7 @@ test('failureOf: null for success and cancel, readable for failures', () => {
   assert.deepEqual(f, { state: 'failed', code: 'WORKER_LOST', message: 'worker w1 stopped answering', stderrTail: null, workerId: 'w1' });
   assert.equal(failureOf({ state: 'failed', error: null }, 3).message, 'ffmpeg exited with code 3');
 });
+
+test('the removed worker runner fails with a pointer to fleet', () => {
+  assert.throws(() => createFfmpegRunner({ runner: 'worker', args: [] }), /FFMPEG_RUNNER=fleet/);
+});

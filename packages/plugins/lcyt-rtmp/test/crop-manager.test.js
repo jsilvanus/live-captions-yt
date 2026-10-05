@@ -1,49 +1,17 @@
 /**
- * CropManager lifecycle tests (no real ffmpeg): FFMPEG_RUNNER=worker against a
- * mock daemon, injected resolution probe. Covers start/stop, status shape,
+ * CropManager lifecycle tests (no real ffmpeg): FFMPEG_WRAPPER stand-in
+ * (helpers/fake-ffmpeg-env.js), injected resolution probe. Covers start/stop, status shape,
  * restart-mode repositioning (position survives the swap, no state wipe from
  * the old runner's close event), and crop-slot fan-out registration in
  * RtmpRelayManager.
  */
-import { test, describe, before, after } from 'node:test';
+import { resetLaunches, launched } from './helpers/fake-ffmpeg-env.js';
+import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import Database from 'better-sqlite3';
 import { CropManager } from '../src/crop-manager.js';
 import { RtmpRelayManager } from '../src/rtmp-manager.js';
 import { runCropMigrations, createCropPreset, createCropSourceMapEntry, setCropConfig } from '../src/db/crop.js';
-
-let server;
-const savedEnv = {};
-const jobs = [];
-
-before(async () => {
-  await new Promise(resolve => {
-    server = createServer((req, res) => {
-      let body = '';
-      req.on('data', d => { body += d; });
-      req.on('end', () => {
-        if (req.method === 'POST') jobs.push(JSON.parse(body || '{}'));
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ jobId: `j-${Math.random()}`, ok: true }));
-      });
-    }).listen(0, '127.0.0.1', resolve);
-  });
-  for (const k of ['FFMPEG_RUNNER', 'WORKER_DAEMON_URL', 'COMPUTE_ORCHESTRATOR_URL', 'MEDIAMTX_API_URL']) {
-    savedEnv[k] = process.env[k];
-    delete process.env[k];
-  }
-  process.env.FFMPEG_RUNNER = 'worker';
-  process.env.WORKER_DAEMON_URL = `http://127.0.0.1:${server.address().port}`;
-});
-
-after(() => new Promise(resolve => {
-  for (const [k, v] of Object.entries(savedEnv)) {
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
-  server.close(resolve);
-}));
 
 const CONFIG = {
   enabled: true, aspectW: 9, aspectH: 16, outW: 1080, outH: 1920,
@@ -78,11 +46,11 @@ describe('CropManager', () => {
   });
 
   test('ffmpeg args crop at incoming quality and push the bare {key}-crop path', async () => {
-    jobs.length = 0;
+    resetLaunches();
     const mgr = makeManager();
     await mgr.start('key2', CONFIG);
 
-    const plan = jobs[0];
+    const plan = (await launched(1))[0];
     const filter = plan.args[plan.args.indexOf('-filter_complex') + 1];
     assert.match(filter, /crop@vcrop=608:1080:\d+:\d+/);
     assert.match(filter, /scale=1080:1920/);
@@ -94,10 +62,11 @@ describe('CropManager', () => {
   });
 
   test('restart-mode applyPosition swaps the renderer at the new position', async () => {
-    jobs.length = 0;
+    resetLaunches();
     const mgr = makeManager();
     await mgr.start('key3', CONFIG, { position: { xNorm: 0, yNorm: 0 } });
     assert.equal(mgr.getStatus('key3').xNorm, 0);
+    await launched(1); // let the first process log itself before it is replaced
 
     const result = await mgr.applyPosition('key3', { xNorm: 1, yNorm: 0 });
     assert.equal(result.mode, 'restart');
@@ -109,7 +78,7 @@ describe('CropManager', () => {
     assert.equal(mgr.getStatus('key3').xNorm, 1);
 
     // Second spawn used the new x offset (maxX = 1920-608 = 1312)
-    const filters = jobs.map(j => j.args[j.args.indexOf('-filter_complex') + 1]);
+    const filters = (await launched(2)).map(j => j.args[j.args.indexOf('-filter_complex') + 1]);
     assert.match(filters[0], /crop@vcrop=608:1080:0:0/);
     assert.match(filters[1], /crop@vcrop=608:1080:1312:0/);
 
@@ -153,14 +122,15 @@ describe('CropManager', () => {
   test('hasZmq without the zeromq module: no zmq filter in the graph, restart mode reported', async () => {
     // The optional `zeromq` package is not installed in this repo, so the
     // lazy import fails — the filter must NOT bind a dead port.
-    jobs.length = 0;
+    resetLaunches();
     const mgr = new CropManager({
       ffmpegCaps: { available: true, hasZmq: true },
       probeResolution: async () => ({ inW: 1920, inH: 1080 }),
     });
     await mgr.start('zmqless', CONFIG);
 
-    const filter = jobs[0].args[jobs[0].args.indexOf('-filter_complex') + 1];
+    const first = (await launched(1))[0];
+    const filter = first.args[first.args.indexOf('-filter_complex') + 1];
     assert.ok(!filter.includes('zmq'), `no zmq filter without the client module: ${filter}`);
     assert.equal(mgr.getStatus('zmqless').repositionMode, 'restart');
     assert.equal(mgr.repositionMode(), 'restart', 'manager-level mode downgrades once the import has settled');

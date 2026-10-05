@@ -128,7 +128,6 @@ function AdminMetricsContent({ backendUrl }) {
   const ffmpegHint = live && Object.keys(live.ffmpeg || {}).length > 0
     ? Object.entries(live.ffmpeg).map(([purpose, n]) => `${purpose}: ${n}`).join(', ')
     : null;
-  const burstActive = live?.burst?.active?.length ?? 0;
   const metricNames = [...new Set(series.map(s => s.metric))].sort();
 
   return (
@@ -140,7 +139,6 @@ function AdminMetricsContent({ backendUrl }) {
         <StatTile label="Active sessions" value={live ? live.activeSessions : '—'} />
         <StatTile label="SSE connections" value={live ? sseTotal : '—'} />
         <StatTile label="ffmpeg processes" value={live ? ffmpegTotal : '—'} hint={ffmpegHint} />
-        <StatTile label="Burst VMs" value={live?.burst ? burstActive : '—'} hint={live?.burst ? `${Math.round((live.burst.totals?.vmSecondsTotal || 0) / 3600)} h total` : 'orchestrator not configured'} />
       </div>
 
       {/* Range selector */}

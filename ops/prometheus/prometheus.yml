@@ -22,12 +22,9 @@ scrape_configs:
     static_configs:
       - targets: ["host.docker.internal:3000"]
 
-  - job_name: lcyt-orchestrator
-    metrics_path: /metrics
-    static_configs:
-      - targets: ["host.docker.internal:4000"]
-
-  - job_name: lcyt-worker-daemon
+  # fffleet (orchestrator and workers) serves /metrics for tokens with the `metrics` scope and lists its
+  # workers at /v1/sd/prometheus (HTTP service discovery); see https://github.com/jsilvanus/fffleet
+  - job_name: fffleet-orchestrator
     metrics_path: /metrics
     static_configs:
       - targets: ["host.docker.internal:5000"]

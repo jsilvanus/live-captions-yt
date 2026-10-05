@@ -2,7 +2,7 @@
 
 This guide covers building, configuring, and deploying LCYT in all supported
 configurations — from a single VM with the helper script to a distributed
-compute setup with Hetzner autoscaling.
+compute setup on an fffleet fleet.
 
 ---
 
@@ -15,11 +15,10 @@ compute setup with Hetzner autoscaling.
 5. [Build-time configuration](#build-time-configuration)
 6. [Runtime environment variables](#runtime-environment-variables)
 7. [ffmpeg runner modes](#ffmpeg-runner-modes)
-8. [Distributed mode (orchestrator)](#distributed-mode-orchestrator)
-9. [Hetzner autoscaling](#hetzner-autoscaling)
-10. [Updating a running deployment](#updating-a-running-deployment)
-11. [Networking and reverse proxy](#networking-and-reverse-proxy)
-12. [Database and backups](#database-and-backups)
+8. [Distributed mode (fffleet)](#distributed-mode-fffleet)
+9. [Updating a running deployment](#updating-a-running-deployment)
+10. [Networking and reverse proxy](#networking-and-reverse-proxy)
+11. [Database and backups](#database-and-backups)
 
 ---
 
@@ -28,7 +27,7 @@ compute setup with Hetzner autoscaling.
 | Mode | Tooling | When to use |
 |------|---------|-------------|
 | **Local (single VM)** | `docker-compose.yml` | Development, personal use, single small event |
-| **Self-managed orchestrator** | `docker-compose.orchestrator.yml` + Hetzner VMs | Production, moderate scale, full control, cost-optimised |
+| **fffleet fleet** | `FFMPEG_RUNNER=fleet` + an [fffleet](https://github.com/jsilvanus/fffleet) orchestrator and workers (its own compose file and autoscaling for Docker or Hetzner) | Production, moderate scale, ffmpeg offloaded to other machines |
 | **Cloudfleet (Kubernetes)** | `k8s/cloudfleet/` manifests | Managed HA cluster, rolling deploys, minimal ops overhead |
 
 See `docs/plans/plan_cloudfleet.md` for a full comparison of all three tiers
@@ -134,7 +133,6 @@ directory.
 | Image | Build context | Purpose |
 |-------|--------------|---------|
 | `lcyt-site:latest` | `.` (repo root) | Backend API + MCP Streamable HTTP server |
-| `lcyt-worker-daemon:latest` | `packages/lcyt-worker-daemon/` | ffmpeg worker daemon (distributed mode) |
 | `lcyt-ffmpeg:latest` | `docker/lcyt-ffmpeg/` | Ephemeral ffmpeg runner (`FFMPEG_RUNNER=docker`) |
 | `lcyt-dsk-renderer:latest` | `docker/lcyt-dsk-renderer/` | Playwright + ffmpeg DSK graphics renderer |
 
@@ -142,7 +140,6 @@ Build all images locally:
 
 ```bash
 docker build -t lcyt-site:latest .
-docker build -f packages/lcyt-worker-daemon/Dockerfile -t lcyt-worker-daemon:latest .
 docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 docker build -t lcyt-dsk-renderer:latest docker/lcyt-dsk-renderer/
 ```
@@ -172,8 +169,8 @@ in `docker-compose.yml`. See `scripts/build.env.example` for a template.
 
 ffmpeg is only installed in `lcyt-site` when one of the four feature flags
 above is set to `1` **and** `FFMPEG_RUNNER=spawn` (the default). If you use
-`FFMPEG_RUNNER=docker` (ephemeral containers) or `FFMPEG_RUNNER=worker`
-(worker daemon), ffmpeg is never called inside this image, so all four flags
+`FFMPEG_RUNNER=docker` (ephemeral containers) or `FFMPEG_RUNNER=fleet`
+(fffleet workers), ffmpeg is never called inside this image, so all four flags
 can stay at `0`.
 
 ### Vite build args (`lcyt-web`)
@@ -369,7 +366,7 @@ directly from the Node.js backend.
 
 ## ffmpeg runner modes
 
-The backend can run ffmpeg in three ways, controlled by `FFMPEG_RUNNER`:
+The backend can run ffmpeg in four ways, controlled by `FFMPEG_RUNNER`:
 
 ### `spawn` (default)
 
@@ -398,19 +395,6 @@ Enable the socket proxy profile in the compose file:
 docker compose --profile docker-runner up -d
 ```
 
-### `worker`
-
-Jobs are dispatched to `lcyt-worker-daemon` via HTTP through the
-`lcyt-orchestrator`. Used in the distributed setup (Phase 4+). The
-`lcyt-site` image does **not** need ffmpeg installed.
-
-```
-FFMPEG_RUNNER=worker
-COMPUTE_ORCHESTRATOR_URL=http://lcyt-orchestrator:4000
-BACKEND_INTERNAL_TOKEN=shared-secret
-ORCHESTRATOR_FALLBACK=spawn   # fallback if orchestrator is unreachable
-```
-
 ### `fleet`
 
 Jobs go to an [fffleet](https://github.com/jsilvanus/fffleet) fleet: an
@@ -426,7 +410,9 @@ FFFLEET_CLIENT_ID=lcyt            # or FFFLEET_TOKEN=...
 FFFLEET_CLIENT_SECRET=...
 ```
 
-`worker` stays for the perception jobs, which fffleet does not run.
+Perception jobs run on the same fleet as the `perception` job type (workers started with
+`FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor`; image `docker/lcyt-perception-worker/`).
+`FFMPEG_RUNNER=worker` and the old `lcyt-orchestrator` / `lcyt-worker-daemon` packages are gone.
 
 **Network requirements.** A fleet worker is a different machine, so every input and output
 in an ffmpeg command must be reachable *from the worker*, not from the backend:
@@ -460,99 +446,20 @@ builds or sandboxed binaries.
 
 ---
 
-## Distributed mode (orchestrator)
+## Distributed mode (fffleet)
 
-The orchestrator compose file (`docker-compose.orchestrator.yml`) runs a
-three-tier architecture:
-
-```
-lcyt-backend ──► lcyt-orchestrator ──► lcyt-worker-daemon (warm pool)
-                                  └──► burst VMs (Hetzner Cloud, on demand)
-```
-
-### Build images
-
-```bash
-docker build -t lcyt-site:latest .
-docker build -f packages/lcyt-worker-daemon/Dockerfile -t lcyt-worker-daemon:latest .
-docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
-```
-
-### Configure
-
-Copy `.env.example` to `.env` and set:
+Heavy ffmpeg work (relays, STT, music analysis, DSK, perception) can run on other machines
+through [fffleet](https://github.com/jsilvanus/fffleet):
 
 ```
-JWT_SECRET=...
-ADMIN_KEY=...
-BACKEND_INTERNAL_TOKEN=...        # shared secret between backend and orchestrator
-HETZNER_API_TOKEN=...             # omit to disable burst provisioning
-HETZNER_NETWORK_ID=...
-HETZNER_SNAPSHOT_ID=...           # see Hetzner autoscaling section
+lcyt-backend ──FFFLEET_URL──► fffleet-orchestrator ──► fffleet-worker (one per VM or container)
+                                      └──► autoscaled workers (Docker, Hetzner Cloud, local processes)
 ```
 
-### Start
-
-```bash
-docker compose -f docker-compose.orchestrator.yml up -d
-```
-
-### Orchestrator env vars
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `COMPUTE_ORCHESTRATOR_URL` | `http://lcyt-orchestrator:4000` | Orchestrator base URL (used by the backend) |
-| `BACKEND_INTERNAL_TOKEN` | _(required)_ | Shared secret for backend ↔ orchestrator auth |
-| `ORCHESTRATOR_FALLBACK` | `spawn` | Runner to use if the orchestrator is unreachable |
-| `WARM_POOL_SIZE` | `1` | Minimum number of warm workers to keep alive |
-| `BURST_COOLDOWN_MS` | `300000` | Idle milliseconds before destroying a burst worker (5 min) |
-| `BURST_QUEUE_LIMIT` | `20` | Pending jobs before the autoscaler provisions burst VMs |
-| `MAX_CONCURRENT_BURST_CREATES` | `3` | Max parallel Hetzner VM provisions |
-| `ORCHESTRATOR_MAX_PENDING_JOBS` | `50` | Max queued jobs before returning 503 |
-| `ORCHESTRATOR_BACKOFF_MS` | `60000` | Base backoff for Hetzner API retries |
-
-### Worker daemon env vars
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `WORKER_ID` | `worker-0` | Unique identifier for this worker instance |
-| `WORKER_MAX_JOBS` | `4` | Maximum concurrent jobs |
-| `FFMPEG_IMAGE` | `lcyt-ffmpeg:latest` | Docker image used for ffmpeg jobs |
-| `DSK_IMAGE` | `lcyt-dsk-renderer:latest` | Docker image used for DSK renderer jobs |
-| `WORKER_AUTH_TOKEN` / `BACKEND_INTERNAL_TOKEN` | _(unset)_ | Optional auth token for all `/jobs` endpoints |
-
----
-
-## Hetzner autoscaling
-
-When `HETZNER_API_TOKEN` is set, the orchestrator automatically provisions
-burst VMs from a pre-baked snapshot when the job queue exceeds
-`BURST_QUEUE_LIMIT`.
-
-### Hetzner env vars
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `HETZNER_API_TOKEN` | _(unset)_ | Hetzner Cloud API token. Autoscaling is disabled without this. |
-| `HETZNER_NETWORK_ID` | _(unset)_ | Hetzner private network ID for inter-VM communication |
-| `HETZNER_SNAPSHOT_ID` | _(unset)_ | ID of the pre-baked worker VM snapshot |
-| `HETZNER_SERVER_TYPE_BURST` | `cx31` | Server type for on-demand burst VMs |
-| `HETZNER_SERVER_TYPE_WARM` | `cx21` | Server type for warm-pool VMs |
-| `HETZNER_LOCATION` | `hel1` | Datacenter location for new VMs |
-
-### Preparing a worker snapshot
-
-See `docs/hetzner_snapshot.md` for the full runbook. The short version:
-
-1. Boot a fresh Hetzner `cx21` Debian 12 VM
-2. Install Docker Engine and enable live-restore
-3. Pre-pull `lcyt-ffmpeg:latest` (and optionally `lcyt-dsk-renderer:latest`)
-4. Install and enable `lcyt-worker-daemon` as a systemd service
-5. Stop services and create a snapshot in the Hetzner Console
-6. Set `HETZNER_SNAPSHOT_ID` to the snapshot ID
-
-New burst VMs boot from this snapshot and self-register with the orchestrator
-via cloud-init. See `docs/hetzner_snapshot.md` for the cloud-init template.
+Set `FFMPEG_RUNNER=fleet` and `FFFLEET_URL` (see [`fleet`](#fleet) above). Running the orchestrator and
+workers, logins (`FFFLEET_CLIENT_ID`/`FFFLEET_CLIENT_SECRET`), S3 staging, autoscaling pools (including
+Hetzner) and metrics are documented in the fffleet README and its `fffleet.example.yaml`. The orchestrator
+can keep its queue across restarts with `FFFLEET_STATE_FILE`.
 
 ---
 
@@ -590,8 +497,7 @@ See `docs/FIREWALL.md` for:
 | 1935 | RTMP ingest | Yes (if streaming is in use) |
 | 3000 | lcyt-backend API | No — via nginx only |
 | 3001 | lcyt-mcp-http | No — via nginx if needed |
-| 4000 | lcyt-orchestrator | No — internal |
-| 5000 | lcyt-worker-daemon | No — internal |
+| 5000 | fffleet-orchestrator (default) | No — internal |
 | 8080 | MediaMTX HLS | No — via nginx proxy |
 | 9997 | MediaMTX REST API | No — internal |
 

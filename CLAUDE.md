@@ -19,9 +19,7 @@ live-captions-yt/
 │   ├── lcyt-mcp-http/          # MCP server (Streamable HTTP transport)
 │   ├── lcyt-site/              # Marketing/docs website (Astro)
 │   ├── lcyt-web/               # Browser-based web UI (Vite + React + wouter)
-│   ├── lcyt-compute/           # ffmpeg runners + job dispatch shared by backend, worker daemon and orchestrator
-│   ├── lcyt-orchestrator/      # Compute orchestrator — worker registration, job dispatch, Hetzner autoscaling
-│   ├── lcyt-worker-daemon/     # Minimal worker daemon — ffmpeg job orchestration, S3 upload
+│   ├── lcyt-compute/           # ffmpeg runners + job dispatch shared by backend and plugins
 │   ├── lcyt-tools/             # Shared AI tool-schema/handler registry (MCP + agentic_chat roles)
 │   ├── shared-styles/          # Shared CSS design tokens consumed by lcyt-site and lcyt-web
 │   ├── tools/                  # Standalone utilities
@@ -61,7 +59,6 @@ live-captions-yt/
 │   └── plans/                  # Individual plan files (plan_*.md)
 ├── .env.example                # Example environment variables
 ├── docker-compose.yml          # Compose stack for local development
-├── docker-compose.orchestrator.yml # Compose stack with orchestrator + worker daemon
 ├── PORTS.md                    # Port assignment reference
 ├── TODO.md                     # Outstanding work items
 ├── CONSIDER.md                 # Open skipped code-review/simplify findings (resolved ones live in docs/CONSIDER-archive.md)
@@ -118,8 +115,6 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | Express relay backend | `packages/lcyt-backend/CLAUDE.md` |
 | Production control bridge agent | `packages/lcyt-bridge/CLAUDE.md` |
 | ffmpeg runners and job dispatch | `packages/lcyt-compute/CLAUDE.md` |
-| Compute orchestrator | `packages/lcyt-orchestrator/CLAUDE.md` |
-| Worker daemon | `packages/lcyt-worker-daemon/CLAUDE.md` |
 | TCP echo test server | `packages/tools/tcp-echo-server/CLAUDE.md` |
 | TCP command sender test tool | `packages/tools/tcp-sender/CLAUDE.md` |
 | MCP server (stdio) | `packages/lcyt-mcp-stdio/CLAUDE.md` |

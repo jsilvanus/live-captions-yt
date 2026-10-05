@@ -2,12 +2,10 @@
  * Perception routes (plan_video_perception.md Phase 2/3), mounted at
  * /production/perception:
  *
- *   POST /ingest              — a worker-daemon perception job POSTs one
+ *   POST /ingest              — an fffleet perception job POSTs one
  *     camera's detection here. Internal, not project-JWT gated — the caller
  *     is a compute worker, not a user session — so it's protected by
- *     BACKEND_INTERNAL_TOKEN the same way lcyt-orchestrator's
- *     requireInternalAuth() gates its own inbound routes (mirrored here, not
- *     imported, since lcyt-backend has no dependency on lcyt-orchestrator).
+ *     BACKEND_INTERNAL_TOKEN or a per-job token.
  *     A per-job token (HMAC of the job's project, camera, feed kind and id, see
  *     lcyt-compute/perception/ingest-token) is accepted as well, and is what new jobs carry.
  *     Detections whose job plan carries feedKind: 'shared' (cameraId null —
@@ -38,7 +36,7 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
   router.post('/ingest', (req, res) => {
     const { apiKey, cameraId, feedKind, jobId, ts, capturedAt, objects, framing, visible } = req.body || {};
     // Accepted: a per-job token minted for exactly this (project, camera, feed kind, job), or the shared
-    // internal token (older jobs and the legacy worker daemon). With neither configured the route is open, as before.
+    // internal token (older jobs). With neither configured the route is open, as before.
     const provided = req.headers['x-internal-auth'];
     const jobTokenOk = !!provided && perceptionManager?.verifyIngest?.({ apiKey, cameraId: cameraId ?? null, feedKind: feedKind ?? null, jobId }, provided);
     const sharedTokenOk = !!internalToken && provided === internalToken;

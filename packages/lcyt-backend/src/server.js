@@ -310,13 +310,11 @@ if (graphicsEnabled) {
   ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics, settings }));
 }
 
-// Background metric pollers: storage gauges, MediaMTX egress deltas, and
-// orchestrator burst-VM accounting (plan_metering_audit §4.2–4.3).
+// Background metric pollers: storage gauges and MediaMTX egress deltas (plan_metering_audit §4.2–4.3).
 const metricsPollers = startMetricsPollers({
   db,
   metrics,
   mediamtxClient: productionMediamtxClient,
-  orchestratorUrl: settings.get('compute.orchestrator_url') || '',
 });
 
 // Inject translation-config + fan-out + caption-file helpers into SttManager
@@ -866,15 +864,14 @@ app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, cre
 app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // fps30 tracker subsystem (plan_video_perception.md Phase 2/3): job dispatch
 // (start/stop a per-camera or shared-feed perception job on the
-// orchestrator/worker daemon) and the ingest side (a worker POSTs
+// fffleet fleet) and the ingest side (a worker POSTs
 // detections back here, fanning into the cue engine's track_state contract
 // + World State's camera.track_state — see perception-aggregator.js's
 // module doc for why this composition-root module, not a plugin, owns that
 // fan-out). The shared-feed resolver (Phase 3) re-tags mixer-only cameras'
 // detections with whichever camera DeviceRegistry says is currently on
 // program before they reach the aggregator.
-// A perception job may run on a remote worker (ORCHESTRATOR_URL/
-// WORKER_DAEMON_URL, the whole point of the compute-orchestration layer),
+// A perception job runs on an fffleet worker (FFFLEET_URL),
 // so its frameUrl/callbackUrl must resolve to this backend's real,
 // externally-reachable URL — BACKEND_URL, the same env var routes/video.js
 // hands out to the DSK renderer for the same reason — not

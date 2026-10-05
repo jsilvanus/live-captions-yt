@@ -565,18 +565,6 @@ addition to the role-picker card.
 
 ---
 
-## Perception job dispatch/auth-header logic duplicated across three packages
-
-**Where:** `packages/lcyt-backend/src/ffmpeg/worker-runner.js` (pre-existing), `packages/plugins/lcyt-production/src/perception-manager.js`, `packages/lcyt-worker-daemon/src/perception-job.js` (both new, `plan_video_perception.md` Phase 2)
-
-**Finding:** All three files independently implement the same shape — "JSON headers + an optional internal-auth token header + POST/DELETE to whichever of `ORCHESTRATOR_URL`/`WORKER_DAEMON_URL` is configured, preferring the orchestrator" — with three different error-handling conventions (`worker-runner.js` throws, `perception-manager.js` throws, `perception-job.js` logs-and-swallows). `perception-manager.js` already factors its own internal `_headers()`/`_post()`/`_delete()` helpers cleanly; the duplication is *across* files, not within any one of them. A future change to how the internal-auth token is passed (signed header, rotated secret, etc.) needs to be found and updated in three places by hand instead of one.
-
-**Why skipped:** the three files live in three different npm workspace packages (`lcyt-backend`, `lcyt-production`, `lcyt-worker-daemon`). A real fix means either extracting the shared logic into the common `lcyt` core library (touching a dependency all three packages share) or accepting the duplication as a cost of the package boundary. `worker-runner.js` in particular is pre-existing, stable, tested ffmpeg-job-dispatch code with no relationship to this PR's actual diff — refactoring it here to shave duplication off a brand-new, unrelated feature (perception jobs) is a real regression-risk-to-payoff mismatch for a cosmetic finding, not a correctness bug. Worth doing as its own focused pass if/when a fourth dispatch consumer shows up (the repo's own stated threshold for promoting a duplicated pattern, per `ROADMAP.md` §0's precedent for `DeviceRegistry`'s callback-to-EventBus promotion question) or when the auth-token scheme actually needs to change and the duplication becomes a real maintenance cost rather than a theoretical one.
-
-(Found during: `/code-review` pass on `plan_video_perception.md` Phases 2-3, 2026-07-21 — reuse angle.)
-
----
-
 ## Server settings (plan_env_to_ui_settings.md) Phase 5 — two small env-only gaps remain unregistered
 
 **Where:** `packages/lcyt-backend/src/storage/s3.js` (5 raw `process.env.S3_*` reads: `S3_ENDPOINT`, `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`), `packages/plugins/lcyt-cues/src/cue-engine.js` (3 raw `process.env.CUE_EVENT_TIMEOUT_MS` reads)

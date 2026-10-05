@@ -9,43 +9,14 @@
  * 3. _upsertPath must fall back to patchPath when addPath fails because the
  *    path config already exists.
  */
-import { test, describe, before, after } from 'node:test';
+import './helpers/fake-ffmpeg-env.js';
+import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
 import { RtmpRelayManager } from '../src/rtmp-manager.js';
 
 const NO_CEA_CAPS = { available: true, hasLibx264: false, hasEia608: false, hasSubrip: false };
 
 describe('RtmpRelayManager — restart race', () => {
-  let server;
-  const savedEnv = {};
-
-  before(async () => {
-    // Minimal mock worker daemon so FFMPEG_RUNNER=worker gives us a fully
-    // controllable runner (no real ffmpeg spawn): WorkerFfmpegRunner emits
-    // 'close' asynchronously from stop(), which is exactly the race window.
-    await new Promise(resolve => {
-      server = createServer((req, res) => {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ jobId: `j-${Date.now()}-${Math.random()}`, ok: true }));
-      }).listen(0, '127.0.0.1', resolve);
-    });
-    for (const k of ['FFMPEG_RUNNER', 'WORKER_DAEMON_URL', 'COMPUTE_ORCHESTRATOR_URL', 'MEDIAMTX_API_URL']) {
-      savedEnv[k] = process.env[k];
-      delete process.env[k];
-    }
-    process.env.FFMPEG_RUNNER = 'worker';
-    process.env.WORKER_DAEMON_URL = `http://127.0.0.1:${server.address().port}`;
-  });
-
-  after(() => new Promise(resolve => {
-    for (const [k, v] of Object.entries(savedEnv)) {
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
-    server.close(resolve);
-  }));
-
   test('old process close event does not wipe the restarted relay state', async () => {
     const mgr = new RtmpRelayManager({ ffmpegCaps: NO_CEA_CAPS });
     const relays = [{ slot: 1, targetUrl: 'rtmp://a.example/live', targetName: 'k' }];
@@ -57,7 +28,7 @@ describe('RtmpRelayManager — restart race', () => {
     // after the new process has been registered.
     await mgr.start('race-key', relays);
 
-    // Give the old runner's async DELETE + 'close' emission time to land.
+    // Give the old runner's async 'close' emission time to land.
     await new Promise(r => setTimeout(r, 150));
 
     assert.ok(mgr.isRunning('race-key'), 'restarted relay must stay registered after the old close event');

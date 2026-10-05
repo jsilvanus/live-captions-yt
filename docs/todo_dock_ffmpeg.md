@@ -1,3 +1,5 @@
+> **Historical (2026-10-05):** `lcyt-orchestrator` and `lcyt-worker-daemon` were removed; remote execution is `FFMPEG_RUNNER=fleet` (fffleet). See `docs/DEPLOY.md`.
+
 # TODO: FFmpeg Container Migration — Phase-by-Phase Checklist
 
 Date: 2026-03-20

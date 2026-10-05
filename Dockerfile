@@ -58,8 +58,8 @@ RUN if [ -n "$APT_MIRROR" ]; then \
 # Install ffmpeg when a feature that spawns it locally is active.
 # Only relevant when FFMPEG_RUNNER=spawn (the default). If you set
 # FFMPEG_RUNNER=docker the backend launches ephemeral lcyt-ffmpeg
-# containers instead, and FFMPEG_RUNNER=worker offloads to
-# lcyt-worker-daemon â€” neither requires ffmpeg in this image.
+# containers instead, and FFMPEG_RUNNER=fleet offloads to
+# an fffleet fleet â€” neither requires ffmpeg in this image.
 # Build with --build-arg RTMP_RELAY_ACTIVE=1 (or RADIO/HLS/PREVIEW)
 # to install ffmpeg for local-spawn mode.
 ARG RTMP_RELAY_ACTIVE=0

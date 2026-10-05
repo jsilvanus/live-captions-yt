@@ -35,7 +35,7 @@ This is a point-in-time snapshot, not a maintained changelog. The repo has no `C
 | plan_files3 | lcyt-files Storage Adapters | local/S3/WebDAV done; CDN URL field, S3 mock tests, migration script remain low-priority |
 | plan_admin | Admin Panel | Phases 1-2 done: CRUD, audit log, import/export |
 | plan_ui | Frontend & UI Plans | All backlog items done (command palette, shortcuts, reconnect, etc.) |
-| plan_dock_ffmpeg | FFmpeg Compute Containers → Distributed Hetzner Architecture | All phases done. Phases 1-3: runner abstraction (`FFMPEG_RUNNER`); Phases 4-7: `lcyt-orchestrator` (worker registry, job routing, Hetzner client, autoscaler, Prometheus metrics) + `lcyt-worker-daemon` (job lifecycle, Docker execution, S3 uploader) fully wired, including caption forwarding (`POST /compute/jobs/:jobId/caption`). See `docs/distributed-compute.md`. |
+| plan_dock_ffmpeg | FFmpeg Compute Containers → Distributed Hetzner Architecture | All phases done. Phases 1-3: runner abstraction (`FFMPEG_RUNNER`); Phases 4-7: `lcyt-orchestrator` + `lcyt-worker-daemon`, **retired 2026-10-05** in favour of the external fffleet project (`FFMPEG_RUNNER=fleet`). |
 
 ### In Progress (4, + TODO follow-through)
 
@@ -101,11 +101,8 @@ Everything else (the bulk of matches) is test-mock terminology and not indicativ
 | `packages/lcyt-mcp-stdio` | 0.1.0 | Stable but early |
 | `packages/lcyt-mcp-http` | 0.1.0 | Stable but early |
 | `packages/lcyt-site` | 0.1.0 | Early (marketing site) |
-| `packages/lcyt-orchestrator` | 0.0.1 (private) | Functionally wired (worker registry, job dispatch, caption forwarding, Hetzner autoscaling) but version number not yet bumped past scaffold-era `0.0.x` |
-| `packages/lcyt-worker-daemon` | 0.0.0 (private) | Same — functional, version number stale |
 | `packages/plugins/*` (cues, production, rtmp, dsk, music, files, agent) | 0.1.0 each | Stable internal plugins, not independently versioned/released |
 
-The orchestrator and worker-daemon's `0.0.x` versions are now a lag indicator, not a maturity signal — plan_dock_ffmpeg Phases 4-7 shipped in PR #221 (see `docs/distributed-compute.md`), but the package versions weren't bumped to reflect it.
 
 ---
 
@@ -116,7 +113,7 @@ The orchestrator and worker-daemon's `0.0.x` versions are now a lag indicator, n
 3. **Server-side music detection tuning** (plan_music Phase 4) — tuning/export/external classifier, plus wiring the `on_publish` auto-start hook for `music_config.autoStart`. Phases 1-3 (client-side, server-side HLS analysis, RTMP fallback) are done.
 4. **AI Agent vision/image inference** (plan_agent Phase 4) — replace the `analyseImage()` stub with a real vision-capable LLM call.
 5. **Write the two skipped integration tests** (`dsk-integration.test.js`, `stt-integration.test.js`) once Playwright/Chromium and HLS/ffmpeg/MediaMTX test infra is available — currently `test.skip`.
-6. **Prove out Hetzner burst autoscaling end-to-end** — the orchestrator/worker-daemon path is wired (job dispatch, caption forwarding, S3 upload) but real-world burst-provisioning under load remains unproven; bump `lcyt-orchestrator`/`lcyt-worker-daemon` package versions once it is.
+6. **Prove out a real remote fffleet fleet end-to-end** (Hetzner pool, S3, workers on another network) — only tested against fakes so far.
 7. Lower priority / polish: plan_help (screenshot capture for the help page), plan_userprojects Phase 4 (QR codes, tally light, time-limited sessions), plan_cloudfleet optional enhancements (Helm chart, Litestream, Postgres, ServiceMonitor, CI CFCR push).
 8. **plan_translate** remains in draft — worth a decision on whether to formally schedule it (closes the gap where STT/CLI captions can't be server-side translated) or shelve it.
 

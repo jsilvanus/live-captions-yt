@@ -5,8 +5,6 @@
  *   api_key that created them, so attribution is direct. Per-path counters
  *   reset when a path is recreated — handled by counter-reset detection.
  * - Storage gauges: per-project caption-file and image bytes every 5 min.
- * - Orchestrator burst-VM accounting: polls GET /compute/burst/history totals
- *   every 60 s (system scope — burst capacity is not project-attributable).
  */
 import logger from 'lcyt/logger';
 
@@ -72,42 +70,11 @@ export function createStorageGaugePoller({ db, metrics, intervalMs = 300_000 }) 
   return { poll, stop: () => clearInterval(timer) };
 }
 
-export function createBurstHistoryPoller({ metrics, orchestratorUrl, intervalMs = 60_000, fetchFn = fetch }) {
-  let lastCreated = NaN;
-  let lastVmSeconds = NaN;
-  let latest = null; // cached for the /admin/metrics/live panel
-
-  async function poll() {
-    let body;
-    try {
-      const res = await fetchFn(`${orchestratorUrl.replace(/\/$/, '')}/compute/burst/history`);
-      if (!res.ok) return;
-      body = await res.json();
-    } catch {
-      return; // orchestrator down — try again next tick
-    }
-    latest = body;
-    const totals = body?.totals || {};
-    const createdDelta = counterDelta(lastCreated, Number(totals.created || 0));
-    const secondsDelta = counterDelta(lastVmSeconds, Number(totals.vmSecondsTotal || 0));
-    lastCreated = Number(totals.created || 0);
-    lastVmSeconds = Number(totals.vmSecondsTotal || 0);
-    if (createdDelta > 0) metrics.count('compute.burst_vms_created', createdDelta, { project: '' });
-    if (secondsDelta > 0) metrics.count('compute.burst_vm_seconds', secondsDelta, { project: '' });
-  }
-
-  const timer = setInterval(() => { poll().catch(() => {}); }, intervalMs);
-  timer.unref();
-  return { poll, stop: () => clearInterval(timer), getLatest: () => latest };
-}
-
 /**
- * Wire up all pollers appropriate to this install. Returns handles so the
- * live-metrics endpoint can reach the burst poller's cache.
+ * Wire up all pollers appropriate to this install. Returns their handles.
  */
-export function startMetricsPollers({ db, metrics, mediamtxClient = null, orchestratorUrl = process.env.ORCHESTRATOR_URL || '' }) {
+export function startMetricsPollers({ db, metrics, mediamtxClient = null }) {
   const pollers = { storage: createStorageGaugePoller({ db, metrics }) };
   if (mediamtxClient) pollers.mediamtxEgress = createMediaMtxEgressPoller({ metrics, mediamtxClient });
-  if (orchestratorUrl) pollers.burstHistory = createBurstHistoryPoller({ metrics, orchestratorUrl });
   return pollers;
 }

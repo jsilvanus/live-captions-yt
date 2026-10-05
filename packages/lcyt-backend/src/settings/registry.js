@@ -144,13 +144,11 @@ const TIER_B = [
   { key: 'mediamtx.api_password', env: 'MEDIAMTX_API_PASSWORD', type: 'secret', default: '', secret: true, category: 'mediamtx', apply: 'manager', description: 'Basic-auth password for the MediaMTX API.' },
 
   // --- Compute -----------------------------------------------------------
-  { key: 'compute.ffmpeg_runner', env: 'FFMPEG_RUNNER', type: 'enum', enum: ['spawn', 'local', 'docker', 'worker', 'fleet'], default: 'spawn', category: 'compute', apply: 'restart', description: "ffmpeg execution backend ('spawn' and 'local' are synonyms in the runner factory). Captured at composition time (factory choice) — restart required. Code default is 'spawn', not 'local' as packages/lcyt-backend/CLAUDE.md's table says." },
+  { key: 'compute.ffmpeg_runner', env: 'FFMPEG_RUNNER', type: 'enum', enum: ['spawn', 'local', 'docker', 'fleet'], default: 'spawn', category: 'compute', apply: 'restart', description: "ffmpeg execution backend ('spawn' and 'local' are synonyms in the runner factory). Captured at composition time (factory choice) — restart required. Code default is 'spawn', not 'local' as packages/lcyt-backend/CLAUDE.md's table says." },
   { key: 'compute.fffleet_url', env: 'FFFLEET_URL', type: 'string', default: '', category: 'compute', apply: 'restart', description: "fffleet orchestrator or worker URL when FFMPEG_RUNNER=fleet. Empty = run ffmpeg on this machine. COMPUTE_URL is accepted as an alias." },
   { key: 'compute.fffleet_token', env: 'FFFLEET_TOKEN', type: 'secret', default: '', secret: true, category: 'compute', apply: 'restart', description: 'Static bearer token for the fffleet URL (or use FFFLEET_CLIENT_ID and FFFLEET_CLIENT_SECRET to log in).' },
   { key: 'compute.fffleet_client_id', env: 'FFFLEET_CLIENT_ID', type: 'string', default: '', category: 'compute', apply: 'restart', description: 'fffleet orchestrator app login (client id); with FFFLEET_CLIENT_SECRET.' },
   { key: 'compute.fffleet_client_secret', env: 'FFFLEET_CLIENT_SECRET', type: 'secret', default: '', secret: true, category: 'compute', apply: 'restart', description: 'fffleet orchestrator app login (client secret).' },
-  { key: 'compute.worker_daemon_url', env: 'WORKER_DAEMON_URL', type: 'string', default: '', category: 'compute', apply: 'restart', description: 'Worker daemon URL when FFMPEG_RUNNER=worker.' },
-  { key: 'compute.orchestrator_url', env: 'ORCHESTRATOR_URL', type: 'string', default: '', category: 'compute', apply: 'restart', description: 'Orchestrator base URL for the burst-VM accounting poller.' },
   { key: 'compute.docker_build_timeout_ms', env: 'DOCKER_BUILD_TIMEOUT_MS', type: 'int', default: 0, category: 'compute', apply: 'restart', description: 'Timeout for Docker image builds in ms.' },
 
   // --- Storage -------------------------------------------------------------
