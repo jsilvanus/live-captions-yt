@@ -145,3 +145,30 @@ describe('camera perception routes', () => {
     assert.deepEqual(calls, [['stop', id], ['status', id]]);
   });
 });
+
+describe('camera perception auto-start switch', () => {
+  const post = (id, body, key = 'key1') => fetch(`${baseUrl}/production/cameras/${id}/perception/auto`, {
+    method: 'POST', headers: { 'x-api-key': key, 'content-type': 'application/json' }, body: JSON.stringify(body),
+  });
+
+  it('sets and clears perception_enabled; it shows on the camera', async () => {
+    const id = insertCamera({ owner_api_key: 'key1' });
+    await startApp(null);
+    assert.equal((await post(id, { enabled: true })).status, 200);
+    assert.equal(db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id).e, 1);
+    const cam = await (await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'key1' } })).json();
+    assert.equal(cam.perceptionEnabled, true);
+    assert.equal((await post(id, { enabled: false })).status, 200);
+    assert.equal(db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id).e, 0);
+  });
+
+  it('validates the body, needs a camera_key, and hides other projects cameras', async () => {
+    const mine = insertCamera({ owner_api_key: 'key1' });
+    const noFeed = insertCamera({ owner_api_key: 'key1', camera_key: '' });
+    const foreign = insertCamera({ owner_api_key: 'other' });
+    await startApp(null);
+    assert.equal((await post(mine, { enabled: 'yes' })).status, 400);
+    assert.equal((await post(noFeed, { enabled: true })).status, 400);
+    assert.equal((await post(foreign, { enabled: true })).status, 404);
+  });
+});

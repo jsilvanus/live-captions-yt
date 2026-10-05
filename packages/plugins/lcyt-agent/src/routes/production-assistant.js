@@ -40,7 +40,7 @@ function buildSystemPrompt(harnessConfig, production) {
  * @param {import('../production-assistant.js').ProductionAssistantManager} manager — already
  *   holds its own RolesBus reference for emitting assistant_suggestion/assistant_action
  * @param {import('../agent-engine.js').AgentEngine} agent
- * @param {{ listCameras?, listMixers?, registry?, db? }} [production]
+ * @param {{ listCameras?, listMixers?, registry?, db?, sceneSummary?: (apiKey: string) => string|null }} [production]
  * @returns {import('express').Router}
  */
 export function createProductionAssistantRouter(db, auth, toolsContext, manager, agent, production, bridgeManager = null) {
@@ -72,6 +72,7 @@ export function createProductionAssistantRouter(db, auth, toolsContext, manager,
     const result = await manager.runTrigger({
       apiKey, triggerText: text, agent, apiSettings, systemPrompt, tools,
       callTool: toolsContext.callTool, mode, cooldownMs: config.harnessConfig.cooldownMs,
+      sceneSummary: production?.sceneSummary?.(apiKey) ?? null,
     });
     if (!result.ok) return res.status(503).json(result);
     res.json(result);

@@ -36,10 +36,16 @@ export const DEFAULT_PREVIEW_BASE_URL = process.env.CAMERA_PREVIEW_BASE_URL
 /**
  * @param {string} cameraId
  * @param {string} [thumbnailsDir]
+ * @param {string|null} [presetId]  per-preset reference image instead of the camera-level one
  * @returns {string} absolute path to the camera's stored thumbnail file
  */
-export function thumbnailPath(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR) {
-  return join(thumbnailsDir, `${cameraId}.jpg`);
+export function thumbnailPath(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR, presetId = null) {
+  return join(thumbnailsDir, presetId ? `${cameraId}--${safePresetId(presetId)}.jpg` : `${cameraId}.jpg`);
+}
+
+/** Preset ids are operator-chosen strings: keep file names safe. */
+function safePresetId(presetId) {
+  return String(presetId).replace(/[^A-Za-z0-9_-]/g, '_');
 }
 
 /**
@@ -78,14 +84,14 @@ async function fetchPreviewJpeg(previewBaseUrl, key) {
  * @param {string} thumbnailsDir
  * @returns {{ ok: true } | { ok: false, error: string, status: number }}
  */
-function writeThumbnailFile(cameraId, buffer, thumbnailsDir) {
+function writeThumbnailFile(cameraId, buffer, thumbnailsDir, presetId = null) {
   try {
     fs.mkdirSync(thumbnailsDir, { recursive: true });
   } catch (err) {
     return { ok: false, error: `Could not create thumbnails directory: ${err.message}`, status: 500 };
   }
 
-  const finalPath = thumbnailPath(cameraId, thumbnailsDir);
+  const finalPath = thumbnailPath(cameraId, thumbnailsDir, presetId);
   const tmpPath = join(thumbnailsDir, `.${cameraId}-${randomBytes(6).toString('hex')}.tmp`);
   try {
     fs.writeFileSync(tmpPath, buffer);
@@ -103,7 +109,7 @@ function writeThumbnailFile(cameraId, buffer, thumbnailsDir) {
  * @param {import('better-sqlite3').Database} db
  * @param {{ id: string, cameraKey: string|null, mixerInput: number|null }} camera  parsed camera row
  * @param {import('./registry.js').DeviceRegistry} registry
- * @param {{ apiKey?: string, mixerId?: string, thumbnailsDir?: string, previewBaseUrl?: string }} [opts]
+ * @param {{ apiKey?: string, mixerId?: string, presetId?: string, thumbnailsDir?: string, previewBaseUrl?: string }} [opts]
  * @returns {Promise<{ ok: true, thumbnailCapturedAt: string, sizeBytes: number }
  *                  | { ok: false, error: string, status: number }>}
  */
@@ -162,11 +168,21 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
 
   if (!fetchResult.ok) return fetchResult;
 
-  const writeResult = writeThumbnailFile(camera.id, fetchResult.buffer, thumbnailsDir);
+  const presetId = opts.presetId || null;
+  const writeResult = writeThumbnailFile(camera.id, fetchResult.buffer, thumbnailsDir, presetId);
   if (!writeResult.ok) return writeResult;
 
   const thumbnailCapturedAt = new Date().toISOString();
-  db.prepare('UPDATE prod_cameras SET thumbnail_captured_at = ? WHERE id = ?').run(thumbnailCapturedAt, camera.id);
+  if (presetId) {
+    // Per-preset reference image: the feed attributor matches the program
+    // feed against these (camera-level image stays as the fallback).
+    db.prepare(
+      `INSERT INTO prod_camera_preset_thumbnails (camera_id, preset_id, captured_at) VALUES (?, ?, ?)
+       ON CONFLICT(camera_id, preset_id) DO UPDATE SET captured_at = excluded.captured_at`
+    ).run(camera.id, String(presetId), thumbnailCapturedAt);
+  } else {
+    db.prepare('UPDATE prod_cameras SET thumbnail_captured_at = ? WHERE id = ?').run(thumbnailCapturedAt, camera.id);
+  }
 
   return { ok: true, thumbnailCapturedAt, sizeBytes: fetchResult.buffer.length };
 }
@@ -176,9 +192,11 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
  * @param {string} cameraId
  * @param {string} [thumbnailsDir]
  */
-export function deleteCameraThumbnailFile(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR) {
+export function deleteCameraThumbnailFile(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR, presetIds = []) {
   try {
-    const p = thumbnailPath(cameraId, thumbnailsDir);
-    if (fs.existsSync(p)) fs.unlinkSync(p);
+    for (const presetId of [null, ...presetIds]) {
+      const p = thumbnailPath(cameraId, thumbnailsDir, presetId);
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
   } catch { /* ignore, matches lcyt-dsk images.js's delete-route precedent */ }
 }

@@ -8,11 +8,15 @@
  *     BACKEND_INTERNAL_TOKEN the same way lcyt-orchestrator's
  *     requireInternalAuth() gates its own inbound routes (mirrored here, not
  *     imported, since lcyt-backend has no dependency on lcyt-orchestrator).
+ *     A per-job token (HMAC of the job's project, camera, feed kind and id, see
+ *     lcyt-compute/perception/ingest-token) is accepted as well, and is what new jobs carry.
  *     Detections whose job plan carries feedKind: 'shared' (cameraId null —
  *     the runner doesn't know which camera the shared feed currently shows)
  *     are re-tagged via the shared-feed resolver before reaching the
  *     aggregator (Phase 3).
  *
+ *   GET  /overview — per-camera job/auto/on-program/detector state, shared-feed job and attribution (status panel).
+ *   POST /shared/auto { enabled } — switch the automatic start/stop of the shared-feed job.
  *   POST /shared/start|stop, GET /shared/status — project-scoped (opts.auth),
  *     dispatch/inspect the one shared-feed perception job for this project
  *     (mixer-input-only cameras, Phase 3) — the camera-scoped equivalent for
@@ -28,18 +32,21 @@ import { Router } from 'express';
  * @param {{ perceptionManager?: object, internalToken?: string|null, auth?: import('express').RequestHandler }} [opts]
  */
 export function createPerceptionRouter(aggregator, resolver, opts = {}) {
-  const { perceptionManager = null, internalToken = null, auth = null } = opts;
+  const { perceptionManager = null, internalToken = null, auth = null, sharedAutostart = null, overview = null } = opts;
   const router = Router();
 
   router.post('/ingest', (req, res) => {
-    if (internalToken) {
-      const provided = req.headers['x-internal-auth'];
-      if (!provided || provided !== internalToken) {
-        return res.status(401).json({ error: 'unauthorized' });
-      }
+    const { apiKey, cameraId, feedKind, jobId, ts, capturedAt, objects, framing, visible } = req.body || {};
+    // Accepted: a per-job token minted for exactly this (project, camera, feed kind, job), or the shared
+    // internal token (older jobs and the legacy worker daemon). With neither configured the route is open, as before.
+    const provided = req.headers['x-internal-auth'];
+    const jobTokenOk = !!provided && perceptionManager?.verifyIngest?.({ apiKey, cameraId: cameraId ?? null, feedKind: feedKind ?? null, jobId }, provided);
+    const sharedTokenOk = !!internalToken && provided === internalToken;
+    const strict = !!internalToken || !!opts.jobTokensEnabled;
+    if (strict && !jobTokenOk && !sharedTokenOk) {
+      return res.status(401).json({ error: 'unauthorized' });
     }
 
-    const { apiKey, cameraId, feedKind, ts, objects, framing, visible } = req.body || {};
     if (!apiKey) {
       return res.status(400).json({ error: 'apiKey is required' });
     }
@@ -47,7 +54,7 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
       return res.status(400).json({ error: 'cameraId is required for a non-shared detection' });
     }
 
-    let detection = { cameraId, ts, objects, framing, visible };
+    let detection = { cameraId, ts, capturedAt, objects, framing, visible };
     if (feedKind === 'shared') {
       detection = resolver?.tagSharedDetection?.(apiKey, detection) ?? null;
       if (!detection) return res.json({ ok: true, dropped: 'no active camera resolved for this project yet' });
@@ -85,7 +92,25 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
     if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
-    res.json({ ok: true, status: perceptionManager.sharedFeedStatus(apiKey) });
+    res.json({ ok: true, status: perceptionManager.sharedFeedStatus(apiKey), auto: sharedAutostart ? sharedAutostart.get(apiKey) : false });
+  });
+
+  // GET /overview — cameras, shared-feed job and feed attribution in one read (camera status panel)
+  sharedRouter.get('/overview', (req, res) => {
+    if (!overview) return res.status(503).json({ error: 'Perception overview not configured' });
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
+    res.json({ ok: true, ...overview(apiKey) });
+  });
+
+  // POST /shared/auto { enabled } — run the shared-feed job automatically while the program feed is live
+  sharedRouter.post('/shared/auto', (req, res) => {
+    if (!sharedAutostart) return res.status(503).json({ error: 'Perception auto-start not configured' });
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
+    if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+    sharedAutostart.set(apiKey, req.body.enabled);
+    res.json({ ok: true, auto: req.body.enabled });
   });
 
   router.use(sharedRouter);

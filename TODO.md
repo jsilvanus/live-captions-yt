@@ -10,7 +10,7 @@
 ## Other unfinished work found in the repo audit
 
 - [ ] **Generalize cue-to-production action execution.** Build a real backend action-dispatch layer so a fired cue can safely invoke production atoms (for example camera, mixer, or crop actions), rather than relying on descriptive cue metadata or client-side interpretation.
-- [ ] **Implement real computer-vision perception.** The vision-role architecture is in place, but the worker-side perception path still needs a real CV/model-backed detector instead of the deterministic/stub detector.
+- [ ] **Real computer-vision perception: built, not yet proven.** All phases of `docs/plans/plan_perception_completion.md` are implemented (detector, tracker, attribution, reliability, LLM hand-off, crop auto-follow, status panel). Still to do: build and run the worker image with native `onnxruntime-node`, try it on real service footage and a real fleet (tune tracker, framing and visual-match thresholds), Describer text into World State per camera, a frame upload path and `FrameProvider` if the preview-JPEG lag matters.
 - [ ] **Complete the `deer` AI provider/runtime.** The provider registry has the provider kind, but the actual runtime path remains unimplemented.
 - [ ] **Wire the remaining vision/camera settings.** Complete the call-site integration for `VISION_PREVIEW_BASE_URL`, `CAMERA_PREVIEW_BASE_URL`, and `CAMERA_THUMBNAILS_DIR` where they are registered but not yet fully wired.
 - [ ] **Resolve Asset Control Assistant UI ownership.** Provide a real UI/dialog for the DSK image-asset operations exposed to the Asset Control Assistant, or move those operations to the page that owns the corresponding media library.

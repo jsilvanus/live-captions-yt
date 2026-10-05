@@ -3,7 +3,9 @@
  * Runtime Shape 1). Events are consumed from the unified `/events/stream`
  * surface (`role.tracker.*`, `role.describer.*`).
  *
- *   POST /roles/:roleCode/start   { } — start the loop for the session's api_key
+ *   POST /roles/:roleCode/start   { cameraId? } — start the loop for the session's api_key;
+ *     with cameraId, a camera-scoped session on that camera's own feed (stop/status/captures take ?cameraId=)
+ *   GET  /roles/sessions — running sessions of the project, project-scoped and per camera
  *   POST /roles/:roleCode/stop
  *   GET  /roles/:roleCode/status
  *
@@ -47,6 +49,18 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     return { apiKey, roleCode, config, providerRow };
   }
 
+  /** Optional camera scope: `cameraId` in the body (start) or the query (everything else). */
+  function cameraIdOf(req) {
+    const raw = req.body?.cameraId ?? req.query?.cameraId;
+    return typeof raw === 'string' && raw ? raw : null;
+  }
+
+  router.get('/sessions', (req, res) => {
+    const apiKey = req.session?.apiKey;
+    if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
+    res.json({ ok: true, sessions: manager.listSessions(apiKey) });
+  });
+
   router.post('/:roleCode/start', (req, res) => {
     const loaded = loadConfigOr503(req, res);
     if (!loaded) return;
@@ -59,8 +73,9 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
       apiSettings,
       vendor: providerRow.vendor,
       harnessConfig: config.harnessConfig,
+      cameraId: cameraIdOf(req),
     });
-    if (!result.ok) return res.status(503).json(result);
+    if (!result.ok) return res.status(result.error === 'Camera not found' ? 404 : (cameraIdOf(req) ? 409 : 503)).json(result);
     res.json(result);
   });
 
@@ -69,7 +84,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
     if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
-    const stopped = manager.stop(apiKey, roleCode);
+    const stopped = manager.stop(apiKey, roleCode, cameraIdOf(req));
     res.json({ ok: true, wasRunning: stopped });
   });
 
@@ -78,7 +93,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
     if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
-    res.json({ ok: true, ...manager.status(apiKey, roleCode) });
+    res.json({ ok: true, ...manager.status(apiKey, roleCode, cameraIdOf(req)) });
   });
 
   router.get('/:roleCode/captures', (req, res) => {
@@ -86,7 +101,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
     if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
-    res.json({ ok: true, captures: manager.getCaptures(apiKey, roleCode) });
+    res.json({ ok: true, captures: manager.getCaptures(apiKey, roleCode, cameraIdOf(req)) });
   });
 
   router.get('/:roleCode/captures/:id/frame', (req, res) => {
@@ -94,7 +109,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode, id } = req.params;
     if (!VISION_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
-    const capture = manager.getCapture(apiKey, roleCode, id);
+    const capture = manager.getCapture(apiKey, roleCode, id, cameraIdOf(req));
     if (!capture || !capture.frame) return res.status(404).json({ error: 'Capture not found' });
     res.setHeader('Content-Type', 'image/jpeg');
     res.setHeader('Cache-Control', 'private, max-age=86400, immutable');
@@ -111,7 +126,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     }
     const { promptOverride } = req.body || {};
     const result = await manager.replay(apiKey, roleCode, req.params.id, {
-      apiSettings, vendor: providerRow.vendor, promptOverride,
+      apiSettings, vendor: providerRow.vendor, promptOverride, cameraId: cameraIdOf(req),
     });
     if (!result.ok) {
       return res.status(result.error === 'Capture not found' ? 404 : 503).json(result);

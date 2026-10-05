@@ -35,6 +35,11 @@ export function runCropMigrations(db) {
     )
   `);
 
+  // auto_follow: keep the crop window on the people the perception detector sees (opt-in, plan_perception_completion.md Phase 4)
+  if (!db.prepare('PRAGMA table_info(crop_config)').all().some(c => c.name === 'auto_follow')) {
+    db.exec('ALTER TABLE crop_config ADD COLUMN auto_follow INTEGER NOT NULL DEFAULT 0');
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS crop_preset_sets (
       id          TEXT PRIMARY KEY,
@@ -143,12 +148,13 @@ function formatConfig(row) {
     followProgram: row.follow_program === 1,
     transitionMs:  row.transition_ms,
     activeSetId:   row.active_set_id ?? null,
+    autoFollow:    row.auto_follow === 1,
   };
 }
 
 const DEFAULT_CONFIG = Object.freeze({
   enabled: false, aspectW: 9, aspectH: 16, outW: null, outH: null,
-  videoBitrate: null, followProgram: true, transitionMs: 0, activeSetId: null,
+  videoBitrate: null, followProgram: true, transitionMs: 0, activeSetId: null, autoFollow: false,
 });
 
 /**
@@ -164,7 +170,7 @@ export function getCropConfig(db, apiKey) {
  * @returns {{ ok: true, config: object } | { ok: false, error: string }}
  */
 export function setCropConfig(db, apiKey, patch = {}) {
-  const { enabled, aspectW, aspectH, outW, outH, videoBitrate, followProgram, transitionMs, activeSetId } = patch;
+  const { enabled, aspectW, aspectH, outW, outH, videoBitrate, followProgram, transitionMs, activeSetId, autoFollow } = patch;
 
   const isPosInt = v => Number.isInteger(v) && v > 0;
   if (aspectW !== undefined && !isPosInt(aspectW)) return { ok: false, error: 'aspectW must be a positive integer' };
@@ -194,19 +200,20 @@ export function setCropConfig(db, apiKey, patch = {}) {
     followProgram: followProgram !== undefined ? Boolean(followProgram) : cur.followProgram,
     transitionMs:  transitionMs  !== undefined ? transitionMs           : cur.transitionMs,
     activeSetId:   activeSetId   !== undefined ? activeSetId            : cur.activeSetId,
+    autoFollow:    autoFollow    !== undefined ? Boolean(autoFollow)    : cur.autoFollow,
   };
 
   db.prepare(`
-    INSERT INTO crop_config (api_key, enabled, aspect_w, aspect_h, out_w, out_h, video_bitrate, follow_program, transition_ms, active_set_id, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    INSERT INTO crop_config (api_key, enabled, aspect_w, aspect_h, out_w, out_h, video_bitrate, follow_program, transition_ms, active_set_id, auto_follow, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(api_key) DO UPDATE SET
       enabled = excluded.enabled, aspect_w = excluded.aspect_w, aspect_h = excluded.aspect_h,
       out_w = excluded.out_w, out_h = excluded.out_h, video_bitrate = excluded.video_bitrate,
       follow_program = excluded.follow_program, transition_ms = excluded.transition_ms,
-      active_set_id = excluded.active_set_id, updated_at = datetime('now')
+      active_set_id = excluded.active_set_id, auto_follow = excluded.auto_follow, updated_at = datetime('now')
   `).run(
     apiKey, next.enabled ? 1 : 0, next.aspectW, next.aspectH, next.outW, next.outH,
-    next.videoBitrate, next.followProgram ? 1 : 0, next.transitionMs, next.activeSetId,
+    next.videoBitrate, next.followProgram ? 1 : 0, next.transitionMs, next.activeSetId, next.autoFollow ? 1 : 0,
   );
   return { ok: true, config: getCropConfig(db, apiKey) };
 }

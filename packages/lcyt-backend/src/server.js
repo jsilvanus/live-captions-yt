@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHmac } from 'node:crypto';
 import express from 'express';
 import { EventBus } from 'lcyt/event-bus';
 import { DskBus } from './dsk-bus.js';
@@ -31,7 +31,8 @@ import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
-  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL,
+  createPerceptionAutostart, setSharedAutostart, getSharedAutostart,
+  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from 'lcyt-production';
@@ -39,7 +40,7 @@ import {
   initDskControl, createDskRouters,
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
-import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -98,6 +99,12 @@ import { createSessionCaptionFileWriter } from './caption-file-writer.js';
 import { createCaptionFanout } from './caption-fanout.js';
 import { createPerceptionAggregator } from './perception-aggregator.js';
 import { createSharedFeedResolver } from './shared-feed-resolver.js';
+import { createFeedAttributor } from './feed-attributor.js';
+import { createSceneSummary } from './scene-summary.js';
+import { createPerceptionOverview } from './perception-overview.js';
+import { createCropFollowController } from './crop-follow-controller.js';
+import { createVisionSourceResolver } from './vision-source-resolver.js';
+import { createAttributionRouter } from './routes/attribution.js';
 import { createPerceptionRouter } from './routes/perception.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
@@ -827,7 +834,7 @@ app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleMan
 app.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
 app.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
-  { listCameras, listMixers, registry: productionRegistry },
+  { listCameras, listMixers, registry: productionRegistry, sceneSummary: (k) => _sceneSummary?.(k) ?? null },
   productionBridgeManager,
 ));
 app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
@@ -860,12 +867,42 @@ app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // DEFAULT_PREVIEW_BASE_URL, which defaults to http://localhost:$PORT and is
 // only correct for lcyt-production's own in-process preview fetches.
 const _perceptionBackendUrl = settings.get('app.backend_url') || DEFAULT_PREVIEW_BASE_URL;
+// Per-job ingest tokens: an explicit secret, else one derived from the JWT secret (domain-separated).
+const _perceptionIngestSecret = process.env.PERCEPTION_INGEST_SECRET
+  || (jwtSecret ? createHmac('sha256', jwtSecret).update('lcyt-perception-ingest').digest('hex') : null);
 const _perceptionManager = createPerceptionManager({
   previewBaseUrl: _perceptionBackendUrl,
   callbackBaseUrl: _perceptionBackendUrl,
+  tokenSecret: _perceptionIngestSecret,
+  db,
 });
+// Re-attach to perception jobs recorded before this process started, then keep jobs in step with the feeds.
+const _perceptionAutostart = createPerceptionAutostart({ db, manager: _perceptionManager, mediamtxClient: productionMediamtxClient });
+_perceptionManager.adopt()
+  .then((r) => { if (r.adopted || r.dropped) console.warn(`[perception] re-adopted ${r.adopted} job(s), dropped ${r.dropped}`); })
+  .catch((err) => console.warn(`[perception] re-adoption failed: ${err.message}`))
+  .finally(() => _perceptionAutostart.start());
 const _perceptionAggregator = createPerceptionAggregator({ store, eventBus, sceneState: _sceneState });
-const _sharedFeedResolver = createSharedFeedResolver({ db, registry: productionRegistry, aggregator: _perceptionAggregator });
+_perceptionAggregator.startSweeper();
+const _feedAttributor = createFeedAttributor({
+  db, registry: productionRegistry, eventBus,
+  previewBaseUrl: _perceptionBackendUrl, thumbnailsDir: DEFAULT_THUMBNAILS_DIR, thumbnailPath,
+});
+_visionRoleManager?.setSourceResolver?.(createVisionSourceResolver({ db, attributor: _feedAttributor, sceneState: _sceneState, aggregator: _perceptionAggregator }));
+// An interest event (person entered, framing dropped, ...) calls the running Describer/Tracker now instead of at the next timed poll.
+eventBus.tap((e) => {
+  if (e.topic !== 'perception.interest' || !_visionRoleManager) return;
+  for (const role of ['describer', 'tracker']) _visionRoleManager.trigger(e.projectId, role, { cameraId: e.data?.cameraId ?? null });
+});
+// Opt-in (crop_config.auto_follow): keep the vertical crop on the people the detector sees in the camera on program.
+const _cropFollow = createCropFollowController({
+  db, eventBus, cropManager: rtmp.cropManager, attributor: _feedAttributor, getCropConfig,
+  follow: { targetCenter, xNormForCenter, createFollowSmoother },
+});
+const _sceneSummary = createSceneSummary({ db, sceneState: _sceneState, attributor: _feedAttributor });
+const _sharedFeedResolver = createSharedFeedResolver({
+  db, registry: productionRegistry, aggregator: _perceptionAggregator, attributor: _feedAttributor,
+});
 
 // Release per-project in-memory state (capture buffers, World State
 // snapshots, tracked cameras) when a project is permanently deleted —
@@ -877,10 +914,19 @@ onKeyDeleted((apiKey) => {
   _visionRoleManager?.clearProject?.(apiKey);
   _sceneState?.clearProject?.(apiKey);
   _perceptionAggregator?.clearProject?.(apiKey);
+  _feedAttributor?.clearProject?.(apiKey);
+  _cropFollow?.clearProject?.(apiKey);
 });
+app.use('/production/attribution', createAttributionRouter(_feedAttributor, { db, auth: scopedAuth('production') }));
 app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
   perceptionManager: _perceptionManager,
   internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
+  jobTokensEnabled: !!_perceptionIngestSecret,
+  overview: createPerceptionOverview({
+    db, sceneState: _sceneState, attributor: _feedAttributor, perceptionManager: _perceptionManager,
+    sharedAutostart: { get: (k) => getSharedAutostart(db, k) },
+  }),
+  sharedAutostart: { get: (k) => getSharedAutostart(db, k), set: (k, v) => setSharedAutostart(db, k, v) },
   auth: scopedAuth('production'),
 }));
 

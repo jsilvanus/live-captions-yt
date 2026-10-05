@@ -30,6 +30,8 @@
  * a real camera id — code-review fix.
  */
 
+import { mintIngestToken, verifyIngestToken } from 'lcyt-compute/perception/ingest-token';
+
 export function isPerceptionDispatchAvailable(env = process.env) {
   return !!(env.FFFLEET_URL || env.ORCHESTRATOR_URL || env.WORKER_DAEMON_URL);
 }
@@ -40,9 +42,10 @@ export function isPerceptionDispatchAvailable(env = process.env) {
  *   callbackBaseUrl: string,  // base URL this backend is reachable at for the ingest callback (usually the same host)
  *   fetchImpl?: typeof fetch,
  *   env?: object,
+ *   db?: import('better-sqlite3').Database,  // optional: records dispatched jobs so adopt() can re-attach after a restart
  * }} opts
  */
-export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetchImpl = fetch, env = process.env, getFleetImpl = null } = {}) {
+export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetchImpl = fetch, env = process.env, getFleetImpl = null, db = null, tokenSecret = env.PERCEPTION_INGEST_SECRET || null } = {}) {
   // FFFLEET_URL: perception is an fffleet job type (workers started with
   // FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor). Otherwise the old orchestrator / worker daemon.
   const fleetUrl = env.FFFLEET_URL || null;
@@ -74,6 +77,13 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     return fetchImpl(`${workerDaemonUrl}${path}`, { method: 'DELETE', headers: _headers(workerToken, 'X-Worker-Auth') });
   }
 
+  // PERCEPTION_STREAM_BASE_URL: where a perception worker can read the media server's streams (e.g.
+  // rtsp://mediamtx:8554). Unset = snapshot polling only. A remote worker must be able to reach it.
+  const streamBase = env.PERCEPTION_STREAM_BASE_URL ? env.PERCEPTION_STREAM_BASE_URL.replace(/\/$/, '') : null;
+  function _streamUrl(key) {
+    return streamBase ? `${streamBase}/${encodeURIComponent(key)}` : null;
+  }
+
   function _sharedKey(apiKey) {
     return `shared:${apiKey}`;
   }
@@ -83,7 +93,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
    * `key`. Both start() and startSharedFeed() reduce to this once they've
    * built their own `frameUrl`/`cameraId`.
    */
-  async function _dispatch(key, apiKey, cameraId, frameUrl, emitIntervalMs, feedKind) {
+  async function _dispatch(key, apiKey, cameraId, frameUrl, emitIntervalMs, feedKind, streamUrl = null) {
     // Idempotency guard (code-review fix): without this, a retried start
     // request (client timeout, double form-submit) would dispatch a second
     // job and overwrite the first job's tracked id in `running` — the first
@@ -101,24 +111,26 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     const jobId = `perception-${key.replace(/[^A-Za-z0-9_-]/g, '')}-${Date.now().toString(36)}`;
     const plan = {
       id: jobId,
+      jobId,
       type: 'perception',
       apiKey,
       cameraId,
       feedKind,
       frameUrl,
+      // With a stream url the job decodes the stream itself (about 5 frames/s) instead of polling the snapshot.
+      streamUrl: streamUrl || undefined,
+      detectFps: streamUrl && env.PERCEPTION_DETECT_FPS ? Number(env.PERCEPTION_DETECT_FPS) : undefined,
       callbackUrl: `${callbackBaseUrl}/production/perception/ingest`,
-      internalToken: workerToken || undefined,
-      emitIntervalMs: emitIntervalMs || 1000,
+      // Per-job token (scoped to this exact job) when a secret is configured, else the shared internal token.
+      internalToken: tokenSecret ? mintIngestToken(tokenSecret, { apiKey, cameraId, feedKind, jobId }) : (workerToken || undefined),
+      emitIntervalMs: emitIntervalMs || (streamUrl ? 200 : 1000),
     };
 
     if (fleetUrl) {
       const { id, type: _type, ...payload } = plan;
-      const fleet = await (getFleetImpl ? getFleetImpl() : (await import('lcyt-compute/ffmpeg')).getFleet(env));
-      const job = await fleet.submit({ id, kind: 'stream', type: 'perception', owner: apiKey, labels: { purpose: 'perception' }, perception: payload });
-      const entry = { jobId: id, apiKey, startedAt: Date.now(), job };
-      running.set(key, entry);
-      // A job that ends by itself (cancelled elsewhere, worker lost) frees the key.
-      job.done.catch(() => {}).then(() => { if (running.get(key) === entry) running.delete(key); });
+      const spec = { id, kind: 'stream', type: 'perception', owner: apiKey, labels: { purpose: 'perception' }, perception: { ...payload, jobId: id } };
+      await _attachFleet(key, apiKey, spec);
+      _persist(key, apiKey, id, 'fleet', spec);
       return { jobId: id };
     }
 
@@ -130,7 +142,66 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     }
 
     running.set(key, { jobId, apiKey, startedAt: Date.now() });
+    _persist(key, apiKey, jobId, 'legacy', { ...plan, jobId });
     return { jobId };
+  }
+
+  // ── persistence + re-adoption ────────────────────────────────────────────
+  function _persist(key, apiKey, jobId, mode, spec) {
+    if (!db) return;
+    try {
+      db.prepare(`INSERT INTO prod_perception_jobs (job_key, api_key, job_id, mode, spec, started_at) VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(job_key) DO UPDATE SET api_key = excluded.api_key, job_id = excluded.job_id, mode = excluded.mode, spec = excluded.spec, started_at = excluded.started_at`)
+        .run(key, apiKey, jobId, mode, JSON.stringify(spec), new Date().toISOString());
+    } catch (err) { console.warn(`[perception] could not record job ${jobId}: ${err.message}`); }
+  }
+
+  function _forget(key) {
+    if (!db) return;
+    try { db.prepare('DELETE FROM prod_perception_jobs WHERE job_key = ?').run(key); } catch { /* ignore */ }
+  }
+
+  /** Submit (or re-attach to) a fleet job and track it under `key`. */
+  async function _attachFleet(key, apiKey, spec) {
+    const fleet = await (getFleetImpl ? getFleetImpl() : (await import('lcyt-compute/ffmpeg')).getFleet(env));
+    const job = await fleet.submit(spec);
+    const entry = { jobId: spec.id, apiKey, startedAt: Date.now(), job };
+    running.set(key, entry);
+    // A job that ends by itself (cancelled elsewhere, worker lost) frees the key and its record. A rejection means
+    // we stopped following it (shutdown, lost connection): the record stays so adopt() can re-attach after a restart.
+    job.done.then(
+      () => { if (running.get(key) === entry) { running.delete(key); _forget(key); } },
+      () => { if (running.get(key) === entry) running.delete(key); },
+    );
+    return entry;
+  }
+
+  /**
+   * After a backend restart: re-attach to the jobs recorded before it. A fleet job is resubmitted with the same id,
+   * which the fleet answers with the job it already runs (or runs afresh when it no longer knows the id), so no
+   * duplicate and no orphan is left. Jobs on the legacy orchestrator/worker daemon cannot be re-attached: they are
+   * stopped best-effort and forgotten, and auto-start (or the operator) starts a new one.
+   * @returns {Promise<{ adopted: number, dropped: number }>}
+   */
+  async function adopt() {
+    if (!db) return { adopted: 0, dropped: 0 };
+    let adopted = 0; let dropped = 0;
+    for (const row of db.prepare('SELECT * FROM prod_perception_jobs').all()) {
+      if (running.has(row.job_key)) continue;
+      let spec;
+      try { spec = JSON.parse(row.spec); } catch { _forget(row.job_key); dropped += 1; continue; }
+      if (row.mode === 'fleet' && fleetUrl) {
+        try { await _attachFleet(row.job_key, row.api_key, spec); adopted += 1; } catch (err) {
+          console.warn(`[perception] could not re-attach job ${row.job_id}: ${err.message}`);
+        }
+      } else {
+        if (row.mode === 'legacy' && (orchestratorUrl || workerDaemonUrl)) {
+          try { await _delete(orchestratorUrl ? `/compute/jobs/${row.job_id}` : `/jobs/${row.job_id}`); } catch { /* best effort */ }
+        }
+        _forget(row.job_key); dropped += 1;
+      }
+    }
+    return { adopted, dropped };
   }
 
   async function _dispatchStop(key) {
@@ -151,6 +222,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
         return false;
       }
       running.delete(key);
+      _forget(key);
       return true;
     }
     try {
@@ -165,6 +237,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
       return false;
     }
     running.delete(key);
+    _forget(key);
     return true;
   }
 
@@ -181,7 +254,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     }
     const cameraId = String(camera.id);
     const frameUrl = `${previewBaseUrl}/preview/${encodeURIComponent(camera.cameraKey)}/incoming`;
-    return _dispatch(cameraId, apiKey, cameraId, frameUrl, emitIntervalMs, 'dedicated');
+    return _dispatch(cameraId, apiKey, cameraId, frameUrl, emitIntervalMs, 'dedicated', _streamUrl(camera.cameraKey));
   }
 
   /**
@@ -204,7 +277,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
    */
   async function startSharedFeed(apiKey, { emitIntervalMs } = {}) {
     const frameUrl = `${previewBaseUrl}/preview/${encodeURIComponent(apiKey)}/incoming`;
-    return _dispatch(_sharedKey(apiKey), apiKey, null, frameUrl, emitIntervalMs, 'shared');
+    return _dispatch(_sharedKey(apiKey), apiKey, null, frameUrl, emitIntervalMs, 'shared', _streamUrl(apiKey));
   }
 
   async function stopSharedFeed(apiKey) {
@@ -215,5 +288,14 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     return running.get(_sharedKey(apiKey)) || null;
   }
 
-  return { start, stop, status, startSharedFeed, stopSharedFeed, sharedFeedStatus };
+  /**
+   * Check the per-job token a perception job sent with its detection.
+   * @param {{ apiKey: string, cameraId?: string|null, feedKind?: string|null, jobId?: string }} scope  from the posted body
+   * @param {string|undefined} token  the X-Internal-Auth header
+   */
+  function verifyIngest(scope, token) {
+    return !!tokenSecret && verifyIngestToken(tokenSecret, scope, token);
+  }
+
+  return { start, stop, status, startSharedFeed, stopSharedFeed, sharedFeedStatus, verifyIngest, adopt };
 }

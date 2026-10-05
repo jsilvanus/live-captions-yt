@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
 import { createPerceptionRouter } from '../src/routes/perception.js';
+import { mintIngestToken, verifyIngestToken } from 'lcyt-compute/perception/ingest-token';
 
 let server, baseUrl;
 
@@ -52,6 +53,20 @@ describe('POST /production/perception/ingest', () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].apiKey, 'key1');
     assert.equal(calls[0].detection.cameraId, 'cam-1');
+  });
+
+  it('passes capturedAt, boxes with track ids and the framing notes through to the aggregator', async () => {
+    const calls = [];
+    await startApp({ ingest: (apiKey, detection) => calls.push(detection) });
+    const objects = [{ id: 't1', trackId: 't1', label: 'person', confidence: 0.9, bbox: { x: 0.1, y: 0.2, w: 0.3, h: 0.6 } }];
+    const res = await fetch(`${baseUrl}/production/perception/ingest`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ apiKey: 'key1', cameraId: 'cam-1', ts: 5, seq: 3, capturedAt: 4, latencyMs: 1, objects, framing: { score: 0.7, notes: 'subject small in frame' }, visible: true }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(calls[0].capturedAt, 4);
+    assert.deepEqual(calls[0].objects, objects);
+    assert.deepEqual(calls[0].framing, { score: 0.7, notes: 'subject small in frame' });
   });
 
   it('401s without X-Internal-Auth when an internalToken is configured', async () => {
@@ -155,5 +170,58 @@ describe('POST /production/perception/shared/start|stop, GET /shared/status', ()
     assert.equal(calls[0][0], 'start');
     assert.equal(calls[0][1], 'key1');
     assert.equal(calls[0][2].emitIntervalMs, 400);
+  });
+});
+
+describe('POST /production/perception/ingest — per-job tokens', () => {
+  const secret = 's3cret';
+  const scope = { apiKey: 'k1', cameraId: 'cam-1', feedKind: 'dedicated', jobId: 'perception-cam1-abc' };
+  const manager = { verifyIngest: (s, token) => verifyIngestToken(secret, s, token) };
+  const post = (body, token) => fetch(`${baseUrl}/production/perception/ingest`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { 'X-Internal-Auth': token } : {}) }, body: JSON.stringify(body),
+  });
+  const body = { apiKey: 'k1', cameraId: 'cam-1', feedKind: 'dedicated', jobId: scope.jobId, objects: [] };
+
+  it('accepts the token minted for exactly this job', async () => {
+    const calls = [];
+    await startApp({ ingest: (...a) => calls.push(a) }, null, { perceptionManager: manager, jobTokensEnabled: true });
+    assert.equal((await post(body, mintIngestToken(secret, scope))).status, 200);
+    assert.equal(calls.length, 1);
+  });
+
+  it('rejects a missing token, a token for another camera or project, and a token from another secret', async () => {
+    await startApp({ ingest: () => assert.fail('must not ingest') }, null, { perceptionManager: manager, jobTokensEnabled: true });
+    assert.equal((await post(body)).status, 401);
+    assert.equal((await post({ ...body, cameraId: 'cam-2' }, mintIngestToken(secret, scope))).status, 401);
+    assert.equal((await post({ ...body, apiKey: 'other' }, mintIngestToken(secret, scope))).status, 401);
+    assert.equal((await post(body, mintIngestToken('other-secret', scope))).status, 401);
+  });
+
+  it('still accepts the shared internal token', async () => {
+    const calls = [];
+    await startApp({ ingest: (...a) => calls.push(a) }, null, { perceptionManager: manager, jobTokensEnabled: true, internalToken: 'shared' });
+    assert.equal((await post(body, 'shared')).status, 200);
+  });
+
+  it('a shared-feed job (cameraId null) validates against its own scope', async () => {
+    const calls = [];
+    const sharedScope = { apiKey: 'k1', cameraId: null, feedKind: 'shared', jobId: 'j-shared' };
+    const resolver = { tagSharedDetection: (k, d) => ({ ...d, cameraId: 'choir' }) };
+    await startApp({ ingest: (...a) => calls.push(a) }, resolver, { perceptionManager: manager, jobTokensEnabled: true });
+    const res = await post({ apiKey: 'k1', feedKind: 'shared', jobId: 'j-shared', objects: [] }, mintIngestToken(secret, sharedScope));
+    assert.equal(res.status, 200);
+    assert.equal(calls[0][1].cameraId, 'choir');
+  });
+});
+
+describe('GET /production/perception/overview', () => {
+  it('401 without a session, 503 when not configured, otherwise the overview for the session project', async () => {
+    await startApp({ ingest: () => {} }, null, { auth: fakeAuth });
+    assert.equal((await fetch(`${baseUrl}/production/perception/overview`)).status, 401);
+    assert.equal((await fetch(`${baseUrl}/production/perception/overview`, { headers: { 'x-api-key': 'k1' } })).status, 503);
+    server.close();
+    await startApp({ ingest: () => {} }, null, { auth: fakeAuth, overview: (k) => ({ for: k, cameras: [] }) });
+    const body = await (await fetch(`${baseUrl}/production/perception/overview`, { headers: { 'x-api-key': 'k1' } })).json();
+    assert.deepEqual(body, { ok: true, for: 'k1', cameras: [] });
   });
 });

@@ -178,3 +178,20 @@ describe('ProductionAssistantManager.confirmSuggestion / rejectSuggestion', () =
 test('AUTO_COOLDOWN_FLOOR_MS is exported and is 3000', () => {
   assert.equal(AUTO_COOLDOWN_FLOOR_MS, 3000);
 });
+
+describe('ProductionAssistantManager.runTrigger - scene summary', () => {
+  test('the scene summary reaches the model as read-only context; without one nothing is added', async () => {
+    const bodies = [];
+    global.fetch = async (url, init) => {
+      bodies.push(JSON.parse(init.body));
+      return { ok: true, json: async () => ({ choices: [{ message: { role: 'assistant', content: 'Nothing to do.' } }] }) };
+    };
+    const manager = new ProductionAssistantManager({}, new RolesBus());
+    const base = { agent: makeFakeAgent(), apiSettings, systemPrompt: 'sys', tools: TOOLS, callTool: async () => ({ ok: true }), mode: 'confirm' };
+    await manager.runTrigger({ ...base, apiKey: 'a', sceneSummary: 'On program: camera "Choir".' });
+    await manager.runTrigger({ ...base, apiKey: 'b' });
+    const user = (b) => b.messages.find((m) => m.role === 'user').content;
+    assert.match(user(bodies[0]), /Current scene \(fast detector and source attribution, read-only\):\nOn program: camera "Choir"\./);
+    assert.doesNotMatch(user(bodies[1]), /Current scene/);
+  });
+});

@@ -28,9 +28,15 @@
  *   db: import('better-sqlite3').Database,
  *   registry: import('lcyt-production').DeviceRegistry,
  *   aggregator: { ingest: (apiKey: string, detection: object) => void },
+ *   attributor?: ReturnType<typeof import("./feed-attributor.js").createFeedAttributor>,
  * }} deps
+ *
+ * With an `attributor` the resolver stops doing its own camera lookup: it
+ * follows the attributor's source changes (mixer signal, visual match or
+ * operator) and tags each detection with the camera valid at its capture time
+ * (guard window after a switch), instead of the camera on program on arrival.
  */
-export function createSharedFeedResolver({ db, registry, aggregator }) {
+export function createSharedFeedResolver({ db, registry, aggregator, attributor = null }) {
   /** @type {Map<string, string|null>} apiKey -> cameraId currently on program */
   const activeCameraByApiKey = new Map();
 
@@ -62,12 +68,16 @@ export function createSharedFeedResolver({ db, registry, aggregator }) {
     activeCameraByApiKey.set(apiKey, newCameraId ?? null);
   }
 
-  const unsubscribeProgramChanged = registry?.onProgramChanged?.(({ apiKey, mixerId, inputNumber }) => {
+  const unsubscribeAttributor = attributor?.onChange?.(({ apiKey, next }) => {
+    _setActiveCamera(apiKey, next.cameraId ?? null);
+  }) ?? null;
+
+  const unsubscribeProgramChanged = attributor ? null : registry?.onProgramChanged?.(({ apiKey, mixerId, inputNumber }) => {
     if (!apiKey) return;
     _setActiveCamera(apiKey, _cameraForMixerInput(mixerId, inputNumber));
   }) ?? null;
 
-  const unsubscribePresetRecalled = registry?.onCameraPresetRecalled?.(({ apiKey, cameraId }) => {
+  const unsubscribePresetRecalled = attributor ? null : registry?.onCameraPresetRecalled?.(({ apiKey, cameraId }) => {
     if (!apiKey || !cameraId) return;
     _setActiveCamera(apiKey, cameraId);
   }) ?? null;
@@ -81,6 +91,11 @@ export function createSharedFeedResolver({ db, registry, aggregator }) {
    *   not forwarded with a made-up cameraId)
    */
   function tagSharedDetection(apiKey, detection) {
+    if (attributor) {
+      const tag = attributor.tagForCapture(apiKey, detection.capturedAt ?? detection.ts ?? Date.now());
+      if (!tag.cameraId) return null;
+      return { ...detection, cameraId: tag.cameraId, source: tag };
+    }
     const cameraId = activeCameraByApiKey.get(apiKey) ?? null;
     if (!cameraId) return null;
     return { ...detection, cameraId };
@@ -95,6 +110,7 @@ export function createSharedFeedResolver({ db, registry, aggregator }) {
   }
 
   function stop() {
+    unsubscribeAttributor?.();
     unsubscribeProgramChanged?.();
     unsubscribePresetRecalled?.();
   }

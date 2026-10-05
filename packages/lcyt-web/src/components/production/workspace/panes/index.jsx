@@ -30,13 +30,13 @@ function PresetButton({ camera, presetId, code, D }) {
   const timer = useRef(null);
   const state = D.ui.presetState[`${camera.id}:${presetId}`];
   const active = D.ui.lastPreset === `${camera.id}:${presetId}`;
-  const captured = !!camera.thumbnailUrl;
+  const captured = !!camera.presetThumbnails?.[presetId];
   const col = presetColors(state, active, ACC);
 
   const down = () => {
     held.current = false;
     clearTimeout(timer.current);
-    timer.current = setTimeout(() => { held.current = true; D.actions.captureThumbnail(camera); }, 600);
+    timer.current = setTimeout(() => { held.current = true; D.actions.captureThumbnail(camera, presetId); }, 600);
   };
   const up = () => {
     clearTimeout(timer.current);
@@ -46,7 +46,7 @@ function PresetButton({ camera, presetId, code, D }) {
   const leave = () => { clearTimeout(timer.current); held.current = false; };
 
   return (
-    <button onPointerDown={down} onPointerUp={up} onPointerLeave={leave} title="Tap to recall · hold to grab thumbnail"
+    <button onPointerDown={down} onPointerUp={up} onPointerLeave={leave} title="Tap to recall · hold to save this view as the preset's reference image"
       style={{ position: 'relative', minWidth: 34, padding: '5px 7px', borderRadius: 5, background: col.bg,
         border: `1px solid ${col.border}`, color: col.color, fontFamily: C.mono, fontSize: '.68rem', fontWeight: 500 }}>
       {state === 'pending' ? '…' : code}
@@ -106,8 +106,8 @@ function ThumbnailsPane({ D }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(110px,1fr))', gap: 6, padding: 8, alignContent: 'start' }}>
       {cameras.map((cam) => (
-        <Tile key={cam.id} src={camThumb(cam, D.thumbTick)} label={cam.thumbnailUrl ? '' : 'empty'} code={cam.name}
-          border={cam.thumbnailUrl ? C.preview : C.tileBorder} />
+        <Tile key={cam.id} src={camThumb(cam, D.thumbTick)} label={camThumb(cam, 0) ? '' : 'empty'} code={cam.name}
+          border={camThumb(cam, 0) ? C.preview : C.tileBorder} />
       ))}
     </div>
   );
@@ -126,7 +126,7 @@ function MonitorsPane({ D }) {
         const isPgm = cam.mixerInput != null && cam.mixerInput === D.activeInput;
         return (
           <Tile key={cam.id} src={camThumb(cam, D.thumbTick)} label={cam.name} code={cam.name}
-            dot={isPgm ? C.live : cam.thumbnailUrl ? C.previewLine : '#5a5a5a'}
+            dot={isPgm ? C.live : camThumb(cam, 0) ? C.previewLine : '#5a5a5a'}
             border={isPgm ? C.live : C.tileBorder} tally={isPgm} />
         );
       })}

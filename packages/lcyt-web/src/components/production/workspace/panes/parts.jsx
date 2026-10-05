@@ -39,8 +39,16 @@ export function Empty({ children }) {
 
 /** Build the cache-busted absolute URL for a camera's captured thumbnail. */
 export function camThumb(camera, tick) {
-  if (!camera?.thumbnailUrl) return null;
-  return `${camera.thumbnailUrl}${camera.thumbnailUrl.includes('?') ? '&' : '?'}t=${tick}`;
+  const url = camera?.thumbnailUrl || cameraAnyThumbUrl(camera);
+  if (!url) return null;
+  return `${url}${url.includes('?') ? '&' : '?'}t=${tick}`;
+}
+
+/** Newest per-preset reference image, used when the camera has no camera-level one. */
+export function cameraAnyThumbUrl(camera) {
+  const list = Object.values(camera?.presetThumbnails || {});
+  if (list.length === 0) return null;
+  return list.sort((a, b) => String(b.capturedAt).localeCompare(String(a.capturedAt)))[0].url;
 }
 
 /** Colour for a preset button given its transient action state. */

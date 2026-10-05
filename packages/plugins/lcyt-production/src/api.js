@@ -19,7 +19,8 @@ import { createBridgeRouter } from './routes/bridge.js';
 import { createEncodersRouter } from './routes/encoders.js';
 import { createProductionCommands, commandStatus, slugifyLabel } from './commands.js';
 import { createPerceptionManager, isPerceptionDispatchAvailable } from './perception-manager.js';
-import { DEFAULT_PREVIEW_BASE_URL } from './camera-thumbnail.js';
+import { DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath } from './camera-thumbnail.js';
+import { createPerceptionAutostart, setSharedAutostart, getSharedAutostart } from './perception-autostart.js';
 
 /**
  * Run DB migrations and start the device registry and bridge manager.
@@ -119,7 +120,8 @@ export { OBSClient };
 export { createProductionCommands, commandStatus, slugifyLabel };
 
 // fps30 tracker subsystem job dispatch (plan_video_perception.md Phase 2/3)
-export { createPerceptionManager, isPerceptionDispatchAvailable, DEFAULT_PREVIEW_BASE_URL };
+export { createPerceptionAutostart, setSharedAutostart, getSharedAutostart };
+export { createPerceptionManager, isPerceptionDispatchAvailable, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath };
 
 // Plain, directly-callable camera/mixer CRUD (for packages/lcyt-tools — plan/mcp)
 export {

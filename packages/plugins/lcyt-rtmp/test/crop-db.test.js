@@ -31,6 +31,19 @@ describe('crop_config', () => {
     assert.equal(cfg.followProgram, true);
     assert.equal(cfg.transitionMs, 0);
     assert.equal(cfg.activeSetId, null);
+    assert.equal(cfg.autoFollow, false);
+  });
+
+  test('autoFollow is opt-in, persists, and an older table gains the column', () => {
+    assert.equal(setCropConfig(db, KEY, { autoFollow: true }).config.autoFollow, true);
+    assert.equal(setCropConfig(db, KEY, { transitionMs: 100 }).config.autoFollow, true);
+    assert.equal(setCropConfig(db, KEY, { autoFollow: false }).config.autoFollow, false);
+    const old = new Database(':memory:');
+    old.exec('CREATE TABLE crop_config (api_key TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0, aspect_w INTEGER NOT NULL DEFAULT 9, aspect_h INTEGER NOT NULL DEFAULT 16, out_w INTEGER, out_h INTEGER, video_bitrate TEXT, follow_program INTEGER NOT NULL DEFAULT 1, transition_ms INTEGER NOT NULL DEFAULT 0, active_set_id TEXT, updated_at TEXT NOT NULL DEFAULT (datetime(\'now\')))');
+    old.prepare("INSERT INTO crop_config (api_key, enabled) VALUES ('k', 1)").run();
+    runCropMigrations(old);
+    assert.equal(getCropConfig(old, 'k').autoFollow, false);
+    assert.equal(getCropConfig(old, 'k').enabled, true);
   });
 
   test('partial updates preserve other fields', () => {

@@ -19,6 +19,7 @@ function ConfigDialog({ config, onClose, onSave }) {
   const [videoBitrate, setVideoBitrate] = useState(config?.videoBitrate ?? '');
   const [transitionMs, setTransitionMs] = useState(config?.transitionMs ?? 0);
   const [followProgram, setFollowProgram] = useState(config?.followProgram ?? true);
+  const [autoFollow, setAutoFollow] = useState(config?.autoFollow ?? false);
   const [saving, setSaving] = useState(false);
 
   async function save() {
@@ -30,6 +31,7 @@ function ConfigDialog({ config, onClose, onSave }) {
       videoBitrate: videoBitrate.trim() === '' ? null : videoBitrate.trim(),
       transitionMs: Number(transitionMs),
       followProgram,
+      autoFollow,
     });
     setSaving(false);
     if (ok) onClose();
@@ -74,6 +76,10 @@ function ConfigDialog({ config, onClose, onSave }) {
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.78rem' }}>
           <input type="checkbox" checked={followProgram} onChange={(e) => setFollowProgram(e.target.checked)} />
           Follow the program bus — auto-apply the bound preset on camera/mixer switches
+        </label>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '.78rem' }}>
+          <input type="checkbox" checked={autoFollow} onChange={(e) => setAutoFollow(e.target.checked)} />
+          Auto-follow people — keep the crop on the people the camera detector sees (needs perception running for the camera on program)
         </label>
       </div>
     </Dialog>

@@ -32,7 +32,12 @@ export function useAiObservability() {
   const [busy, setBusy] = useState(false);
   const [trackerObjects, setTrackerObjects] = useState([]);
   const [describerUpdate, setDescriberUpdate] = useState(null);
+  // Perception: latest detector subjects per camera and the feed attributor's current source tag
+  const [detectorByCamera, setDetectorByCamera] = useState({});
+  const [sourceTag, setSourceTag] = useState(null);
+  const [lastDetectorCamera, setLastDetectorCamera] = useState(null);
   const [previewTick, setPreviewTick] = useState(0);
+  const [perception, setPerception] = useState(null);
 
   const api = useCallback(async (path, opts = {}) => {
     const token = getSessionToken?.();
@@ -88,6 +93,46 @@ export function useAiObservability() {
       }
     });
   }, [connected, eventStream]);
+
+  useEffect(() => {
+    if (!connected) return undefined;
+    return eventStream.on(['camera.track_state', 'feed.source_changed'], (envelope) => {
+      if (envelope.topic === 'feed.source_changed') {
+        setSourceTag(envelope.data || null);
+      } else if (envelope.data?.cameraId) {
+        const { cameraId, subjects, visible } = envelope.data;
+        setDetectorByCamera((m) => ({ ...m, [cameraId]: visible === false ? [] : (Array.isArray(subjects) ? subjects : []) }));
+        setLastDetectorCamera(cameraId);
+      }
+    });
+  }, [connected, eventStream]);
+
+  // Boxes of the camera on program (per the attributor), else of the camera that reported last.
+  const detectorSubjects = detectorByCamera[sourceTag?.cameraId ?? lastDetectorCamera] ?? [];
+
+  // Camera status panel: one overview read (jobs, auto-start, on-program, what the detector sees, attribution)
+  const loadPerception = useCallback(async () => {
+    if (!backendUrl || !apiKey) return;
+    try {
+      const res = await api('/production/perception/overview');
+      if (res.ok) setPerception(await res.json());
+    } catch { /* panel just keeps its last state */ }
+  }, [api, backendUrl, apiKey]);
+
+  useEffect(() => {
+    if (!connected) return undefined;
+    loadPerception();
+    const id = setInterval(loadPerception, 4000);
+    return () => clearInterval(id);
+  }, [connected, loadPerception]);
+
+  /** POST to a perception/attribution route, refresh the overview, return an error string or null. */
+  const perceptionAction = useCallback(async (path, body = {}) => {
+    const res = await api(path, { method: 'POST', body });
+    const data = await res.json().catch(() => ({}));
+    await loadPerception();
+    return res.ok ? null : (data.error || data.message || `HTTP ${res.status}`);
+  }, [api, loadPerception]);
 
   // Cache-buster tick for the polled preview-JPEG <img> (same convention as
   // useCropEditor.js's previewTick).
@@ -145,7 +190,7 @@ export function useAiObservability() {
   return {
     connected, backendUrl, apiKey,
     status, captures, busy,
-    trackerObjects, describerUpdate,
+    trackerObjects, describerUpdate, detectorSubjects, sourceTag, perception, perceptionAction,
     previewUrl, frameUrl,
     actions: { startRole, stopRole, refreshCaptures, replay },
   };

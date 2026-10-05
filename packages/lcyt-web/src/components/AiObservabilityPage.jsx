@@ -4,6 +4,7 @@ import { useUserAuth } from '../hooks/useUserAuth.js';
 import { useProjectRequired } from '../hooks/useProjectRequired.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
 import { LiveOverlay } from './ai-observability/LiveOverlay.jsx';
+import { PerceptionPanel } from './ai-observability/PerceptionPanel.jsx';
 import { CapturesPanel } from './ai-observability/CapturesPanel.jsx';
 import { useAiObservability } from './ai-observability/useAiObservability.js';
 
@@ -60,7 +61,12 @@ function AiObservabilityContent() {
             previewUrl={hook.previewUrl}
             trackerObjects={hook.trackerObjects}
             describerUpdate={hook.describerUpdate}
+            detectorSubjects={hook.detectorSubjects}
+            sourceTag={hook.sourceTag}
+            cameraNames={Object.fromEntries((hook.perception?.cameras || []).map((c) => [c.id, c.name]))}
           />
+
+          <PerceptionPanel overview={hook.perception} onAction={hook.perceptionAction} />
 
           <div style={{ display: 'flex', gap: 6, borderBottom: '1px solid var(--color-border)' }}>
             {ROLE_CODES.map((code) => (
