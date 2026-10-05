@@ -178,6 +178,15 @@ describe('AgentEngine', () => {
     assert.equal(cfg.embeddingApiKey, 'sk-test-123');
   });
 
+  test("computeEmbeddings routes the 'deer' provider to the deer client", async () => {
+    const db = createDb();
+    setAiConfig(db, 'key1', { embeddingProvider: 'deer', embeddingApiUrl: 'deer.local:50055' });
+    const agent = new AgentEngine(db);
+    // @jsilvanus/embedeer is not installed in the test environment, so reaching
+    // its loader proves the call took the deer path rather than the OpenAI one.
+    await assert.rejects(agent.computeEmbeddings(['x'], 'key1'), /@jsilvanus\/embedeer/);
+  });
+
   test('isServerEmbeddingAvailable reflects env', () => {
     const db = createDb();
     const agent = new AgentEngine(db);

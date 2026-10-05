@@ -32,8 +32,10 @@ export function runAiMigrations(db) {
  * 'server' — use server-configured embedding API
  * 'openai' — user provides their own OpenAI API key
  * 'custom' — user provides custom embedding API endpoint + key
+ * 'deer'   — local embedding model served by @jsilvanus/embedeer (gRPC address in
+ *            embedding_api_url, optional model name; no API key)
  */
-export const VALID_PROVIDERS = ['none', 'server', 'openai', 'custom'];
+export const VALID_PROVIDERS = ['none', 'server', 'openai', 'custom', 'deer'];
 
 /**
  * Get AI config for an API key, or null if not configured.
