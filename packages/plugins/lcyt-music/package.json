@@ -10,7 +10,8 @@
   "dependencies": {
     "better-sqlite3": "^11.0",
     "express": "^4.21",
-    "lcyt-backend": "*"
+    "lcyt-backend": "*",
+    "lcyt-compute": "*"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",
   "license": "",

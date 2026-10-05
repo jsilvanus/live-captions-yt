@@ -8,6 +8,7 @@
     "test": "node --test ./test/index.js"
   },
   "dependencies": {
+    "lcyt-compute": "*",
     "playwright-core": "^1.51"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",

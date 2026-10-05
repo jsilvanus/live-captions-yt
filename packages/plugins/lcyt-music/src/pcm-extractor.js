@@ -6,6 +6,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { spawnFfmpeg } from 'lcyt-compute/ffmpeg';
 import { reportFfmpegRun } from './ffmpeg-accounting.js';
 
 /**
@@ -19,14 +20,14 @@ export function extractPcm(segmentBuffer, { sampleRate = 22050, apiKey = '' } = 
   return new Promise((resolve, reject) => {
     let proc;
     try {
-      proc = spawn('ffmpeg', [
+      proc = spawnFfmpeg([
         '-hide_banner', '-loglevel', 'error',
         '-i', 'pipe:0',
         '-f', 's16le',
         '-ac', '1',
         '-ar', String(sampleRate),
         'pipe:1',
-      ], { stdio: ['pipe', 'pipe', 'pipe'] });
+      ], { purpose: 'pcm', apiKey, stdio: ['pipe', 'pipe', 'pipe'] });
     } catch (err) {
       reject(new Error(`extractPcm: failed to spawn ffmpeg: ${err.message}`));
       return;

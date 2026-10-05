@@ -15,7 +15,7 @@
 
 import { EventEmitter } from 'node:events';
 import { spawn } from 'node:child_process';
-import { reportFfmpegRun } from 'lcyt-compute/ffmpeg';
+import { reportFfmpegRun, spawnFfmpeg } from 'lcyt-compute/ffmpeg';
 import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
@@ -268,7 +268,12 @@ export class SttManager extends EventEmitter {
 
       let proc;
       try {
-        proc = spawn('ffmpeg', ffmpegArgs, { stdio: ['ignore', 'pipe', 'pipe'] });
+        proc = spawnFfmpeg(ffmpegArgs, {
+          purpose: 'stt',
+          apiKey,
+          runner: this._settings ? this._settings.get('compute.ffmpeg_runner') : undefined,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
       } catch (err) {
         this._sessions.delete(apiKey);
         throw new Error(`SttManager: failed to spawn ffmpeg for ${audioSource}: ${err.message}`);

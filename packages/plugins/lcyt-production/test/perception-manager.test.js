@@ -201,3 +201,54 @@ describe('createPerceptionManager', () => {
     });
   });
 });
+
+describe('createPerceptionManager with FFFLEET_URL', () => {
+  function fakeFleet() {
+    const submitted = [];
+    const fleet = {
+      submitted,
+      async submit(spec) {
+        let finish;
+        const done = new Promise((resolve) => { finish = resolve; });
+        const job = { id: spec.id, done, cancelled: false, async cancel() { job.cancelled = true; finish({ state: 'cancelled' }); } };
+        submitted.push({ spec, job });
+        return job;
+      },
+    };
+    return fleet;
+  }
+  const env = { FFFLEET_URL: 'http://fleet', BACKEND_INTERNAL_TOKEN: 'tok' };
+
+  it('counts as available', () => {
+    assert.equal(isPerceptionDispatchAvailable({ FFFLEET_URL: 'http://fleet' }), true);
+  });
+
+  it('submits a perception stream job and cancels it on stop()', async () => {
+    const fleet = fakeFleet();
+    const mgr = createPerceptionManager({ previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend', env, getFleetImpl: async () => fleet });
+    const { jobId } = await mgr.start('key1', CAMERA, { emitIntervalMs: 500 });
+    const { spec, job } = fleet.submitted[0];
+    assert.equal(spec.id, jobId);
+    assert.equal(spec.kind, 'stream');
+    assert.equal(spec.type, 'perception');
+    assert.equal(spec.owner, 'key1');
+    assert.equal(spec.perception.frameUrl, 'http://backend/preview/feed-abc/incoming');
+    assert.equal(spec.perception.callbackUrl, 'http://backend/production/perception/ingest');
+    assert.equal(spec.perception.internalToken, 'tok');
+    assert.equal(spec.perception.emitIntervalMs, 500);
+    assert.equal(spec.perception.type, undefined);
+    assert.deepEqual(await mgr.start('key1', CAMERA), { jobId, alreadyRunning: true });
+    assert.equal(await mgr.stop('cam-1'), true);
+    assert.equal(job.cancelled, true);
+    assert.equal(mgr.status('cam-1'), null);
+  });
+
+  it('forgets a job that ends by itself', async () => {
+    const fleet = fakeFleet();
+    const mgr = createPerceptionManager({ previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend', env, getFleetImpl: async () => fleet });
+    await mgr.start('key1', CAMERA);
+    await fleet.submitted[0].job.cancel();
+    await new Promise((r) => setImmediate(r));
+    assert.equal(mgr.status('cam-1'), null);
+  });
+});

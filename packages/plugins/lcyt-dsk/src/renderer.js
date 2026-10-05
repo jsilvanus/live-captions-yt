@@ -20,7 +20,7 @@
  *   getStatus(apiKey)                      — { running, template }
  */
 
-import { spawn } from 'node:child_process';
+import { spawnFfmpeg } from 'lcyt-compute/ffmpeg';
 import { existsSync, readdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -490,7 +490,7 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
 
   const rtmpUrl = `${rtmpBaseUrl}/${rtmpApp}/${apiKey}`;
 
-  const ffmpeg = spawn('ffmpeg', [
+  const ffmpeg = spawnFfmpeg([
     '-y',
     '-f', 'image2pipe',
     '-framerate', String(FRAME_RATE),
@@ -502,7 +502,7 @@ export async function startRtmpStream(apiKey, rtmpBaseUrl, rtmpApp = 'dsk') {
     '-g', String(FRAME_RATE * 2),  // keyframe every 2 s
     '-f', 'flv',
     rtmpUrl,
-  ], { stdio: ['pipe', 'ignore', 'pipe'] });
+  ], { purpose: 'dsk', apiKey, stdio: ['pipe', 'ignore', 'pipe'] });
 
   ffmpeg.stderr.on('data', (buf) => {
     const msg = buf.toString().trim();
@@ -663,7 +663,7 @@ export async function startViewportStream(apiKey, opts) {
     '-g', String(FRAME_RATE * 2),
   ];
   const outputArgs = teeString ? ['-f', 'tee', teeString] : ['-f', 'flv', localUrl];
-  const ffmpeg = spawn('ffmpeg', [...encodeArgs, ...outputArgs], { stdio: ['pipe', 'ignore', 'pipe'] });
+  const ffmpeg = spawnFfmpeg([...encodeArgs, ...outputArgs], { purpose: 'dsk', apiKey, stdio: ['pipe', 'ignore', 'pipe'] });
 
   ffmpeg.stderr.on('data', (buf) => {
     const msg = buf.toString().trim();

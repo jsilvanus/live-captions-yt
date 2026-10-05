@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { Writable } from 'node:stream';
+import { PassThrough, Writable } from 'node:stream';
 import { randomUUID } from 'node:crypto';
 
 /**
@@ -18,6 +18,8 @@ import { randomUUID } from 'node:crypto';
  * whose writes go to the job through the fleet API, so callers that write SRT cues to
  * `proc.stdin` work the same on a remote worker.
  */
+
+const STDIN_CHUNK = 512 * 1024;
 
 let sharedFleet = null;
 let sharedKey = null;
@@ -39,7 +41,9 @@ export async function getFleet(env = process.env) {
   const key = JSON.stringify(opts);
   if (!sharedFleet || sharedKey !== key) {
     sharedFleet?.close().catch(() => {});
-    sharedFleet = createFleet(opts);
+    // Without a URL jobs run on this machine; perception jobs are the one non-ffmpeg type they need.
+    const { runPerception } = await import('../perception/fffleet-executor.js');
+    sharedFleet = createFleet({ ...opts, local: { executors: { perception: runPerception } } });
     sharedKey = key;
   }
   return sharedFleet;
@@ -53,12 +57,13 @@ export async function closeFleet() {
 }
 
 export class FleetFfmpegRunner extends EventEmitter {
-  constructor({ fleet = null, args = [], name = 'ffmpeg', stdin = 'ignore', apiKey = '', purpose = 'unknown', timeoutMs = null, requires = [], ...rest } = {}) {
+  constructor({ fleet = null, args = [], name = 'ffmpeg', stdin = 'ignore', stdout = 'ignore', apiKey = '', purpose = 'unknown', timeoutMs = null, requires = [], ...rest } = {}) {
     super();
     this._fleet = fleet;
     this.args = args;
     this.name = name;
     this._stdinMode = stdin;
+    this._stdoutMode = stdout;
     this.owner = apiKey || purpose;
     this.purpose = purpose;
     this.timeoutMs = timeoutMs;
@@ -85,6 +90,7 @@ export class FleetFfmpegRunner extends EventEmitter {
       requires: this.requires,
       timeoutMs: this.timeoutMs,
       stdin: wantsStdin,
+      ...(this._stdoutMode === 'pipe' ? { stdout: true } : {}),
       ffmpeg: { args: this.args },
     };
     let job;
@@ -97,6 +103,15 @@ export class FleetFfmpegRunner extends EventEmitter {
     this.job = job;
     this.jobId = job.id;
     this.where = job.where;
+
+    if (this._stdoutMode === 'pipe') {
+      // Raw ffmpeg stdout (PCM, ...) from the fleet, as a plain Readable like a child process's.
+      this.stdout = new PassThrough();
+      job.stdout().then(
+        (stream) => { stream.on('error', (err) => this.stdout?.destroy(err)); stream.pipe(this.stdout); },
+        (err) => this.stdout?.destroy(err),
+      );
+    }
 
     if (wantsStdin) {
       this.stdin = new Writable({
@@ -154,7 +169,14 @@ export class FleetFfmpegRunner extends EventEmitter {
     const job = this.job;
     if (!job) throw new Error('no active job');
     await this._running();
-    return job.write(data);
+    // The fleet API takes bodies of at most 1 MB.
+    const buf = typeof data === 'string' ? Buffer.from(data) : data;
+    let bytes = 0;
+    for (let i = 0; i < Math.max(buf.length, 1); i += STDIN_CHUNK) {
+      await job.write(buf.subarray(i, i + STDIN_CHUNK));
+      bytes += Math.min(STDIN_CHUNK, buf.length - i);
+    }
+    return { bytes };
   }
 
   _running(timeoutMs = 30_000) {
