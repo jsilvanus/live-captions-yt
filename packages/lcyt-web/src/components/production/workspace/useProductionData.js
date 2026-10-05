@@ -247,13 +247,13 @@ export function useProductionData() {
     }), 1500);
   }, [jfetch, patch]);
 
-  const captureThumbnail = useCallback(async (camera) => {
+  const captureThumbnail = useCallback(async (camera, presetId = null) => {
     const key = `${camera.id}:thumb`;
     patch((s) => ({ presetState: { ...s.presetState, [key]: 'pending' } }));
     try {
       const r = await jfetch(`/production/cameras/${camera.id}/thumbnail/capture`, {
         method: 'POST',
-        body: JSON.stringify({ apiKey, mixerId: primaryMixer?.id }),
+        body: JSON.stringify({ apiKey, mixerId: primaryMixer?.id, ...(presetId ? { presetId: String(presetId) } : {}) }),
       });
       patch((s) => ({ presetState: { ...s.presetState, [key]: r.ok ? 'ok' : 'error' } }));
       if (r.ok) { setThumbTick((t) => t + 1); loadCore(); }

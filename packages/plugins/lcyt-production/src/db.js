@@ -110,6 +110,15 @@ export function runMigrations(db) {
     db.exec('ALTER TABLE prod_cameras ADD COLUMN thumbnail_captured_at TEXT');
   }
 
+  // Per-preset reference thumbnails (feed attribution matches the program feed
+  // against these). The JPEG lives beside the camera one as <cameraId>--<presetId>.jpg.
+  db.exec(`CREATE TABLE IF NOT EXISTS prod_camera_preset_thumbnails (
+    camera_id   TEXT NOT NULL,
+    preset_id   TEXT NOT NULL,
+    captured_at TEXT NOT NULL,
+    PRIMARY KEY (camera_id, preset_id)
+  )`);
+
   // owner_api_key: the project (api_keys.key) that created this camera, set
   // automatically from the now-real session/device auth on the CRUD routes
   // (plan_ingest_feeds.md's cross-tenant sourceCameraId review finding).

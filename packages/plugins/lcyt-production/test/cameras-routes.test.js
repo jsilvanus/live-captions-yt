@@ -156,6 +156,33 @@ describe('camera thumbnail routes', () => {
     assert.equal(bytes.toString(), 'jpeg-bytes');
   });
 
+  it('per-preset capture stores a separate image and lists it on the camera', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = insertCamera({ camera_key: 'cam-key-1' });
+    mockPreview();
+
+    const cap = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail/capture`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ presetId: 'altar' }),
+    });
+    assert.equal(cap.status, 200);
+    assert.equal((await cap.json()).presetId, 'altar');
+
+    // camera-level image untouched
+    assert.equal((await fetch(`${baseUrl}/production/cameras/${id}/thumbnail`)).status, 404);
+    const img = await fetch(`${baseUrl}/production/cameras/${id}/preset/altar/thumbnail.jpg`);
+    assert.equal(img.status, 200);
+    assert.equal(Buffer.from(await img.arrayBuffer()).toString(), 'jpeg-bytes');
+    assert.equal((await fetch(`${baseUrl}/production/cameras/${id}/preset/other/thumbnail`)).status, 404);
+
+    const cam = await (await fetch(`${baseUrl}/production/cameras/${id}`)).json();
+    assert.ok(cam.presetThumbnails.altar.url.endsWith(`/preset/altar/thumbnail`));
+
+    await fetch(`${baseUrl}/production/cameras/${id}`, { method: 'DELETE' });
+    assert.equal(fs.readdirSync(thumbnailsDir).length, 0);
+  });
+
   it('program-feed capture (amx camera) requires the camera to be the active mixer source', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const mixerId = insertMixer();

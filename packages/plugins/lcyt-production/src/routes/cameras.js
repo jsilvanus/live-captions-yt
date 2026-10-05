@@ -51,6 +51,7 @@ function hasAuthCredentials(req) {
 function isUnauthenticatedCameraRoute(req) {
   const path = req.path;
   if (/\/thumbnail(\.jpg)?$/.test(path)) return true;
+  if (/\/preset\/[^/]+\/thumbnail(\.jpg)?$/.test(path)) return true;
   if (/\/whip(-url)?(\/|$)/.test(path)) return !hasAuthCredentials(req);
   return false;
 }
@@ -86,9 +87,18 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
    */
   function withThumbnailUrl(camera, req) {
     const origin = `${req.protocol}://${req.get('host')}`;
+    const presetRows = db.prepare('SELECT preset_id, captured_at FROM prod_camera_preset_thumbnails WHERE camera_id = ?').all(camera.id);
+    const presetThumbnails = {};
+    for (const r of presetRows) {
+      presetThumbnails[r.preset_id] = {
+        url: `${origin}/production/cameras/${camera.id}/preset/${encodeURIComponent(r.preset_id)}/thumbnail`,
+        capturedAt: r.captured_at,
+      };
+    }
     return {
       ...camera,
       thumbnailUrl: camera.thumbnailCapturedAt ? `${origin}/production/cameras/${camera.id}/thumbnail` : null,
+      presetThumbnails,
     };
   }
 
@@ -251,7 +261,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
     db.prepare('DELETE FROM prod_cameras WHERE id = ?').run(id);
     registry.removeCamera(id).catch(() => {});
-    deleteCameraThumbnailFile(id, cameraThumbnailOpts.thumbnailsDir);
+    const presetIds = db.prepare('SELECT preset_id FROM prod_camera_preset_thumbnails WHERE camera_id = ?').all(id).map(r => r.preset_id);
+    db.prepare('DELETE FROM prod_camera_preset_thumbnails WHERE camera_id = ?').run(id);
+    deleteCameraThumbnailFile(id, cameraThumbnailOpts.thumbnailsDir, presetIds);
     res.status(204).end();
   });
 
@@ -261,12 +273,13 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const camera = parseCamera(row);
-    const { apiKey, mixerId } = req.body ?? {};
+    const { apiKey, mixerId, presetId } = req.body ?? {};
+    if (presetId != null && typeof presetId !== 'string') return res.status(400).json({ error: 'presetId must be a string' });
     const result = await captureCameraThumbnail(db, camera, registry, {
-      apiKey, mixerId, ...cameraThumbnailOpts,
+      apiKey, mixerId, presetId, ...cameraThumbnailOpts,
     });
     if (!result.ok) return res.status(result.status).json({ error: result.error });
-    res.json({ ok: true, thumbnailCapturedAt: result.thumbnailCapturedAt, sizeBytes: result.sizeBytes });
+    res.json({ ok: true, presetId: presetId || null, thumbnailCapturedAt: result.thumbnailCapturedAt, sizeBytes: result.sizeBytes });
   });
 
   // GET /production/cameras/:id/thumbnail(.jpg) — serve the saved thumbnail
@@ -284,6 +297,23 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     try { res.setHeader('Content-Length', fs.statSync(filepath).size); } catch { /* ignore */ }
     fs.createReadStream(filepath).pipe(res);
   }
+  function sendJpeg(filepath, res) {
+    if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Thumbnail file not found on disk' });
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    try { res.setHeader('Content-Length', fs.statSync(filepath).size); } catch { /* ignore */ }
+    fs.createReadStream(filepath).pipe(res);
+  }
+
+  // GET /production/cameras/:id/preset/:presetId/thumbnail(.jpg) — per-preset reference image
+  function servePresetThumbnail(req, res) {
+    const row = db.prepare('SELECT 1 FROM prod_camera_preset_thumbnails WHERE camera_id = ? AND preset_id = ?')
+      .get(req.params.id, req.params.presetId);
+    if (!row) return res.status(404).json({ error: 'No thumbnail captured for this preset' });
+    sendJpeg(thumbnailPath(req.params.id, cameraThumbnailOpts.thumbnailsDir, req.params.presetId), res);
+  }
+  router.get('/:id/preset/:presetId/thumbnail', servePresetThumbnail);
+  router.get('/:id/preset/:presetId/thumbnail.jpg', servePresetThumbnail);
   router.get('/:id/thumbnail', serveThumbnail);
   router.get('/:id/thumbnail.jpg', serveThumbnail);
 
