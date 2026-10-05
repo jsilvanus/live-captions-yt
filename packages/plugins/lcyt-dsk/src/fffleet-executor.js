@@ -39,7 +39,7 @@ export async function runDsk(spec, rt, deps = {}) {
   const env = rt.env ?? process.env;
   const launch = deps.launch ?? (opts => chromium.launch(opts));
   const spawnImpl = deps.spawn ?? spawn;
-  const executablePath = deps.executablePath ?? resolveChromiumExecutable(env);
+  const executablePath = 'executablePath' in deps ? deps.executablePath : resolveChromiumExecutable(env);
   if (!executablePath) throw new Error('no Chromium found on this worker (set PLAYWRIGHT_DSK_CHROMIUM)');
 
   const browser = await launch({ headless: true, executablePath, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu'] });
