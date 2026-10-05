@@ -412,6 +412,9 @@ FFFLEET_CLIENT_SECRET=...
 
 Perception jobs run on the same fleet as the `perception` job type (workers started with
 `FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor`; image `docker/lcyt-perception-worker/`).
+The Admin → Metrics page shows a Fleet tile (workers, slots, queue, autoscaler) read from the
+orchestrator's `/metrics`; the token or client needs the `metrics` scope (a client login asks for
+it automatically, so the client must be allowed `metrics`).
 `FFMPEG_RUNNER=worker` and the old `lcyt-orchestrator` / `lcyt-worker-daemon` packages are gone.
 
 **Network requirements.** A fleet worker is a different machine, so every input and output

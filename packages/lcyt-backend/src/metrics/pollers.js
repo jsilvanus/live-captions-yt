@@ -7,6 +7,7 @@
  * - Storage gauges: per-project caption-file and image bytes every 5 min.
  */
 import logger from 'lcyt/logger';
+import { createFleetPoller } from './fleet-poller.js';
 
 /**
  * Counter-reset-safe delta: when the current reading is lower than the last
@@ -76,5 +77,7 @@ export function createStorageGaugePoller({ db, metrics, intervalMs = 300_000 }) 
 export function startMetricsPollers({ db, metrics, mediamtxClient = null }) {
   const pollers = { storage: createStorageGaugePoller({ db, metrics }) };
   if (mediamtxClient) pollers.mediamtxEgress = createMediaMtxEgressPoller({ metrics, mediamtxClient });
+  const fleet = createFleetPoller();
+  if (fleet) pollers.fleet = fleet;
   return pollers;
 }

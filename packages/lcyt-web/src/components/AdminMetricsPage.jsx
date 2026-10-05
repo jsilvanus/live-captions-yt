@@ -128,6 +128,16 @@ function AdminMetricsContent({ backendUrl }) {
   const ffmpegHint = live && Object.keys(live.ffmpeg || {}).length > 0
     ? Object.entries(live.ffmpeg).map(([purpose, n]) => `${purpose}: ${n}`).join(', ')
     : null;
+  const fleet = live?.fleet || null;
+  const fleetHint = fleet?.ok
+    ? [
+        `${fleet.slotsUsed}/${fleet.slots} slots`,
+        fleet.draining ? `${fleet.draining} draining` : null,
+        fleet.autoscalerCreates ? `autoscaler: ${fleet.autoscalerCreates} started, ${fleet.autoscalerCreateFailures} failed` : null,
+        fleet.workersLost ? `${fleet.workersLost} lost` : null,
+        fleet.dispatchFailures ? `${fleet.dispatchFailures} dispatch failures` : null,
+      ].filter(Boolean).join(', ')
+    : fleet ? `unreachable: ${fleet.error}` : null;
   const metricNames = [...new Set(series.map(s => s.metric))].sort();
 
   return (
@@ -139,6 +149,8 @@ function AdminMetricsContent({ backendUrl }) {
         <StatTile label="Active sessions" value={live ? live.activeSessions : '—'} />
         <StatTile label="SSE connections" value={live ? sseTotal : '—'} />
         <StatTile label="ffmpeg processes" value={live ? ffmpegTotal : '—'} hint={ffmpegHint} />
+        {fleet && <StatTile label="Fleet workers" value={fleet.ok ? fleet.workers : '—'} hint={fleetHint} />}
+        {fleet?.ok && <StatTile label="Fleet queue" value={fleet.queued} hint={Object.entries(fleet.queueByClass || {}).filter(([, n]) => n > 0).map(([c, n]) => `${c}: ${n}`).join(', ') || null} />}
       </div>
 
       {/* Range selector */}

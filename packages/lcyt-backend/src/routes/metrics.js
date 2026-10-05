@@ -6,7 +6,8 @@
  *     → { series: [{ key, metric, points: [[period, value], …] }] }
  *   GET /admin/metrics/live
  *     → "right now" panel: active sessions, running ffmpeg by purpose,
- *       SSE connection counts. No Prometheus dependency.
+ *       SSE connection counts, and the fffleet summary when FFFLEET_URL is set
+ *       (read from the orchestrator's /metrics).
  */
 import { Router } from 'express';
 import { queryRollupSeries } from '../db/usage-rollups.js';
@@ -35,6 +36,7 @@ export function createAdminMetricsRouter(db, { store = null, metrics = null, met
       activeSessions: store ? store.size() : 0,
       ffmpeg: getRunningFfmpegCounts(),
       sse: metrics ? metrics.getSseCounts() : {},
+      fleet: metricsPollers.fleet ? metricsPollers.fleet.snapshot() : null,
       ts: Date.now(),
     });
   });
