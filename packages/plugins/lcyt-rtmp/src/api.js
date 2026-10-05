@@ -96,7 +96,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
 
   const ffmpegCaps = (settings ? settings.get('media.rtmp_relay_active') : process.env.RTMP_RELAY_ACTIVE === '1')
     ? probeFfmpeg()
-    : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false, hasZmq: false };
+    : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
 
   // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
   const _rtmpStatIds = new Map();

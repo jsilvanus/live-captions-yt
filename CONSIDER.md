@@ -622,3 +622,13 @@ addition to the role-picker card.
 **Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
 
 **Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
+
+---
+
+## Crop stdin repositioning: not verified on a real RTSP/MediaMTX source or fffleet worker, and `-re`-free latency unmeasured
+
+**Where:** `packages/plugins/lcyt-rtmp/src/crop-manager.js`, `test/crop-stdin.test.js`.
+
+The ~120 ms (4 frame) stdin-command delay was measured on a local `-re` lavfi source with the `spawn` runner. A live RTSP input has its own jitter buffer, so the real delay will be larger and is not measured. The fleet path (`FleetFfmpegRunner.stdin` -> `job.write`) relies on the fffleet worker leaving ffmpeg's stdin open for `kind: 'stream'` jobs without `-nostdin`; not exercised here. `DockerFfmpegRunner` starts the container with stdin ignored, so docker is restart-only (could be done with `docker run -i` + piping `proc.stdin` instead of host stdin). Also unused now: `docker/lcyt-ffmpeg` still builds `--enable-libzmq` (can be dropped; see the report of this change) and `docker/lcyt-ffmpeg/README.md` still describes zmq as required.
+
+Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpRelayManager.writeCaption()` (CEA-708 stdin path, `proc.stdin`) only works through the fleet runner or `spawnFfmpeg`; `test/rtmp-manager.unit.test.js` asserts that. Adding a `stdin` getter to the local runner would silently change that path, so the crop manager reads `handle.proc.stdin` instead.

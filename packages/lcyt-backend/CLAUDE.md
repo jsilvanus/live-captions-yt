@@ -74,7 +74,6 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `MEDIAMTX_API_USER` | Basic-auth username for the MediaMTX API | none |
 | `MEDIAMTX_API_PASSWORD` | Basic-auth password for the MediaMTX API | none |
 | `MEDIAMTX_WEBRTC_BASE_URL` | MediaMTX WebRTC HTTP base URL (WHEP audio source for STT, WebRTC preview) | `http://127.0.0.1:8889` |
-| `CROP_ZMQ_PORT_BASE` | First 127.0.0.1 port for per-process zmq binds (vertical-crop live repositioning) | `5560` |
 | `CROP_OUTPUT_DEFAULT` | Vertical-crop delivery size when crop_config out_w/out_h are NULL | `1080x1920` |
 | `PREVIEW_ROOT` | Directory for JPEG thumbnail files | `/tmp/previews` |
 | `PREVIEW_INTERVAL_S` | Seconds between thumbnail updates | `5` |

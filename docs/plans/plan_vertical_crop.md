@@ -2,7 +2,7 @@
 id: plan/vertical-crop
 title: "Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop"
 status: implemented
-summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 → 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) — with dedicated UI for editing positions per set (set selector, sources×sets overview grid, activate-set control) — shifted live via runtime ffmpeg filter commands (zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 → camera 2 → camera 1/preset 2, each with its own crop position)."
+summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 → 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) — with dedicated UI for editing positions per set (set selector, sources×sets overview grid, activate-set control) — shifted live via runtime ffmpeg filter commands (stdin `C` commands; originally zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 → camera 2 → camera 1/preset 2, each with its own crop position)."
 related: plan/prod, plan/video_perception
 ---
 
@@ -45,31 +45,28 @@ pushes H.264/AAC back into MediaMTX on the **`{key}-crop`** path. Relay slots ga
 pointed at the vertical rendition; the existing `/stream-hls/:key/*` proxy serves it to
 browsers as `{key}-crop` with zero new code. Crop *position* changes are delivered to
 the running process as libavfilter **runtime commands** (`crop@vcrop x 656`) over the
-ffmpeg `zmq` filter — the position takes effect on the next frame, so a preset switch
-is glitch-free, and short eased interpolation gives an optional "camera pan" transition.
+ffmpeg's interactive stdin (originally the `zmq` filter, replaced 2026-10, see below) —
+the position takes effect within a few frames, so a preset switch is glitch-free, and short eased interpolation gives an optional "camera pan" transition.
 A `crop_source_map` table plus hooks in `lcyt-production`'s mixer-switch and
 camera-preset routes make the active preset follow the program bus automatically.
 
-## Why zmq commands (and the fallbacks)
+## Why stdin commands (and the fallbacks)
 
 ffmpeg's `crop` filter supports runtime commands for `x`/`y` (and `w`/`h`, which we
 deliberately keep fixed — resizing the window mid-stream would change the scaler's
-input and is not needed for "shift the crop position"). The supported ways to deliver
-commands to a live process:
+input and is not needed for "shift the crop position"). Delivery to a live process:
 
 | Mechanism | Latency | Requirements | Verdict |
 |---|---|---|---|
-| `zmq` filter in the graph + ZeroMQ REQ client | next frame | ffmpeg built with `--enable-libzmq`; `zeromq` npm package (optional dep) | **Primary.** Purpose-built for exactly this; bind to `127.0.0.1` only. |
+| Interactive stdin: `Ccrop@vcrop -1 x <px>\n` (ffmpeg started **without** `-nostdin`) | measured ~120 ms (~4 frames @30 fps, ffmpeg's own pipeline queue; `test/crop-stdin.test.js`) | stock ffmpeg; a runner that exposes ffmpeg's stdin (`spawn`, `fleet`) | **Primary** (implemented 2026-10). No libzmq build, no control port, works as an fffleet stream job (`stdin: true`, `writeStdin`). |
+| `zmq` filter + ZeroMQ REQ client | next frame | ffmpeg built with `--enable-libzmq`; `zeromq` npm package | **Removed** (was the original primary). Needed a custom ffmpeg build and a 127.0.0.1 port per renderer. |
 | `sendcmd` filter | n/a | command file parsed once at init | Rejected — not live. |
-| Interactive stdin `c` commands | next frame | tty-ish stdin semantics | Rejected — fragile under `spawn`, breaks the runner abstraction, conflicts with the CEA-708 stdin SRT pipe convention. |
-| Double-run + MediaMTX publisher swap (`overridePublisher`) | ~0.5–1 s splice | nothing special | **Fallback** when the ffmpeg build lacks `zmq`. Start a second renderer with the new x/y, let it take over `{key}-crop`, stop the old one. No black gap (the path always has a publisher) but a visible timestamp splice. |
+| Double-run + MediaMTX publisher swap (`overridePublisher`) | ~0.5–1 s splice | nothing special | Not built; the restart fallback below is used instead. |
+| Restart per move | ~0.5–1 s splice | MediaMTX keeps the path alive | **Fallback** when the runner cannot give stdin (`FFMPEG_RUNNER=docker`) or the stdin pipe is gone. |
 
-`probeFfmpeg()` (`rtmp-manager.js`) is extended to also detect the `zmq` filter
-(`ffmpeg -hide_banner -filters` contains ` zmq `), reported as `caps.hasZmq`. The
-manager exposes which mode it is in via `GET /crop/status` (`repositionMode:
-'live' | 'restart'`) so the UI can warn when only the fallback is available.
-`docker/lcyt-ffmpeg/` gets `--enable-libzmq` (or the distro package `libzmq3-dev`)
-so containerised deployments always get live mode.
+`GET /crop/status` reports `repositionMode: 'live' | 'restart'` (`'live'` = stdin
+commands). The earlier `caps.hasZmq` probe, `CROP_ZMQ_PORT_BASE` and the optional
+`zeromq` dependency no longer exist.
 
 ## 1. Data model (lcyt-rtmp `db.js`, additive migrations)
 
@@ -153,7 +150,7 @@ deployments keep working):
 
 ```
 ffmpeg -rtsp_transport tcp -i rtsp://127.0.0.1:8554/{key}
-  -filter_complex "[0:v]crop@vcrop={cropW}:{cropH}:{x0}:{y0},scale={outW}:{outH},zmq=bind_address=tcp\\://127.0.0.1\\:{port}[v]"
+  -filter_complex "[0:v]crop@vcrop={cropW}:{cropH}:{x0}:{y0},scale={outW}:{outH}[v]"   (stdin open, no -nostdin)
   -map "[v]" -map 0:a
   -c:v libx264 -preset veryfast -tune zerolatency -b:v {bitrate}
   -c:a copy
@@ -166,8 +163,8 @@ Notes:
   now-enabled `rtsp: yes` in `docker/mediamtx.yml`.
 - The output URL is bare `{key}-crop` (no RTMP app prefix) — MediaMTX path names are
   the full URL path (same fix as `outRtmpUrl()`).
-- `zmq` sits at the graph tail; its bind port is per-process, allocated from
-  `CROP_ZMQ_PORT_BASE` (default 5560) upward, bound to `127.0.0.1` **only**.
+- ffmpeg's stdin stays open (runner `stdin: 'pipe'`); position changes are written as
+  `Ccrop@vcrop -1 x <px>\nCcrop@vcrop -1 y <px>\n`.
 - Input resolution (`inW`/`inH`) is taken from `MediaMtxClient.getPath(name).tracks`
   when available, else a one-shot `ffprobe`. If the publisher restarts with a new
   resolution the renderer is restarted with recomputed pixel geometry (the normalised
@@ -307,11 +304,8 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
 
 | Env var | Purpose | Default |
 |---|---|---|
-| `CROP_ZMQ_PORT_BASE` | first localhost port for per-process zmq bind | `5560` |
 | `CROP_OUTPUT_DEFAULT` | delivery size when `out_w/out_h` NULL | `1080x1920` |
 
-- `docker/lcyt-ffmpeg/Dockerfile`: add libzmq so `hasZmq` is true in containers.
-- `PORTS.md`: document the `CROP_ZMQ_PORT_BASE` range (loopback only, never exposed).
 - `docker/mediamtx.yml` path-naming comment: add `{key}-crop`.
 
 ## 7. Testing
@@ -445,3 +439,13 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
   tracked as a follow-up, not v1 (see §4).
 - Audio for short-form platforms is passed through (`-c:a copy`); if a target
   requires specific AAC profiles the per-slot `audioBitrate` idiom can be reused.
+
+## Addendum 2026-10: zmq removed, stdin commands
+
+Live repositioning now uses ffmpeg's interactive stdin (`Ccrop@vcrop -1 x N`) instead of
+the zmq filter. Removed: `hasZmq` probe, zmq filter in the graph, `CROP_ZMQ_PORT_BASE` /
+`media.crop_zmq_port_base`, the `zeromq` optional import, the PORTS.md entry.
+`docker/lcyt-ffmpeg` no longer needs `--enable-libzmq` / `libzmq3-dev` / `libzmq5` for
+crop (image intentionally left unchanged here). The docker runner does not expose
+ffmpeg's stdin, so it stays restart-mode. Measured with a synthetic red|green source:
+see `packages/plugins/lcyt-rtmp/test/crop-stdin.test.js`.

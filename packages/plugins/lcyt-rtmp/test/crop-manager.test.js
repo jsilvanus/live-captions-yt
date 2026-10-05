@@ -5,7 +5,7 @@
  * the old runner's close event), and crop-slot fan-out registration in
  * RtmpRelayManager.
  */
-import { resetLaunches, launched } from './helpers/fake-ffmpeg-env.js';
+import { resetLaunches, launched, stdinWritten } from './helpers/fake-ffmpeg-env.js';
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import Database from 'better-sqlite3';
@@ -20,8 +20,7 @@ const CONFIG = {
 
 function makeManager() {
   return new CropManager({
-    // No hasZmq → restart repositioning mode; no zmq socket involved.
-    ffmpegCaps: { available: true, hasZmq: false },
+    ffmpegCaps: { available: true },
     probeResolution: async () => ({ inW: 1920, inH: 1080 }),
   });
 }
@@ -34,7 +33,7 @@ describe('CropManager', () => {
     assert.ok(mgr.isRunning('key1'));
     const st = mgr.getStatus('key1');
     assert.equal(st.running, true);
-    assert.equal(st.repositionMode, 'restart');
+    assert.equal(st.repositionMode, 'live');
     assert.equal(st.cropW, 608);
     assert.equal(st.cropH, 1080);
     assert.equal(st.xNorm, 0.5);
@@ -61,28 +60,70 @@ describe('CropManager', () => {
     await mgr.stop('key2');
   });
 
-  test('restart-mode applyPosition swaps the renderer at the new position', async () => {
+  test('ffmpeg is started with stdin open (no -nostdin) and no zmq filter', async () => {
+    resetLaunches();
+    const mgr = makeManager();
+    await mgr.start('stdin1', CONFIG);
+    const plan = (await launched(1))[0];
+    assert.ok(!plan.args.includes('-nostdin'));
+    assert.ok(!plan.args.join(' ').includes('zmq'));
+    await mgr.stop('stdin1');
+  });
+
+  test('applyPosition writes stdin commands instead of restarting', async () => {
     resetLaunches();
     const mgr = makeManager();
     await mgr.start('key3', CONFIG, { position: { xNorm: 0, yNorm: 0 } });
-    assert.equal(mgr.getStatus('key3').xNorm, 0);
-    await launched(1); // let the first process log itself before it is replaced
+    await launched(1);
 
     const result = await mgr.applyPosition('key3', { xNorm: 1, yNorm: 0 });
-    assert.equal(result.mode, 'restart');
-    assert.equal(result.xNorm, 1);
-
-    // Old runner's async close event must not wipe the new session.
-    await new Promise(r => setTimeout(r, 150));
-    assert.ok(mgr.isRunning('key3'), 'restarted renderer stays registered');
+    assert.equal(result.mode, 'live');
     assert.equal(mgr.getStatus('key3').xNorm, 1);
+    assert.equal(mgr.getStatus('key3').repositionMode, 'live');
+    // maxX = 1920-608 = 1312
+    for (let i = 0; i < 50 && !stdinWritten().includes('x 1312'); i++) await new Promise(r => setTimeout(r, 20));
+    assert.equal(stdinWritten(), 'Ccrop@vcrop -1 x 1312\nCcrop@vcrop -1 y 0\n');
+    assert.equal((await launched(1)).length, 1, 'no second process was started');
 
-    // Second spawn used the new x offset (maxX = 1920-608 = 1312)
+    await mgr.stop('key3');
+  });
+
+  test('eased transition sends several stdin steps ending on the target', async () => {
+    resetLaunches();
+    const mgr = makeManager();
+    await mgr.start('ease', CONFIG, { position: { xNorm: 0, yNorm: 0 } });
+    await mgr.applyPosition('ease', { xNorm: 1, yNorm: 0, transitionMs: 200 });
+    await new Promise(r => setTimeout(r, 400));
+    const xs = [...stdinWritten().matchAll(/crop@vcrop -1 x (\d+)/g)].map(m => Number(m[1]));
+    assert.ok(xs.length >= 4, `expected several steps, got ${xs}`);
+    assert.equal(xs.at(-1), 1312);
+    assert.deepEqual(xs, [...xs].sort((a, b) => a - b), 'monotonic pan');
+    await mgr.stop('ease');
+  });
+
+  test('a dead stdin pipe falls back to restart-mode repositioning', async () => {
+    resetLaunches();
+    const mgr = makeManager();
+    await mgr.start('key3b', CONFIG, { position: { xNorm: 0, yNorm: 0 } });
+    await launched(1);
+    mgr._sessions.get('key3b').stdin.destroy();
+    assert.equal(mgr.getStatus('key3b').repositionMode, 'restart');
+
+    const result = await mgr.applyPosition('key3b', { xNorm: 1, yNorm: 0 });
+    assert.equal(result.mode, 'restart');
+    await new Promise(r => setTimeout(r, 150));
+    assert.ok(mgr.isRunning('key3b'), 'restarted renderer stays registered');
+    assert.equal(mgr.getStatus('key3b').xNorm, 1);
     const filters = (await launched(2)).map(j => j.args[j.args.indexOf('-filter_complex') + 1]);
     assert.match(filters[0], /crop@vcrop=608:1080:0:0/);
     assert.match(filters[1], /crop@vcrop=608:1080:1312:0/);
+    await mgr.stop('key3b');
+  });
 
-    await mgr.stop('key3');
+  test('repositionMode() is restart for the docker runner (no stdin exposure)', () => {
+    const mgr = new CropManager({ ffmpegCaps: { available: true }, settings: { get: k => (k === 'compute.ffmpeg_runner' ? 'docker' : undefined) } });
+    assert.equal(mgr.repositionMode(), 'restart');
+    assert.equal(makeManager().repositionMode(), 'live');
   });
 
   test('position carries across restarts when not overridden', async () => {
@@ -95,7 +136,7 @@ describe('CropManager', () => {
 
   test('probe failure falls back to 1080p geometry', async () => {
     const mgr = new CropManager({
-      ffmpegCaps: { available: true, hasZmq: false },
+      ffmpegCaps: { available: true },
       probeResolution: async () => null,
     });
     await mgr.start('key5', CONFIG);
@@ -112,30 +153,11 @@ describe('CropManager', () => {
 
   test('fails fast when ffmpeg lacks libx264', async () => {
     const mgr = new CropManager({
-      ffmpegCaps: { available: true, hasLibx264: false, hasZmq: false },
+      ffmpegCaps: { available: true, hasLibx264: false },
       probeResolution: async () => ({ inW: 1920, inH: 1080 }),
     });
     await assert.rejects(() => mgr.start('nox264', CONFIG), /libx264/);
     assert.ok(!mgr.isRunning('nox264'));
-  });
-
-  test('hasZmq without the zeromq module: no zmq filter in the graph, restart mode reported', async () => {
-    // The optional `zeromq` package is not installed in this repo, so the
-    // lazy import fails — the filter must NOT bind a dead port.
-    resetLaunches();
-    const mgr = new CropManager({
-      ffmpegCaps: { available: true, hasZmq: true },
-      probeResolution: async () => ({ inW: 1920, inH: 1080 }),
-    });
-    await mgr.start('zmqless', CONFIG);
-
-    const first = (await launched(1))[0];
-    const filter = first.args[first.args.indexOf('-filter_complex') + 1];
-    assert.ok(!filter.includes('zmq'), `no zmq filter without the client module: ${filter}`);
-    assert.equal(mgr.getStatus('zmqless').repositionMode, 'restart');
-    assert.equal(mgr.repositionMode(), 'restart', 'manager-level mode downgrades once the import has settled');
-
-    await mgr.stop('zmqless');
   });
 });
 
