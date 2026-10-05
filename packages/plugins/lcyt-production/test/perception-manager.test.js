@@ -252,3 +252,47 @@ describe('createPerceptionManager with FFFLEET_URL', () => {
     assert.equal(mgr.status('cam-1'), null);
   });
 });
+
+describe('createPerceptionManager stream url', () => {
+  function fakeFleet() {
+    const submitted = [];
+    return {
+      submitted,
+      async submit(spec) {
+        const job = { id: spec.id, done: new Promise(() => {}), async cancel() {} };
+        submitted.push({ spec, job });
+        return job;
+      },
+    };
+  }
+  const base = { FFFLEET_URL: 'http://fleet', BACKEND_INTERNAL_TOKEN: 'tok' };
+
+  it('without PERCEPTION_STREAM_BASE_URL the job polls the snapshot only, at the slow default rate', async () => {
+    const fleet = fakeFleet();
+    const mgr = createPerceptionManager({ previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend', env: base, getFleetImpl: async () => fleet });
+    await mgr.start('key1', CAMERA);
+    const { perception } = fleet.submitted[0].spec;
+    assert.equal(perception.streamUrl, undefined);
+    assert.equal(perception.emitIntervalMs, 1000);
+  });
+
+  it('with PERCEPTION_STREAM_BASE_URL a camera job reads its own stream and runs at 5 detections/s', async () => {
+    const fleet = fakeFleet();
+    const env = { ...base, PERCEPTION_STREAM_BASE_URL: 'rtsp://mediamtx:8554/', PERCEPTION_DETECT_FPS: '8' };
+    const mgr = createPerceptionManager({ previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend', env, getFleetImpl: async () => fleet });
+    await mgr.start('key1', CAMERA);
+    const { perception } = fleet.submitted[0].spec;
+    assert.equal(perception.streamUrl, 'rtsp://mediamtx:8554/feed-abc');
+    assert.equal(perception.detectFps, 8);
+    assert.equal(perception.emitIntervalMs, 200);
+    assert.equal(perception.frameUrl, 'http://backend/preview/feed-abc/incoming');
+  });
+
+  it('the shared-feed job reads the project stream', async () => {
+    const fleet = fakeFleet();
+    const env = { ...base, PERCEPTION_STREAM_BASE_URL: 'rtsp://mediamtx:8554' };
+    const mgr = createPerceptionManager({ previewBaseUrl: 'http://backend', callbackBaseUrl: 'http://backend', env, getFleetImpl: async () => fleet });
+    await mgr.startSharedFeed('key1');
+    assert.equal(fleet.submitted[0].spec.perception.streamUrl, 'rtsp://mediamtx:8554/key1');
+  });
+});
