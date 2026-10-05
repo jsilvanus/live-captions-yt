@@ -22,7 +22,7 @@ test('a perception job polls the frame url, posts detections to the callback and
   try {
     const job = await fleet.submit({
       id: 'perception-test', kind: 'stream', type: 'perception',
-      perception: { cameraId: 'cam-1', apiKey: 'key1', feedKind: 'dedicated', frameUrl: `${base}/frame`, callbackUrl: `${base}/ingest`, internalToken: 'tok', emitIntervalMs: 200 },
+      perception: { backend: 'stub', cameraId: 'cam-1', apiKey: 'key1', feedKind: 'dedicated', frameUrl: `${base}/frame`, callbackUrl: `${base}/ingest`, internalToken: 'tok', emitIntervalMs: 200 },
     });
     for (let i = 0; i < 100 && posts.length === 0; i++) await new Promise((r) => setTimeout(r, 50));
     assert.ok(posts.length > 0, 'a detection was posted');
@@ -39,7 +39,24 @@ test('a perception job polls the frame url, posts detections to the callback and
 
 test('a perception job without a frame url fails', async () => {
   const fleet = createFleet({ local: { executors: { [executor.type]: executor.run } } });
-  const job = await fleet.submit({ id: 'perception-bad', kind: 'stream', type: 'perception', perception: {} });
+  const job = await fleet.submit({ id: 'perception-bad', kind: 'stream', type: 'perception', perception: { backend: 'stub' } });
   assert.equal((await job.done).state, 'failed');
   await fleet.close();
+});
+
+test('a perception job with the default (onnx) backend and no model fails with a readable error instead of reporting fake people', async () => {
+  const saved = { backend: process.env.PERCEPTION_BACKEND, model: process.env.PERCEPTION_MODEL_PATH };
+  delete process.env.PERCEPTION_BACKEND;
+  delete process.env.PERCEPTION_MODEL_PATH;
+  const fleet = createFleet({ local: { executors: { [executor.type]: executor.run } } });
+  try {
+    const job = await fleet.submit({ id: 'perception-nomodel', kind: 'stream', type: 'perception', perception: { cameraId: 'cam-1', apiKey: 'k', frameUrl: 'http://127.0.0.1:1/frame' } });
+    const result = await job.done;
+    assert.equal(result.state, 'failed');
+    assert.match(String(result.error?.message ?? result.error ?? JSON.stringify(result)), /PERCEPTION_MODEL_PATH/);
+  } finally {
+    await fleet.close();
+    if (saved.backend !== undefined) process.env.PERCEPTION_BACKEND = saved.backend;
+    if (saved.model !== undefined) process.env.PERCEPTION_MODEL_PATH = saved.model;
+  }
 });

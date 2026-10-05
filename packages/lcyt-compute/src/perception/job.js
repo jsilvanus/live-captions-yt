@@ -1,6 +1,6 @@
 /**
  * Wires the perception runner into one job (run by the worker daemon and by an fffleet worker):
- * poll the camera's frame source, run the stub detector, POST each
+ * poll the camera's frame source, run the detector, POST each
  * detection back to the caller-supplied callback URL (plan_video_perception.md
  * Phase 2 Stream B).
  */
@@ -12,12 +12,12 @@ import { createPerceptionRunner } from './runner.js';
 /**
  * @param {{ cameraId: string, apiKey: string, frameUrl: string, callbackUrl?: string, internalToken?: string, emitIntervalMs?: number }} plan
  * @param {string} jobId
- * @param {{ fetchImpl?: typeof fetch, onJobError?: (kind: 'detect'|'callback', err: Error|{message:string}) => void }} [opts]
+ * @param {{ fetchImpl?: typeof fetch, onJobError?: (kind: 'detect'|'callback', err: Error|{message:string}) => void, backend?: { detect: Function }, frameSource?: { getFrame: Function, close?: Function } }} [opts]
+ *   `backend` defaults to the stub and `frameSource` to the snapshot poll of `plan.frameUrl`, which keeps the legacy
+ *   worker daemon path unchanged; the fffleet executor passes the real detector and the stream source.
  * @returns {{ start: () => void, stop: () => void }}
  */
-export function createPerceptionJob(plan, jobId, { fetchImpl = fetch, onJobError } = {}) {
-  const frameSource = createHttpFrameSource(plan.frameUrl, { fetchImpl });
-  const backend = createStubDetector();
+export function createPerceptionJob(plan, jobId, { fetchImpl = fetch, onJobError, backend = createStubDetector(), frameSource = createHttpFrameSource(plan.frameUrl, { fetchImpl }) } = {}) {
 
   async function postDetection(detection) {
     if (!plan.callbackUrl) return;

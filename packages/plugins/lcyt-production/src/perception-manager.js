@@ -74,6 +74,13 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     return fetchImpl(`${workerDaemonUrl}${path}`, { method: 'DELETE', headers: _headers(workerToken, 'X-Worker-Auth') });
   }
 
+  // PERCEPTION_STREAM_BASE_URL: where a perception worker can read the media server's streams (e.g.
+  // rtsp://mediamtx:8554). Unset = snapshot polling only. A remote worker must be able to reach it.
+  const streamBase = env.PERCEPTION_STREAM_BASE_URL ? env.PERCEPTION_STREAM_BASE_URL.replace(/\/$/, '') : null;
+  function _streamUrl(key) {
+    return streamBase ? `${streamBase}/${encodeURIComponent(key)}` : null;
+  }
+
   function _sharedKey(apiKey) {
     return `shared:${apiKey}`;
   }
@@ -83,7 +90,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
    * `key`. Both start() and startSharedFeed() reduce to this once they've
    * built their own `frameUrl`/`cameraId`.
    */
-  async function _dispatch(key, apiKey, cameraId, frameUrl, emitIntervalMs, feedKind) {
+  async function _dispatch(key, apiKey, cameraId, frameUrl, emitIntervalMs, feedKind, streamUrl = null) {
     // Idempotency guard (code-review fix): without this, a retried start
     // request (client timeout, double form-submit) would dispatch a second
     // job and overwrite the first job's tracked id in `running` — the first
@@ -106,9 +113,12 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
       cameraId,
       feedKind,
       frameUrl,
+      // With a stream url the job decodes the stream itself (about 5 frames/s) instead of polling the snapshot.
+      streamUrl: streamUrl || undefined,
+      detectFps: streamUrl && env.PERCEPTION_DETECT_FPS ? Number(env.PERCEPTION_DETECT_FPS) : undefined,
       callbackUrl: `${callbackBaseUrl}/production/perception/ingest`,
       internalToken: workerToken || undefined,
-      emitIntervalMs: emitIntervalMs || 1000,
+      emitIntervalMs: emitIntervalMs || (streamUrl ? 200 : 1000),
     };
 
     if (fleetUrl) {
@@ -181,7 +191,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     }
     const cameraId = String(camera.id);
     const frameUrl = `${previewBaseUrl}/preview/${encodeURIComponent(camera.cameraKey)}/incoming`;
-    return _dispatch(cameraId, apiKey, cameraId, frameUrl, emitIntervalMs, 'dedicated');
+    return _dispatch(cameraId, apiKey, cameraId, frameUrl, emitIntervalMs, 'dedicated', _streamUrl(camera.cameraKey));
   }
 
   /**
@@ -204,7 +214,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
    */
   async function startSharedFeed(apiKey, { emitIntervalMs } = {}) {
     const frameUrl = `${previewBaseUrl}/preview/${encodeURIComponent(apiKey)}/incoming`;
-    return _dispatch(_sharedKey(apiKey), apiKey, null, frameUrl, emitIntervalMs, 'shared');
+    return _dispatch(_sharedKey(apiKey), apiKey, null, frameUrl, emitIntervalMs, 'shared', _streamUrl(apiKey));
   }
 
   async function stopSharedFeed(apiKey) {

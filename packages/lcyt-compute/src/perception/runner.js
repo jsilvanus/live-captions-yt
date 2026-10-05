@@ -25,7 +25,7 @@
 
 /**
  * @param {string} cameraId
- * @param {{ getFrame: () => Promise<Buffer|null> }} frameSource
+ * @param {{ getFrame: () => Promise<any>, close?: () => void }} frameSource  a frame is whatever the backend accepts (a JPEG Buffer or a decoded frame object); an object frame may carry `capturedAt`
  * @param {{
  *   emitIntervalMs?: number,
  *   backend: { detect: (frame: Buffer|null) => Promise<{ objects: object[], framing: object|null }> },
@@ -42,15 +42,22 @@ export function createPerceptionRunner(cameraId, frameSource, config = {}) {
 
   let timer = null;
   let stopped = true;
+  let seq = 0;
 
   async function tick() {
     if (stopped) return;
     try {
       const frame = await frameSource.getFrame();
+      const capturedAt = (frame && frame.capturedAt) || Date.now();
       const result = await backend.detect(frame);
+      const ts = Date.now();
+      // capturedAt is when the frame was grabbed, latencyMs how old it was when the result was ready.
       onDetection({
         cameraId,
-        ts: Date.now(),
+        ts,
+        seq: ++seq,
+        capturedAt,
+        latencyMs: ts - capturedAt,
         objects: result.objects || [],
         framing: result.framing || null,
         visible: !!frame,
@@ -72,6 +79,7 @@ export function createPerceptionRunner(cameraId, frameSource, config = {}) {
       stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;
+      frameSource.close?.();
     },
   };
 }

@@ -29,5 +29,8 @@
   },
   "dependencies": {
     "fffleet": "^2.0.0"
+  },
+  "optionalDependencies": {
+    "onnxruntime-node": "^1.30.0"
   }
 }
