@@ -138,8 +138,8 @@ name=my-api-key
 ```
 
 **Behavior:**
-- `publish` — starts an ffmpeg process that transcodes the incoming RTMP stream to HLS under `$HLS_ROOT/<key>/`. Returns `403` if `hls_enabled` is not set for the key.
-- `publish_done` — stops the ffmpeg HLS process for the key.
+- `publish` — registers the stream's path in MediaMTX, which produces the HLS that `/stream-hls/:key/*` proxies. Returns `403` if `hls_enabled` is not set for the key.
+- `publish_done` — marks the stream's HLS as stopped.
 
 All nginx callbacks return plain text `ok` on success, or an error message with the appropriate HTTP status.
 
@@ -167,5 +167,4 @@ application hls {
 
 | Variable | Default | Description |
 |---|---|---|
-| `HLS_ROOT` | `/data/hls` | Directory where HLS playlists and segments are written. Each key gets its own subdirectory. |
 | `BACKEND_URL` | _(derived from request)_ | Used to build absolute URLs in `player.js`. Set this when the backend is behind a reverse proxy. |
