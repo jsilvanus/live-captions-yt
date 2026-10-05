@@ -650,3 +650,17 @@ doesn't support the concept at all.
 (Found during: `/code-review` pass on `plan_video_perception.md` Phases 2-3, 2026-07-21 — reuse angle.)
 
 **Resolved 2026-10-05:** two of the three copies (the worker runner and the worker daemon) were deleted when `lcyt-orchestrator` and `lcyt-worker-daemon` were retired; perception dispatch is now only the fffleet path in `perception-manager.js`.
+
+## Asset Control Assistant's tools have no dialog to drive on the Assets page
+
+**Where:** `packages/lcyt-web/src/components/AssetsPage.jsx`, `packages/lcyt-tools/src/tools/assets.js`, `docs/plans/plan_ai_roles_framework.md`
+
+**Finding:** `plan_ai_roles_framework.md` describes Asset Control Assistant as "the same dialog-driving pattern as Setup Assistant... scoped to the Assets page's tools" — but its actual tools (`asset.update`/`asset.delete`, `packages/lcyt-tools/src/tools/assets.js`) operate on `lcyt-dsk`'s image-layer asset library (`listImages`/`updateImageSettings`/`deleteImage`), which is rendered as the Media Library inside `DskEditorPage.jsx`, not as any card on `AssetsPage.jsx` — `AssetsPage.jsx`'s 8 cards are graphics templates, cue rules, actions, icons, caption files, broadcasts, thumbnails, and videos, none of which correspond to `asset.*`'s target rows. So mounting `RoleAssistantPanel` (this pass's new `useGuidedAction`-driven chat panel) on `AssetsPage.jsx`, per the plan's stated scope, means its `pendingActions` never resolve to a real dialog — they render as plain "no interactive dialog is wired up for this yet" chat text (see `RoleAssistantPanel.jsx`'s fallback path) rather than opening/pre-filling a form.
+
+**Skipped because:** fixing it for real means either (a) registering guided-action targets for `asset.update`/`asset.delete` inside `DskEditorPage.jsx`'s Media Library instead, which puts the chat panel on the wrong page relative to where its tools' dialogs actually live, or (b) building an image-asset management section on `AssetsPage.jsx` itself that doesn't exist today — both are a real, separate scope decision (which page should own DSK image assets), not something to resolve as a side effect of wiring up the chat panel this pass was scoped to add. The chat panel and its useful non-dialog capabilities (`asset.list` reads, proposing changes with a plain-text description) still work; only the "walk the human through the real form" behavior is unavailable for this one role.
+
+(Found during: Lane 4 — Setup Assistant / Asset Control Assistant frontend, plan_ai_roles_framework.md's remaining Tier 1 item, 2026-07-21.)
+
+---
+
+**Resolved:** option (b): `AssetsPage.jsx` has an Images card (Edit/Delete) and `components/assets/useImageAssets.jsx` registers the `asset.update`/`asset.delete` guided-action dialogs.
