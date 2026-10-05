@@ -414,7 +414,7 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
    exists to follow. Logged in `CONSIDER.md` rather than forced.
 5. **Ops & polish** ✅ (implemented 2026-07-20) — `docker/lcyt-ffmpeg/Dockerfile`
    rebuilt as a multi-stage image that compiles ffmpeg from source with
-   `--enable-gpl --enable-libx264 --enable-libzmq` (neither Debian's nor
+   `--enable-gpl --enable-libx264 --enable-libzmq` (libzmq was dropped again in 2026-10, see the Addendum; neither Debian's nor
    Ubuntu's official `ffmpeg` apt packages are built with libzmq — installing
    just the `libzmq3-dev` *library* alongside the old apt-installed binary,
    as an earlier revision of this section suggested, would not have added

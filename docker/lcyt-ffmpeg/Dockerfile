@@ -2,20 +2,11 @@
 # ffmpeg runner image used by the lcyt backend when `FFMPEG_RUNNER=docker` is
 # set.
 #
-# Built from source (rather than the distro `ffmpeg` package) so the binary
-# includes the `zmq` filter (--enable-libzmq) — required for live, gapless
-# vertical-crop repositioning (docs/plans/plan_vertical_crop.md, Phase 5).
-# Neither Debian's nor Ubuntu's official `ffmpeg` apt packages are built with
-# libzmq (verified against packages.debian.org/packages.ubuntu.com — neither
-# lists libzmq5 as a runtime dependency), so simply installing the
-# `libzmq3-dev` runtime/dev library alongside the distro ffmpeg binary — as
-# an earlier revision of the plan suggested — does NOT add the filter: the
-# zmq graph node has to be compiled into ffmpeg's own libavfilter, which only
-# happens with a `--enable-libzmq` build. Without it, CropManager
-# (packages/plugins/lcyt-rtmp/src/crop-manager.js) correctly detects the
-# missing filter via probeFfmpeg()'s `hasZmq` check and falls back to
-# restart-mode repositioning (a visible splice on every position change)
-# instead of failing — but this image should give `repositionMode: 'live'`.
+# Built from source (rather than the distro `ffmpeg` package) to pin the ffmpeg
+# version and a small, known feature set (libx264 + ffmpeg's native filters).
+# Live crop repositioning no longer needs a special build: CropManager sends
+# `Ccrop@vcrop -1 x <px>` to ffmpeg's stdin (docs/plans/plan_vertical_crop.md,
+# "Addendum 2026-10"), which works on any ffmpeg. libzmq was dropped.
 #
 # Multi-stage: the builder stage compiles ffmpeg; the final stage only ships
 # the runtime shared libraries + the built binaries, keeping the image small.
@@ -30,7 +21,7 @@ RUN set -eux \
   && apt-get install -y --no-install-recommends \
        build-essential pkg-config yasm nasm \
        ca-certificates curl xz-utils \
-       libzmq3-dev libx264-dev \
+       libx264-dev \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src
@@ -44,7 +35,6 @@ WORKDIR /usr/src/ffmpeg-${FFMPEG_VERSION}
 #   apt-installed build provided (libx264 has shipped in Debian's "main"
 #   component, not just contrib/non-free, since patents on the format
 #   expired), so this is capability parity, not an addition.
-# --enable-libzmq: the `zmq` filter — see header comment above.
 # Everything else is left at ffmpeg's own defaults: the native muxers/
 #   demuxers/encoders this backend also probes for (probeFfmpeg()'s
 #   hasEia608/hasSubrip checks) are built in without any extra --enable flag,
@@ -61,7 +51,6 @@ RUN ./configure \
       --disable-debug \
       --enable-gpl \
       --enable-libx264 \
-      --enable-libzmq \
   && make -j"$(nproc)" \
   && make install \
   && ldconfig
@@ -77,7 +66,6 @@ RUN set -eux \
        ca-certificates \
        dumb-init \
        procps \
-       libzmq5 \
        libx264-164 \
   && rm -rf /var/lib/apt/lists/*
 
@@ -93,8 +81,8 @@ CMD ["ffmpeg", "-version"]
 
 # Build (local dev):
 #   docker build -t lcyt-ffmpeg:local ./docker/lcyt-ffmpeg
-# Verify the zmq filter compiled in (should print a line containing " zmq "):
-#   docker run --rm lcyt-ffmpeg:local ffmpeg -hide_banner -filters | grep zmq
+# Verify libx264 is compiled in (should print a line containing "libx264"):
+#   docker run --rm lcyt-ffmpeg:local ffmpeg -hide_banner -encoders | grep libx264
 # Example registry tag & push:
 #   docker tag lcyt-ffmpeg:local registry.example.com/org/lcyt-ffmpeg:1.0.0
 #   docker push registry.example.com/org/lcyt-ffmpeg:1.0.0
