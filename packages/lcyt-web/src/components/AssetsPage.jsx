@@ -11,6 +11,7 @@ import { SetupCard, SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { CATEGORY_COLORS } from './setup-hub/icons.jsx';
 import { GuidedActionProvider } from '../hooks/useGuidedAction.jsx';
 import { RoleAssistantPanel } from './agent/RoleAssistantPanel.jsx';
+import { useImageAssets } from './assets/useImageAssets.jsx';
 
 const FILTERS = [
   { id: 'all', label: 'All' },
@@ -127,7 +128,7 @@ function formatBytes(bytes) {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-export function AssetsPage() {
+function AssetsPageInner() {
   useProjectRequired();
   const session = useSessionContext();
   const connected = session?.connected;
@@ -147,6 +148,11 @@ export function AssetsPage() {
   const [errors, setErrors] = useState({});
 
   const token = session?.getSessionToken?.() ?? null;
+  const imageAssets = useImageAssets({
+    backendUrl,
+    connected,
+    headers: token ? { Authorization: `Bearer ${token}` } : apiKey ? { 'X-API-Key': apiKey } : {},
+  });
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) {
@@ -346,6 +352,38 @@ export function AssetsPage() {
       )),
     },
     {
+      key: 'images',
+      section: 'reusable',
+      title: 'Images',
+      description: 'Image-layer assets used by DSK overlays.',
+      icon: styledIcon(IconsCardIcon, 'teal'),
+      color: 'teal',
+      status: connected ? (imageAssets.loading ? 'partial' : 'ready') : 'partial',
+      statusLabel: connected ? (imageAssets.loading ? 'Loading…' : `${imageAssets.images.length} image${imageAssets.images.length === 1 ? '' : 's'}`) : 'Connect',
+      body: !connected ? (
+        <p className="setup-card__empty">Connect to a project to manage images.</p>
+      ) : imageAssets.error ? (
+        <p className="setup-card__empty">{imageAssets.error}</p>
+      ) : imageAssets.loading ? (
+        <p className="setup-card__empty">Loading…</p>
+      ) : imageAssets.images.length === 0 ? (
+        <p className="setup-card__empty">No images uploaded yet.</p>
+      ) : imageAssets.images.map(image => (
+        <SetupItemRow
+          key={image.id}
+          name={image.shorthand || image.filename}
+          meta={image.mimeType || 'image'}
+          badge={formatBytes(image.sizeBytes)}
+          extra={(
+            <span>
+              <button type="button" onClick={() => imageAssets.openEdit(image.id)}>Edit</button>{' '}
+              <button type="button" onClick={() => imageAssets.openDelete(image.id)}>Delete</button>
+            </span>
+          )}
+        />
+      )),
+    },
+    {
       key: 'icons',
       section: 'reusable',
       title: 'Icons',
@@ -496,7 +534,6 @@ export function AssetsPage() {
   ].filter(card => filter === 'all' || card.section === filter);
 
   return (
-    <GuidedActionProvider>
       <div className="setup-hub-page-layout">
         <div className="setup-hub-page">
           <div className="setup-hub-page__header">
@@ -545,16 +582,22 @@ export function AssetsPage() {
         </div>
 
         {/* Asset Control Assistant (plan_ai_roles_framework.md). Its tools
-            (asset.update/delete) operate on lcyt-dsk's image-layer asset
-            library, which this page doesn't render a dialog for today (see
-            CONSIDER.md) — proposed actions surface as plain chat text rather
-            than a driven dialog until that gap is closed. */}
+            (asset.update/delete) are driven through the Images card's edit
+            and delete dialogs (useImageAssets). */}
         <RoleAssistantPanel
           roleCode="asset_control_assistant"
           title="Asset Control Assistant"
           subtitle="Ask about or manage the image assets used by DSK overlays."
         />
+        {imageAssets.dialogs}
       </div>
+  );
+}
+
+export function AssetsPage() {
+  return (
+    <GuidedActionProvider>
+      <AssetsPageInner />
     </GuidedActionProvider>
   );
 }
