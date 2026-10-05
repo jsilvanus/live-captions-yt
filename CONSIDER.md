@@ -632,11 +632,3 @@ addition to the role-picker card.
 The ~120 ms (4 frame) stdin-command delay was measured on a local `-re` lavfi source with the `spawn` runner. A live RTSP input has its own jitter buffer, so the real delay will be larger and is not measured. The fleet path (`FleetFfmpegRunner.stdin` -> `job.write`) relies on the fffleet worker leaving ffmpeg's stdin open for `kind: 'stream'` jobs without `-nostdin`; not exercised here. `DockerFfmpegRunner` starts the container with stdin ignored, so docker is restart-only (could be done with `docker run -i` + piping `proc.stdin` instead of host stdin).
 
 Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpRelayManager.writeCaption()` (CEA-708 stdin path, `proc.stdin`) only works through the fleet runner or `spawnFfmpeg`; `test/rtmp-manager.unit.test.js` asserts that. Adding a `stdin` getter to the local runner would silently change that path, so the crop manager reads `handle.proc.stdin` instead.
-
----
-
-## `HLS_ROOT` / `bootstrap.hls_root` is now unused
-
-**Where:** `packages/lcyt-backend/src/settings/registry.js` (`bootstrap.hls_root`), and the `HLS_ROOT` rows in `packages/lcyt-backend/CLAUDE.md`, `packages/plugins/lcyt-rtmp/README.md`, `docs/DEPLOY.md`, `docs/api/README.md`, `docs/env-vars.md`, `docs/plans/plan_rtmp.md`.
-
-`HlsManager` no longer has an ffmpeg re-mux or a segment directory (the code path was never reachable in production because `initRtmpControl` never passed `localRtmp`), and nothing else reads `HLS_ROOT`. The setting and its documentation rows are left in place in this change because removing a registry key touches the settings UI, its tests and six docs; it deserves its own small PR. `RADIO_HLS_ROOT` is a separate setting and was not examined here.

@@ -188,7 +188,6 @@ Useful for embedding a stream preview on a website or dashboard.
 
 | Variable         | Default                           | Purpose                              |
 |------------------|-----------------------------------|--------------------------------------|
-| `HLS_ROOT`       | `/tmp/hls-video`                  | HLS segment output directory         |
 | `HLS_LOCAL_RTMP` | `RADIO_LOCAL_RTMP` or `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL |
 | `HLS_RTMP_APP`   | `RTMP_APPLICATION` or `live`      | nginx-rtmp application name          |
 
