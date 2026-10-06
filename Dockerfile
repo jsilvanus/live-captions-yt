@@ -7,6 +7,7 @@ COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
 COPY packages/lcyt-mcp-http/package.json packages/lcyt-mcp-http/
 COPY packages/lcyt-tools/package.json packages/lcyt-tools/
+COPY packages/lcyt-compute/package.json packages/lcyt-compute/
 COPY packages/plugins/lcyt-production/package.json packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/package.json packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/package.json packages/plugins/lcyt-rtmp/
@@ -16,6 +17,7 @@ COPY packages/plugins/lcyt-agent/package.json packages/plugins/lcyt-agent/
 COPY packages/plugins/lcyt-connectors/package.json packages/plugins/lcyt-connectors/
 COPY packages/plugins/lcyt-music/package.json packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/package.json packages/plugins/lcyt-actions/
+COPY packages/plugins/lcyt-platforms/package.json packages/plugins/lcyt-platforms/
 
 # Install workspace dependencies.
 RUN npm ci \
@@ -26,6 +28,13 @@ RUN npm ci \
   --workspace=packages/plugins/lcyt-dsk \
   --workspace=packages/plugins/lcyt-rtmp \
   --workspace=packages/plugins/lcyt-files \
+  --workspace=packages/lcyt-tools \
+  --workspace=packages/lcyt-compute \
+  --workspace=packages/plugins/lcyt-cues \
+  --workspace=packages/plugins/lcyt-agent \
+  --workspace=packages/plugins/lcyt-connectors \
+  --workspace=packages/plugins/lcyt-music \
+  --workspace=packages/plugins/lcyt-platforms \
   --workspace=packages/plugins/lcyt-actions
 
 # Copy source
@@ -33,6 +42,7 @@ COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
 COPY packages/lcyt-mcp-http/src/ packages/lcyt-mcp-http/src/
 COPY packages/lcyt-tools/ packages/lcyt-tools/
+COPY packages/lcyt-compute/ packages/lcyt-compute/
 COPY packages/plugins/lcyt-production/ packages/plugins/lcyt-production/
 COPY packages/plugins/lcyt-dsk/ packages/plugins/lcyt-dsk/
 COPY packages/plugins/lcyt-rtmp/ packages/plugins/lcyt-rtmp/
@@ -42,6 +52,7 @@ COPY packages/plugins/lcyt-agent/ packages/plugins/lcyt-agent/
 COPY packages/plugins/lcyt-connectors/ packages/plugins/lcyt-connectors/
 COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/ packages/plugins/lcyt-actions/
+COPY packages/plugins/lcyt-platforms/ packages/plugins/lcyt-platforms/
 
 FROM node:20-slim
 WORKDIR /app
