@@ -3,82 +3,86 @@ import { reassignOrDeleteOwnedOrgs } from './orgs.js';
 
 /**
  * User CRUD operations for the `users` table.
+ * Migrated to Prisma ORM - works with both SQLite and PostgreSQL.
  * Used when USE_USER_LOGINS=1 (default).
  */
 
 /**
  * Create a new user account.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {{ email: string, passwordHash: string, name?: string }} opts
  * @returns {{ id: number, email: string, name: string|null }}
  */
 export function createUser(db, { email, passwordHash, name = null }) {
-  const stmt = db.prepare(
-    'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)'
+  const result = db.run(
+    'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)',
+    [email.toLowerCase().trim(), passwordHash, name || null]
   );
-  const result = stmt.run(email.toLowerCase().trim(), passwordHash, name || null);
   return { id: result.lastInsertRowid, email: email.toLowerCase().trim(), name: name || null };
 }
 
 /**
  * Fetch a user by email (includes password_hash for verification).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {string} email
  * @returns {object|undefined}
  */
 export function getUserByEmail(db, email) {
-  return db.prepare('SELECT * FROM users WHERE email = ? AND active = 1').get(
-    email.toLowerCase().trim()
+  return db.get(
+    'SELECT * FROM users WHERE email = ? AND active = 1',
+    [email.toLowerCase().trim()]
   );
 }
 
 /**
  * Fetch a user by ID (excludes password_hash).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} id
  * @returns {{ id: number, email: string, name: string|null, created_at: string, active: number, is_admin: number, admin_role: string }|undefined}
  */
 export function getUserById(db, id) {
-  return db.prepare(
-    'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users WHERE id = ?'
-  ).get(id);
+  return db.get(
+    'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users WHERE id = ?',
+    [id]
+  );
 }
 
 /**
  * Update a user's password hash.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} id
  * @param {string} passwordHash
  */
 export function updateUserPassword(db, id, passwordHash) {
-  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+  db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
 }
 
 /**
  * Get all API keys belonging to a user.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} userId
  * @returns {object[]}
  */
 export function getKeysByUserId(db, userId) {
-  return db.prepare(
-    'SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC'
-  ).all(userId);
+  return db.all(
+    'SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC',
+    [userId]
+  );
 }
 
 /**
  * Grant or revoke admin rights for a user.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} userId
  * @param {boolean} isAdmin
  */
 export function setUserAdmin(db, userId, isAdmin) {
-  db.prepare('UPDATE users SET is_admin = ? WHERE id = ?').run(isAdmin ? 1 : 0, userId);
+  db.run('UPDATE users SET is_admin = ? WHERE id = ?', [isAdmin ? 1 : 0, userId]);
 }
 
 /**
  * Set the admin role for a user (when is_admin = 1).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} userId
  * @param {string} role - 'full' or 'readonly'
  */
@@ -87,23 +91,23 @@ export function setUserAdminRole(db, userId, role) {
   if (!validRoles.includes(role)) {
     throw new Error(`Invalid admin_role: ${role}. Must be one of: ${validRoles.join(', ')}`);
   }
-  db.prepare('UPDATE users SET admin_role = ? WHERE id = ?').run(role, userId);
+  db.run('UPDATE users SET admin_role = ? WHERE id = ?', [role, userId]);
 }
 
 /**
  * List all users (excludes password_hash).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @returns {object[]}
  */
 export function getAllUsers(db) {
-  return db.prepare(
+  return db.all(
     'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users ORDER BY id'
-  ).all();
+  );
 }
 
 /**
  * Update user fields (name, active).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} userId
  * @param {{ name?: string|null, active?: boolean }} updates
  */
@@ -114,7 +118,7 @@ export function updateUser(db, userId, updates) {
   if ('active' in updates) { parts.push('active = ?'); params.push(updates.active ? 1 : 0); }
   if (parts.length === 0) return;
   params.push(userId);
-  db.prepare(`UPDATE users SET ${parts.join(', ')} WHERE id = ?`).run(...params);
+  db.run(`UPDATE users SET ${parts.join(', ')} WHERE id = ?`, params);
 }
 
 const PROJECT_ROLE_RANK = { owner: 5, admin: 4, editor: 3, operator: 2, viewer: 1 };
@@ -136,7 +140,7 @@ export function getUserAccountExport(db, userId) {
   const user = getUserById(db, userId);
   if (!user) return null;
 
-  const projectRows = db.prepare(`
+  const projectRows = db.all(`
     SELECT
       ak.key,
       ak.owner,
@@ -155,7 +159,7 @@ export function getUserAccountExport(db, userId) {
           SELECT 1 FROM org_members om WHERE om.org_id = ak.org_id AND om.user_id = ?
        )
     ORDER BY ak.created_at DESC
-  `).all(userId, userId, userId, userId, userId);
+  `, [userId, userId, userId, userId, userId]);
 
   const projects = projectRows.map((row) => {
     const explicitRole = normalizeProjectRole(row.explicit_access_level);
@@ -163,9 +167,10 @@ export function getUserAccountExport(db, userId) {
     const effectiveRole = pickHigherRole(explicitRole, orgRole);
     const effectiveAccessLevel = effectiveRole || (row.user_id === userId ? 'owner' : 'viewer');
 
-    const featureRows = db.prepare(
-      'SELECT feature_code FROM project_features WHERE api_key = ? AND enabled = 1 ORDER BY feature_code'
-    ).all(row.key);
+    const featureRows = db.all(
+      'SELECT feature_code FROM project_features WHERE api_key = ? AND enabled = 1 ORDER BY feature_code',
+      [row.key]
+    );
 
     return {
       key: row.key,
@@ -177,13 +182,13 @@ export function getUserAccountExport(db, userId) {
     };
   });
 
-  const orgRows = db.prepare(`
+  const orgRows = db.all(`
     SELECT o.id, o.name, o.slug, om.role, om.joined_at
     FROM org_members om
     JOIN organizations o ON o.id = om.org_id
     WHERE om.user_id = ?
     ORDER BY om.joined_at ASC
-  `).all(userId);
+  `, [userId]);
 
   return {
     user: {
@@ -204,25 +209,27 @@ export function getUserAccountExport(db, userId) {
 }
 
 export function deleteOwnedProjectsForUser(db, userId) {
-  const ownedKeyRows = db.prepare(
-    'SELECT key FROM api_keys WHERE user_id = ? ORDER BY created_at DESC'
-  ).all(userId);
-  const explicitOwnerRows = db.prepare(
-    "SELECT api_key FROM project_members WHERE user_id = ? AND access_level = 'owner'"
-  ).all(userId);
+  const ownedKeyRows = db.all(
+    'SELECT key FROM api_keys WHERE user_id = ? ORDER BY created_at DESC',
+    [userId]
+  );
+  const explicitOwnerRows = db.all(
+    "SELECT api_key FROM project_members WHERE user_id = ? AND access_level = 'owner'",
+    [userId]
+  );
 
   const keys = [...new Set([...ownedKeyRows.map(row => row.key), ...explicitOwnerRows.map(row => row.api_key)])];
 
   for (const key of keys) {
-    const existing = db.prepare('SELECT key FROM api_keys WHERE key = ?').get(key);
+    const existing = db.get('SELECT key FROM api_keys WHERE key = ?', [key]);
     if (!existing) continue;
     anonymizeKey(db, key);
-    db.prepare('DELETE FROM project_features WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM project_member_permissions WHERE member_id IN (SELECT id FROM project_members WHERE api_key = ?)').run(key);
-    db.prepare('DELETE FROM project_members WHERE api_key = ?').run(key);
+    db.run('DELETE FROM project_features WHERE api_key = ?', [key]);
+    db.run('DELETE FROM project_member_permissions WHERE member_id IN (SELECT id FROM project_members WHERE api_key = ?)', [key]);
+    db.run('DELETE FROM project_members WHERE api_key = ?', [key]);
     deleteKey(db, key);
   }
-  db.prepare('DELETE FROM project_members WHERE user_id = ?').run(userId);
+  db.run('DELETE FROM project_members WHERE user_id = ?', [userId]);
   return keys.length;
 }
 
@@ -236,16 +243,16 @@ export function deleteOwnedProjectsForUser(db, userId) {
  * (deleteOwnedProjectsForUser deletes those keys outright; the admin route
  * SETs it NULL to keep the project alive) and `organizations.owner_user_id`
  * is NOT NULL, so it's resolved separately via `reassignOrDeleteOwnedOrgs`.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} userId
  */
 export function clearUserReferences(db, userId) {
-  db.prepare('UPDATE org_members SET invited_by = NULL WHERE invited_by = ?').run(userId);
-  db.prepare('UPDATE project_members SET invited_by = NULL WHERE invited_by = ?').run(userId);
-  db.prepare('UPDATE project_features SET granted_by = NULL WHERE granted_by = ?').run(userId);
-  db.prepare('UPDATE user_features SET granted_by = NULL WHERE granted_by = ?').run(userId);
-  db.prepare('UPDATE site_feature_policies SET updated_by = NULL WHERE updated_by = ?').run(userId);
-  db.prepare('UPDATE org_feature_overrides SET set_by = NULL WHERE set_by = ?').run(userId);
+  db.run('UPDATE org_members SET invited_by = NULL WHERE invited_by = ?', [userId]);
+  db.run('UPDATE project_members SET invited_by = NULL WHERE invited_by = ?', [userId]);
+  db.run('UPDATE project_features SET granted_by = NULL WHERE granted_by = ?', [userId]);
+  db.run('UPDATE user_features SET granted_by = NULL WHERE granted_by = ?', [userId]);
+  db.run('UPDATE site_feature_policies SET updated_by = NULL WHERE updated_by = ?', [userId]);
+  db.run('UPDATE org_feature_overrides SET set_by = NULL WHERE set_by = ?', [userId]);
 }
 
 /**
@@ -257,7 +264,7 @@ export function clearUserReferences(db, userId) {
  * row. Order matters under live FK enforcement: organizations.owner_user_id
  * (NOT NULL, no ON DELETE action) must be resolved before `DELETE FROM users`
  * or the delete throws SQLITE_CONSTRAINT_FOREIGNKEY.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db-factory.js').DbClient} db
  * @param {number} userId
  */
 export function deleteUserAccount(db, userId) {
@@ -265,8 +272,8 @@ export function deleteUserAccount(db, userId) {
     deleteOwnedProjectsForUser(db, userId);
     reassignOrDeleteOwnedOrgs(db, userId);
     clearUserReferences(db, userId);
-    db.prepare('DELETE FROM org_members WHERE user_id = ?').run(userId);
-    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    db.run('DELETE FROM org_members WHERE user_id = ?', [userId]);
+    db.run('DELETE FROM users WHERE id = ?', [userId]);
   });
   tx();
   return true;

@@ -57,7 +57,7 @@
   },
   "homepage": "https://github.com/jsilvanus/live-captions-yt#readme",
   "devDependencies": {
-    "@prisma/client": "^7.10.0",
-    "prisma": "^8.0.0-rc.20"
+    "@prisma/client": "^5.17.0",
+    "prisma": "^5.17.0"
   }
 }

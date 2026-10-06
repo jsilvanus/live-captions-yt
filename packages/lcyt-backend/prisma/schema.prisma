@@ -43,8 +43,8 @@ model User {
   projectFeatures  ProjectFeature[]
   userFeatures     UserFeature[]
   invitedProjectMembers ProjectMember[] @relation("InvitedBy")
-  projectMemberPermissions ProjectMemberPermission[]
   auditLogs        AuditLog[]
+  grantedUserFeatures UserFeature[] @relation("GrantedBy")
   serverSettings   ServerSettings[]
 
   @@map("users")
@@ -67,6 +67,7 @@ model Organization {
   members           OrgMember[]
   featureOverrides  OrgFeatureOverride[]
   apiKeys           ApiKey[]
+  auditLogs         AuditLog[]
 
   @@map("organizations")
 }
@@ -633,7 +634,9 @@ model ServerSettings {
   key        String  @id
   value      String
   updatedAt  String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedBy  String?
+  updatedBy  Int?
+
+  user       User?   @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
 
   @@map("server_settings")
 }
