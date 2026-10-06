@@ -67,8 +67,8 @@ FROM node:22-slim
 WORKDIR /app
 COPY --from=build /app .
 
-# Copy built frontend bundle to /srv/web for serving
-COPY --from=build /app/packages/lcyt-web/dist /srv/web
+# Copy built frontend bundle to /srv/web for serving (after other COPY so it's not overwritten)
+COPY --from=build /app/packages/lcyt-web/dist/ /srv/web/
 ENV STATIC_DIR=/srv/web
 
 # Optional apt mirror â€” set APT_MIRROR to speed up installs on hosted servers.
