@@ -65,6 +65,15 @@ If you move builds around (e.g., `lcyt-web` → main `Dockerfile`), ensure:
 2. The `npm ci` command includes all workspaces
 3. The source copy step includes all packages
 4. Build/test scripts reference the correct packages
+5. **Frontend dist is copied AFTER the full `/app` copy** so it's not overwritten
 
 This caught an error twice:
 - 2026-10-06: `shared-styles` missing when consolidating frontend build into main image
+- 2026-10-06: Frontend dist folder overwritten by `COPY --from=build /app .`; moved COPY to after main copy
+
+## Build Performance
+
+**lcyt image build time:** ~3m 30s (includes npm install, backend build, and frontend React bundle build)
+- This is for a fresh build with full dependencies
+- Subsequent builds with Docker layer caching will be faster if only code changes
+
