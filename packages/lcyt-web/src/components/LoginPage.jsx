@@ -54,7 +54,7 @@ export function getBackendFeatures() {
 // ---------------------------------------------------------------------------
 
 export function LoginPage() {
-  const { login } = useUserAuth();
+  const { login, loginLocal } = useUserAuth();
 
   // Step state (1 = backend selection, 2 = auth, 3 = success)
   const [step, setStep] = useState(1);
@@ -108,6 +108,12 @@ export function LoginPage() {
       setFeatures(data.features);
       saveBackendFeatures(data.features);
       try { localStorage.setItem(KEYS.backend.preset, preset); } catch { /* ignore */ }
+      if (data.features.includes('local-mode')) {
+        // Local install mode: the backend has no login, so sign in without asking.
+        await loginLocal(`${url.origin}${url.pathname.replace(/\/$/, '')}`);
+        window.location.assign('/projects');
+        return;
+      }
       setStep(2);
     } catch (err) {
       clearTimeout(timer);

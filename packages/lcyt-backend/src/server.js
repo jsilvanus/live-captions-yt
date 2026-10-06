@@ -108,6 +108,7 @@ import { createAttributionRouter } from './routes/attribution.js';
 import { createPerceptionRouter } from './routes/perception.js';
 import { composeCaptionText } from './caption-files.js';
 import { createUserAuthMiddleware } from './middleware/user-auth.js';
+import { isLocalMode, resolveLocalBind, ensureLocalIdentity, createLocalModeMiddleware } from './local-mode.js';
 import { createWriteAuditMiddleware } from './middleware/write-audit.js';
 import { createMetrics, setMetricsInstance } from './metrics/index.js';
 import { attachBusMetrics } from './metrics/bus-tap.js';
@@ -181,6 +182,20 @@ if (!settings.get('app.free_apikey_active')) {
   console.info('ℹ FREE_APIKEY_ACTIVE is not set — POST /keys?freetier is disabled.');
 } else {
   console.info('✓ Free-tier API key endpoint enabled at POST /keys?freetier');
+}
+
+// Local install mode (LCYT_INSTALL_MODE=local): no login, single local admin.
+// Env-only on purpose — it gates authentication itself, so it must not be
+// switchable from the UI or the DB.
+const localMode = isLocalMode();
+if (localMode) {
+  const bind = resolveLocalBind();
+  console.warn('⚠ LOCAL INSTALL MODE (LCYT_INSTALL_MODE=local): authentication is OFF.');
+  console.warn('  Every request without credentials acts as the local administrator.');
+  console.warn('  Use only on your own machine. Unset LCYT_INSTALL_MODE for a shared or public server.');
+  if (bind.exposed) {
+    console.warn(`  ⚠ Listening on ${bind.host} (LCYT_LOCAL_ALLOW_REMOTE=1): anyone who can reach this port has full admin access.`);
+  }
 }
 
 const loginEnabled = settings.get('app.use_user_logins');
@@ -673,6 +688,16 @@ app.use('/icons', createIconRouter(db, scopedAuth('icon'), undefined, requirePro
 // NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
 app.use(express.json({ limit: '64kb' }));
 
+if (localMode) {
+  const localIdentity = ensureLocalIdentity(db);
+  const localAuth = createLocalModeMiddleware(db, jwtSecret, localIdentity);
+  app.use(localAuth);
+  // Lets the web UI pick up the local identity as if it had logged in.
+  app.post('/auth/local', (req, res) => {
+    res.json({ token: localAuth.token, userId: localIdentity.userId, email: localIdentity.email, name: 'Local user', isAdmin: true, projectId: localIdentity.projectId });
+  });
+}
+
 app.use(createWriteAuditMiddleware(db));
 
 // Request logging middleware
@@ -739,6 +764,7 @@ app.get('/health', (req, res) => {
   // Build feature list based on enabled capabilities
   const features = ['captions', 'sync'];
   if (loginEnabled) features.push('login');
+  if (localMode) features.push('local-mode');
   // Admin panel is available if: user-based logins are enabled (any admin user can use it)
   // or the legacy ADMIN_KEY env var is set.
   if (loginEnabled || process.env.ADMIN_KEY) features.push('admin');
@@ -754,6 +780,7 @@ app.get('/health', (req, res) => {
     uptime: Math.floor(process.uptime()),
     activeSessions: store.size(),
     loginEnabled,
+    ...(localMode ? { localMode: true } : {}),
     features,
     ...(rtmpActive ? {
       rtmpIngest: {

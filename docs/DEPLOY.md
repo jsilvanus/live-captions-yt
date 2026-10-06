@@ -217,6 +217,8 @@ before running the backend directly.
 | `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Domains allowed to use the `/stream` RTMP relay endpoints |
 | `FREE_APIKEY_ACTIVE` | _(unset)_ | Set to `1` to enable free-tier API key self-registration at `POST /keys?freetier` |
 | `USE_USER_LOGINS` | _(enabled)_ | Set to `0` to disable user registration and login (`/auth` routes) |
+| `LCYT_INSTALL_MODE` | _(unset)_ | `local` = single-user install with **no login**: requests without credentials act as a built-in local admin that owns every project. Logs a startup warning, binds `127.0.0.1` (or `HOST`), and refuses to start on a non-loopback `HOST` unless `LCYT_LOCAL_ALLOW_REMOTE=1`. Env-only. Never use on a shared or public server |
+| `LCYT_LOCAL_ALLOW_REMOTE` | _(unset)_ | `1` allows local mode on a non-loopback `HOST` (needed in Docker, where the container listens on `0.0.0.0`; publish the port on `127.0.0.1` only) |
 | `USAGE_PUBLIC` | _(unset)_ | Set to any value to make `GET /usage` public (no admin key required) |
 
 ### Session management

@@ -5,12 +5,26 @@ import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
 import { compactHourlyRollups } from './db/usage-rollups.js';
 import { kindForMetric } from './metrics/registry.js';
+import { isLocalMode, resolveLocalBind } from './local-mode.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 
-const server = app.listen(PORT, () => {
-  logger.info(`Listening on port ${PORT}`);
+// Local install mode listens on loopback unless told otherwise, and refuses a
+// public HOST without LCYT_LOCAL_ALLOW_REMOTE=1. Server mode keeps listening on
+// every interface and ignores HOST, as before.
+let listenHost;
+if (isLocalMode()) {
+  const bind = resolveLocalBind();
+  if (bind.error) {
+    logger.error(bind.error);
+    process.exit(1);
+  }
+  listenHost = bind.host;
+}
+
+const server = app.listen(PORT, listenHost, () => {
+  logger.info(`Listening on ${listenHost ?? '*'}:${PORT}`);
 });
 
 /**
