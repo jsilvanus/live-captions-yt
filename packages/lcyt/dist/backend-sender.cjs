@@ -91,6 +91,7 @@ class BackendCaptionSender {
       headers['Authorization'] = 'Bearer ' + token;
     }
 
+
     const res = await fetch(`${this.backendUrl}${path}`, {
       method,
       headers,
