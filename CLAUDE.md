@@ -44,6 +44,8 @@ live-captions-yt/
 ├── docker/                     # Docker build contexts for containerised services
 │   ├── lcyt-ffmpeg/            # ffmpeg Docker image (used by DockerFfmpegRunner)
 │   ├── lcyt-dsk-renderer/      # Chromium DSK renderer Docker image
+│   ├── lcyt-fleet-worker/      # Fat fffleet worker image (DSK + perception); published by publish-images.yml
+│   ├── lcyt-web/               # Web UI bundle image (copies dist into a volume); published by publish-images.yml
 │   ├── lcyt-bridge/            # Plain Node.js container deployment mode for lcyt-bridge
 │   ├── lcyt-bridge-ollama/     # Example: lcyt-bridge + ollama/ollama on a private compose network
 │   └── mediamtx.yml            # MediaMTX configuration template
