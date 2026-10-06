@@ -77,6 +77,20 @@ export function useUserAuth() {
     return data;
   }, []);
 
+  // Local install mode (backend /health lists 'local-mode'): no credentials, the
+  // backend hands out the local admin's token.
+  const loginLocal = useCallback(async (url) => {
+    const base = url.replace(/\/$/, '');
+    const res = await fetch(`${base}/auth/local`, { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Local login failed');
+    saveStored({ token: data.token, backendUrl: base });
+    setToken(data.token);
+    setBackendUrl(base);
+    setUser({ userId: data.userId, email: data.email, name: data.name, isAdmin: !!data.isAdmin });
+    return data;
+  }, []);
+
   const register = useCallback(async (url, email, password, name) => {
     const base = url.replace(/\/$/, '');
     const res = await fetch(`${base}/auth/register`, {
@@ -192,7 +206,7 @@ export function useUserAuth() {
   }, [token, backendUrl, logout]);
 
   return {
-    user, token, backendUrl, loading, login, register, logout, changePassword,
+    user, token, backendUrl, loading, login, loginLocal, register, logout, changePassword,
     updateProfile, exportData, removeData, deleteAccount, requestProjectAccessToken,
   };
 }

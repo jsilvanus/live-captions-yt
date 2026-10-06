@@ -68,6 +68,9 @@ This document lists environment variables found across the repository, with the 
   - Files: packages/lcyt-backend/src/server.js, packages/lcyt-backend/src/routes/keys.js, docker-compose.yml
 
 - `USE_USER_LOGINS` — Set to '0' to disable user registration/login routes.
+- `LCYT_INSTALL_MODE` — `local` drops login (local admin, owns all projects); off by default. See docs/DEPLOY.md.
+  - Files: packages/lcyt-backend/src/local-mode.js, packages/lcyt-backend/src/server.js, packages/lcyt-backend/src/index.js
+- `LCYT_LOCAL_ALLOW_REMOTE` — `1` lets local mode listen on a non-loopback `HOST` (Docker).
   - Files: packages/lcyt-backend/src/server.js
 
 - `GRAPHICS_ENABLED` — Runtime toggle to enable DSK/graphics endpoints (also used as build-arg).

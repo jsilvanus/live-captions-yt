@@ -49,6 +49,8 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `USAGE_PUBLIC` | If set, /usage endpoint needs no auth | unset |
 | `FREE_APIKEY_ACTIVE` | If set to `1`, enables free API key self-registration endpoint | unset |
 | `USE_USER_LOGINS` | Set to `0` to disable user registration/login (`/auth` routes) | enabled |
+| `LCYT_INSTALL_MODE` | `local` = no-login single-user install (see "Local install mode" below). Env-only, off by default | unset |
+| `LCYT_LOCAL_ALLOW_REMOTE` | `1` allows local mode on a non-loopback `HOST` (Docker) | unset |
 | `FEATURE_GATE_ENFORCE` | If set to `1`, enables feature-gate middleware on `/captions`, `/mic`, `/stats` (Phase 2 of plan_userprojects) | unset (gates are no-ops by default) |
 | `HLS_SUBS_ROOT` | Directory for WebVTT subtitle segment files | `/tmp/hls-subs` |
 | `HLS_SUBS_SEGMENT_DURATION` | Subtitle segment length in seconds | `6` |
@@ -517,3 +519,12 @@ User accounts (`USE_USER_LOGINS` is enabled by default; set to `0` to disable):
 ---
 
 See root `CLAUDE.md` for the Caption Target Architecture and Plugin Architecture conventions, and each plugin's own `CLAUDE.md` (`packages/plugins/*`) for the managers this backend wires in.
+
+## Local install mode
+
+`LCYT_INSTALL_MODE=local` (`src/local-mode.js`, wired in `server.js`/`index.js`) drops login for a single-user install on the operator's own machine. A middleware mounted after the body parser (before the write-audit and every auth-gated router) gives each request that carries **no credentials** (no bearer/query/body/cookie token and no `X-Admin-Key`) the token of a built-in admin user (`local@lcyt.localhost`, `is_admin=1`, created on first start with a default project). That user is made owner of every active project on each such request, so setup-tier checks pass and keys created later work immediately. Supplied credentials are still verified (bad token = 401, revoked project key = 401, MCP token scopes unchanged), so existing clients and the revoked-key check behave as before.
+
+- `/health` reports `localMode: true` and a `local-mode` feature; `POST /auth/local` (local mode only) returns the local token so the web LoginPage can skip the form (`useUserAuth().loginLocal`).
+- Startup prints a warning. Listens on `127.0.0.1` (or `HOST`); a non-loopback `HOST` aborts startup unless `LCYT_LOCAL_ALLOW_REMOTE=1` (set it in Docker and publish the port on `127.0.0.1`). `HOST` is ignored outside local mode.
+- Env-only on purpose (not in the settings registry): auth must not be switchable from the UI/DB. Invalid values throw at startup.
+- Tests: `test/local-mode.test.js`.
