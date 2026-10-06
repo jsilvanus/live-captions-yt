@@ -6,6 +6,7 @@ COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
 COPY packages/lcyt-web/package.json packages/lcyt-web/
+COPY packages/shared-styles/package.json packages/shared-styles/
 COPY packages/lcyt-mcp-http/package.json packages/lcyt-mcp-http/
 COPY packages/lcyt-tools/package.json packages/lcyt-tools/
 COPY packages/lcyt-compute/package.json packages/lcyt-compute/
@@ -25,6 +26,7 @@ RUN npm ci \
   --workspace=packages/lcyt \
   --workspace=packages/lcyt-backend \
   --workspace=packages/lcyt-web \
+  --workspace=packages/shared-styles \
   --workspace=packages/lcyt-mcp-http \
   --workspace=packages/plugins/lcyt-production \
   --workspace=packages/plugins/lcyt-dsk \
@@ -43,6 +45,7 @@ RUN npm ci \
 COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
 COPY packages/lcyt-web/ packages/lcyt-web/
+COPY packages/shared-styles/ packages/shared-styles/
 COPY packages/lcyt-mcp-http/src/ packages/lcyt-mcp-http/src/
 COPY packages/lcyt-tools/ packages/lcyt-tools/
 COPY packages/lcyt-compute/ packages/lcyt-compute/
