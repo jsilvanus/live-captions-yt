@@ -60,8 +60,8 @@ COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/ packages/plugins/lcyt-actions/
 COPY packages/plugins/lcyt-platforms/ packages/plugins/lcyt-platforms/
 
-# Build frontend (React bundle)
-RUN npm run build:web
+# Build frontend (React bundle) — clean dist first to avoid stale cache
+RUN rm -rf packages/lcyt-web/dist/ && npm run build:web
 
 FROM node:22-slim
 WORKDIR /app
