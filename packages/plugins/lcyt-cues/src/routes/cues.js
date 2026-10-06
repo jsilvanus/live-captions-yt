@@ -25,6 +25,7 @@ import {
   insertNamedCondition, updateNamedCondition, deleteNamedCondition,
 } from '../db.js';
 import { isLeafNode } from '../condition-tree.js';
+import { defaultThresholdFor } from '../cue-engine.js';
 import { requireApiKey } from './helpers.js';
 
 function isSafeRegex(pattern) {
@@ -187,7 +188,8 @@ function normalizeInlineCue(rawCue, index, apiKey) {
     action: rawCue?.action ?? {},
     enabled: rawCue?.enabled !== false,
     cooldown_ms: rawCue?.cooldown_ms ?? rawCue?.cooldownMs ?? 0,
-    fuzzy_threshold: rawCue?.fuzzy_threshold ?? rawCue?.fuzzyThreshold ?? 0.75,
+    fuzzy_threshold: rawCue?.fuzzy_threshold ?? rawCue?.fuzzyThreshold ?? defaultThresholdFor(matchType),
+    once_per_section: rawCue?.once_per_section ?? rawCue?.oncePerSection,
     source: 'inline',
     fileName: rawCue?.fileName ?? rawCue?.file_name ?? null,
     fileId: rawCue?.fileId ?? rawCue?.file_id ?? null,
@@ -328,7 +330,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
       action: withRun(apiKey, action, 'ids') || {},
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
       cooldown_ms: cooldown_ms !== undefined && cooldown_ms !== null ? cooldown_ms : defaultCooldownFor(resolvedMatchType, condition_tree, name => resolveNamedConditionTree(apiKey, name)),
-      fuzzy_threshold: fuzzy_threshold ?? 0.75,
+      fuzzy_threshold: fuzzy_threshold ?? defaultThresholdFor(resolvedMatchType),
       condition_tree: resolvedMatchType === 'composite' ? condition_tree : undefined,
     });
 

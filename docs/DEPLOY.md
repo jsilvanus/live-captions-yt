@@ -26,14 +26,15 @@ compute setup on an fffleet fleet.
 
 | Mode | Tooling | When to use |
 |------|---------|-------------|
-| **Local (single VM)** | `docker-compose.yml` | Development, personal use, single small event |
+| **LCYT only** | `docker-compose.lcyt.yml` | One container, no sidecars (no MediaMTX, fffleet or auditor): captions to YouTube/viewers/generic targets, cues, connectors, MCP. Rebuild with `--build-arg RTMP_RELAY_ACTIVE=1` to get ffmpeg in the image for relay/radio |
+| **Local (single VM)** | `docker-compose.yml` | Development, personal use, single small event; adds MediaMTX (and an opt-in docker socket proxy for `FFMPEG_RUNNER=docker`) |
 | **fffleet fleet** | `FFMPEG_RUNNER=fleet` + an [fffleet](https://github.com/jsilvanus/fffleet) orchestrator and workers (its own compose file and autoscaling for Docker or Hetzner) | Production, moderate scale, ffmpeg offloaded to other machines |
 | **Cloudfleet (Kubernetes)** | `k8s/cloudfleet/` manifests | Managed HA cluster, rolling deploys, minimal ops overhead |
 
 See `docs/plans/plan_cloudfleet.md` for a full comparison of all three tiers
 and the Cloudfleet deployment guide.
 
-In the first two modes the web UI (`lcyt-web`) and the marketing site
+In the first three modes the web UI (`lcyt-web`) and the marketing site
 (`lcyt-site`) are built on the host and served by nginx as static files — they
 are **not** baked into any Docker image.
 
@@ -330,9 +331,9 @@ directly from the Node.js backend.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `STT_PROVIDER` | `google` | Default STT provider: `google`, `whisper_http`, or `openai` |
+| `STT_PROVIDER` | `google` | Default STT provider: `google`, `whisper_http`, `openai`, or `auditor` (the auditor service pulls the stream itself and returns text) |
 | `STT_DEFAULT_LANGUAGE` | `en-US` | Default BCP-47 language tag |
-| `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls`, `rtmp`, or `whep` |
+| `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls`, `rtmp`, or `whep` (ignored by `auditor`) |
 | `GOOGLE_APPLICATION_CREDENTIALS` | _(unset)_ | Path to Google service account JSON |
 | `GOOGLE_STT_KEY` | _(unset)_ | Google Cloud STT REST API key (simpler alternative to service account) |
 | `GOOGLE_STT_MODE` | `rest` | Google STT mode: `rest` or `grpc` (lower latency; requires `@google-cloud/speech`) |
@@ -341,6 +342,9 @@ directly from the Node.js backend.
 | `OPENAI_STT_URL` | OpenAI default | Base URL for an OpenAI-compatible STT endpoint |
 | `OPENAI_STT_API_KEY` | _(unset)_ | API key for the OpenAI STT endpoint |
 | `OPENAI_STT_MODEL` | `whisper-1` | Model name for OpenAI STT requests |
+| `AUDITOR_STT_URL` | _(unset)_ | Base URL of the [liturgos-auditor](https://github.com/jsilvanus/liturgos-auditor) STT service (`auditor` provider; `POST /v1/live`, events over SSE) |
+| `AUDITOR_STT_API_KEY` | _(unset)_ | Bearer key for the auditor service, if it has one |
+| `AUDITOR_STT_SOURCE_URL` | `rtsp://127.0.0.1:8554/{streamKey}` | Stream URL the auditor pulls; `{streamKey}` is replaced. Must be reachable from the machine or fleet worker where the auditor runs (`rtsp://` or `srt://`) |
 
 ### YouTube / OAuth
 

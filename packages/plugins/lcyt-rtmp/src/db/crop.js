@@ -12,8 +12,8 @@
  * survive an input-resolution change; pixel conversion happens in
  * crop-manager.js at apply time.
  *
- * NOTE: `PRAGMA foreign_keys` is not enabled repo-wide (see CONSIDER.md), so
- * ON DELETE CASCADE declarations are inert — deletes cascade manually here.
+ * NOTE: better-sqlite3 enables `PRAGMA foreign_keys` by default, so the
+ * ON DELETE CASCADE declarations work; the manual deletes here are redundant.
  */
 import { randomUUID } from 'node:crypto';
 import { hasProdCamerasTable } from './relay.js';

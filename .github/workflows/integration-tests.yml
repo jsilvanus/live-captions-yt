@@ -9,15 +9,10 @@ on:
 permissions:
   contents: read
 
-# ⚠ NEW PLUGIN? The plugin list below is hand-maintained in FOUR places and
-# must be updated whenever a package is added under packages/plugins/:
-#   1. detect-changes → the push-to-main `plugins=` list
-#   2. detect-changes → the workflow-changed `plugins=` list
-#   3. detect-changes → the per-plugin `grep` chain that builds PLUGINS for PRs
-#   4. build-unit-matrix → the full `PACKAGES` array
-# A plugin missing from these runs its tests NOWHERE, and CI still reports
-# green. Three plugins were already lost this way — see CONSIDER.md for the
-# pending fix (replace the lists with a glob over packages/plugins/*).
+# Packages are discovered, not listed: every directory under packages/ and
+# packages/plugins/ whose package.json has a "test" script is tested on main and
+# on workflow changes; on a PR only the changed ones (plus the backend when a
+# plugin changed). A new package or plugin needs no edit here.
 
 # ── Detect changed paths (for PR test partitioning) ──────────────────
 jobs:
@@ -39,10 +34,17 @@ jobs:
       - name: Detect paths
         id: paths
         run: |
+          discover_plugins() {
+            local out=""
+            for d in packages/plugins/*/; do
+              grep -q '"test"' "$d/package.json" 2>/dev/null && out="$out,$(basename "$d")"
+            done
+            echo "${out#,}"
+          }
           if [[ "${{ github.event_name }}" == "push" ]]; then
             # On main: run everything
             echo "is-main=true" >> $GITHUB_OUTPUT
-            echo "plugins=lcyt-actions,lcyt-agent,lcyt-connectors,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-platforms,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
+            echo "plugins=$(discover_plugins)" >> $GITHUB_OUTPUT
             echo "backend=lcyt-backend" >> $GITHUB_OUTPUT
             echo "frontend=lcyt-web" >> $GITHUB_OUTPUT
             echo "core=lcyt" >> $GITHUB_OUTPUT
@@ -57,7 +59,7 @@ jobs:
             if echo "$CHANGED" | grep -q "^\.github/workflows/"; then
               echo "has-workflow-changes=true" >> $GITHUB_OUTPUT
               echo "is-main=true" >> $GITHUB_OUTPUT
-              echo "plugins=lcyt-actions,lcyt-agent,lcyt-connectors,lcyt-cues,lcyt-dsk,lcyt-files,lcyt-music,lcyt-platforms,lcyt-production,lcyt-rtmp" >> $GITHUB_OUTPUT
+              echo "plugins=$(discover_plugins)" >> $GITHUB_OUTPUT
               echo "backend=lcyt-backend" >> $GITHUB_OUTPUT
               echo "frontend=lcyt-web" >> $GITHUB_OUTPUT
               echo "core=lcyt" >> $GITHUB_OUTPUT
@@ -68,16 +70,10 @@ jobs:
 
               # Parse which packages changed
               PLUGINS=""
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-actions" && PLUGINS="$PLUGINS,lcyt-actions"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-agent" && PLUGINS="$PLUGINS,lcyt-agent"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-connectors" && PLUGINS="$PLUGINS,lcyt-connectors"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-cues" && PLUGINS="$PLUGINS,lcyt-cues"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-dsk" && PLUGINS="$PLUGINS,lcyt-dsk"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-files" && PLUGINS="$PLUGINS,lcyt-files"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-music" && PLUGINS="$PLUGINS,lcyt-music"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-platforms" && PLUGINS="$PLUGINS,lcyt-platforms"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-production" && PLUGINS="$PLUGINS,lcyt-production"
-              echo "$CHANGED" | grep -q "^packages/plugins/lcyt-rtmp" && PLUGINS="$PLUGINS,lcyt-rtmp"
+              for d in packages/plugins/*/; do
+                n=$(basename "$d")
+                echo "$CHANGED" | grep -q "^packages/plugins/$n/" && PLUGINS="$PLUGINS,$n"
+              done
               PLUGINS=${PLUGINS#,}  # Remove leading comma
               echo "plugins=$PLUGINS" >> $GITHUB_OUTPUT
 
@@ -166,25 +162,12 @@ jobs:
 
           # On main or workflow changes, test everything (full CI)
           if [[ "$IS_MAIN" == "true" ]]; then
-            PACKAGES=(
-              "packages/lcyt"
-              "packages/lcyt-cli"
-              "packages/lcyt-web"
-              "packages/lcyt-bridge"
-              "packages/lcyt-mcp-stdio"
-              "packages/lcyt-mcp-http"
-              "packages/lcyt-backend"
-              "packages/plugins/lcyt-actions"
-              "packages/plugins/lcyt-agent"
-              "packages/plugins/lcyt-connectors"
-              "packages/plugins/lcyt-cues"
-              "packages/plugins/lcyt-dsk"
-              "packages/plugins/lcyt-files"
-              "packages/plugins/lcyt-music"
-              "packages/plugins/lcyt-platforms"
-              "packages/plugins/lcyt-production"
-              "packages/plugins/lcyt-rtmp"
-            )
+            PACKAGES=()
+            for d in packages/*/ packages/plugins/*/; do
+              d=${d%/}
+              [[ "$d" == "packages/plugins" ]] && continue
+              grep -q '"test"' "$d/package.json" 2>/dev/null && PACKAGES+=("$d")
+            done
           fi
 
           # Convert array to JSON using pure bash (no jq dependency)

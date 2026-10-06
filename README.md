@@ -112,6 +112,7 @@ npm run build        # Build CJS output for core library
 
 ## Deployment notes
 
+- **Just LCYT, nothing else:** `docker compose -f docker-compose.lcyt.yml up -d --build` starts only the backend (no MediaMTX, fffleet or auditor). `docker-compose.yml` adds MediaMTX; see `docs/DEPLOY.md` for the fleet.
 - **Set a stable `JWT_SECRET`**: for production, set `JWT_SECRET` in your environment so session tokens remain valid across restarts. Example in `docker-compose.yml`:
 
 ```yaml

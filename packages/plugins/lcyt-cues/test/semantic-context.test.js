@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { CueEngine, readContextSettings, semanticCandidates, MAX_CONTEXT_LINES } from '../src/cue-engine.js';
+import { CueEngine, readContextSettings, semanticCandidates, MAX_CONTEXT_LINES, defaultThresholdFor, DEFAULT_SEMANTIC_THRESHOLD } from '../src/cue-engine.js';
 
 // Lines stay under 3 words so the fuzzy-word fallback (needs >= pattern length) cannot match.
 // Bag-of-two-words embedder: pattern "prayer for healing" = [1,1]; a text with
@@ -13,7 +13,7 @@ const embed = async texts => texts.map(t => {
 function engineWith(cue) {
   const engine = new CueEngine({});
   engine.setEmbeddingFn(embed);
-  engine.setInlineSnapshot('k', { cues: [{ phrase: 'prayer for healing', matchType: 'semantic', action: { type: 'event', label: 'x' }, ...cue }] });
+  engine.setInlineSnapshot('k', { cues: [{ phrase: 'prayer for healing', matchType: 'semantic', fuzzy_threshold: 0.75, action: { type: 'event', label: 'x' }, ...cue }] });
   return engine;
 }
 async function feed(engine, lines) {
@@ -52,7 +52,7 @@ describe('semantic cue context', () => {
     engine.setEmbeddingFn(embed);
     engine.pushContextLine('k', 'a prayer');
     engine.pushContextLine('k', 'for healing');
-    const leaf = { type: 'match', matchType: 'semantic', pattern: 'prayer for healing' };
+    const leaf = { type: 'match', matchType: 'semantic', pattern: 'prayer for healing', threshold: 0.75 };
     const ctx = { text: 'for healing', apiKey: 'k' };
     assert.equal((await engine.evaluateComposite('k', leaf, ctx)).matched, false);
     assert.equal((await engine.evaluateComposite('k', { ...leaf, contextMode: 'window' }, ctx)).matched, true);
@@ -71,5 +71,41 @@ describe('semantic cue context', () => {
 
   test('semanticCandidates appends the current line when the buffer lacks it', () => {
     assert.deepEqual(semanticCandidates('c', ['a', 'b'], { context_mode: 'window', context_segments: 3 }), ['a b c']);
+  });
+});
+
+describe('semantic cue defaults', () => {
+  test('default threshold is 0.70 for semantic and 0.75 for other types', () => {
+    assert.equal(DEFAULT_SEMANTIC_THRESHOLD, 0.70);
+    assert.equal(defaultThresholdFor('semantic'), 0.70);
+    assert.equal(defaultThresholdFor('fuzzy'), 0.75);
+  });
+
+  test('a semantic cue without a threshold matches at ~0.71 similarity (would miss at 0.75)', async () => {
+    const engine = new CueEngine({});
+    engine.setEmbeddingFn(embed);
+    engine.setInlineSnapshot('k', { cues: [{ phrase: 'prayer for healing', matchType: 'semantic', action: { type: 'event', label: 'x' } }] });
+    assert.equal((await engine.evaluateInlineCues('k', 'a prayer')).length, 1);
+  });
+
+  test('fires once per section, again in the next section, and never again after clearContext resets', async () => {
+    const engine = new CueEngine({});
+    engine.setEmbeddingFn(embed);
+    engine.setInlineSnapshot('k', { cues: [{ phrase: 'prayer for healing', matchType: 'semantic', action: { type: 'event', label: 'x' } }] });
+    const run = async (text, section) => (await engine.evaluateInlineCues('k', text, { section })).length;
+    assert.equal(await run('prayer for healing', 'a'), 1);
+    assert.equal(await run('prayer for healing', 'a'), 0);
+    assert.equal(await run('prayer for healing', 'b'), 1);
+    assert.equal(await run('prayer for healing', 'b'), 0);
+    engine.clearContext('k');
+    assert.equal(await run('prayer for healing', 'b'), 1);
+  });
+
+  test('once_per_section: false keeps firing on every matching line', async () => {
+    const engine = new CueEngine({});
+    engine.setEmbeddingFn(embed);
+    engine.setInlineSnapshot('k', { cues: [{ phrase: 'prayer for healing', matchType: 'semantic', once_per_section: false, action: { type: 'event', label: 'x' } }] });
+    assert.equal((await engine.evaluateInlineCues('k', 'prayer for healing', { section: 'a' })).length, 1);
+    assert.equal((await engine.evaluateInlineCues('k', 'prayer for healing', { section: 'a' })).length, 1);
   });
 });

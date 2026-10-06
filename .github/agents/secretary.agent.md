@@ -30,7 +30,7 @@ outputs:
 examples:
   - "Create an implementation plan for moving ffmpeg jobs to ephemeral containers — include phase objectives and acceptance criteria."
   - "Scan the orchestrator code and list all env vars it reads, produce a `packages/orchestrator/.env.example`."
-  - "Scaffold `packages/lcyt-orchestrator/README.md` with architecture diagram placeholder and run instructions."
+  - "Scaffold `packages/lcyt-compute/README.md` with architecture diagram placeholder and run instructions."
 notes:
   - "This agent is designed to be a helpful assistant to the Orchestrator Agent, not a full replacement."
 ---
