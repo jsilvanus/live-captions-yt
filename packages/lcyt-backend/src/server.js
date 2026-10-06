@@ -729,7 +729,6 @@ app.use((_req, res, next) => {
 // Example: STATIC_DIR=../lcyt-web/dist node src/index.js
 if (process.env.STATIC_DIR) {
   const { resolve } = await import('node:path');
-  const { join } = await import('node:path');
   const staticDir = resolve(process.env.STATIC_DIR);
   app.use(express.static(staticDir, {
     setHeaders(res) {
@@ -737,13 +736,8 @@ if (process.env.STATIC_DIR) {
     },
   }));
   console.info(`✓ Serving static client from: ${staticDir}`);
-  
-  // SPA fallback: serve index.html for all client routes
-  // This allows the frontend router to handle navigation
-  app.get('/*', (req, res) => {
-    const indexPath = join(staticDir, 'index.html');
-    res.sendFile(indexPath);
-  });
+  // Note: SPA fallback route (app.get('/*', ...)) is registered at the END of this file,
+  // AFTER all API routes, to avoid intercepting API endpoints like /health
 }
 
 // ---------------------------------------------------------------------------
