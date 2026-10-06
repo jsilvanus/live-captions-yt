@@ -3,6 +3,7 @@ import busboy from 'busboy';
 import * as fs from 'node:fs';
 import { join, resolve, basename, extname } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import logger from 'lcyt/logger';
 import {
   isGraphicsEnabled,
@@ -57,7 +58,7 @@ function ensureImageDir(apiKey) {
  *   (plan_env_to_ui_settings.md), duck-typed. Falls back to raw process.env when omitted.
  * @returns {Router}
  */
-export function createImagesRouter(db, auth, settings = null) {
+export function createImagesRouter(db, auth, settings = null, { graphicsStore = null } = {}) {
   const router = Router();
 
   // POST /images — upload
@@ -98,6 +99,7 @@ export function createImagesRouter(db, auth, settings = null) {
     let originalFilename = null;
     let writeStream = null;
     let aborted = false;
+    const uploadedChunks = [];
 
     function abort(statusCode, message) {
       if (aborted) return;
@@ -139,23 +141,28 @@ export function createImagesRouter(db, auth, settings = null) {
       const ext = MIME_TO_EXT[mimeType] || extname(originalFilename) || '';
       const storedFilename = `${randomUUID()}${ext}`;
 
-      let dir;
-      try { dir = ensureImageDir(apiKey); } catch (err) {
-        fileStream.resume();
-        return abort(500, 'Could not create storage directory');
-      }
+      if (!graphicsStore) {
+        let dir;
+        try { dir = ensureImageDir(apiKey); } catch (err) {
+          fileStream.resume();
+          return abort(500, 'Could not create storage directory');
+        }
 
-      diskPath = join(dir, storedFilename);
+        diskPath = join(dir, storedFilename);
 
-      try {
-        writeStream = fs.createWriteStream(diskPath);
-      } catch (err) {
-        fileStream.resume();
-        return abort(500, 'Could not open file for writing');
+        try {
+          writeStream = fs.createWriteStream(diskPath);
+        } catch (err) {
+          fileStream.resume();
+          return abort(500, 'Could not open file for writing');
+        }
+      } else {
+        diskPath = storedFilename;
       }
 
       fileStream.on('data', chunk => {
         uploadedBytes += chunk.length;
+        if (graphicsStore) uploadedChunks.push(chunk);
       });
 
       fileStream.on('limit', () => {
@@ -164,9 +171,12 @@ export function createImagesRouter(db, auth, settings = null) {
       });
 
       fileStream.on('error', () => abort(500, 'File read error'));
-      writeStream.on('error', () => abort(500, 'File write error'));
-
-      fileStream.pipe(writeStream);
+      if (writeStream) {
+        writeStream.on('error', () => abort(500, 'File write error'));
+        fileStream.pipe(writeStream);
+      } else {
+        fileStream.resume();
+      }
     });
 
     bb.on('finish', () => {
@@ -174,9 +184,9 @@ export function createImagesRouter(db, auth, settings = null) {
 
       // Close the write stream before responding
       if (writeStream && !writeStream.writableEnded) {
-        writeStream.end(() => finalize());
+        writeStream.end(() => { void finalize(); });
       } else {
-        finalize();
+        void finalize();
       }
     });
 
@@ -184,34 +194,44 @@ export function createImagesRouter(db, auth, settings = null) {
 
     req.pipe(bb);
 
-    function finalize() {
+    async function finalize() {
       if (aborted) return;
 
       // Validate shorthand
       if (!shorthand || !SHORTHAND_RE.test(shorthand)) {
-        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
+        if (!graphicsStore && diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(400).json({ error: 'shorthand is required and must be 1-32 alphanumeric/dash/underscore characters, starting with a letter or digit' });
       }
 
       if (!mimeType || !ACCEPTED_MIMES.has(mimeType)) {
-        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
+        if (!graphicsStore && diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(400).json({ error: 'No valid image file received' });
       }
 
       // Check shorthand uniqueness
       if (isShorthandTaken(db, apiKey, shorthand)) {
-        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
+        if (!graphicsStore && diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(409).json({ error: `Shorthand '${shorthand}' is already in use for this key` });
       }
 
       // Re-check quota including this file (race condition guard)
       const nowUsed = getTotalImageStorageBytes(db, apiKey);
       if (nowUsed + uploadedBytes > maxStorageBytes) {
-        if (diskPath) try { fs.unlinkSync(diskPath); } catch {}
+        if (!graphicsStore && diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(413).json({ error: 'Storage quota would be exceeded' });
       }
 
       const storedFilename = basename(diskPath);
+      if (graphicsStore) {
+        const objectKey = `${safeApiKey(apiKey)}/${storedFilename}`;
+        try {
+          await graphicsStore.put(objectKey, Buffer.concat(uploadedChunks), { contentType: mimeType });
+        } catch (err) {
+          logger.error(`[images] store.put failed: ${err?.message}`);
+          return res.status(500).json({ error: 'Could not persist image object' });
+        }
+      }
+
       const id = registerImage(db, {
         apiKey,
         filename: storedFilename,
@@ -269,6 +289,21 @@ export function createImagesRouter(db, auth, settings = null) {
 
   // GET /images/:id — serve image publicly (no auth — for DSK page pre-loading)
   router.get('/:id', (req, res) => {
+    const sendStoreObject = async () => {
+      const objectKey = `${safeApiKey(row.api_key)}/${safeFilename}`;
+      try {
+        const opened = await graphicsStore.stream(objectKey);
+        res.setHeader('Content-Type', row.mime_type || opened.contentType || 'application/octet-stream');
+        res.setHeader('Cache-Control', 'public, max-age=86400');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        if (opened.contentLength != null) res.setHeader('Content-Length', String(opened.contentLength));
+        const source = opened.stream?.pipe ? opened.stream : Readable.fromWeb(opened.stream);
+        source.pipe(res);
+      } catch (err) {
+        return res.status(404).json({ error: 'Image file not found' });
+      }
+    };
+
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Invalid image id' });
 
@@ -277,6 +312,10 @@ export function createImagesRouter(db, auth, settings = null) {
 
     const safe = safeApiKey(row.api_key);
     const safeFilename = basename(row.filename);
+    if (graphicsStore) {
+      void sendStoreObject();
+      return;
+    }
     const filepath = join(GRAPHICS_BASE_DIR, safe, safeFilename);
 
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Image file not found on disk' });
@@ -302,13 +341,20 @@ export function createImagesRouter(db, auth, settings = null) {
     const row = deleteImage(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'Image not found' });
 
-    // Best-effort disk deletion
+    // Best-effort object deletion
     try {
-      const safe = safeApiKey(row.api_key);
-      const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
-      if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      const safeFilename = basename(row.filename);
+      if (graphicsStore) {
+        void graphicsStore.delete(`${safeApiKey(row.api_key)}/${safeFilename}`).catch((err) => {
+          logger.warn('[images] Could not delete object:', err?.message);
+        });
+      } else {
+        const safe = safeApiKey(row.api_key);
+        const filepath = join(GRAPHICS_BASE_DIR, safe, safeFilename);
+        if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
+      }
     } catch (e) {
-      logger.warn('[images] Could not delete disk file:', e.message);
+      logger.warn('[images] Could not delete stored image file:', e.message);
     }
 
     return res.json({ ok: true });

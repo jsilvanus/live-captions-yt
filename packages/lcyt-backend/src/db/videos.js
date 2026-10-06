@@ -1,8 +1,7 @@
-import { mkdirSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, writeFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getMetricsInstance } from '../metrics/index.js';
-import { uploadDirectoryToS3 } from '../storage/s3.js';
 import logger from 'lcyt/logger';
 
 function safeSlug(value) {
@@ -151,10 +150,16 @@ export function updateVideo(db, apiKey, id, patch = {}) {
   return { ok: true, video: getVideo(db, apiKey, id) };
 }
 
-export function deleteVideo(db, apiKey, id) {
+export async function deleteVideo(db, apiKey, id, { recordingsStore = null } = {}) {
   const video = getVideo(db, apiKey, id);
   if (!video) return { ok: false, error: 'Video not found', status: 404 };
   const dir = getVideoStorageDir(apiKey, id);
+  if (video.storageType === 's3' && recordingsStore) {
+    const prefix = video.storageKey || buildVideoStorageKey(apiKey, id);
+    await recordingsStore.deletePrefix(prefix).catch((err) => {
+      logger.warn(`[videos] Failed to delete recording prefix ${prefix}: ${err?.message}`);
+    });
+  }
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   db.prepare('DELETE FROM videos WHERE api_key = ? AND id = ?').run(apiKey, id);
   return { ok: true };
@@ -195,14 +200,60 @@ export function finishVideoRecording(db, apiKey, id, fields = {}) {
  * @param {string} apiKey
  * @param {string} videoId
  */
-export async function syncVideoRecordingToStorage(db, apiKey, videoId) {
+function listLocalFilesRecursive(rootDir, currentDir = rootDir, out = []) {
+  const entries = readdirSync(currentDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const fullPath = join(currentDir, entry.name);
+    if (entry.isDirectory()) {
+      listLocalFilesRecursive(rootDir, fullPath, out);
+      continue;
+    }
+    if (!entry.isFile()) continue;
+    const rel = relative(rootDir, fullPath).split('\\').join('/');
+    const st = statSync(fullPath);
+    out.push({ fullPath, relativePath: rel, size: st.size });
+  }
+  return out;
+}
+
+export async function syncVideoRecordingToStorage(db, apiKey, videoId, {
+  recordingsStore = null,
+  maxConcurrency = 4,
+} = {}) {
   const video = getVideo(db, apiKey, videoId);
   if (!video || video.storageType !== 's3') return;
+  if (!recordingsStore) {
+    logger.warn(`[videos] recording ${videoId} is marked s3 but no recordingsStore is configured; falling back to local`);
+    updateVideo(db, apiKey, videoId, { storageType: 'local' });
+    return;
+  }
   const dir = getVideoStorageDir(apiKey, videoId);
+  const prefix = video.storageKey || buildVideoStorageKey(apiKey, videoId);
   try {
-    const { totalBytes } = await uploadDirectoryToS3(dir, video.storageKey || buildVideoStorageKey(apiKey, videoId));
+    const files = listLocalFilesRecursive(dir);
+    let cursor = 0;
+    let totalBytes = 0;
+
+    async function uploadNext() {
+      while (cursor < files.length) {
+        const idx = cursor++;
+        const file = files[idx];
+        const objectKey = `${prefix}/${file.relativePath}`;
+        const uploaded = await recordingsStore.putFile(objectKey, file.fullPath);
+        const remoteSize = Number(uploaded?.size ?? 0);
+        if (remoteSize !== file.size) {
+          throw new Error(`size verification failed for ${objectKey}: local=${file.size}, remote=${remoteSize}`);
+        }
+        totalBytes += file.size;
+      }
+    }
+
+    const workerCount = Math.max(1, Math.min(Number(maxConcurrency) || 1, files.length || 1));
+    await Promise.all(Array.from({ length: workerCount }, uploadNext));
+
     updateVideo(db, apiKey, videoId, { sizeBytes: totalBytes });
     if (totalBytes > 0) getMetricsInstance()?.count('videos.bytes', totalBytes, { project: apiKey });
+    if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   } catch (err) {
     logger.warn(`[videos] S3 upload failed for recording ${videoId}, falling back to local storage: ${err?.message}`);
     updateVideo(db, apiKey, videoId, { storageType: 'local' });

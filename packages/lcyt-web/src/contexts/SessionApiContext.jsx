@@ -10,7 +10,7 @@ import { createContext, useContext } from 'react';
  * (wrapped with useCallback(fn, []) in useSession).
  *
  * Slice: getStats, eraseSelf,
- *        listFiles, getFileDownloadUrl, deleteFile,
+ *        listFiles, listStorageLibrary, getFileDownloadUrl, deleteFile,
  *        uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
  *        listIcons, uploadIcon, deleteIcon,
  *        configureRelay, updateRelay, stopRelaySlot, stopRelay,

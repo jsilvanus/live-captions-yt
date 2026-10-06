@@ -46,6 +46,7 @@ const SetupHubPage           = lazyImport(() => import('./components/setup-hub/S
 const SetupStandalonePage    = lazyImport(() => import('./components/setup-hub/SetupStandalonePage.jsx').then(m => ({ default: m.SetupStandalonePage })));
 const TeamPage                = lazyImport(() => import('./components/TeamPage').then(m => ({ default: m.TeamPage })));
 const AssetsPage              = lazyImport(() => import('./components/AssetsPage').then(m => ({ default: m.AssetsPage })));
+const StorageLibraryPage      = lazyImport(() => import('./components/StorageLibraryPage.jsx').then(m => ({ default: m.StorageLibraryPage })));
 const BroadcastsManager       = lazyImport(() => import('./components/BroadcastsManager').then(m => ({ default: m.BroadcastsManager })));
 const StoredVideosManager     = lazyImport(() => import('./components/StoredVideosManager').then(m => ({ default: m.StoredVideosManager })));
 const AccountPage            = lazyImport(() => import('./components/AccountPage').then(m => ({ default: m.AccountPage })));
@@ -237,6 +238,7 @@ function SidebarApp() {
             <Route path="/projects" component={ProjectsPage} />
             <Route path="/projects/:key" component={ProjectSettingsPage} />
             <Route path="/assets" component={AssetsPage} />
+            <Route path="/library" component={StorageLibraryPage} />
             <Route path="/broadcasts" component={BroadcastsManager} />
             <Route path="/videos" component={StoredVideosManager} />
             <Route path="/team" component={TeamPage} />

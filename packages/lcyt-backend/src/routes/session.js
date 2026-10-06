@@ -22,17 +22,17 @@ import { createRequireFeature } from '../middleware/feature-gate.js';
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
  * @param {import('express').RequestHandler} auth
- * @param {{ relayManager?: object, dskCaptionProcessor?: Function, soundCaptionProcessor?: Function, cueProcessor?: Function, resolveStorage?: Function, mediamtxClient?: object | null, settings?: import('../settings/service.js').SettingsService }} [opts]
+ * @param {{ relayManager?: object, dskCaptionProcessor?: Function, soundCaptionProcessor?: Function, cueProcessor?: Function, resolveStorage?: Function, mediamtxClient?: object | null, recordingsStore?: object | null, settings?: import('../settings/service.js').SettingsService }} [opts]
  * @returns {Router}
  */
-export function createSessionRouters(db, store, jwtSecret, auth, { relayManager = null, dskCaptionProcessor = null, soundCaptionProcessor = null, cueProcessor = null, resolveStorage = null, mediamtxClient = null, settings = null } = {}) {
+export function createSessionRouters(db, store, jwtSecret, auth, { relayManager = null, dskCaptionProcessor = null, soundCaptionProcessor = null, cueProcessor = null, resolveStorage = null, mediamtxClient = null, recordingsStore = null, settings = null } = {}) {
   const router = Router();
 
   // Feature-gate middleware factories — no-ops when FEATURE_GATE_ENFORCE is unset/0
   const requireCaptions = createRequireFeature(db, 'captions', settings);
   const requireMicLock  = createRequireFeature(db, 'mic-lock', settings);
 
-  router.use('/live',     createLiveRouter(db, store, jwtSecret, { mediamtxClient, settings }));
+  router.use('/live',     createLiveRouter(db, store, jwtSecret, { mediamtxClient, recordingsStore, settings }));
   router.use('/captions', requireCaptions, createCaptionsRouter(store, auth, db, relayManager, dskCaptionProcessor, resolveStorage, soundCaptionProcessor, cueProcessor));
   router.use('/events',   createEventsRouter(store, jwtSecret));
   router.use('/sync',     createSyncRouter(store, auth));

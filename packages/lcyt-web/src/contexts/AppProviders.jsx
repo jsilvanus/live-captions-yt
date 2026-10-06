@@ -241,6 +241,7 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     getStats:         session.getStats,
     eraseSelf:        session.eraseSelf,
     listFiles:        session.listFiles,
+    listStorageLibrary: session.listStorageLibrary,
     getFileDownloadUrl: session.getFileDownloadUrl,
     deleteFile:       session.deleteFile,
     uploadImage:      session.uploadImage,

@@ -66,7 +66,7 @@ export async function initDskControl(db, dskBus, relayManager, { metrics = null,
  * @param {object} dskBus  — DskBus instance
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager
- * @param {{ metrics?: object, settings?: { get: (key: string) => * }, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts] —
+ * @param {{ metrics?: object, settings?: { get: (key: string) => * }, mediaStores?: { graphicsStore?: object, dskThumbnailsStore?: object }, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean, thumbnailStore?: object } }} [opts] —
  *   optional backend metrics handle (plan_metering_audit §3.2:
  *   dsk.template_activations / dsk.broadcasts), lcyt-backend's
  *   SettingsService (plan_env_to_ui_settings.md, duck-typed), and the
@@ -75,16 +75,20 @@ export async function initDskControl(db, dskBus, relayManager, { metrics = null,
  *   access to lcyt-backend's project_members table)
  * @returns {{ dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter }}
  */
-export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null, settings = null, deps = {} } = {}) {
+export function createDskRouters(db, dskBus, auth, relayManager, { metrics = null, settings = null, mediaStores = null, deps = {} } = {}) {
+  const depsWithMedia = {
+    ...deps,
+    thumbnailStore: deps.thumbnailStore || mediaStores?.dskThumbnailsStore || null,
+  };
   return {
     /** Mount at /dsk  — public SSE + image list + public viewports */
     dskRouter: createDskRouter(db, dskBus),
     /** Mount at /dsk  — authenticated template CRUD + renderer control */
-    dskTemplatesRouter: createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics, settings, deps),
+    dskTemplatesRouter: createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics, settings, depsWithMedia),
     /** Mount at /dsk  — authenticated viewport CRUD (JWT Bearer) */
     dskViewportsRouter: createDskViewportsRouter(db, auth, deps),
     /** Mount at /images — authenticated upload (JWT Bearer); public serve; viewport settings */
-    imagesRouter: createImagesRouter(db, auth, settings),
+    imagesRouter: createImagesRouter(db, auth, settings, { graphicsStore: mediaStores?.graphicsStore || null }),
     /** Mount at /dsk-rtmp — nginx-rtmp on_publish callbacks */
     dskRtmpRouter: createDskRtmpRouter(db, relayManager, settings),
   };

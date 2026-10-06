@@ -29,11 +29,11 @@ import { requireProjectRole } from '../middleware/project-access.js';
  * @param {import('express').RequestHandler} auth
  * @param {import('../store.js').SessionStore} store
  * @param {string} jwtSecret
- * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function, settings?: import('../settings/service.js').SettingsService, platforms?: object }} [managers]
+ * @param {{ hlsManager?: object, hlsSubsManager?: object, sttManager?: object, resolveStorage?: Function, invalidateStorageCache?: Function, recordingsStore?: object, mediaStores?: object, settings?: import('../settings/service.js').SettingsService, platforms?: object }} [managers]
  * @param {import('express').RequestHandler} [projectAuth]
  * @returns {Router}
  */
-export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, settings = null, platforms = null } = {}, makeScopedAuth = null) {
+export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, recordingsStore = null, mediaStores = null, settings = null, platforms = null } = {}, makeScopedAuth = null) {
   const router = Router();
   // Per-resource project access for scoped external tokens; falls back to the
   // session-JWT `auth` when no factory is supplied (isolated tests).
@@ -45,7 +45,12 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   // other /file route (list/create/update/delete) keeps working unchanged
   // under the same scoped auth, reading apiKey off req.session directly
   // instead of resolving a live /live session (see CONSIDER.md).
-  router.use('/file',            createFilesRouter(db, scoped('file'), store, jwtSecret, resolveStorage, invalidateStorageCache, requireProjectRole(db, 'setup')));
+  router.use('/file',            createFilesRouter(db, scoped('file'), store, jwtSecret, resolveStorage, invalidateStorageCache, {
+    requireSetup: requireProjectRole(db, 'setup'),
+    libraryStores: mediaStores || {
+      recordingsStore,
+    },
+  }));
   router.use('/viewer',          createViewerRouter(db));
   router.use('/video',           createVideoRouter(db, hlsManager, hlsSubsManager));
   router.use('/stt',             createSttRouter(scoped('stt'), sttManager, db, jwtSecret, settings));
@@ -56,7 +61,7 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
     router.use('/broadcasts/:id/platforms', createBroadcastPlatformsRouter(db, scoped('broadcast'), platforms));
   }
   router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
-  router.use('/videos',          createVideosRouter(scoped('video'), db));
+  router.use('/videos',          createVideosRouter(scoped('video'), db, { recordingsStore }));
   router.use('/translation',     createTranslationRouter(scoped('translation'), db));
   router.use('/bridge-download', createBridgeDownloadRouter(settings));
   return router;

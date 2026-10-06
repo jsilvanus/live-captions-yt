@@ -32,7 +32,7 @@ import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import {
   createPerceptionAutostart, setSharedAutostart, getSharedAutostart,
-  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath,
+  initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath, thumbnailObjectKey,
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from 'lcyt-production';
@@ -114,6 +114,7 @@ import { createMetrics, setMetricsInstance } from './metrics/index.js';
 import { attachBusMetrics } from './metrics/bus-tap.js';
 import { setFfmpegAccountingSink } from './ffmpeg/index.js';
 import { startMetricsPollers } from './metrics/pollers.js';
+import { createMediaStores } from './storage/media-stores.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -279,6 +280,7 @@ const productionCommands = createProductionCommands({
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 // Wire into RTMP plugin so HLS segments can be published to storage.
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db, { settings });
+const mediaStores = await createMediaStores(settings);
 
 // RTMP plugin — run DB migrations, create all manager instances.
 // Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
@@ -667,6 +669,7 @@ const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { 
 // DSK routers require auth — must be created after auth is initialized.
 const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, {
   metrics, settings,
+  mediaStores,
   // Setup-tier writes only (plan_project_roles.md, decided 2026-07-26) —
   // template/viewport CRUD; live-trigger routes (activate/broadcast/renderer
   // start-stop/graphics push) stay ungated, see CONSIDER.md.
@@ -682,7 +685,13 @@ app.use(createCorsMiddleware(store));
 // member via requireProjectRole's own read exemption. No longer depends on a
 // live /live session (previously store.get(sessionId); only ever used
 // session.apiKey — see CONSIDER.md).
-app.use('/icons', createIconRouter(db, scopedAuth('icon'), undefined, requireProjectRole(db, 'setup')));
+app.use('/icons', createIconRouter(
+  db,
+  scopedAuth('icon'),
+  undefined,
+  requireProjectRole(db, 'setup'),
+  { iconStore: mediaStores.iconsStore }
+));
 
 // JSON body parser — 64KB limit prevents abuse
 // NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
@@ -812,7 +821,16 @@ app.get('/contact', (req, res) => {
   res.status(200).json({ name, email, ...(phone ? { phone } : {}), ...(website ? { website } : {}) });
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor: _dskCaptionProcessor, soundCaptionProcessor: _soundCaptionProcessor, cueProcessor: _cueProcessor, resolveStorage, mediamtxClient: productionMediamtxClient, settings }));
+app.use(createSessionRouters(db, store, jwtSecret, auth, {
+  relayManager,
+  dskCaptionProcessor: _dskCaptionProcessor,
+  soundCaptionProcessor: _soundCaptionProcessor,
+  cueProcessor: _cueProcessor,
+  resolveStorage,
+  mediamtxClient: productionMediamtxClient,
+  recordingsStore: mediaStores.recordingsStore,
+  settings,
+}));
 app.use(createAccountRouters(db, jwtSecret, { loginEnabled, settings }));
 app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
 app.use('/admin', createAdminRouter(db, jwtSecret));
@@ -826,7 +844,24 @@ app.use('/dsk',      dskRouter);
 app.use('/dsk',      dskTemplatesRouter);
 app.use('/dsk',      dskViewportsRouter);
 app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(db, auth, store, jwtSecret, { hlsManager, hlsSubsManager, sttManager, resolveStorage, invalidateStorageCache, settings, platforms: platformDeps }, scopedAuth));
+app.use(createContentRouters(
+  db,
+  auth,
+  store,
+  jwtSecret,
+  {
+    hlsManager,
+    hlsSubsManager,
+    sttManager,
+    resolveStorage,
+    invalidateStorageCache,
+    recordingsStore: mediaStores.recordingsStore,
+    mediaStores,
+    settings,
+    platforms: platformDeps,
+  },
+  scopedAuth
+));
 app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
 app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
@@ -926,7 +961,11 @@ const _perceptionAggregator = createPerceptionAggregator({ store, eventBus, scen
 _perceptionAggregator.startSweeper();
 const _feedAttributor = createFeedAttributor({
   db, registry: productionRegistry, eventBus,
-  previewBaseUrl: _perceptionBackendUrl, thumbnailsDir: DEFAULT_THUMBNAILS_DIR, thumbnailPath,
+  previewBaseUrl: _perceptionBackendUrl,
+  thumbnailsDir: DEFAULT_THUMBNAILS_DIR,
+  thumbnailPath,
+  thumbnailsStore: mediaStores.cameraThumbnailsStore,
+  thumbnailObjectKey,
 });
 _visionRoleManager?.setSourceResolver?.(createVisionSourceResolver({ db, attributor: _feedAttributor, sceneState: _sceneState, aggregator: _perceptionAggregator }));
 // An interest event (person entered, framing dropped, ...) calls the running Describer/Tracker now instead of at the next timed poll.
@@ -983,6 +1022,10 @@ app.use('/production', createProductionRouter(db, productionRegistry, production
   // cross-tenant review finding) and routes/bridge.js's
   // isUnauthenticatedBridgeRoute().
   auth: scopedAuth('production'),
+  cameraThumbnail: {
+    previewBaseUrl: settings ? (settings.get('production.camera_preview_base_url') || `http://localhost:${process.env.PORT || 3000}`) : DEFAULT_PREVIEW_BASE_URL,
+    thumbnailStore: mediaStores.cameraThumbnailsStore,
+  },
   perceptionManager: _perceptionManager,
   settings,
   // Setup-tier CRUD vs. Production-tier live-control split

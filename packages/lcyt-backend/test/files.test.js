@@ -252,6 +252,35 @@ describe('GET /file', () => {
 });
 
 // ---------------------------------------------------------------------------
+// GET /file/library — object storage library listing
+// ---------------------------------------------------------------------------
+
+describe('GET /file/library', () => {
+  it('should return 401 with no auth', async () => {
+    const res = await fetch(`${baseUrl}/file/library`);
+    assert.strictEqual(res.status, 401);
+  });
+
+  it('returns caption storage objects for the authenticated key', async () => {
+    const session = createMockSession();
+    const token = makeToken(session.sessionId);
+    await registerTestFile(session, { content: 'library listing test', lang: 'original', format: 'youtube' });
+
+    const res = await fetch(`${baseUrl}/file/library?limit=50`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    assert.strictEqual(res.status, 200);
+    const data = await res.json();
+    assert.ok(Array.isArray(data.areas));
+    const captionsArea = data.areas.find(a => a.id === 'captions');
+    assert.ok(captionsArea, 'captions area should be present');
+    assert.ok(Array.isArray(captionsArea.items));
+    assert.ok(captionsArea.items.length >= 1, 'captions area should include at least one object');
+    assert.ok(Number.isFinite(data?.totals?.objectCount));
+  });
+});
+
+// ---------------------------------------------------------------------------
 // GET /file/:id — download a file
 // ---------------------------------------------------------------------------
 

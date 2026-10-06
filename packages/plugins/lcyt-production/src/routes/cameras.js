@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import * as fs from 'node:fs';
+import { Readable } from 'node:stream';
 import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseCamera } from '../registry.js';
-import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath } from '../camera-thumbnail.js';
+import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath, thumbnailObjectKey } from '../camera-thumbnail.js';
 import { requireTier } from '../route-access.js';
 import { createProductionCommands, commandStatus } from '../commands.js';
 
@@ -254,7 +255,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // DELETE /production/cameras/:id — delete camera
-  router.delete('/:id', requireSetup, (req, res) => {
+  router.delete('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
     const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
     if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
@@ -263,7 +264,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     registry.removeCamera(id).catch(() => {});
     const presetIds = db.prepare('SELECT preset_id FROM prod_camera_preset_thumbnails WHERE camera_id = ?').all(id).map(r => r.preset_id);
     db.prepare('DELETE FROM prod_camera_preset_thumbnails WHERE camera_id = ?').run(id);
-    deleteCameraThumbnailFile(id, cameraThumbnailOpts.thumbnailsDir, presetIds);
+    await deleteCameraThumbnailFile(id, cameraThumbnailOpts.thumbnailsDir, presetIds, cameraThumbnailOpts.thumbnailStore ?? null);
     res.status(204).end();
   });
 
@@ -283,10 +284,27 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // GET /production/cameras/:id/thumbnail(.jpg) — serve the saved thumbnail
-  function serveThumbnail(req, res) {
+  async function sendStoredJpeg(store, key, res) {
+    try {
+      const opened = await store.stream(key);
+      res.setHeader('Content-Type', 'image/jpeg');
+      res.setHeader('Cache-Control', 'private, max-age=60');
+      if (opened.contentLength != null) res.setHeader('Content-Length', String(opened.contentLength));
+      const source = opened.stream?.pipe ? opened.stream : Readable.fromWeb(opened.stream);
+      source.pipe(res);
+    } catch {
+      res.status(404).json({ error: 'Thumbnail file not found on disk' });
+    }
+  }
+
+  async function serveThumbnail(req, res) {
     const row = db.prepare('SELECT thumbnail_captured_at FROM prod_cameras WHERE id = ?').get(req.params.id);
     if (!row || !row.thumbnail_captured_at) {
       return res.status(404).json({ error: 'No thumbnail captured for this camera' });
+    }
+
+    if (cameraThumbnailOpts.thumbnailStore) {
+      return sendStoredJpeg(cameraThumbnailOpts.thumbnailStore, thumbnailObjectKey(req.params.id, null), res);
     }
 
     const filepath = thumbnailPath(req.params.id, cameraThumbnailOpts.thumbnailsDir);
@@ -306,10 +324,13 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   }
 
   // GET /production/cameras/:id/preset/:presetId/thumbnail(.jpg) — per-preset reference image
-  function servePresetThumbnail(req, res) {
+  async function servePresetThumbnail(req, res) {
     const row = db.prepare('SELECT 1 FROM prod_camera_preset_thumbnails WHERE camera_id = ? AND preset_id = ?')
       .get(req.params.id, req.params.presetId);
     if (!row) return res.status(404).json({ error: 'No thumbnail captured for this preset' });
+    if (cameraThumbnailOpts.thumbnailStore) {
+      return sendStoredJpeg(cameraThumbnailOpts.thumbnailStore, thumbnailObjectKey(req.params.id, req.params.presetId), res);
+    }
     sendJpeg(thumbnailPath(req.params.id, cameraThumbnailOpts.thumbnailsDir, req.params.presetId), res);
   }
   router.get('/:id/preset/:presetId/thumbnail', servePresetThumbnail);
