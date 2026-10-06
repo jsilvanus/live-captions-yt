@@ -17,11 +17,13 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/lcyt
+# Install the shared dependencies first: with no package.json here, `npm install` prunes everything in node_modules
+# that it did not install itself, so the executor packages are copied in afterwards.
+# onnxruntime-node downloads its native library while installing, so the build needs network access.
+RUN npm install --no-save --no-audit --no-fund onnxruntime-node@^1.30.0 playwright-core@^1.51
 COPY packages/lcyt-compute/ /opt/lcyt/node_modules/lcyt-compute/
 COPY packages/plugins/lcyt-dsk/ /opt/lcyt/node_modules/lcyt-dsk/
-# onnxruntime-node downloads its native library while installing, so the build needs network access.
-RUN cd node_modules/lcyt-compute && npm install --omit=dev --no-audit --no-fund \
-  && cd /opt/lcyt && npm install --no-save --no-audit --no-fund onnxruntime-node@^1.30.0 playwright-core@^1.51
+RUN cd node_modules/lcyt-compute && npm install --omit=dev --no-audit --no-fund
 
 ARG PERCEPTION_MODEL_URL=https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_tiny.onnx
 ARG PERCEPTION_MODEL_SHA256=427cc366d34e27ff7a03e2899b5e3671425c262ea2291f88bb942bc1cc70b0f7
@@ -33,6 +35,11 @@ RUN mkdir -p /models \
 # /opt/lcyt, where the executors' own dependencies (onnxruntime-node, playwright-core) are installed.
 RUN ln -s /opt/lcyt/node_modules/lcyt-compute /app/node_modules/lcyt-compute \
   && ln -s /opt/lcyt/node_modules/lcyt-dsk /app/node_modules/lcyt-dsk
+
+# Fail the build, not the container, when an executor does not resolve from the worker's own location.
+RUN cd /app/packages/fffleet-worker/bin \
+  && node --input-type=module -e "import.meta.resolve('lcyt-compute/perception/fffleet-executor'); import.meta.resolve('lcyt-dsk/fffleet-executor');" \
+  && test -f /opt/lcyt/node_modules/lcyt-compute/src/perception/fffleet-executor.js
 
 # The base image starts `node packages/fffleet-worker/bin/fffleet-worker.js` relative to its working directory.
 WORKDIR /app
