@@ -1040,6 +1040,20 @@ if (musicManager) {
 }
 
 // ---------------------------------------------------------------------------
+// SPA fallback (must be LAST, after all API routes)
+// ---------------------------------------------------------------------------
+
+// If serving a static SPA bundle, fall back to index.html for unmatched routes.
+// This allows the client-side router (React Router) to handle navigation.
+if (process.env.STATIC_DIR) {
+  const { resolve, join } = await import('node:path');
+  const staticDir = resolve(process.env.STATIC_DIR);
+  app.get('/*', (req, res) => {
+    res.sendFile(join(staticDir, 'index.html'));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
