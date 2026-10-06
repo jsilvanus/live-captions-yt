@@ -10,13 +10,13 @@ const PROVIDERS = [
   { value: 'google',       label: 'Google Cloud Speech-to-Text' },
   { value: 'whisper_http', label: 'Whisper (HTTP)' },
   { value: 'openai',       label: 'OpenAI Whisper' },
+  { value: 'auditor',      label: 'Auditor (pulls the stream itself)' },
 ];
 
 const AUDIO_SOURCES = [
   { value: 'hls',  label: 'HLS (MediaMTX)' },
   { value: 'rtmp', label: 'RTMP (via ffmpeg)' },
   { value: 'whep', label: 'WHEP (WebRTC)' },
-  { value: 'auditor', label: 'Auditor (pulls the stream itself)' },
 ];
 
 export function SttPanel({ config = {}, onChange }) {

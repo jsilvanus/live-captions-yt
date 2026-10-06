@@ -169,7 +169,7 @@ describe('AuditorLiveAdapter', () => {
   });
 });
 
-describe('SttManager audioSource=auditor', () => {
+describe('SttManager provider=auditor', () => {
   const closers = [];
   afterEach(async () => { while (closers.length) await closers.pop()(); });
 
@@ -184,14 +184,15 @@ describe('SttManager audioSource=auditor', () => {
     const transcripts = [];
     mgr.on('transcript', t => transcripts.push(t));
 
-    await mgr.start('mykeyabcd', { language: 'fi-FI', audioSource: 'auditor', streamKey: 'sermon' });
+    await mgr.start('mykeyabcd', { provider: 'auditor', language: 'fi-FI', streamKey: 'sermon' });
     await waitFor(() => sent.length === 1);
     assert.equal(sent[0].text, 'Herra armahda');
     assert.equal(sent[0].ts.toISOString(), '2026-10-05T09:30:00.250Z');
     assert.equal(transcripts[0].provider, 'auditor');
     assert.equal(svc.state.created[0].source, 'rtsp://mediamtx:8554/sermon');
     const status = mgr.getStatus('mykeyabcd');
-    assert.equal(status.audioSource, 'auditor');
+    assert.equal(status.provider, 'auditor');
+    assert.equal(status.audioSource, 'none'); // no audio passes through LCYT
     assert.equal(status.mode, 'auditor-live');
 
     await mgr.stop('mykeyabcd');
@@ -203,7 +204,7 @@ describe('SttManager audioSource=auditor', () => {
     const svc = await fakeService({ status: 403, script: () => [] });
     closers.push(svc.close);
     const mgr = new SttManager({ values: () => [][Symbol.iterator]() }, null, { get: key => (key === 'stt.auditor_url' ? svc.url : undefined) });
-    await assert.rejects(mgr.start('k', { audioSource: 'auditor', streamKey: 'x' }), /403/);
+    await assert.rejects(mgr.start('k', { provider: 'auditor', streamKey: 'x' }), /403/);
     assert.equal(mgr.isRunning('k'), false);
   });
 });

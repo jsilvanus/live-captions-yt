@@ -173,9 +173,10 @@ export class SttManager extends EventEmitter {
     // (falling back to raw process.env only when omitted) — settings-resolved
     // values are passed through here rather than widening those classes further.
     let adapter;
-    if (audioSource === 'auditor') {
-      // Pull type: the auditor service pulls the stream itself, so the provider choice does not apply.
-      provider = 'auditor';
+    if (provider === 'auditor') {
+      // Transcript source, not an audio source: the auditor service pulls the stream itself, so no
+      // audio passes through here and `audioSource` does not apply.
+      audioSource = 'none';
       adapter = new AuditorLiveAdapter({
         language,
         streamKey: effectiveStreamKey,
@@ -204,7 +205,7 @@ export class SttManager extends EventEmitter {
         model: this._settings ? this._settings.get('stt.openai_stt_model') || undefined : undefined,
       });
     } else {
-      throw new Error(`SttManager: unsupported provider "${provider}". Supported: google, whisper_http, openai`);
+      throw new Error(`SttManager: unsupported provider "${provider}". Supported: google, whisper_http, openai, auditor`);
     }
 
     await adapter.start({ language });
@@ -329,12 +330,12 @@ export class SttManager extends EventEmitter {
         }
       });
 
-    } else if (audioSource === 'auditor') {
+    } else if (provider === 'auditor') {
       // Nothing to pull here: the adapter's start() (above) already opened the session on the service.
 
     } else {
       this._sessions.delete(apiKey);
-      throw new Error(`SttManager: unsupported audioSource "${audioSource}". Supported: hls, rtmp, whep, auditor`);
+      throw new Error(`SttManager: unsupported audioSource "${audioSource}". Supported: hls, rtmp, whep`);
     }
 
     logger.info(`[stt] Started for key ${apiKey.slice(0, 8)}… provider=${provider} lang=${language} source=${audioSource} stream=${effectiveStreamKey}`);

@@ -9,7 +9,8 @@ const PROVIDER_LABELS = {
   webspeech: 'Web Speech API (browser)',
   google: 'Google Cloud Speech-to-Text',
   whisper_http: 'Whisper (HTTP)',
-  openai: 'OpenAI Whisper'
+  openai: 'OpenAI Whisper',
+  auditor: 'Auditor (pulls the stream itself)'
 };
 
 /**

@@ -276,6 +276,7 @@ export function ServicePanel(props) {
             <option value="google">{t('settings.serverStt.providerGoogle')}</option>
             <option value="whisper_http">{t('settings.serverStt.providerWhisper')}</option>
             <option value="openai">{t('settings.serverStt.providerOpenAi')}</option>
+            <option value="auditor">{t('settings.serverStt.providerAuditor')}</option>
           </select>
         </div>
 
@@ -298,7 +299,6 @@ export function ServicePanel(props) {
             <option value="hls">{t('settings.serverStt.audioSourceHls')}</option>
             <option value="rtmp">{t('settings.serverStt.audioSourceRtmp')}</option>
             <option value="whep">{t('settings.serverStt.audioSourceWhep')}</option>
-            <option value="auditor">{t('settings.serverStt.audioSourceAuditor')}</option>
           </select>
           {serverSttAudioSource === 'whep' && serverSttWhepAvailable === false && (
             <span className="stt-whep-warning">{t('settings.serverStt.whepUnavailable')}</span>

@@ -176,7 +176,7 @@ PUT    /stt/config
 | `STT_AUDIO_SOURCE` | `hls` | Audio source: `hls`, `rtmp`, `whep` |
 | `GOOGLE_STT_MODE` | `rest` | Google STT: `rest` or `grpc` |
 | `WHISPER_HTTP_URL` | — | Whisper HTTP server base URL |
-| `AUDITOR_STT_URL` | — | Auditor STT service base URL (`audioSource=auditor`: the service pulls the stream and sends final transcripts) |
+| `AUDITOR_STT_URL` | — | Auditor STT service base URL (provider `auditor`: the service pulls the stream and sends final transcripts) |
 | `AUDITOR_STT_API_KEY` | — | Bearer key for that service |
 | `AUDITOR_STT_SOURCE_URL` | `rtsp://127.0.0.1:8554/{streamKey}` | Stream URL the service pulls; use an address its fleet workers reach |
 | `OPENAI_STT_API_KEY` | — | OpenAI API key |
