@@ -29,7 +29,13 @@ RUN mkdir -p /models \
   && curl -fsSL "$PERCEPTION_MODEL_URL" -o /models/model.onnx \
   && if [ -n "$PERCEPTION_MODEL_SHA256" ]; then echo "$PERCEPTION_MODEL_SHA256  /models/model.onnx" | sha256sum -c -; fi
 
-# The executors resolve from /opt/lcyt/node_modules.
+# The worker imports the executors from /app (ESM ignores NODE_PATH), so link them in. The links resolve to
+# /opt/lcyt, where the executors' own dependencies (onnxruntime-node, playwright-core) are installed.
+RUN ln -s /opt/lcyt/node_modules/lcyt-compute /app/node_modules/lcyt-compute \
+  && ln -s /opt/lcyt/node_modules/lcyt-dsk /app/node_modules/lcyt-dsk
+
+# The base image starts `node packages/fffleet-worker/bin/fffleet-worker.js` relative to its working directory.
+WORKDIR /app
 ENV NODE_PATH=/opt/lcyt/node_modules \
     FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor,lcyt-dsk/fffleet-executor \
     PERCEPTION_MODEL_PATH=/models/model.onnx \
