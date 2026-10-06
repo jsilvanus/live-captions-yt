@@ -1,0 +1,639 @@
+// Prisma schema for LCYT Backend
+// Supports both SQLite and PostgreSQL
+// 
+// Usage:
+//   SQLite:      DATABASE_URL="file:./lcyt.db"
+//   PostgreSQL:  DATABASE_URL="postgresql://user:pass@host:5432/lcyt"
+//
+// Generate client: npx prisma generate
+// Create migration: npx prisma migrate dev --name <name>
+// Apply migration:  npx prisma migrate deploy
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Users & Authentication
+// ───────────────────────────────────────────────────────────────────────────
+
+model User {
+  id          Int     @id @default(autoincrement())
+  email       String  @unique
+  passwordHash String
+  name        String?
+  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  active      Int     @default(1)
+  isAdmin     Int     @default(0)
+  adminRole   String  @default("full")
+
+  // Relations
+  organizations    Organization[]
+  orgMemberships   OrgMember[]
+  projectMembers   ProjectMember[]
+  apiKeys          ApiKey[]
+  invitedOrgMembers OrgMember[] @relation("InvitedBy")
+  siteFeaturePolicies SiteFeaturePolicy[]
+  orgFeatureOverrides OrgFeatureOverride[]
+  projectFeatures  ProjectFeature[]
+  userFeatures     UserFeature[]
+  invitedProjectMembers ProjectMember[] @relation("InvitedBy")
+  projectMemberPermissions ProjectMemberPermission[]
+  auditLogs        AuditLog[]
+  serverSettings   ServerSettings[]
+
+  @@map("users")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Organizations & Teams
+// ───────────────────────────────────────────────────────────────────────────
+
+model Organization {
+  id                Int      @id @default(autoincrement())
+  name              String
+  slug              String   @unique
+  ownerUserId       Int
+  createdAt         String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  projectSlugPolicy String   @default("none") // 'none' | 'prefix'
+
+  // Relations
+  owner             User              @relation(fields: [ownerUserId], references: [id])
+  members           OrgMember[]
+  featureOverrides  OrgFeatureOverride[]
+  apiKeys           ApiKey[]
+
+  @@map("organizations")
+}
+
+model OrgMember {
+  id        Int      @id @default(autoincrement())
+  orgId     Int
+  userId    Int
+  role      String   @default("member") // 'member' | 'admin'
+  invitedBy Int?
+  joinedAt  String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter   User?        @relation("InvitedBy", fields: [invitedBy], references: [id])
+
+  @@unique([orgId, userId])
+  @@index([userId])
+  @@index([orgId])
+  @@map("org_members")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// API Keys & Projects
+// ───────────────────────────────────────────────────────────────────────────
+
+model ApiKey {
+  id                 Int      @id @default(autoincrement())
+  key                String   @unique
+  owner              String
+  createdAt          String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  expiresAt          String?
+  active             Int      @default(1)
+  email              String?
+  dailyLimit         Int?
+  lifetimeLimit      Int?
+  lifetimeUsed       Int      @default(0)
+  activeBroadcastId  String?
+  revokedAt          String?
+  sequence           Int      @default(0)
+  lastCaptionAt      String?
+  backendFileEnabled Int      @default(0)
+  graphicsEnabled    Int      @default(0)
+  userId             Int?
+  orgId              Int?
+  restricted         Int      @default(0)
+  orgBaselineRole    String   @default("viewer") // 'viewer' | 'editor'
+  
+  // RTMP/relay columns
+  relayAllowed       Int      @default(0)
+  relayActive        Int      @default(0)
+  radioEnabled       Int      @default(0)
+  hlsEnabled         Int      @default(0)
+  cea708DelayMs      Int      @default(0)
+  embedCors          String   @default("*")
+  deviceCode         String?
+  ingestStreamKey    String?  @unique
+  publicSlug         String?  @unique
+
+  // Relations
+  owner_user         User?                      @relation(fields: [userId], references: [id])
+  organization       Organization?              @relation(fields: [orgId], references: [id])
+  targets            CaptionTarget[]
+  usage              CaptionUsage[]
+  errors             CaptionError[]
+  sessions           Session[]
+  broadcasts         Broadcast[]
+  videos             Video[]
+  projectFeatures    ProjectFeature[]
+  projectMembers     ProjectMember[]
+  stats              SessionStats[]
+  translationVendor  TranslationVendorConfig?
+  translationTargets TranslationTarget[]
+  captionFiles       CaptionFile[]
+  icons              Icon[]
+  auditLogs          AuditLog[]
+  mcpTokens          MCPToken[]
+  usageRollups       UsageRollup[]
+  deviceRoles        ProjectDeviceRole[]
+
+  @@index([orgId])
+  @@index([ingestStreamKey])
+  @@index([publicSlug])
+  @@map("api_keys")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Caption Targets & Delivery
+// ───────────────────────────────────────────────────────────────────────────
+
+model CaptionTarget {
+  id         String   @id @default(cuid())
+  apiKey     String
+  type       String   // 'youtube' | 'viewer' | 'generic'
+  enabled    Int      @default(1)
+  sortOrder  Int      @default(0)
+  streamKey  String?
+  url        String?
+  headers    String?  // JSON
+  viewerKey  String?
+  noBatch    Int      @default(0)
+  createdAt  String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt  String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  iconId     Int?
+  iconEnabled Int     @default(0)
+
+  // Relations
+  project    ApiKey    @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  icon       Icon?     @relation(fields: [iconId], references: [id], onDelete: SetNull)
+  translationTargets TranslationTarget[]
+
+  @@index([apiKey])
+  @@map("caption_targets")
+}
+
+model CaptionUsage {
+  apiKey String
+  date   String
+  count  Int    @default(0)
+
+  // Relations
+  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@id([apiKey, date])
+  @@map("caption_usage")
+}
+
+model CaptionError {
+  id        Int    @id @default(autoincrement())
+  apiKey    String
+  sessionId String
+  timestamp String
+  errorCode Int?
+  errorMsg  String?
+  batchSize Int    @default(1)
+
+  // Relations
+  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@map("caption_errors")
+}
+
+model UsageRollup {
+  apiKey      String
+  periodStart String
+  grain       String @default("hour") // 'hour' | 'day'
+  metric      String
+  value       Float  @default(0)
+
+  // Relations
+  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@id([apiKey, metric, grain, periodStart])
+  @@index([periodStart])
+  @@index([metric, periodStart])
+  @@map("usage_rollups")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Sessions & Statistics
+// ───────────────────────────────────────────────────────────────────────────
+
+model Session {
+  sessionId    String   @id
+  apiKey       String?
+  streamKey    String?
+  domain       String?
+  sequence     Int      @default(0)
+  startedAt    String?
+  lastActivity String?
+  syncOffset   Int?
+  micHolder    String?
+  data         String?  // JSON
+  broadcastId  String?
+
+  // Relations
+  project      ApiKey? @relation(fields: [apiKey], references: [key], onDelete: SetNull)
+  stats        SessionStats[]
+
+  @@map("sessions")
+}
+
+model SessionStats {
+  id              Int    @id @default(autoincrement())
+  sessionId       String
+  apiKey          String
+  domain          String?
+  startedAt       String
+  endedAt         String
+  durationMs      Int
+  captionsSent    Int    @default(0)
+  captionsFailed  Int    @default(0)
+  finalSequence   Int    @default(0)
+  endedBy         String @default("client")
+  broadcastId     String?
+
+  // Relations
+  session         Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  project         ApiKey  @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@map("session_stats")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Broadcasts & Videos
+// ───────────────────────────────────────────────────────────────────────────
+
+model Broadcast {
+  id                    String   @id
+  apiKey                String
+  title                 String   @default("")
+  description           String?
+  status                String   @default("draft") // 'draft' | 'scheduled' | 'live' | 'ended'
+  scheduledStart        String?
+  scheduledEnd          String?
+  actualStart           String?
+  actualEnd             String?
+  youtubeVideoIds       String?
+  youtubeBroadcastId    String?
+  rundownFileId         Int?
+  recordEnabled         Int      @default(0)
+  privacyStatus         String   @default("unlisted")
+  armed                 Int      @default(0)
+  archivedAt            String?
+  createdAt             String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt             String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  project               ApiKey   @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  assets                BroadcastAsset[]
+  files                 BroadcastFile[]
+  videos                Video[]
+
+  @@index([apiKey])
+  @@index([apiKey, status])
+  @@map("broadcasts")
+}
+
+model BroadcastAsset {
+  id          Int    @id @default(autoincrement())
+  broadcastId String
+  assetType   String
+  assetRef    String
+  sortOrder   Int    @default(0)
+  createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, assetType, assetRef])
+  @@index([broadcastId])
+  @@map("broadcast_assets")
+}
+
+model BroadcastFile {
+  id          Int @id @default(autoincrement())
+  broadcastId String
+  fileId      Int
+  createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  broadcast   Broadcast    @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  file        CaptionFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@unique([broadcastId, fileId])
+  @@index([broadcastId])
+  @@index([fileId])
+  @@map("broadcast_files")
+}
+
+model Video {
+  id          String   @id
+  apiKey      String
+  broadcastId String?
+  title       String   @default("")
+  status      String   @default("recording")
+  storageType String   @default("local")
+  storageKey  String?
+  durationMs  Int?
+  sizeBytes   Int      @default(0)
+  startedAt   String?
+  endedAt     String?
+  createdAt   String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt   String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  project     ApiKey     @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  broadcast   Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+
+  @@index([apiKey])
+  @@index([broadcastId])
+  @@map("videos")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// File Storage
+// ───────────────────────────────────────────────────────────────────────────
+
+model CaptionFile {
+  id          Int     @id @default(autoincrement())
+  apiKey      String
+  sessionId   String?
+  filename    String
+  lang        String?
+  format      String  @default("youtube")
+  type        String  @default("captions")
+  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  sizeBytes   Int     @default(0)
+  broadcastId String?
+
+  // Relations
+  project         ApiKey          @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  broadcastFiles  BroadcastFile[]
+
+  @@map("caption_files")
+}
+
+model Icon {
+  id          Int     @id @default(autoincrement())
+  apiKey      String
+  filename    String
+  diskFilename String
+  mimeType    String  @default("image/png")
+  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  sizeBytes   Int     @default(0)
+
+  // Relations
+  project     ApiKey        @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  targets     CaptionTarget[]
+
+  @@map("icons")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Translations
+// ───────────────────────────────────────────────────────────────────────────
+
+model TranslationVendorConfig {
+  apiKey      String   @id
+  vendor      String   @default("mymemory")
+  vendorApiKey String?
+  libreUrl    String?
+  libreKey    String?
+  showOriginal Int     @default(0)
+  updatedAt   String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  project     ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@map("translation_vendor_config")
+}
+
+model TranslationTarget {
+  id              String  @id @default(cuid())
+  apiKey          String
+  enabled         Int     @default(1)
+  lang            String
+  target          String
+  format          String?
+  sortOrder       Int     @default(0)
+  createdAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  captionTargetId String?
+  showOriginal    Int     @default(0)
+
+  // Relations
+  project         ApiKey        @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  captionTarget   CaptionTarget? @relation(fields: [captionTargetId], references: [id], onDelete: SetNull)
+
+  @@index([apiKey])
+  @@map("translation_targets")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Feature Flags & Access Control
+// ───────────────────────────────────────────────────────────────────────────
+
+model SiteFeaturePolicy {
+  featureCode String  @id
+  mode        String  @default("denied")
+  updatedBy   Int?
+  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  updatedByUser User? @relation(fields: [updatedBy], references: [id])
+
+  @@map("site_feature_policies")
+}
+
+model OrgFeatureOverride {
+  orgId       Int
+  featureCode String
+  mode        String
+  setBy       Int?
+  setAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  setByUser   User?        @relation(fields: [setBy], references: [id])
+
+  @@id([orgId, featureCode])
+  @@map("org_feature_overrides")
+}
+
+model ProjectFeature {
+  apiKey      String
+  featureCode String
+  enabled     Int     @default(1)
+  config      String? // JSON
+  grantedBy   Int?
+  grantedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  project     ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  grantedByUser User? @relation(fields: [grantedBy], references: [id])
+
+  @@id([apiKey, featureCode])
+  @@index([apiKey])
+  @@map("project_features")
+}
+
+model UserFeature {
+  userId      Int
+  featureCode String
+  enabled     Int     @default(1)
+  config      String? // JSON
+  grantedBy   Int?
+  grantedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  user        User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  grantedByUser User? @relation("GrantedBy", fields: [grantedBy], references: [id])
+
+  @@id([userId, featureCode])
+  @@index([userId])
+  @@map("user_features")
+}
+
+model ProjectMember {
+  id          Int    @id @default(autoincrement())
+  apiKey      String
+  userId      Int
+  accessLevel String @default("editor") // 'viewer' | 'editor' | 'operator' | 'admin' | 'owner'
+  invitedBy   Int?
+  joinedAt    String @default(dbgenerated("CURRENT_TIMESTAMP"))
+
+  // Relations
+  project     ApiKey  @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter     User?   @relation("InvitedBy", fields: [invitedBy], references: [id])
+  permissions ProjectMemberPermission[]
+
+  @@unique([apiKey, userId])
+  @@index([userId])
+  @@index([apiKey])
+  @@map("project_members")
+}
+
+model ProjectMemberPermission {
+  id         Int    @id @default(autoincrement())
+  memberId   Int
+  permission String
+  granted    Int    @default(1)
+
+  // Relations
+  member     ProjectMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, permission])
+  @@map("project_member_permissions")
+}
+
+model ProjectDeviceRole {
+  id          Int    @id @default(autoincrement())
+  apiKey      String
+  roleType    String
+  name        String
+  pinHash     String
+  permissions String @default("[]") // JSON
+  config      String? // JSON
+  active      Int    @default(1)
+  createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
+  expiresAt   String?
+
+  // Relations
+  project     ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@index([apiKey])
+  @@map("project_device_roles")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Events & Audit
+// ───────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id         Int     @id @default(autoincrement())
+  createdAt  String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  actor      String
+  actorKind  String
+  actorId    String?
+  userId     Int?
+  apiKey     String?
+  orgId      Int?
+  action     String
+  targetType String?
+  targetId   String?
+  details    String?
+  ip         String?
+
+  // Relations
+  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project    ApiKey?      @relation(fields: [apiKey], references: [key], onDelete: SetNull)
+  org        Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([apiKey, id])
+  @@index([orgId, id])
+  @@index([action])
+  @@map("audit_log")
+}
+
+model BusEvent {
+  id          Int    @id @default(autoincrement())
+  projectId   String?
+  topic       String
+  ts          Int
+  payloadJson String?
+
+  @@index([projectId])
+  @@index([ts])
+  @@map("bus_events")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// MCP Tokens
+// ───────────────────────────────────────────────────────────────────────────
+
+model MCPToken {
+  id               Int    @id @default(autoincrement())
+  apiKey           String
+  label            String
+  tokenHash        String @unique
+  userId           Int?
+  projectId        String?
+  scopes           String?
+  createdAt        String @default(dbgenerated("CURRENT_TIMESTAMP"))
+  lastUsedAt       String?
+  revokedAt        String?
+  active           Int    @default(1)
+  createdByUserId  Int?
+  createdByName    String @default("")
+
+  // Relations
+  project          ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+
+  @@index([apiKey])
+  @@map("mcp_tokens")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Server Settings
+// ───────────────────────────────────────────────────────────────────────────
+
+model ServerSettings {
+  key        String  @id
+  value      String
+  updatedAt  String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedBy  String?
+
+  @@map("server_settings")
+}
