@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import { DbClient } from '../db-client.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DB_PATH = join(__dirname, '..', '..', 'lcyt-backend.db');
@@ -8,12 +9,14 @@ const DEFAULT_DB_PATH = join(__dirname, '..', '..', 'lcyt-backend.db');
 /**
  * Open/create the SQLite database and ensure the api_keys and caption_usage tables exist.
  * Runs additive migrations for new columns (safe to call on existing databases).
+ * Returns a DbClient abstraction layer (in Phase 1, wraps better-sqlite3).
  * @param {string} [dbPath] - Path to the SQLite database file. Defaults to DB_PATH env var or ./lcyt-backend.db
- * @returns {import('better-sqlite3').Database}
+ * @returns {DbClient}
  */
 export function initDb(dbPath) {
   const resolvedPath = dbPath || process.env.DB_PATH || DEFAULT_DB_PATH;
-  const db = new Database(resolvedPath);
+  const sqlite = new Database(resolvedPath);
+  const db = new DbClient(sqlite);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
