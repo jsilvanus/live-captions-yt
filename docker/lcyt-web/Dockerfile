@@ -1,3 +1,7 @@
+# DEPRECATED: The frontend is now built into the main lcyt image (Dockerfile).
+# This separate builder is no longer used. The Dockerfile below is kept for reference only.
+# See https://github.com/jsilvanus/live-captions-yt/issues/... for the consolidation.
+
 # lcyt-web: the built web UI bundle, for the LCYT backend to serve (STATIC_DIR). The image only copies the bundle
 # into the /out volume on start, so a compose stack can share it with the backend container:
 #   volumes: [web:/out]   (this container)   and   [web:/srv/web:ro] + STATIC_DIR=/srv/web   (backend)

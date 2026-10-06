@@ -1,9 +1,8 @@
 name: Publish images
 
-# Builds the container images the deployment stack (jsilvanus/deploy-media) pulls:
-#   lcyt              the backend + MCP server (Dockerfile)
+# Builds and publishes the container images the deployment stack (jsilvanus/deploy-media) uses:
+#   lcyt              the backend + frontend web UI (Dockerfile) — STATIC_DIR is set in the image
 #   lcyt-fleet-worker the fat fffleet worker: DSK graphics + perception (docker/lcyt-fleet-worker)
-#   lcyt-web          the built web UI bundle (docker/lcyt-web)
 # Tags: `latest` and `sha-<sha>` from main, `<version>` and `<major>.<minor>` from v*.*.* tags.
 # The images are not pushed from pull requests.
 
@@ -28,8 +27,6 @@ jobs:
             file: Dockerfile
           - image: lcyt-fleet-worker
             file: docker/lcyt-fleet-worker/Dockerfile
-          - image: lcyt-web
-            file: docker/lcyt-web/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

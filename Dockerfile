@@ -1,10 +1,11 @@
-﻿FROM node:20-slim AS build
+FROM node:22-slim AS build
 WORKDIR /app
 
 # Copy workspace manifests (enables layer caching for npm ci)
 COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
+COPY packages/lcyt-web/package.json packages/lcyt-web/
 COPY packages/lcyt-mcp-http/package.json packages/lcyt-mcp-http/
 COPY packages/lcyt-tools/package.json packages/lcyt-tools/
 COPY packages/lcyt-compute/package.json packages/lcyt-compute/
@@ -19,10 +20,11 @@ COPY packages/plugins/lcyt-music/package.json packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/package.json packages/plugins/lcyt-actions/
 COPY packages/plugins/lcyt-platforms/package.json packages/plugins/lcyt-platforms/
 
-# Install workspace dependencies.
+# Install workspace dependencies (including lcyt-web for frontend build).
 RUN npm ci \
   --workspace=packages/lcyt \
   --workspace=packages/lcyt-backend \
+  --workspace=packages/lcyt-web \
   --workspace=packages/lcyt-mcp-http \
   --workspace=packages/plugins/lcyt-production \
   --workspace=packages/plugins/lcyt-dsk \
@@ -40,6 +42,7 @@ RUN npm ci \
 # Copy source
 COPY packages/lcyt/ packages/lcyt/
 COPY packages/lcyt-backend/ packages/lcyt-backend/
+COPY packages/lcyt-web/ packages/lcyt-web/
 COPY packages/lcyt-mcp-http/src/ packages/lcyt-mcp-http/src/
 COPY packages/lcyt-tools/ packages/lcyt-tools/
 COPY packages/lcyt-compute/ packages/lcyt-compute/
@@ -54,9 +57,16 @@ COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/ packages/plugins/lcyt-actions/
 COPY packages/plugins/lcyt-platforms/ packages/plugins/lcyt-platforms/
 
-FROM node:20-slim
+# Build frontend (React bundle)
+RUN npm run build:web
+
+FROM node:22-slim
 WORKDIR /app
 COPY --from=build /app .
+
+# Copy built frontend bundle to /srv/web for serving
+COPY --from=build /app/packages/lcyt-web/dist /srv/web
+ENV STATIC_DIR=/srv/web
 
 # Optional apt mirror â€” set APT_MIRROR to speed up installs on hosted servers.
 # Example (Hetzner): --build-arg APT_MIRROR=http://mirror.hetzner.com/debian/packages
