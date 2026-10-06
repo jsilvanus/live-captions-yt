@@ -1,0 +1,57 @@
+# ─── LCYT only ───────────────────────────────────────────────────────────────
+# One container: the LCYT backend (API on 3000, MCP on 3001) with its SQLite
+# database on a volume. No sidecars: no MediaMTX, fffleet, auditor, docker
+# socket proxy or nginx. ffmpeg runs inside the container when a feature needs
+# it (FFMPEG_RUNNER=spawn), so RTMP relay, radio, HLS and server-side STT from
+# a stream stay off unless you enable them and build with ffmpeg:
+#
+#   docker compose -f docker-compose.lcyt.yml build \
+#     --build-arg RTMP_RELAY_ACTIVE=1
+#
+# Quick start:
+#   cp .env.example .env     # set JWT_SECRET and ADMIN_KEY (required)
+#   docker compose -f docker-compose.lcyt.yml up -d --build
+#   curl http://127.0.0.1:3000/health
+#
+# Everything else (STT providers, AI, YouTube OAuth, ...) is configured in
+# Admin → Server once the backend is up. The web UI is not part of this image;
+# serve packages/lcyt-web/dist separately (or use the hosted app and add its
+# domain to ALLOWED_DOMAINS). Use docker-compose.yml for the MediaMTX stack.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+  lcyt:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
+        GRAPHICS_ENABLED: ${GRAPHICS_ENABLED:-0}
+        APT_MIRROR: ${APT_MIRROR:-}
+    image: lcyt-site:latest
+    ports:
+      - "127.0.0.1:3000:3000"   # API
+      - "127.0.0.1:3001:3001"   # MCP
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      DB_PATH: /data/lcyt.sqlite
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-app.lcyt.fi,localhost}
+      PUBLIC_URL: ${PUBLIC_URL:-}
+      LCYT_WEB_URL: ${LCYT_WEB_URL:-}
+      FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
+      MCP_REQUIRE_API_KEY: ${MCP_REQUIRE_API_KEY:-0}
+      RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
+      FFMPEG_RUNNER: spawn
+    restart: unless-stopped
+    volumes:
+      - lcyt-db:/data
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const req=http.get('http://127.0.0.1:3000/health',res=>{process.exit(res.statusCode===200?0:1)});req.on('error',()=>process.exit(1));"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  lcyt-db: {}

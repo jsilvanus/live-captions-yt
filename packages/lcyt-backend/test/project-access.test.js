@@ -188,3 +188,27 @@ describe('resource-mode scope gating (colon-less requiredScope, verb from method
     assert.equal((await fetch(`${baseUrl}/dsk-res`, { method: 'POST', ...H(token) })).status, 200);
   });
 });
+
+describe('revoked project key (api_keys.active = 0)', () => {
+  it('rejects project, session and external tokens once the key is revoked, while another key still works', async () => {
+    const user = createUser(db, { email: 'revoked@example.com', passwordHash: 'hash', name: 'Revoked' });
+    const key = createKey(db, { owner: 'Revoked', user_id: user.id }).key;
+    addMember(db, key, user.id, 'owner');
+    const H = (t) => ({ headers: { Authorization: `Bearer ${t}`, 'X-Project-Id': key } });
+    const projectToken = jwt.sign({ kind: 'project', type: 'user', userId: user.id, email: 'revoked@example.com', projectId: key, projectRole: 'editor' }, JWT_SECRET, { expiresIn: '1h' });
+    const sessionToken = jwt.sign({ sessionId: 's1', apiKey: key }, JWT_SECRET, { expiresIn: '1h' });
+    assert.equal((await fetch(`${baseUrl}/check`, H(projectToken))).status, 200);
+    assert.equal((await fetch(`${baseUrl}/check`, H(sessionToken))).status, 200);
+
+    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(key);
+
+    for (const t of [projectToken, sessionToken]) {
+      const res = await fetch(`${baseUrl}/check`, H(t));
+      assert.equal(res.status, 401);
+      assert.match((await res.json()).error, /revoked/);
+    }
+    // A token for a different, active project is unaffected.
+    const other = jwt.sign({ kind: 'project', type: 'user', userId: 1, email: 'project-access@example.com', projectId: projectKey, projectRole: 'editor' }, JWT_SECRET, { expiresIn: '1h' });
+    assert.equal((await fetch(`${baseUrl}/check`, { headers: { Authorization: `Bearer ${other}`, 'X-Project-Id': projectKey } })).status, 200);
+  });
+});

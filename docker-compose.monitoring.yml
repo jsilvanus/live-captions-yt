@@ -4,7 +4,7 @@
 #
 # Usage:
 #   METRICS_TOKEN=... docker compose -f docker-compose.yml -f docker-compose.monitoring.yml up
-#   (or with docker-compose.orchestrator.yml for the full worker stack)
+#   (the fffleet orchestrator and workers run from the fffleet repo; its /metrics is scraped via the Admin Metrics Fleet tile)
 #
 # Retention defaults to 30 days; override with PROM_RETENTION (e.g. 90d).
 

@@ -674,3 +674,229 @@ doesn't support the concept at all.
 `HlsManager` no longer has an ffmpeg re-mux or a segment directory (the code path was never reachable in production because `initRtmpControl` never passed `localRtmp`), and nothing else reads `HLS_ROOT`. The setting and its documentation rows are left in place in this change because removing a registry key touches the settings UI, its tests and six docs; it deserves its own small PR. `RADIO_HLS_ROOT` is a separate setting and was not examined here.
 
 **Resolved:** the registry key and the documentation rows were removed.
+
+> WRONG, closed 2026-10-06: better-sqlite3 enables `PRAGMA foreign_keys` by default (checked: it returns 1), so the cascades work; the manual deletes in `lcyt-rtmp/src/db/crop.js` are harmless redundancy
+
+## New `ON DELETE CASCADE` on `caption_targets`/`translation_vendor_config`/`translation_targets` is inert — `PRAGMA foreign_keys` is never enabled
+
+**Where:** `packages/lcyt-backend/src/db/schema.js` (the three new tables from
+`plan_selfservice_config_backend.md` §1) vs. `packages/lcyt-backend/src/db/keys.js`'s
+`deleteKey()` and `routes/keys.js`'s `DELETE /keys/:key?permanent=true` handler.
+
+**Finding:** All three new tables declare `api_key TEXT ... REFERENCES api_keys(key)
+ON DELETE CASCADE`, matching the same declaration already used by
+`project_features`/`project_members`/`project_member_permissions`/`project_device_roles`.
+But nowhere in the codebase is `PRAGMA foreign_keys = ON` ever issued on the
+`better-sqlite3` connection (checked via grep), and SQLite disables FK
+enforcement by default — so every `ON DELETE CASCADE` in this schema,
+including the three new ones, is currently a no-op. `deleteKey()` is a bare
+`DELETE FROM api_keys WHERE key = ?`; the permanent-delete route
+(`routes/keys.js`) only manually cleans up DSK images before calling it.
+Permanently deleting a project key today already leaves orphaned rows behind
+in every one of those "cascading" child tables — this change adds three more
+tables to that existing gap rather than introducing a new one.
+
+**Why skipped:** Pre-existing, repo-wide gap (not specific to this diff) —
+fixing it means either (a) turning on `PRAGMA foreign_keys = ON`, which risks
+surfacing latent FK-violation errors from years of already-orphaned rows in
+production-shaped databases the moment it's enabled, or (b) adding manual
+`DELETE FROM <table> WHERE api_key = ?` cleanup for every child table (there
+are now 7+) inside `deleteKey()`/the permanent-delete route — a real fix, but
+one that touches shared deletion code far outside this plan's scope and
+deserves its own audit + test pass across all affected tables, not three
+lines added incidentally by a config-CRUD feature.
+
+(Found during: `/code-review` on `claude/selfservice-config-backend-djp52h`, 2026-07-06.)
+
+**Update (2026-07-11): the premise is stale.** The installed `better-sqlite3`
+enables `PRAGMA foreign_keys` **by default** (verified: `new Database(':memory:')`
+reports `foreign_keys = 1`; no explicit pragma exists in the codebase, but none
+is needed). So the `ON DELETE CASCADE` declarations are live, not inert — FK
+constraint errors are real (a test writing `DELETE FROM organizations` before
+`DELETE FROM api_keys` fails with `SQLITE_CONSTRAINT_FOREIGNKEY`). The residual
+concern inverts: rather than orphaned rows, deployments upgraded from an era of
+already-orphaned rows may hit FK violations on writes touching them. Worth a
+short audit pass of `deleteKey()`/permanent-delete against live-FK semantics,
+then this entry can close.
+
+**Update (2026-07-11): RESOLVED.** Ran the audit. Full inventory of every
+`REFERENCES` declaration in `packages/lcyt-backend/src/db/schema.js`:
+
+- **`api_keys(key)` children (core schema):** `caption_targets`,
+  `translation_vendor_config`, `translation_targets`, `project_features`,
+  `project_members` (→ `project_member_permissions` cascades transitively via
+  `member_id`), `project_device_roles` — **every one is `ON DELETE CASCADE`**.
+  So the original finding's premise was doubly stale: not only is FK
+  enforcement live, but there is no NO-ACTION `api_keys(key)` child table in
+  the core schema left for `deleteKey()` to break on. Confirmed empirically —
+  `deleteKey()` on a key with rows in all six tables did not throw.
+- **`users(id)` / `organizations(id)` references — this is where the real
+  breakage was:**
+  - `organizations.owner_user_id` — **NOT NULL, no `ON DELETE` action.**
+    Deleting a user who owns an org threw `SQLITE_CONSTRAINT_FOREIGNKEY`.
+    Reproduced both in the self-service `DELETE /auth/me` flow (a user who is
+    the *sole* member of their own org — the route's existing pre-check only
+    blocked the "owns an org **with other members**" case, so a solo-owned
+    org fell through to `deleteUserAccount()` and threw) and via direct
+    `db/orgs.js` calls.
+  - `api_keys.org_id` — no `ON DELETE` action. Deleting an org with member
+    projects threw the same error; `DELETE /orgs/:id` had no existing test
+    covering this at all.
+  - `org_members.invited_by`, `project_members.invited_by`,
+    `project_features.granted_by`, `user_features.granted_by`,
+    `site_feature_policies.updated_by`, `org_feature_overrides.set_by` — all
+    nullable, no `ON DELETE` action. Lower-severity (audit-trail
+    attribution, not ownership) but still a real, enforced constraint that
+    could block a user delete if that user had ever invited/granted/set
+    anything referenced by one of these columns.
+  - `api_keys.user_id` — nullable, no `ON DELETE` action, but already handled
+    correctly pre-existing (`UPDATE api_keys SET user_id = NULL` in the admin
+    route, and `deleteOwnedProjectsForUser()` deleting the key outright in
+    the self-service path).
+
+  **Fix:** `packages/lcyt-backend/src/db/orgs.js` gained
+  `reassignOrDeleteOwnedOrgs(db, userId)` — for each org the user owns,
+  promotes another member (admin-ranked first, then earliest-joined) to
+  owner, or if the user is the org's sole member, detaches its projects
+  (`api_keys.org_id = NULL`, same semantic as the sibling fix below) and
+  deletes the org outright. `deleteOrganization(db, orgId)` now detaches
+  member projects before deleting the org row (`api_keys.org_id = NULL`,
+  wrapped in `db.transaction`), matching the Caption Target Architecture
+  convention that an org vanishing must never delete or break its projects.
+  `packages/lcyt-backend/src/db/users.js` gained `clearUserReferences(db,
+  userId)` to null out the six audit-trail columns above, and
+  `deleteUserAccount()` (self-service `DELETE /auth/me`) now calls
+  `reassignOrDeleteOwnedOrgs()` + `clearUserReferences()` before deleting
+  `org_members`/`users` rows. `packages/lcyt-backend/src/routes/admin.js`'s
+  `DELETE /admin/users/:id` gained an `ownedOrgs` count to its existing
+  `?force=true` gate (alongside `activeProjects`) and calls the same two
+  helpers on force-delete. `deleteKey()` itself was left functionally
+  unchanged for the CASCADE tables (correctly no-op, the engine already
+  handles them) but was additionally wrapped in `db.transaction` and now
+  explicitly cleans up the **undeclared-FK** `api_key` tables
+  (`caption_usage`, `session_stats`, `caption_errors`, `auth_events`,
+  `sessions`, `caption_files`, `icons`, `viewer_key_daily_stats`,
+  `mcp_tokens`, plus `rtmp_stream_stats`/`rtmp_relays` when present) so a
+  permanent key delete doesn't silently orphan rows there — this part isn't
+  FK-required (no constraint is declared on those columns) but closes the
+  data-hygiene half of the original finding.
+
+  **Chosen semantics (documented for anyone revisiting):** a user's owned
+  *projects* survive a user delete (unlink, don't delete — matches the
+  pre-existing admin-route behavior this audit found already in place); a
+  user's owned *organizations* are transferred to another member when
+  possible, torn down only when the user was the org's sole member; an org's
+  member *projects* always survive an org delete (detach, don't delete).
+
+  **Ambiguity flagged, not resolved:** `DELETE /admin/users/:id?force=true`
+  auto-transfers org ownership to another member without any additional
+  confirmation step (unlike `DELETE /auth/me`, which blocks outright rather
+  than silently reassigning when other members exist). This mirrors the
+  existing `activeProjects` force-unlink behavior's "force means force"
+  posture, but a site admin silently losing visibility into who now owns a
+  team is a real product question or worth a confirmation UI. Not resolved
+  here — flagging for whoever next touches `DELETE /admin/users/:id`.
+
+  **Residual, per-plugin (not fixed here — plugin files are out of scope for
+  this pass):** every plugin table that keys off `api_key` (`lcyt-agent`:
+  `ai_config`, `ai_model_configs`, `project_ai_role_configs`, `agent_events`,
+  `agent_context`, `ai_providers.owner_api_key`, `ai_provider_grants`;
+  `lcyt-connectors`: `api_connectors`, `variables`; `lcyt-cues`: `cue_rules`,
+  `cue_events`; `lcyt-dsk`: `dsk_templates`, `dsk_viewports` (its "images"
+  actually live in `lcyt-backend`'s own `caption_files` table — already
+  covered by `deleteKey()`'s cleanup above); `lcyt-files`:
+  `key_storage_config`; `lcyt-music`: `music_events`, `music_config`;
+  `lcyt-rtmp`: `rtmp_relays` (already cleaned up defensively via the
+  `try/catch` in `deleteKey()`/`cleanRevokedKeys()`, but only when the table
+  exists), `rtmp_stream_stats` (same), `stt_config`, `stt_source_languages`,
+  `radio_config`) declares its `api_key` column with **no FK constraint at
+  all** — same undeclared-reference shape as `lcyt-backend`'s own
+  `caption_usage`/`mcp_tokens`/etc. before this pass. None of them will
+  throw `SQLITE_CONSTRAINT_FOREIGNKEY` on a key delete (no constraint is
+  declared to violate), but none of them get cleaned up by `deleteKey()`
+  either, since `lcyt-backend` doesn't reach into plugin internals (see the
+  Plugin Architecture convention in the root `CLAUDE.md`) — a permanent key
+  delete today orphans rows in all of these. Each plugin's own delete/cleanup
+  path (if any) should audit this on its own
+  schedule.
+
+(Audited 2026-07-11: 888/888 `packages/lcyt-backend` tests pass, including
+new failing-first-then-fixed coverage for all four paths above —
+`test/keys.test.js` (`deleteKey()` cascade + orphan cleanup),
+`test/orgs.test.js` (`DELETE /orgs/:id` with member projects),
+`test/admin.test.js` (`DELETE /admin/users/:id` owned-org block/transfer/
+teardown), `test/auth.test.js` (`DELETE /auth/me` solo-owned-org teardown +
+still-blocks-with-other-members).)
+
+---
+
+> RESOLVED (seen 2026-10-06): `SttManager._deliverTranscript` now composes through the injected `composeCaptionText` (`stt-manager.js`)
+
+## Server-STT delivery doesn't compose translated caption text for YouTube/viewer targets
+
+**Where:** `packages/plugins/lcyt-rtmp/src/stt-manager.js` (`_deliverTranscript`)
+
+**Finding:** The server-STT delivery path computes `captionLang` from
+`captions`-target translation rows but never uses it: YouTube targets get
+`sender.send(trimmed, ts)` (original text only) and viewer broadcasts set
+`composedText: trimmed`. The client-driven path (`routes/captions.js`)
+composes via `composeCaptionText(text, captionLang, translations,
+showOriginal)` and does per-target routed composition via
+`translationsByTargetId`, so a "captions"-target translation changes what
+YouTube/viewers see there but not in server-STT mode. Viewers still receive
+the raw `translations` map, so viewer pages can render translations — the gap
+is the composed text (and per-target routing / `show_original` handling).
+
+**Why skipped:** Reproducing `captions.js`'s Phase 5 per-target composition
+(routed `caption_target_id`, per-row `show_original`, `<br>` composition)
+inside `_deliverTranscript` is a real chunk of duplicated logic; the right fix
+is probably extracting the composition/fan-out block from `routes/captions.js`
+into a shared helper (like `caption-file-writer.js` did for archiving) and
+using it from both paths — its own pass, not a side effect of the archiving
+fix that surfaced it.
+
+(Found during: caption/translation pipeline audit after `plan_batch_options`,
+2026-07-10 — the same audit fixed the sibling gap where `_deliverTranscript`
+translated for `backend-file` targets and then dropped the result; archiving
+is now wired via `createSessionCaptionFileWriter` + `setDeliveryHelpers`.)
+
+**Update (2026-07-10): RESOLVED.** The extraction pass ran the same day:
+`src/caption-fanout.js` (`createCaptionFanout({ db })`) now owns the
+extra-target delivery block, `routes/captions.js` calls it (move-not-change —
+route tests unchanged as the regression proof), and `SttManager` receives it
+plus `composeCaptionText` via `setDeliveryHelpers`. Server-STT now composes
+YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
+fallback), honours per-target routing, and registers viewer key owners — a
+stats-attribution miss the extraction also surfaced and fixed. The old
+`broadcastToViewers` injection was removed.
+
+---
+
+> RESOLVED 2026-10-06: `createProjectAccessMiddleware` rejects every token kind (session, user/project, device, external) with 401 when `api_keys.active = 0` (`isProjectKeyRevoked`, `middleware/project-access.js`); test in `test/project-access.test.js`
+
+## `getEffectiveProjectAccessLevel()` never checks `api_keys.active` — a revoked project key doesn't invalidate live JWTs of any kind
+
+**Where:** `packages/lcyt-backend/src/db/project-members.js` (`getMemberAccessLevel()`, `getEffectiveProjectAccessLevel()`), `packages/lcyt-backend/src/middleware/project-access.js`
+
+**Finding:** `validateApiKey()` (`db/keys.js`) checks `api_keys.active`/`revoked_at` and is the gate for the raw-API-key flow, but the JWT-based `createProjectAccessMiddleware()` gate never calls it — `getEffectiveProjectAccessLevel()`/`getMemberAccessLevel()` only ever look at `project_members`/`api_keys.user_id`, never `active`. So revoking a project's key (`DELETE /keys/:key` → `active = 0`) doesn't invalidate any already-issued session/user/project/device JWT for that project; each keeps working until its own TTL expires (2h for session/project tokens, 1h for device, 30d for the user-level token — though a user token alone can't reach a project route without a resolvable projectId). This affects every token kind, not just the 3 the "10 Altitude Issues" entry above flagged (session/external/device) — user/project tokens are equally unchecked.
+
+**Why skipped:** broader and differently-risky than a mechanical dedup — adding this check could unexpectedly lock out a live session on a project that looks revoked-but-still-cached somewhere, and needs its own reasoning about where in the request path it belongs (every branch? only at issuance via `POST /auth/project-token`? both?) and what error shape callers should expect. Surfaced during the 2026-09-10 auth-middleware repo-study pass; not folded into that pass's scope.
+
+(Found during: repo-study pass on the "Auth Middleware: 10 Altitude Issues" entry, 2026-09-10.)
+
+---
+
+
+> RESOLVED 2026-10-06: `.github/workflows/integration-tests.yml` now discovers packages by glob (`packages/*`, `packages/plugins/*` with a `test` script), which also adds `lcyt-compute` and `lcyt-tools`, which CI had never run
+
+## RESOLVED — the CI plugin lists have been brought back in line
+
+**Where:** `.github/workflows/integration-tests.yml` — the `detect-changes` job's two `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
+
+**Original finding:** CI enumerated plugins by hand in four places and had fallen behind `packages/plugins/`. `lcyt-platforms` was missing entirely, and `lcyt-connectors` and `lcyt-actions` had never been unit-tested by CI at all.
+
+**Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
+
+**Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
+
+---

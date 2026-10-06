@@ -97,9 +97,22 @@ function attachProjectContext(req, authInfo) {
   return authInfo;
 }
 
-function handleTokenAuth(req, res, next, authInfo) {
+/**
+ * A revoked project key (`api_keys.active = 0`) must stop every token issued for
+ * that project, not only the raw-key flow. Unknown ids pass: not every
+ * projectId resolves to an api_keys row, and this check only revokes.
+ */
+function isProjectKeyRevoked(db, projectId) {
+  const row = db.prepare('SELECT active FROM api_keys WHERE key = ?').get(projectId);
+  return row?.active === 0;
+}
+
+function handleTokenAuth(db, req, res, next, authInfo) {
   if (!authInfo.projectId) {
     return res.status(400).json({ error: 'projectId is required' });
+  }
+  if (isProjectKeyRevoked(db, authInfo.projectId)) {
+    return res.status(401).json({ error: 'Project key has been revoked' });
   }
   attachProjectContext(req, authInfo);
   return next();
@@ -141,7 +154,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           return res.status(403).json({ error: 'Insufficient token scope' });
         }
       }
-      return handleTokenAuth(req, res, next, {
+      return handleTokenAuth(db, req, res, next, {
         kind: 'external',
         projectId: projectId || external.projectId || external.apiKey,
         userId: external.userId,
@@ -158,7 +171,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
       const kind = classifyToken(payload);
 
       if (kind === 'session') {
-        return handleTokenAuth(req, res, next, {
+        return handleTokenAuth(db, req, res, next, {
           kind: 'session',
           projectId: projectId || payload.projectId || payload.apiKey,
           sessionId: payload.sessionId || null,
@@ -184,7 +197,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         if (!accessLevel) {
           return res.status(403).json({ error: 'Not a project member' });
         }
-        return handleTokenAuth(req, res, next, {
+        return handleTokenAuth(db, req, res, next, {
           kind: payload.kind === 'project' ? 'project' : 'user',
           userId: user.userId,
           email: user.email,
@@ -211,7 +224,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         // uniformly with the external/user branches instead of a fourth,
         // narrower copy.
         const device = normalizeUserPayload(payload);
-        return handleTokenAuth(req, res, next, {
+        return handleTokenAuth(db, req, res, next, {
           kind: 'device',
           projectId: projectId || payload.projectId || payload.apiKey,
           deviceRole: payload.deviceRole || payload.role || null,

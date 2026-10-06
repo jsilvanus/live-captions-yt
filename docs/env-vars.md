@@ -206,3 +206,17 @@ This document lists environment variables found across the repository, with the 
 If you'd like, I can:
 - Commit these two files in a branch and open a PR.
 - Expand `docs/env-vars.md` into separate per-service env examples (`packages/lcyt-backend/.env.example`, `packages/lcyt-mcp-http/.env.example`, etc.).
+
+## Compute fleet and STT (added 2026-10-06)
+
+- `FFMPEG_RUNNER` — `spawn` (default), `local`, `docker` or `fleet`. `worker` was removed.
+  - Files: packages/lcyt-compute/src/ffmpeg/index.js
+- `FFFLEET_URL`, `FFFLEET_CLIENT_ID`, `FFFLEET_CLIENT_SECRET`, `FFFLEET_TOKEN`, `FFFLEET_FALLBACK` — fffleet orchestrator address, login and local fallback (`none` fails instead of running ffmpeg here).
+  - Files: packages/lcyt-compute/src/ffmpeg/fleet-runner.js, packages/plugins/lcyt-production/src/perception-manager.js
+- `DSK_RENDER_EXECUTOR` — `local` (default) or `fleet` (per-viewport DSK streams as fffleet jobs; needs `DSK_PAGE_BASE_URL`).
+  - Files: packages/plugins/lcyt-dsk/src/renderer.js, packages/plugins/lcyt-dsk/src/fleet-viewports.js
+- `STT_PROVIDER` — `google`, `whisper_http`, `openai` or `auditor`; `STT_AUDIO_SOURCE` — `hls`, `rtmp` or `whep` (ignored by `auditor`).
+  - Files: packages/plugins/lcyt-rtmp/src/stt-manager.js
+- `AUDITOR_STT_URL`, `AUDITOR_STT_API_KEY`, `AUDITOR_STT_SOURCE_URL` — liturgos-auditor service address, key and the stream URL it pulls (`{streamKey}` template).
+  - Files: packages/plugins/lcyt-rtmp/src/stt-adapters/auditor-live.js, packages/lcyt-backend/src/settings/registry.js
+

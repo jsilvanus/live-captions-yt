@@ -137,6 +137,17 @@ export const MAX_CONTEXT_LINES = 20;
 const DEFAULT_CONTEXT_SEGMENTS = 3;
 
 /**
+ * Default similarity threshold per match type. Semantic matching uses 0.70:
+ * on two real Finnish services (YouTube/auditor captions, gte-multilingual-base)
+ * 0.75 missed 2 of 7 and 2 of 5 cues, 0.70 found nearly all of them.
+ */
+export const DEFAULT_SEMANTIC_THRESHOLD = 0.70;
+export const DEFAULT_FUZZY_THRESHOLD = 0.75;
+export function defaultThresholdFor(matchType) {
+  return matchType === 'semantic' ? DEFAULT_SEMANTIC_THRESHOLD : DEFAULT_FUZZY_THRESHOLD;
+}
+
+/**
  * Normalise a rule/leaf's context settings. `line` (default) matches the
  * current caption only, `window` the last N lines joined, `both` either.
  * @returns {{ mode: 'line'|'window'|'both', segments: number }}
@@ -268,6 +279,12 @@ export class CueEngine {
      * semantic rules with `context_mode` 'window' or 'both'. Map<apiKey, string[]>
      */
     this._recentLines = new Map();
+
+    /**
+     * Section in which an inline semantic cue last fired, so it fires once per
+     * section instead of again on the following lines. Map<apiKey, Map<ruleId, string>>
+     */
+    this._firedInSection = new Map();
   }
 
   /** Record a caption line in the rolling context buffer (call once per caption, before evaluating). */
@@ -281,7 +298,10 @@ export class CueEngine {
   }
 
   /** Forget the rolling context (e.g. at a section change or session end). */
-  clearContext(apiKey) { this._recentLines.delete(apiKey); }
+  clearContext(apiKey) {
+    this._recentLines.delete(apiKey);
+    this._firedInSection.delete(apiKey);
+  }
 
   /** Best semantic similarity between `pattern` and any candidate text; one embedding call. */
   async _bestSemanticScore(apiKey, pattern, candidates, extra = {}) {
@@ -316,7 +336,7 @@ export class CueEngine {
         action: cue.action || {},
         enabled: cue.enabled !== false,
         cooldown_ms: cue.cooldown_ms ?? cue.cooldownMs ?? 0,
-        fuzzy_threshold: cue.fuzzy_threshold ?? cue.fuzzyThreshold ?? 0.75,
+        fuzzy_threshold: cue.fuzzy_threshold ?? cue.fuzzyThreshold ?? defaultThresholdFor(cue.match_type || cue.matchType || (cue.semantic ? 'semantic' : null)),
         context_mode: readContextSettings(cue).mode,
         context_segments: readContextSettings(cue).segments,
         source: 'inline',
@@ -498,7 +518,7 @@ export class CueEngine {
       }
       case 'semantic': {
         if (!pattern || !text || !this._embedFn) return false;
-        const threshold = node.fuzzy_threshold ?? node.threshold ?? 0.75;
+        const threshold = node.fuzzy_threshold ?? node.threshold ?? DEFAULT_SEMANTIC_THRESHOLD;
         try {
           const recent = ctx.recent ?? this._recentLines.get(apiKey);
           const best = await this._bestSemanticScore(apiKey, pattern, semanticCandidates(text, recent, node));
@@ -765,11 +785,17 @@ export class CueEngine {
         if (last && (now - last) < rule.cooldown_ms) continue;
       }
 
+      // A semantic cue fires once per section (opt out with once_per_section: false):
+      // the lines after a match keep scoring high and would refire it.
+      const sectionKey = String(codes?.section ?? '');
+      const oncePerSection = rule.match_type === 'semantic' && (rule.once_per_section ?? rule.oncePerSection) !== false;
+      if (oncePerSection && this._firedInSection.get(apiKey)?.get(rule.id) === sectionKey) continue;
+
       let matched = null;
       try {
         switch (rule.match_type) {
           case 'semantic': {
-            const threshold = rule.fuzzy_threshold ?? 0.75;
+            const threshold = rule.fuzzy_threshold ?? DEFAULT_SEMANTIC_THRESHOLD;
             if (rule.pattern && text) {
               const candidates = semanticCandidates(text, recent, rule);
               if (this._embedFn) {
@@ -820,6 +846,11 @@ export class CueEngine {
 
       if (matched !== null) {
         this._lastFired.set(rule.id, now);
+        if (oncePerSection) {
+          const bySection = this._firedInSection.get(apiKey) || new Map();
+          bySection.set(rule.id, sectionKey);
+          this._firedInSection.set(apiKey, bySection);
+        }
         fired.push({ rule, matched });
         this._recordFired(apiKey, rule, matched);
       }
