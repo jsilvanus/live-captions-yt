@@ -86,6 +86,38 @@ export function LoginPage() {
     setError(null);
   }, [backendUrl]);
 
+  // Auto-probe localhost on mount for local-mode auto-login
+  useEffect(() => {
+    const autoProbeLocalhost = async () => {
+      // Only auto-probe if we're at localhost and haven't detected features yet
+      if (!window.location.hostname.match(/^(localhost|127\.0\.0\.1|::1|\[::1\])$/i)) return;
+      if (features !== null) return; // Already probed or user made a selection
+
+      const localUrl = `${window.location.protocol}//${window.location.host}`;
+      try {
+        const res = await fetch(`${localUrl}/health`, {
+          cache: 'no-store',
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data.ok || !Array.isArray(data.features)) return;
+        setFeatures(data.features);
+        saveBackendFeatures(data.features);
+
+        // Auto-login in local-mode
+        if (data.features.includes('local-mode')) {
+          await loginLocal(localUrl);
+          window.location.assign('/');
+        }
+      } catch {
+        // Silently ignore probe failures; user can manually select backend
+      }
+    };
+
+    autoProbeLocalhost();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ─── Phase 1: Probe backend ─────────────────────────────
 
   async function handleProbe() {
