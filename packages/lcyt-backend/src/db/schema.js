@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3';
+import { Pool } from 'pg';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
 import { DbClient } from '../db-client.js';
@@ -7,16 +8,38 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_DB_PATH = join(__dirname, '..', '..', 'lcyt-backend.db');
 
 /**
- * Open/create the SQLite database and ensure the api_keys and caption_usage tables exist.
- * Runs additive migrations for new columns (safe to call on existing databases).
- * Returns a DbClient abstraction layer (in Phase 1, wraps better-sqlite3).
- * @param {string} [dbPath] - Path to the SQLite database file. Defaults to DB_PATH env var or ./lcyt-backend.db
- * @returns {DbClient}
+ * Initialize database connection based on DATABASE_URL.
+ * - SQLite: creates/initializes the database file
+ * - PostgreSQL: connects to existing database (schema created by migrations)
+ * 
+ * Returns a DbClient abstraction layer that works with both databases.
+ * @param {string} [dbPath] - Path to the SQLite database file (ignored for PostgreSQL)
+ * @returns {DbClient | Promise<DbClient>}
  */
 export function initDb(dbPath) {
-  const resolvedPath = dbPath || process.env.DB_PATH || DEFAULT_DB_PATH;
-  const sqlite = new Database(resolvedPath);
-  const db = new DbClient(sqlite);
+  const databaseUrl = process.env.DATABASE_URL;
+  const dbType = DbClient.detectDatabaseType(databaseUrl);
+
+  if (dbType === 'postgres') {
+    // For PostgreSQL: connect to existing database
+    // In Phase 2 testing, the database is pre-initialized by Docker Compose
+    // In Phase 3, migrations will create/update schema
+    const pool = new Pool({
+      connectionString: databaseUrl,
+      // Connection pool settings for development/testing
+      min: 2,
+      max: 10,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
+
+    // Don't initialize schema here - it should exist from Docker Compose init script or migrations
+    return new DbClient(null, pool, 'postgres');
+  } else {
+    // SQLite: use existing synchronous initialization
+    const resolvedPath = dbPath || process.env.DB_PATH || DEFAULT_DB_PATH;
+    const sqlite = new Database(resolvedPath);
+    const db = new DbClient(sqlite, null, 'sqlite');
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -795,7 +818,8 @@ export function initDb(dbPath) {
       }
     }
   });
-  backfillTx();
+    backfillTx();
 
-  return db;
+    return db;
+  }
 }
