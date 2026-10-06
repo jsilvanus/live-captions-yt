@@ -11,7 +11,7 @@
  */
 
 import { Router } from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
@@ -75,6 +75,22 @@ function parseLibraryLimit(value) {
   return Math.min(parsed, MAX_LIBRARY_LIMIT);
 }
 
+function safeUnderscoreSegment(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9._-]+/g, '_');
+}
+
+function safeDashSegment(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+}
+
+function iconKeySegment(apiKey) {
+  const raw = String(apiKey ?? '');
+  const safe = raw.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+  if (safe === raw) return safe;
+  const suffix = createHash('sha256').update(raw).digest('hex').slice(0, 8);
+  return `${safe}-${suffix}`;
+}
+
 function inferBackendType(store) {
   if (typeof store?.type === 'string' && store.type) return store.type;
   if (typeof store?.listObjects === 'function') return 'adapter';
@@ -82,11 +98,11 @@ function inferBackendType(store) {
   return 'unknown';
 }
 
-async function collectStoreObjects(store, { apiKey = null, limit = DEFAULT_LIBRARY_LIMIT } = {}) {
+async function collectStoreObjects(store, { apiKey = null, limit = DEFAULT_LIBRARY_LIMIT, prefix = '' } = {}) {
   if (typeof store?.listObjects === 'function') {
     const items = [];
     let truncated = false;
-    for await (const entry of store.listObjects(apiKey ?? '', '')) {
+    for await (const entry of store.listObjects(apiKey ?? '', prefix || '')) {
       if (items.length >= limit) {
         truncated = true;
         break;
@@ -107,7 +123,7 @@ async function collectStoreObjects(store, { apiKey = null, limit = DEFAULT_LIBRA
     let truncated = false;
     while (items.length < limit) {
       const remaining = limit - items.length;
-      const page = await store.list('', { limit: Math.min(remaining, 1000), cursor });
+      const page = await store.list(prefix || '', { limit: Math.min(remaining, 1000), cursor });
       for (const entry of page.items || []) {
         if (items.length >= limit) {
           truncated = true;
@@ -126,7 +142,6 @@ async function collectStoreObjects(store, { apiKey = null, limit = DEFAULT_LIBRA
         break;
       }
     }
-    if (cursor) truncated = true;
     items.sort((a, b) => a.key.localeCompare(b.key));
     return { items, truncated };
   }
@@ -292,18 +307,22 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     try {
       const captionStorage = await _resolve(apiKey);
       const areas = [
-        { id: 'captions', label: 'Caption / Rundown Files', store: captionStorage, usesApiKey: true },
-        { id: 'graphics', label: 'Graphics', store: libraryStores.graphicsStore, usesApiKey: false },
-        { id: 'icons', label: 'Icons', store: libraryStores.iconsStore, usesApiKey: false },
-        { id: 'dsk-thumbnails', label: 'DSK Thumbnails', store: libraryStores.dskThumbnailsStore, usesApiKey: false },
-        { id: 'camera-thumbnails', label: 'Camera Thumbnails', store: libraryStores.cameraThumbnailsStore, usesApiKey: false },
-        { id: 'recordings', label: 'Recordings', store: libraryStores.recordingsStore, usesApiKey: false },
+        { id: 'captions', label: 'Caption / Rundown Files', store: captionStorage, usesApiKey: true, prefixForApiKey: () => '' },
+        { id: 'graphics', label: 'Graphics', store: libraryStores.graphicsStore, usesApiKey: false, prefixForApiKey: (key) => `${safeUnderscoreSegment(key)}/` },
+        { id: 'icons', label: 'Icons', store: libraryStores.iconsStore, usesApiKey: false, prefixForApiKey: (key) => `${iconKeySegment(key)}/` },
+        { id: 'dsk-thumbnails', label: 'DSK Thumbnails', store: libraryStores.dskThumbnailsStore, usesApiKey: false, prefixForApiKey: (key) => `${safeUnderscoreSegment(key)}/` },
+        { id: 'recordings', label: 'Recordings', store: libraryStores.recordingsStore, usesApiKey: false, prefixForApiKey: (key) => `${safeDashSegment(key)}/` },
       ];
 
       const outAreas = [];
       for (const area of areas) {
         if (!area.store) continue;
-        const listed = await collectStoreObjects(area.store, { apiKey: area.usesApiKey ? apiKey : null, limit });
+        const areaPrefix = typeof area.prefixForApiKey === 'function' ? area.prefixForApiKey(apiKey) : '';
+        const listed = await collectStoreObjects(area.store, {
+          apiKey: area.usesApiKey ? apiKey : null,
+          limit,
+          prefix: areaPrefix,
+        });
         const totalBytes = listed.items.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
         outAreas.push({
           id: area.id,

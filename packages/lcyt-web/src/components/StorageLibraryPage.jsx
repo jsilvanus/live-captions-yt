@@ -65,6 +65,7 @@ function TreeNode({ node, depth = 0, expanded, onToggle }) {
             <button
               type="button"
               onClick={() => onToggle(dir.path)}
+              aria-expanded={isOpen}
               style={{
                 border: 'none',
                 background: 'transparent',

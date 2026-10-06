@@ -278,6 +278,61 @@ describe('GET /file/library', () => {
     assert.ok(captionsArea.items.length >= 1, 'captions area should include at least one object');
     assert.ok(Number.isFinite(data?.totals?.objectCount));
   });
+
+  it('scopes shared media-store listing by key prefix and reports full paged results as non-truncated', async () => {
+    const calls = [];
+    const pagedStore = {
+      type: 's3',
+      async list(prefix, { cursor }) {
+        calls.push({ prefix, cursor });
+        if (!cursor) {
+          return {
+            items: [{ key: `${prefix}one.png`, size: 11, lastModified: 1 }],
+            nextCursor: 'next-page',
+          };
+        }
+        return {
+          items: [{ key: `${prefix}two.png`, size: 22, lastModified: 2 }],
+          nextCursor: null,
+        };
+      },
+    };
+
+    const app = express();
+    app.use(express.json({ limit: '64kb' }));
+    app.use('/file', createFilesRouter(
+      db,
+      createAuthMiddleware(JWT_SECRET),
+      store,
+      JWT_SECRET,
+      resolveStorage,
+      () => {},
+      { libraryStores: { graphicsStore: pagedStore } }
+    ));
+
+    const tempServer = createServer(app);
+    await new Promise((resolve) => tempServer.listen(0, resolve));
+    const tempUrl = `http://localhost:${tempServer.address().port}`;
+
+    try {
+      const session = createMockSession();
+      const token = makeToken(session.sessionId);
+      const res = await fetch(`${tempUrl}/file/library?limit=2000`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      assert.strictEqual(res.status, 200);
+      const data = await res.json();
+
+      const graphicsArea = data.areas.find(a => a.id === 'graphics');
+      assert.ok(graphicsArea, 'graphics area should be present');
+      assert.strictEqual(graphicsArea.truncated, false);
+      assert.strictEqual(graphicsArea.objectCount, 2);
+      assert.ok(calls.length >= 2);
+      assert.strictEqual(calls[0].prefix, 'files-test-key/');
+    } finally {
+      await new Promise((resolve) => tempServer.close(resolve));
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
