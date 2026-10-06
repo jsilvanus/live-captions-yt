@@ -1,0 +1,182 @@
+name: Database Test Matrix
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  checks: write
+  pull-requests: write
+
+jobs:
+  test-matrix:
+    name: Test Matrix (${{ matrix.database }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgres]
+        node-version: [20.x]
+
+    services:
+      # PostgreSQL service (used when database=postgres)
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lcyt_test
+          POSTGRES_USER: lcyt_user
+          POSTGRES_PASSWORD: test-password-change-me
+          POSTGRES_INITDB_ARGS: '-E UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8'
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+        ports:
+          - 5432:5432
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure SQLite database
+        if: matrix.database == 'sqlite'
+        run: |
+          echo "DATABASE_URL=file:./test.db" >> $GITHUB_ENV
+          echo "TEST_DATABASE=sqlite" >> $GITHUB_ENV
+
+      - name: Configure PostgreSQL database
+        if: matrix.database == 'postgres'
+        run: |
+          echo "DATABASE_URL=postgresql://lcyt_user:test-password-change-me@localhost:5432/lcyt_test" >> $GITHUB_ENV
+          echo "TEST_DATABASE=postgres" >> $GITHUB_ENV
+
+      - name: Wait for PostgreSQL to be ready
+        if: matrix.database == 'postgres'
+        run: |
+          until pg_isready -h localhost -U lcyt_user -d lcyt_test; do
+            echo 'Waiting for PostgreSQL to be ready...'
+            sleep 2
+          done
+        timeout-minutes: 5
+
+      - name: Generate Prisma client
+        working-directory: packages/lcyt-backend
+        run: npx prisma generate
+
+      - name: Run tests (${{ matrix.database }})
+        working-directory: packages/lcyt-backend
+        run: npm test
+        env:
+          NODE_ENV: test
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          TEST_DATABASE: ${{ env.TEST_DATABASE }}
+
+      - name: Collect test results (${{ matrix.database }})
+        if: always()
+        run: |
+          echo "## Test Results: ${{ matrix.database }}" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Tests completed for ${{ matrix.database }}" >> $GITHUB_STEP_SUMMARY
+
+  test-matrix-result:
+    name: Test Matrix Result
+    runs-on: ubuntu-latest
+    if: always()
+    needs: test-matrix
+
+    steps:
+      - name: Check test matrix results
+        run: |
+          if [[ "${{ needs.test-matrix.result }}" == "failure" ]]; then
+            echo "❌ One or more databases failed"
+            exit 1
+          fi
+          echo "✅ All databases passed"
+          exit 0
+
+      - name: Comment PR with results
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const status = '${{ needs.test-matrix.result }}' === 'success' ? '✅' : '❌';
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## Database Test Matrix ${status}
+
+              Ran full test suite against both SQLite and PostgreSQL.
+              
+              - **SQLite:** ${{ needs.test-matrix.result == 'success' && '✅ PASS' || '❌ FAIL' }}
+              - **PostgreSQL:** ${{ needs.test-matrix.result == 'success' && '✅ PASS' || '❌ FAIL' }}
+              
+              See [workflow results](${context.payload.pull_request.html_url}/checks) for details.`
+            })
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter (if configured)
+        continue-on-error: true
+        run: npm run lint --if-present
+
+  schema-validation:
+    name: Schema Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        working-directory: packages/lcyt-backend
+        run: npm ci
+
+      - name: Validate Prisma schema
+        working-directory: packages/lcyt-backend
+        run: npx prisma validate
+
+      - name: Format check (Prisma)
+        working-directory: packages/lcyt-backend
+        run: npx prisma format --check

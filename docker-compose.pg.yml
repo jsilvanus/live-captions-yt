@@ -1,0 +1,201 @@
+version: '3.9'
+
+# ───────────────────────────────────────────────────────────────────────────
+# PostgreSQL Development Stack for LCYT Backend
+# 
+# Usage:
+#   cp .env.example .env
+#   docker compose -f docker-compose.pg.yml up
+#
+# Access:
+#   Backend:    http://localhost:3000
+#   PostgreSQL: localhost:5432 (psql or pgAdmin)
+#   pgAdmin:    http://localhost:5050 (if --profile admin)
+#   Metrics:    http://localhost:9090 (Prometheus, if --profile monitoring)
+#
+# Environment:
+#   DATABASE_URL="postgresql://lcyt_user:password@postgres:5432/lcyt"
+# ───────────────────────────────────────────────────────────────────────────
+
+services:
+  # ─────────────────────────────────────────────────────────────────────────
+  # PostgreSQL 16 (primary database)
+  # ─────────────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: lcyt-postgres
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: lcyt
+      POSTGRES_USER: ${POSTGRES_USER:-lcyt_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me-in-production}
+      POSTGRES_INITDB_ARGS: "-E UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+      # Enable query logging for debugging (optional)
+      # POSTGRES_INIT_ARGS: "-c log_statement=all"
+    volumes:
+      - lcyt-postgres-data:/var/lib/postgresql/data
+      - ./ops/db-init/postgres-init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-lcyt_user} -d lcyt"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - lcyt-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PgBouncer - Connection Pooling (optional, for production-like testing)
+  # ─────────────────────────────────────────────────────────────────────────
+  pgbouncer:
+    image: edoburu/pgbouncer:latest
+    container_name: lcyt-pgbouncer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6432:6432"
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-lcyt_user}:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/lcyt"
+      POOL_MODE: "transaction"
+      MAX_CLIENT_CONN: 1000
+      DEFAULT_POOL_SIZE: 25
+      RESERVE_POOL_SIZE: 5
+      RESERVE_POOL_TIMEOUT: 3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    profiles:
+      - pooling  # opt-in: `docker compose --profile pooling up`
+    networks:
+      - lcyt-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # pgAdmin - Web UI for PostgreSQL (optional)
+  # ─────────────────────────────────────────────────────────────────────────
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: lcyt-pgadmin
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@lcyt.local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_ENHANCED_LOG_LEVEL: 10
+      PGADMIN_CONFIG_CONSOLE_LOG_LEVEL: 10
+    profiles:
+      - admin  # opt-in: `docker compose --profile admin up`
+    depends_on:
+      - postgres
+    networks:
+      - lcyt-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # LCYT Backend (Express API server)
+  # ─────────────────────────────────────────────────────────────────────────
+  lcyt-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: lcyt-backend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3001:3001"  # MCP SSE server
+    environment:
+      # Database: use PgBouncer if pooling profile enabled, else direct PostgreSQL
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-lcyt_user}:${POSTGRES_PASSWORD:-change-me-in-production}@postgres:5432/lcyt}
+      
+      # Node & deployment
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: 3000
+      
+      # Security (CHANGE THESE IN PRODUCTION)
+      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-me}
+      ADMIN_KEY: ${ADMIN_KEY:-dev-admin-key-change-me}
+      
+      # Configuration
+      ALLOWED_DOMAINS: ${ALLOWED_DOMAINS:-localhost,127.0.0.1,app.lcyt.local}
+      SESSION_TTL: ${SESSION_TTL:-7200000}
+      CLEANUP_INTERVAL: ${CLEANUP_INTERVAL:-300000}
+      
+      # Optional features
+      FREE_APIKEY_ACTIVE: ${FREE_APIKEY_ACTIVE:-0}
+      RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
+      GRAPHICS_ENABLED: ${GRAPHICS_ENABLED:-0}
+      
+      # Logging
+      PRISMA_LOG: ${PRISMA_LOG:-}
+      
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      - lcyt-backend-storage:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+    networks:
+      - lcyt-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Adminer - Simple DB admin UI (optional, alternative to pgAdmin)
+  # ─────────────────────────────────────────────────────────────────────────
+  adminer:
+    image: adminer:latest
+    container_name: lcyt-adminer
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+    profiles:
+      - admin
+    depends_on:
+      - postgres
+    networks:
+      - lcyt-net
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Prometheus - Metrics collection (optional)
+  # ─────────────────────────────────────────────────────────────────────────
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: lcyt-prometheus
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ./ops/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - lcyt-prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=30d"
+    profiles:
+      - monitoring  # opt-in: `docker compose --profile monitoring up`
+    depends_on:
+      - lcyt-backend
+    networks:
+      - lcyt-net
+
+volumes:
+  lcyt-postgres-data:
+    driver: local
+  lcyt-backend-storage:
+    driver: local
+  lcyt-prometheus-data:
+    driver: local
+
+networks:
+  lcyt-net:
+    driver: bridge
+    name: lcyt-net
