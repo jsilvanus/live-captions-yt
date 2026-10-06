@@ -100,6 +100,7 @@ export default {
       provider: 'Provider',
       providerGoogle: 'Google Cloud STT',
       providerWhisper: 'Whisper HTTP (whisper.cpp)',
+      providerAuditor: 'Auditor (pulls the stream itself)',
       providerOpenAi: 'OpenAI-compatible',
       language: 'Language',
       audioSource: 'Audio source',

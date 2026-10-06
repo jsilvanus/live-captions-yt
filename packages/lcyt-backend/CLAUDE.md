@@ -109,6 +109,9 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `GOOGLE_STT_KEY` | Google Cloud STT REST API key (simpler alternative to service account) | none |
 | `GOOGLE_STT_MODE` | Google STT mode: `rest` (default) or `grpc` (lower latency; requires `@google-cloud/speech`) | `rest` |
 | `WHISPER_HTTP_URL` | Base URL of a Whisper-compatible HTTP STT server | none |
+| `AUDITOR_STT_URL` | Base URL of the auditor STT service for `provider=auditor` (pull type) | none |
+| `AUDITOR_STT_API_KEY` | Bearer key for the auditor STT service | none |
+| `AUDITOR_STT_SOURCE_URL` | Stream URL the auditor pulls, `{streamKey}` replaced; must be reachable from where it runs (fleet worker) | `rtsp://127.0.0.1:8554/{streamKey}` |
 | `WHISPER_HTTP_MODEL` | Model name to request from the Whisper HTTP server | none |
 | `OPENAI_STT_URL` | Base URL for OpenAI-compatible STT endpoint | OpenAI default |
 | `OPENAI_STT_API_KEY` | API key for OpenAI STT endpoint | none |

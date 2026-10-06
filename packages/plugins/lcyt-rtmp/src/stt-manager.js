@@ -20,6 +20,7 @@ import { HlsSegmentFetcher } from './hls-segment-fetcher.js';
 import { GoogleSttAdapter } from './stt-adapters/google-stt.js';
 import { WhisperHttpAdapter } from './stt-adapters/whisper-http.js';
 import { OpenAiAdapter } from './stt-adapters/openai.js';
+import { AuditorLiveAdapter } from './stt-adapters/auditor-live.js';
 import { translateText, isSameLanguage } from './translate-server.js';
 import { getSttConfig } from './db.js';
 import logger from 'lcyt/logger';
@@ -172,7 +173,19 @@ export class SttManager extends EventEmitter {
     // (falling back to raw process.env only when omitted) — settings-resolved
     // values are passed through here rather than widening those classes further.
     let adapter;
-    if (provider === 'google') {
+    if (provider === 'auditor') {
+      // Transcript source, not an audio source: the auditor service pulls the stream itself, so no
+      // audio passes through here and `audioSource` does not apply.
+      audioSource = 'none';
+      adapter = new AuditorLiveAdapter({
+        language,
+        streamKey: effectiveStreamKey,
+        clientRef: `lcyt:${apiKey.slice(0, 8)}`,
+        baseUrl: this._settings ? this._settings.get('stt.auditor_url') || undefined : undefined,
+        apiKey: this._settings ? this._settings.get('stt.auditor_api_key') || undefined : undefined,
+        sourceUrl: this._settings ? this._settings.get('stt.auditor_source_url') || undefined : undefined,
+      });
+    } else if (provider === 'google') {
       adapter = new GoogleSttAdapter({
         language,
         apiKey: this._settings ? this._settings.get('stt.google_stt_key') || undefined : undefined,
@@ -192,7 +205,7 @@ export class SttManager extends EventEmitter {
         model: this._settings ? this._settings.get('stt.openai_stt_model') || undefined : undefined,
       });
     } else {
-      throw new Error(`SttManager: unsupported provider "${provider}". Supported: google, whisper_http, openai`);
+      throw new Error(`SttManager: unsupported provider "${provider}". Supported: google, whisper_http, openai, auditor`);
     }
 
     await adapter.start({ language });
@@ -316,6 +329,9 @@ export class SttManager extends EventEmitter {
           this.stop(apiKey);
         }
       });
+
+    } else if (provider === 'auditor') {
+      // Nothing to pull here: the adapter's start() (above) already opened the session on the service.
 
     } else {
       this._sessions.delete(apiKey);

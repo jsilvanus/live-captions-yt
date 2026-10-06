@@ -30,7 +30,7 @@ import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 import { getMetricsInstance } from '../metrics/index.js';
 import { requireProjectRole } from '../middleware/project-access.js';
 
-const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai'];
+const VALID_PROVIDERS    = ['google', 'whisper_http', 'openai', 'auditor'];
 const VALID_AUDIO_SOURCE = ['hls', 'rtmp', 'whep'];
 
 /** Send an SSE event line to an Express response. */

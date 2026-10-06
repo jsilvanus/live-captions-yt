@@ -98,6 +98,7 @@ export default {
       provider: 'Palveluntarjoaja',
       providerGoogle: 'Google Cloud STT',
       providerWhisper: 'Whisper HTTP (whisper.cpp)',
+      providerAuditor: 'Auditor (hakee virran itse)',
       providerOpenAi: 'OpenAI-yhteensopiva',
       language: 'Kieli',
       audioSource: 'Äänilähde',

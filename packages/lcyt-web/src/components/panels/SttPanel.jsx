@@ -10,6 +10,7 @@ const PROVIDERS = [
   { value: 'google',       label: 'Google Cloud Speech-to-Text' },
   { value: 'whisper_http', label: 'Whisper (HTTP)' },
   { value: 'openai',       label: 'OpenAI Whisper' },
+  { value: 'auditor',      label: 'Auditor (pulls the stream itself)' },
 ];
 
 const AUDIO_SOURCES = [

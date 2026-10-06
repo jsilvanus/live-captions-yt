@@ -276,6 +276,7 @@ export function ServicePanel(props) {
             <option value="google">{t('settings.serverStt.providerGoogle')}</option>
             <option value="whisper_http">{t('settings.serverStt.providerWhisper')}</option>
             <option value="openai">{t('settings.serverStt.providerOpenAi')}</option>
+            <option value="auditor">{t('settings.serverStt.providerAuditor')}</option>
           </select>
         </div>
 

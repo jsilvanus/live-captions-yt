@@ -99,6 +99,7 @@ export default {
       provider: 'Leverantör',
       providerGoogle: 'Google Cloud STT',
       providerWhisper: 'Whisper HTTP (whisper.cpp)',
+      providerAuditor: 'Auditor (hämtar strömmen själv)',
       providerOpenAi: 'OpenAI-kompatibel',
       language: 'Språk',
       audioSource: 'Ljudkälla',
