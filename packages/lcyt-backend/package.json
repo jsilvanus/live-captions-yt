@@ -60,6 +60,6 @@
   "homepage": "https://github.com/jsilvanus/live-captions-yt#readme",
   "devDependencies": {
     "@prisma/client": "^5.17.0",
-    "prisma": "^5.17.0"
+    "prisma": "^5.22.0"
   }
 }

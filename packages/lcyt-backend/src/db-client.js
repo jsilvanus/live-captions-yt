@@ -191,6 +191,22 @@ export class DbClient {
       throw new Error('Database backup is not yet implemented for PostgreSQL');
     }
   }
+
+  /**
+   * Execute a SQLite PRAGMA statement
+   * For SQLite: delegates to better-sqlite3's pragma() method
+   * For PostgreSQL: throws (Postgres does not have PRAGMAs)
+   * @param {string} pragma - PRAGMA name
+   * @param {Object} options - Options object (e.g., { simple: true })
+   * @returns {*} Pragma result
+   */
+  pragma(pragma, options) {
+    if (this.type === 'sqlite') {
+      return this.sqlite.pragma(pragma, options);
+    } else {
+      throw new Error('PRAGMA statements are not supported for PostgreSQL');
+    }
+  }
 }
 
 

@@ -55,7 +55,7 @@ describe('createSessionCaptionFileWriter', () => {
       text: 'Hello spoken world',
       translations: { 'fi-FI': 'Hei puhuttu maailma' },
       fileFormats: { 'fi-FI': 'vtt' },
-      timestamp: new Date(startedAt + 9_000).toISOString().replace('Z', ''),
+      timestamp: new Date(startedAt + 9_000).toISOString(),
     });
 
     // fi-FI requested vtt → WEBVTT file with a session-relative cue
