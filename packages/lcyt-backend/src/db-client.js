@@ -177,6 +177,20 @@ export class DbClient {
   getConnection() {
     return this.type === 'sqlite' ? this.sqlite : this.pgPool;
   }
+
+  /**
+   * Create a backup of the database
+   * For SQLite: synchronous backup using better-sqlite3's backup() method
+   * For PostgreSQL: not yet implemented
+   * @param {string} path - Destination file path
+   */
+  backup(path) {
+    if (this.type === 'sqlite') {
+      return this.sqlite.backup(path);
+    } else {
+      throw new Error('Database backup is not yet implemented for PostgreSQL');
+    }
+  }
 }
 
 
