@@ -173,6 +173,9 @@ jobs:
         working-directory: packages/lcyt-backend
         run: npm ci
 
+      - name: Set DATABASE_URL for validation
+        run: echo "DATABASE_URL=file:./test.db" >> $GITHUB_ENV
+
       - name: Validate Prisma schema
         working-directory: packages/lcyt-backend
         run: npx prisma validate
