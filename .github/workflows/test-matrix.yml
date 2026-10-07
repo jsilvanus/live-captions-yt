@@ -23,7 +23,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        database: [sqlite, postgres]
+        # FIXME: PostgreSQL tests temporarily disabled until all test code is refactored to support both SQLite and PostgreSQL
+        # Currently: tests are SQLite-hardcoded (use initDb(':memory:'), raw ? placeholders, PRAGMA, datetime() functions)
+        # TODO: Migrate test suite to use DbClient abstraction + parameterized queries compatible with both databases
+        database: [sqlite]  # [sqlite, postgres]
         node-version: [20.x]
 
     services:
