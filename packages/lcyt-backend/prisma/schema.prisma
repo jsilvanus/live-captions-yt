@@ -23,29 +23,29 @@ generator client {
 // ───────────────────────────────────────────────────────────────────────────
 
 model User {
-  id          Int     @id @default(autoincrement())
-  email       String  @unique
+  id           Int     @id @default(autoincrement())
+  email        String  @unique
   passwordHash String
-  name        String?
-  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  active      Int     @default(1)
-  isAdmin     Int     @default(0)
-  adminRole   String  @default("full")
+  name         String?
+  createdAt    String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  active       Int     @default(1)
+  isAdmin      Int     @default(0)
+  adminRole    String  @default("full")
 
   // Relations
-  organizations    Organization[]
-  orgMemberships   OrgMember[]
-  projectMembers   ProjectMember[]
-  apiKeys          ApiKey[]
-  invitedOrgMembers OrgMember[] @relation("InvitedBy")
-  siteFeaturePolicies SiteFeaturePolicy[]
-  orgFeatureOverrides OrgFeatureOverride[]
-  projectFeatures  ProjectFeature[]
-  userFeatures     UserFeature[]
-  invitedProjectMembers ProjectMember[] @relation("InvitedBy")
-  auditLogs        AuditLog[]
-  grantedUserFeatures UserFeature[] @relation("GrantedBy")
-  serverSettings   ServerSettings[]
+  organizations         Organization[]
+  orgMemberships        OrgMember[]
+  projectMembers        ProjectMember[]
+  apiKeys               ApiKey[]
+  invitedOrgMembers     OrgMember[]          @relation("InvitedBy")
+  siteFeaturePolicies   SiteFeaturePolicy[]
+  orgFeatureOverrides   OrgFeatureOverride[]
+  projectFeatures       ProjectFeature[]
+  userFeatures          UserFeature[]
+  invitedProjectMembers ProjectMember[]      @relation("InvitedBy")
+  auditLogs             AuditLog[]
+  grantedUserFeatures   UserFeature[]        @relation("GrantedBy")
+  serverSettings        ServerSettings[]
 
   @@map("users")
 }
@@ -55,34 +55,34 @@ model User {
 // ───────────────────────────────────────────────────────────────────────────
 
 model Organization {
-  id                Int      @id @default(autoincrement())
+  id                Int    @id @default(autoincrement())
   name              String
-  slug              String   @unique
+  slug              String @unique
   ownerUserId       Int
-  createdAt         String   @default(dbgenerated("CURRENT_TIMESTAMP"))
-  projectSlugPolicy String   @default("none") // 'none' | 'prefix'
+  createdAt         String @default(dbgenerated("CURRENT_TIMESTAMP"))
+  projectSlugPolicy String @default("none") // 'none' | 'prefix'
 
   // Relations
-  owner             User              @relation(fields: [ownerUserId], references: [id])
-  members           OrgMember[]
-  featureOverrides  OrgFeatureOverride[]
-  apiKeys           ApiKey[]
-  auditLogs         AuditLog[]
+  owner            User                 @relation(fields: [ownerUserId], references: [id])
+  members          OrgMember[]
+  featureOverrides OrgFeatureOverride[]
+  apiKeys          ApiKey[]
+  auditLogs        AuditLog[]
 
   @@map("organizations")
 }
 
 model OrgMember {
-  id        Int      @id @default(autoincrement())
+  id        Int    @id @default(autoincrement())
   orgId     Int
   userId    Int
-  role      String   @default("member") // 'member' | 'admin'
+  role      String @default("member") // 'member' | 'admin'
   invitedBy Int?
-  joinedAt  String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  joinedAt  String @default(dbgenerated("CURRENT_TIMESTAMP"))
 
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inviter   User?        @relation("InvitedBy", fields: [invitedBy], references: [id])
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter User?        @relation("InvitedBy", fields: [invitedBy], references: [id])
 
   @@unique([orgId, userId])
   @@index([userId])
@@ -95,41 +95,41 @@ model OrgMember {
 // ───────────────────────────────────────────────────────────────────────────
 
 model ApiKey {
-  id                 Int      @id @default(autoincrement())
-  key                String   @unique
+  id                 Int     @id @default(autoincrement())
+  key                String  @unique
   owner              String
-  createdAt          String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  createdAt          String  @default(dbgenerated("CURRENT_TIMESTAMP"))
   expiresAt          String?
-  active             Int      @default(1)
+  active             Int     @default(1)
   email              String?
   dailyLimit         Int?
   lifetimeLimit      Int?
-  lifetimeUsed       Int      @default(0)
+  lifetimeUsed       Int     @default(0)
   activeBroadcastId  String?
   revokedAt          String?
-  sequence           Int      @default(0)
+  sequence           Int     @default(0)
   lastCaptionAt      String?
-  backendFileEnabled Int      @default(0)
-  graphicsEnabled    Int      @default(0)
+  backendFileEnabled Int     @default(0)
+  graphicsEnabled    Int     @default(0)
   userId             Int?
   orgId              Int?
-  restricted         Int      @default(0)
-  orgBaselineRole    String   @default("viewer") // 'viewer' | 'editor'
-  
+  restricted         Int     @default(0)
+  orgBaselineRole    String  @default("viewer") // 'viewer' | 'editor'
+
   // RTMP/relay columns
-  relayAllowed       Int      @default(0)
-  relayActive        Int      @default(0)
-  radioEnabled       Int      @default(0)
-  hlsEnabled         Int      @default(0)
-  cea708DelayMs      Int      @default(0)
-  embedCors          String   @default("*")
-  deviceCode         String?
-  ingestStreamKey    String?  @unique
-  publicSlug         String?  @unique
+  relayAllowed    Int     @default(0)
+  relayActive     Int     @default(0)
+  radioEnabled    Int     @default(0)
+  hlsEnabled      Int     @default(0)
+  cea708DelayMs   Int     @default(0)
+  embedCors       String  @default("*")
+  deviceCode      String?
+  ingestStreamKey String? @unique
+  publicSlug      String? @unique
 
   // Relations
-  owner_user         User?                      @relation(fields: [userId], references: [id])
-  organization       Organization?              @relation(fields: [orgId], references: [id])
+  owner_user         User?                    @relation(fields: [userId], references: [id])
+  organization       Organization?            @relation(fields: [orgId], references: [id])
   targets            CaptionTarget[]
   usage              CaptionUsage[]
   errors             CaptionError[]
@@ -159,24 +159,24 @@ model ApiKey {
 // ───────────────────────────────────────────────────────────────────────────
 
 model CaptionTarget {
-  id         String   @id @default(cuid())
-  apiKey     String
-  type       String   // 'youtube' | 'viewer' | 'generic'
-  enabled    Int      @default(1)
-  sortOrder  Int      @default(0)
-  streamKey  String?
-  url        String?
-  headers    String?  // JSON
-  viewerKey  String?
-  noBatch    Int      @default(0)
-  createdAt  String   @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt  String   @default(dbgenerated("CURRENT_TIMESTAMP"))
-  iconId     Int?
+  id          String  @id @default(cuid())
+  apiKey      String
+  type        String // 'youtube' | 'viewer' | 'generic'
+  enabled     Int     @default(1)
+  sortOrder   Int     @default(0)
+  streamKey   String?
+  url         String?
+  headers     String? // JSON
+  viewerKey   String?
+  noBatch     Int     @default(0)
+  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  iconId      Int?
   iconEnabled Int     @default(0)
 
   // Relations
-  project    ApiKey    @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  icon       Icon?     @relation(fields: [iconId], references: [id], onDelete: SetNull)
+  project            ApiKey              @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  icon               Icon?               @relation(fields: [iconId], references: [id], onDelete: SetNull)
   translationTargets TranslationTarget[]
 
   @@index([apiKey])
@@ -196,13 +196,13 @@ model CaptionUsage {
 }
 
 model CaptionError {
-  id        Int    @id @default(autoincrement())
+  id        Int     @id @default(autoincrement())
   apiKey    String
   sessionId String
   timestamp String
   errorCode Int?
   errorMsg  String?
-  batchSize Int    @default(1)
+  batchSize Int     @default(1)
 
   // Relations
   project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
@@ -231,42 +231,42 @@ model UsageRollup {
 // ───────────────────────────────────────────────────────────────────────────
 
 model Session {
-  sessionId    String   @id
+  sessionId    String  @id
   apiKey       String?
   streamKey    String?
   domain       String?
-  sequence     Int      @default(0)
+  sequence     Int     @default(0)
   startedAt    String?
   lastActivity String?
   syncOffset   Int?
   micHolder    String?
-  data         String?  // JSON
+  data         String? // JSON
   broadcastId  String?
 
   // Relations
-  project      ApiKey? @relation(fields: [apiKey], references: [key], onDelete: SetNull)
-  stats        SessionStats[]
+  project ApiKey?        @relation(fields: [apiKey], references: [key], onDelete: SetNull)
+  stats   SessionStats[]
 
   @@map("sessions")
 }
 
 model SessionStats {
-  id              Int    @id @default(autoincrement())
-  sessionId       String
-  apiKey          String
-  domain          String?
-  startedAt       String
-  endedAt         String
-  durationMs      Int
-  captionsSent    Int    @default(0)
-  captionsFailed  Int    @default(0)
-  finalSequence   Int    @default(0)
-  endedBy         String @default("client")
-  broadcastId     String?
+  id             Int     @id @default(autoincrement())
+  sessionId      String
+  apiKey         String
+  domain         String?
+  startedAt      String
+  endedAt        String
+  durationMs     Int
+  captionsSent   Int     @default(0)
+  captionsFailed Int     @default(0)
+  finalSequence  Int     @default(0)
+  endedBy        String  @default("client")
+  broadcastId    String?
 
   // Relations
-  session         Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
-  project         ApiKey  @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
+  project ApiKey  @relation(fields: [apiKey], references: [key], onDelete: Cascade)
 
   @@map("session_stats")
 }
@@ -276,30 +276,30 @@ model SessionStats {
 // ───────────────────────────────────────────────────────────────────────────
 
 model Broadcast {
-  id                    String   @id
-  apiKey                String
-  title                 String   @default("")
-  description           String?
-  status                String   @default("draft") // 'draft' | 'scheduled' | 'live' | 'ended'
-  scheduledStart        String?
-  scheduledEnd          String?
-  actualStart           String?
-  actualEnd             String?
-  youtubeVideoIds       String?
-  youtubeBroadcastId    String?
-  rundownFileId         Int?
-  recordEnabled         Int      @default(0)
-  privacyStatus         String   @default("unlisted")
-  armed                 Int      @default(0)
-  archivedAt            String?
-  createdAt             String   @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt             String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  id                 String  @id
+  apiKey             String
+  title              String  @default("")
+  description        String?
+  status             String  @default("draft") // 'draft' | 'scheduled' | 'live' | 'ended'
+  scheduledStart     String?
+  scheduledEnd       String?
+  actualStart        String?
+  actualEnd          String?
+  youtubeVideoIds    String?
+  youtubeBroadcastId String?
+  rundownFileId      Int?
+  recordEnabled      Int     @default(0)
+  privacyStatus      String  @default("unlisted")
+  armed              Int     @default(0)
+  archivedAt         String?
+  createdAt          String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt          String  @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  project               ApiKey   @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  assets                BroadcastAsset[]
-  files                 BroadcastFile[]
-  videos                Video[]
+  project ApiKey           @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  assets  BroadcastAsset[]
+  files   BroadcastFile[]
+  videos  Video[]
 
   @@index([apiKey])
   @@index([apiKey, status])
@@ -314,7 +314,7 @@ model BroadcastAsset {
   sortOrder   Int    @default(0)
   createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
 
-  broadcast   Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  broadcast Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
 
   @@unique([broadcastId, assetType, assetRef])
   @@index([broadcastId])
@@ -322,13 +322,13 @@ model BroadcastAsset {
 }
 
 model BroadcastFile {
-  id          Int @id @default(autoincrement())
+  id          Int    @id @default(autoincrement())
   broadcastId String
   fileId      Int
   createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
 
-  broadcast   Broadcast    @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
-  file        CaptionFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  broadcast Broadcast   @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
+  file      CaptionFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
 
   @@unique([broadcastId, fileId])
   @@index([broadcastId])
@@ -337,23 +337,23 @@ model BroadcastFile {
 }
 
 model Video {
-  id          String   @id
+  id          String  @id
   apiKey      String
   broadcastId String?
-  title       String   @default("")
-  status      String   @default("recording")
-  storageType String   @default("local")
+  title       String  @default("")
+  status      String  @default("recording")
+  storageType String  @default("local")
   storageKey  String?
   durationMs  Int?
-  sizeBytes   Int      @default(0)
+  sizeBytes   Int     @default(0)
   startedAt   String?
   endedAt     String?
-  createdAt   String   @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt   String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  project     ApiKey     @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  broadcast   Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
+  project   ApiKey     @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  broadcast Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
 
   @@index([apiKey])
   @@index([broadcastId])
@@ -378,24 +378,24 @@ model CaptionFile {
   broadcastId String?
 
   // Relations
-  project         ApiKey          @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  broadcastFiles  BroadcastFile[]
+  project        ApiKey          @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  broadcastFiles BroadcastFile[]
 
   @@map("caption_files")
 }
 
 model Icon {
-  id          Int     @id @default(autoincrement())
-  apiKey      String
-  filename    String
+  id           Int    @id @default(autoincrement())
+  apiKey       String
+  filename     String
   diskFilename String
-  mimeType    String  @default("image/png")
-  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  sizeBytes   Int     @default(0)
+  mimeType     String @default("image/png")
+  createdAt    String @default(dbgenerated("CURRENT_TIMESTAMP"))
+  sizeBytes    Int    @default(0)
 
   // Relations
-  project     ApiKey        @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  targets     CaptionTarget[]
+  project ApiKey          @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  targets CaptionTarget[]
 
   @@map("icons")
 }
@@ -405,16 +405,16 @@ model Icon {
 // ───────────────────────────────────────────────────────────────────────────
 
 model TranslationVendorConfig {
-  apiKey      String   @id
-  vendor      String   @default("mymemory")
+  apiKey       String  @id
+  vendor       String  @default("mymemory")
   vendorApiKey String?
-  libreUrl    String?
-  libreKey    String?
+  libreUrl     String?
+  libreKey     String?
   showOriginal Int     @default(0)
-  updatedAt   String   @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt    String  @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  project     ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
 
   @@map("translation_vendor_config")
 }
@@ -433,8 +433,8 @@ model TranslationTarget {
   showOriginal    Int     @default(0)
 
   // Relations
-  project         ApiKey        @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  captionTarget   CaptionTarget? @relation(fields: [captionTargetId], references: [id], onDelete: SetNull)
+  project       ApiKey         @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  captionTarget CaptionTarget? @relation(fields: [captionTargetId], references: [id], onDelete: SetNull)
 
   @@index([apiKey])
   @@map("translation_targets")
@@ -445,10 +445,10 @@ model TranslationTarget {
 // ───────────────────────────────────────────────────────────────────────────
 
 model SiteFeaturePolicy {
-  featureCode String  @id
-  mode        String  @default("denied")
+  featureCode String @id
+  mode        String @default("denied")
   updatedBy   Int?
-  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
   updatedByUser User? @relation(fields: [updatedBy], references: [id])
@@ -461,11 +461,11 @@ model OrgFeatureOverride {
   featureCode String
   mode        String
   setBy       Int?
-  setAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  setAt       String @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  org         Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  setByUser   User?        @relation(fields: [setBy], references: [id])
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  setByUser User?        @relation(fields: [setBy], references: [id])
 
   @@id([orgId, featureCode])
   @@map("org_feature_overrides")
@@ -480,8 +480,8 @@ model ProjectFeature {
   grantedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  project     ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  grantedByUser User? @relation(fields: [grantedBy], references: [id])
+  project       ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  grantedByUser User?  @relation(fields: [grantedBy], references: [id])
 
   @@id([apiKey, featureCode])
   @@index([apiKey])
@@ -497,7 +497,7 @@ model UserFeature {
   grantedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  user        User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user          User  @relation(fields: [userId], references: [id], onDelete: Cascade)
   grantedByUser User? @relation("GrantedBy", fields: [grantedBy], references: [id])
 
   @@id([userId, featureCode])
@@ -514,9 +514,9 @@ model ProjectMember {
   joinedAt    String @default(dbgenerated("CURRENT_TIMESTAMP"))
 
   // Relations
-  project     ApiKey  @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inviter     User?   @relation("InvitedBy", fields: [invitedBy], references: [id])
+  project     ApiKey                    @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  inviter     User?                     @relation("InvitedBy", fields: [invitedBy], references: [id])
   permissions ProjectMemberPermission[]
 
   @@unique([apiKey, userId])
@@ -532,26 +532,26 @@ model ProjectMemberPermission {
   granted    Int    @default(1)
 
   // Relations
-  member     ProjectMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  member ProjectMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
 
   @@unique([memberId, permission])
   @@map("project_member_permissions")
 }
 
 model ProjectDeviceRole {
-  id          Int    @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   apiKey      String
   roleType    String
   name        String
   pinHash     String
-  permissions String @default("[]") // JSON
+  permissions String  @default("[]") // JSON
   config      String? // JSON
-  active      Int    @default(1)
-  createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
+  active      Int     @default(1)
+  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
   expiresAt   String?
 
   // Relations
-  project     ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
 
   @@index([apiKey])
   @@map("project_device_roles")
@@ -577,9 +577,9 @@ model AuditLog {
   ip         String?
 
   // Relations
-  user       User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
-  project    ApiKey?      @relation(fields: [apiKey], references: [key], onDelete: SetNull)
-  org        Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
+  user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  project ApiKey?       @relation(fields: [apiKey], references: [key], onDelete: SetNull)
+  org     Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
   @@index([apiKey, id])
@@ -589,7 +589,7 @@ model AuditLog {
 }
 
 model BusEvent {
-  id          Int    @id @default(autoincrement())
+  id          Int     @id @default(autoincrement())
   projectId   String?
   topic       String
   ts          Int
@@ -605,22 +605,22 @@ model BusEvent {
 // ───────────────────────────────────────────────────────────────────────────
 
 model MCPToken {
-  id               Int    @id @default(autoincrement())
-  apiKey           String
-  label            String
-  tokenHash        String @unique
-  userId           Int?
-  projectId        String?
-  scopes           String?
-  createdAt        String @default(dbgenerated("CURRENT_TIMESTAMP"))
-  lastUsedAt       String?
-  revokedAt        String?
-  active           Int    @default(1)
-  createdByUserId  Int?
-  createdByName    String @default("")
+  id              Int     @id @default(autoincrement())
+  apiKey          String
+  label           String
+  tokenHash       String  @unique
+  userId          Int?
+  projectId       String?
+  scopes          String?
+  createdAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
+  lastUsedAt      String?
+  revokedAt       String?
+  active          Int     @default(1)
+  createdByUserId Int?
+  createdByName   String  @default("")
 
   // Relations
-  project          ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
+  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
 
   @@index([apiKey])
   @@map("mcp_tokens")
@@ -631,12 +631,12 @@ model MCPToken {
 // ───────────────────────────────────────────────────────────────────────────
 
 model ServerSettings {
-  key        String  @id
-  value      String
-  updatedAt  String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedBy  Int?
+  key       String @id
+  value     String
+  updatedAt String @default(dbgenerated("CURRENT_TIMESTAMP"))
+  updatedBy Int?
 
-  user       User?   @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+  user User? @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
 
   @@map("server_settings")
 }
