@@ -47,5 +47,10 @@
   },
   "dependencies": {
     "regexparam": "^3.0.0"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/lib-storage": "^3.1146.0",
+    "webdav": "^5.0.0"
   }
 }
