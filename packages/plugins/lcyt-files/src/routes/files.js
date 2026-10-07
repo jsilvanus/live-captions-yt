@@ -11,7 +11,7 @@
  */
 
 import { Router } from 'express';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
@@ -43,6 +43,8 @@ import logger from 'lcyt/logger';
 
 // Sanity bound for ?offsetMs= on VTT downloads: ±24h
 const MAX_OFFSET_MS = 86_400_000;
+const DEFAULT_LIBRARY_LIMIT = 2000;
+const MAX_LIBRARY_LIMIT = 10000;
 
 function contentTypeForFormat(format) {
   if (format === 'vtt') return 'text/vtt';
@@ -67,6 +69,86 @@ function storageKeyTypeFor(type) {
   return type === 'rundown' ? 'rundown' : 'file';
 }
 
+function parseLibraryLimit(value) {
+  const parsed = Number.parseInt(String(value ?? ''), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_LIBRARY_LIMIT;
+  return Math.min(parsed, MAX_LIBRARY_LIMIT);
+}
+
+function safeUnderscoreSegment(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9._-]+/g, '_');
+}
+
+function safeDashSegment(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+}
+
+function iconKeySegment(apiKey) {
+  const raw = String(apiKey ?? '');
+  const safe = raw.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
+  if (safe === raw) return safe;
+  const suffix = createHash('sha256').update(raw).digest('hex').slice(0, 8);
+  return `${safe}-${suffix}`;
+}
+
+function inferBackendType(store) {
+  if (typeof store?.type === 'string' && store.type) return store.type;
+  if (typeof store?.listObjects === 'function') return 'adapter';
+  if (typeof store?.list === 'function') return 'object-store';
+  return 'unknown';
+}
+
+async function collectStoreObjects(store, { apiKey = null, limit = DEFAULT_LIBRARY_LIMIT, prefix = '' } = {}) {
+  if (typeof store?.listObjects === 'function') {
+    const items = [];
+    let truncated = false;
+    for await (const entry of store.listObjects(apiKey ?? '', prefix || '')) {
+      if (items.length >= limit) {
+        truncated = true;
+        break;
+      }
+      items.push({
+        key: entry.objectKey || entry.key || '',
+        size: Number(entry.size ?? 0),
+        lastModified: Number(entry.lastModified ?? 0) || null,
+      });
+    }
+    items.sort((a, b) => a.key.localeCompare(b.key));
+    return { items, truncated };
+  }
+
+  if (typeof store?.list === 'function') {
+    const items = [];
+    let cursor = null;
+    let truncated = false;
+    while (items.length < limit) {
+      const remaining = limit - items.length;
+      const page = await store.list(prefix || '', { limit: Math.min(remaining, 1000), cursor });
+      for (const entry of page.items || []) {
+        if (items.length >= limit) {
+          truncated = true;
+          break;
+        }
+        items.push({
+          key: entry.key || '',
+          size: Number(entry.size ?? 0),
+          lastModified: Number(entry.lastModified ?? 0) || null,
+        });
+      }
+      if (!page.nextCursor) break;
+      cursor = page.nextCursor;
+      if (items.length >= limit) {
+        truncated = true;
+        break;
+      }
+    }
+    items.sort((a, b) => a.key.localeCompare(b.key));
+    return { items, truncated };
+  }
+
+  throw new Error('Storage adapter does not support listing');
+}
+
 // Rate limiter: max 60 requests per minute per IP for file operations
 const fileRateLimit = rateLimit({
   windowMs: 60 * 1000,
@@ -80,6 +162,7 @@ const fileRateLimit = rateLimit({
  * Factory for the /file router.
  *
  * GET    /file                   — List all caption files for the authenticated key
+ * GET    /file/library           — List caption/media storage objects (tree-ready data)
  * GET    /file/:id               — Download a specific file (supports ?token= for direct links)
  * DELETE /file/:id               — Delete a specific file (database row + storage object)
  * GET    /file/storage-config    — Get per-key S3 config (credentials masked)
@@ -92,15 +175,29 @@ const fileRateLimit = rateLimit({
  * @param {string} jwtSecret
  * @param {(apiKey: string) => Promise<import('../adapters/types.js').StorageAdapter>} resolveStorage
  * @param {(apiKey: string) => void} [invalidateStorageCache]
- * @param {import('express').RequestHandler} [requireSetup]  Setup-tier write gate (plan_project_roles.md) for /storage-config only; no-op passthrough when omitted (e.g. tests constructing this router directly)
+ * @param {{
+ *   requireSetup?: import('express').RequestHandler,
+ *   libraryStores?: {
+ *     graphicsStore?: any,
+ *     iconsStore?: any,
+ *     dskThumbnailsStore?: any,
+ *     cameraThumbnailsStore?: any,
+ *     recordingsStore?: any,
+ *   }
+ * } | import('express').RequestHandler} [routeOptions]  Setup-tier write gate + optional extra stores for GET /file/library.
  * @returns {Router}
  */
-export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache = () => {}, requireSetup = (req, res, next) => next()) {
+export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache = () => {}, routeOptions = null) {
   // Ensure the key_storage_config table exists (idempotent — safe to call on every startup)
   if (db) runFilesDbMigrations(db);
 
   // Defensive fallback: if no resolver provided, use an adapter-less stub that returns 503
   const _resolve = resolveStorage ?? (() => Promise.reject(new Error('Storage not configured')));
+  const hasLegacyRequireSetup = typeof routeOptions === 'function';
+  const requireSetup = hasLegacyRequireSetup
+    ? routeOptions
+    : (routeOptions?.requireSetup || ((req, res, next) => next()));
+  const libraryStores = hasLegacyRequireSetup ? {} : (routeOptions?.libraryStores || {});
 
   const router = Router();
 
@@ -200,6 +297,61 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
       }));
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ files });
+  });
+
+  // GET /file/library — list files across caption/media storage areas
+  router.get('/library', fileRateLimit, auth, async (req, res) => {
+    const apiKey = req.session.apiKey;
+    const limit = parseLibraryLimit(req.query.limit);
+
+    try {
+      const captionStorage = await _resolve(apiKey);
+      const areas = [
+        { id: 'captions', label: 'Caption / Rundown Files', store: captionStorage, usesApiKey: true, prefixForApiKey: () => '' },
+        { id: 'graphics', label: 'Graphics', store: libraryStores.graphicsStore, usesApiKey: false, prefixForApiKey: (key) => `${safeUnderscoreSegment(key)}/` },
+        { id: 'icons', label: 'Icons', store: libraryStores.iconsStore, usesApiKey: false, prefixForApiKey: (key) => `${iconKeySegment(key)}/` },
+        { id: 'dsk-thumbnails', label: 'DSK Thumbnails', store: libraryStores.dskThumbnailsStore, usesApiKey: false, prefixForApiKey: (key) => `${safeUnderscoreSegment(key)}/` },
+        { id: 'recordings', label: 'Recordings', store: libraryStores.recordingsStore, usesApiKey: false, prefixForApiKey: (key) => `${safeDashSegment(key)}/` },
+      ];
+
+      const outAreas = [];
+      for (const area of areas) {
+        if (!area.store) continue;
+        const areaPrefix = typeof area.prefixForApiKey === 'function' ? area.prefixForApiKey(apiKey) : '';
+        const listed = await collectStoreObjects(area.store, {
+          apiKey: area.usesApiKey ? apiKey : null,
+          limit,
+          prefix: areaPrefix,
+        });
+        const totalBytes = listed.items.reduce((sum, item) => sum + (Number(item.size) || 0), 0);
+        outAreas.push({
+          id: area.id,
+          label: area.label,
+          backendType: inferBackendType(area.store),
+          objectCount: listed.items.length,
+          totalBytes,
+          truncated: listed.truncated,
+          items: listed.items,
+        });
+      }
+
+      const totals = outAreas.reduce((acc, area) => {
+        acc.objectCount += area.objectCount;
+        acc.totalBytes += area.totalBytes;
+        return acc;
+      }, { objectCount: 0, totalBytes: 0 });
+
+      res.set('Cache-Control', 'private, max-age=10, stale-while-revalidate=20');
+      return res.json({
+        limitPerArea: limit,
+        generatedAt: new Date().toISOString(),
+        totals,
+        areas: outAreas,
+      });
+    } catch (err) {
+      logger.error('[file] Failed to build storage library:', err.message);
+      return res.status(500).json({ error: 'Failed to load storage library' });
+    }
   });
 
   // POST /file — Create a new caption/rundown file with full content

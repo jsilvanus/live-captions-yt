@@ -44,5 +44,8 @@
     "@playwright/test": "^1.61.1",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0"
+  },
+  "dependencies": {
+    "regexparam": "^3.0.0"
   }
 }

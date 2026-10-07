@@ -177,6 +177,36 @@ export class DbClient {
   getConnection() {
     return this.type === 'sqlite' ? this.sqlite : this.pgPool;
   }
+
+  /**
+   * Create a backup of the database
+   * For SQLite: synchronous backup using better-sqlite3's backup() method
+   * For PostgreSQL: not yet implemented
+   * @param {string} path - Destination file path
+   */
+  backup(path) {
+    if (this.type === 'sqlite') {
+      return this.sqlite.backup(path);
+    } else {
+      throw new Error('Database backup is not yet implemented for PostgreSQL');
+    }
+  }
+
+  /**
+   * Execute a SQLite PRAGMA statement
+   * For SQLite: delegates to better-sqlite3's pragma() method
+   * For PostgreSQL: throws (Postgres does not have PRAGMAs)
+   * @param {string} pragma - PRAGMA name
+   * @param {Object} options - Options object (e.g., { simple: true })
+   * @returns {*} Pragma result
+   */
+  pragma(pragma, options) {
+    if (this.type === 'sqlite') {
+      return this.sqlite.pragma(pragma, options);
+    } else {
+      throw new Error('PRAGMA statements are not supported for PostgreSQL');
+    }
+  }
 }
 
 

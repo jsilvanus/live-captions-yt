@@ -33,6 +33,7 @@ import rateLimit from 'express-rate-limit';
 import { existsSync, mkdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
 import {
   saveTemplate,
   listTemplates,
@@ -94,6 +95,11 @@ function thumbnailStorageDir(apiKey) {
   return dir;
 }
 
+function thumbnailStorageKey(apiKey, filename) {
+  const keyPrefix = String(apiKey || 'default').replace(/[^a-zA-Z0-9._-]+/g, '_');
+  return `${keyPrefix}/${filename}`;
+}
+
 function slugify(value) {
   return String(value || 'thumbnail')
     .toLowerCase()
@@ -107,6 +113,7 @@ function makeThumbnailFilename(name) {
 
 export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics = null, settings = null, deps = {}) {
   const router = Router();
+  const thumbnailStore = deps.thumbnailStore || null;
   const localRtmpBase = resolveDskLocalRtmp(settings);
   const dskRtmpApp = settings ? settings.get('graphics.dsk_rtmp_app') : DSK_RTMP_APP;
   const localServerUrl = resolveDskLocalServer(settings);
@@ -392,15 +399,18 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
     try {
       const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: localServerUrl, width: widthPx, height: heightPx });
-      const dir = thumbnailStorageDir(apiKey);
       const fileName = makeThumbnailFilename(name);
-      const fullPath = join(dir, fileName);
-      writeFileSync(fullPath, png);
+      const storagePath = thumbnailStore ? thumbnailStorageKey(apiKey, fileName) : join(thumbnailStorageDir(apiKey), fileName);
+      if (thumbnailStore) {
+        await thumbnailStore.put(storagePath, png, { contentType: 'image/png' });
+      } else {
+        writeFileSync(storagePath, png);
+      }
       const id = createThumbnail(db, {
         apiKey,
         templateId: resolvedTemplateId,
         name: name || 'thumbnail',
-        storagePath: fullPath,
+        storagePath,
         width: widthPx,
         height: heightPx,
         sizeBytes: png.byteLength,
@@ -413,7 +423,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   });
 
   // GET /dsk/:apikey/thumbnails/:id — fetch thumbnail metadata or image bytes
-  router.get('/:apikey/thumbnails/:id', auth, thumbnailRateLimit, (req, res) => {
+  router.get('/:apikey/thumbnails/:id', auth, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -423,9 +433,20 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
       const { storage_path, ...safe } = row;
       return res.json({ thumbnail: safe });
     }
+    if (thumbnailStore) {
+      try {
+        const opened = await thumbnailStore.stream(row.storage_path);
+        res.set('Content-Type', opened.contentType || 'image/png');
+        if (opened.contentLength != null) res.set('Content-Length', String(opened.contentLength));
+        const source = opened.stream?.pipe ? opened.stream : Readable.fromWeb(opened.stream);
+        return source.pipe(res);
+      } catch {
+        return res.status(404).json({ error: 'Thumbnail file not found' });
+      }
+    }
     if (!existsSync(row.storage_path)) return res.status(404).json({ error: 'Thumbnail file not found' });
     res.set('Content-Type', 'image/png');
-    res.sendFile(row.storage_path);
+    return res.sendFile(row.storage_path);
   });
 
   // PUT /dsk/:apikey/thumbnails/:id — refresh a thumbnail from the current template
@@ -451,18 +472,24 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
     try {
       const png = await renderTemplateToPng(templatePayload, { apiKey, serverUrl: localServerUrl, width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080 });
-      const dir = thumbnailStorageDir(apiKey);
       const fileName = makeThumbnailFilename(name || existing.name || 'thumbnail');
-      const fullPath = join(dir, fileName);
-      writeFileSync(fullPath, png);
-      if (existsSync(existing.storage_path)) unlinkSync(existing.storage_path);
+      const storagePath = thumbnailStore ? thumbnailStorageKey(apiKey, fileName) : join(thumbnailStorageDir(apiKey), fileName);
+      if (thumbnailStore) {
+        await thumbnailStore.put(storagePath, png, { contentType: 'image/png' });
+        if (existing.storage_path) {
+          await thumbnailStore.delete(existing.storage_path).catch(() => {});
+        }
+      } else {
+        writeFileSync(storagePath, png);
+        if (existsSync(existing.storage_path)) unlinkSync(existing.storage_path);
+      }
       updateThumbnail(db, id, apiKey, {
         name: name || existing.name || 'thumbnail',
         templateId: resolvedTemplateId,
         width: Number(width) || existing.width || 1920,
         height: Number(height) || existing.height || 1080,
         sizeBytes: png.byteLength,
-        storagePath: fullPath,
+        storagePath,
       });
       res.json({ ok: true, thumbnail: { id, name: name || existing.name || 'thumbnail', width: Number(width) || existing.width || 1920, height: Number(height) || existing.height || 1080, sizeBytes: png.byteLength } });
     } catch (err) {
@@ -472,13 +499,17 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   });
 
   // DELETE /dsk/:apikey/thumbnails/:id — remove a cached thumbnail
-  router.delete('/:apikey/thumbnails/:id', auth, requireSetup, thumbnailRateLimit, (req, res) => {
+  router.delete('/:apikey/thumbnails/:id', auth, requireSetup, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
     const row = getThumbnail(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Thumbnail not found' });
-    if (row.storage_path && existsSync(row.storage_path)) unlinkSync(row.storage_path);
+    if (thumbnailStore) {
+      if (row.storage_path) await thumbnailStore.delete(row.storage_path).catch(() => {});
+    } else if (row.storage_path && existsSync(row.storage_path)) {
+      unlinkSync(row.storage_path);
+    }
     deleteThumbnail(db, id, req.params.apikey);
     res.json({ ok: true });
   });

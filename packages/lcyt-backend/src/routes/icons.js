@@ -22,8 +22,10 @@ import {
 } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { Readable } from 'node:stream';
 import rateLimit from 'express-rate-limit';
 import { registerIcon, listIcons, getIcon, deleteIcon } from '../db.js';
+import logger from 'lcyt/logger';
 
 const ICONS_DIR = resolve(process.env.ICONS_DIR || '/data/icons');
 
@@ -72,7 +74,7 @@ const iconRateLimit = rateLimit({
  * @param {import('express').RequestHandler} [requireSetup]  Setup-tier write gate (plan_project_roles.md); no-op passthrough when omitted (e.g. tests constructing this router directly)
  * @returns {Router}
  */
-export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, next) => next()) {
+export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, next) => next(), { iconStore = null } = {}) {
   const ICONS_DIR = resolve(baseDir || process.env.ICONS_DIR || '/data/icons');
   const router = Router();
 
@@ -89,7 +91,7 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
     express.json({ limit: '400kb' }),
     auth,
     requireSetup,
-    (req, res) => {
+    async (req, res) => {
       const apiKey = req.session.apiKey;
       const { filename, mimeType, data } = req.body ?? {};
 
@@ -135,13 +137,18 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
       const ext = mimeType === 'image/svg+xml' ? '.svg' : '.png';
       const safeKey = iconKeySegment(apiKey);
       const diskFilename = `${randomUUID()}${ext}`;
-      const dir = join(ICONS_DIR, safeKey);
+      const objectKey = `${safeKey}/${diskFilename}`;
 
       try {
-        mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, diskFilename), buf);
+        if (iconStore) {
+          await iconStore.put(objectKey, buf, { contentType: mimeType });
+        } else {
+          const dir = join(ICONS_DIR, safeKey);
+          mkdirSync(dir, { recursive: true });
+          writeFileSync(join(dir, diskFilename), buf);
+        }
       } catch (err) {
-        console.error('[icons] Failed to write file:', err.message);
+        logger.error(`[icons] Failed to write file: ${err.message}`);
         return res.status(500).json({ error: 'Failed to save icon' });
       }
 
@@ -176,7 +183,7 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
   });
 
   // ── GET /icons/:id — serve icon (public, no auth, CORS *) ─────────────────
-  router.get('/:id', iconRateLimit, (req, res) => {
+  router.get('/:id', iconRateLimit, async (req, res) => {
     const id = parseInt(req.params.id, 10);
     if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
 
@@ -184,14 +191,26 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
     if (!row) return res.status(404).json({ error: 'Icon not found' });
 
     const safeKey = iconKeySegment(row.api_key);
+    const objectKey = `${safeKey}/${row.disk_filename}`;
     const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
-    if (!existsSync(filepath)) return res.status(404).json({ error: 'Icon file not found on disk' });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', row.mime_type);
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    if (iconStore) {
+      try {
+        const opened = await iconStore.stream(objectKey);
+        if (opened.contentLength != null) res.setHeader('Content-Length', String(opened.contentLength));
+        const source = opened.stream?.pipe ? opened.stream : Readable.fromWeb(opened.stream);
+        return source.pipe(res);
+      } catch {
+        return res.status(404).json({ error: 'Icon file not found in storage' });
+      }
+    }
+
+    if (!existsSync(filepath)) return res.status(404).json({ error: 'Icon file not found on disk' });
     res.setHeader('Content-Length', row.size_bytes);
-    createReadStream(filepath).pipe(res);
+    return createReadStream(filepath).pipe(res);
   });
 
   // ── DELETE /icons/:id — delete icon (auth required) ────────────────────────
@@ -211,8 +230,14 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
     // Best-effort disk cleanup
     try {
       const safeKey = iconKeySegment(row.api_key);
-      const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
-      if (existsSync(filepath)) unlinkSync(filepath);
+      if (iconStore) {
+        void iconStore.delete(`${safeKey}/${row.disk_filename}`).catch((err) => {
+          logger.warn(`[icons] Could not delete stored icon object: ${err?.message}`);
+        });
+      } else {
+        const filepath = join(ICONS_DIR, safeKey, row.disk_filename);
+        if (existsSync(filepath)) unlinkSync(filepath);
+      }
     } catch (e) {
       console.warn('[icons] Could not delete disk file:', e.message);
     }

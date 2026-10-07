@@ -628,6 +628,13 @@ export function useSession({
     return api.get('/file');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const listStorageLibrary = useCallback(async function listStorageLibrary({ limit = 2000 } = {}) {
+    const params = new URLSearchParams();
+    if (Number.isFinite(limit) && limit > 0) params.set('limit', String(Math.trunc(limit)));
+    const qs = params.toString();
+    return api.get(`/file/library${qs ? `?${qs}` : ''}`);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const getFileDownloadUrl = useCallback(function getFileDownloadUrl(fileId) {
     const token = senderRef.current?._token;
     const url = backendUrlRef.current;
@@ -762,7 +769,7 @@ export function useSession({
     claimMic, releaseMic,
     getStats, eraseSelf,
     getSessionFeatures,
-    listFiles, getFileDownloadUrl, deleteFile, getStorageConfig, setStorageConfig, deleteStorageConfig,
+    listFiles, listStorageLibrary, getFileDownloadUrl, deleteFile, getStorageConfig, setStorageConfig, deleteStorageConfig,
     uploadImage, listImages, deleteImage, getImageViewUrl, getDskUrl,
     updateImageSettings,
     listIcons, uploadIcon, deleteIcon,

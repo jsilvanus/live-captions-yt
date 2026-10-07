@@ -12,14 +12,12 @@
     "test": "node --experimental-test-module-mocks --test test/*.test.js"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/lib-storage": "^3.0.0",
     "express": "^4.21",
     "express-rate-limit": "^8.2.1",
     "jsonwebtoken": "^9.0",
-    "lcyt-backend": "*"
-  },
-  "optionalDependencies": {
-    "@aws-sdk/client-s3": "^3.0.0",
-    "@aws-sdk/lib-storage": "^3.0.0",
+    "lcyt-backend": "*",
     "webdav": "^5.0.0"
   },
   "author": "Juha Itäleino <jsilvanus@gmail.com>",

@@ -30,6 +30,7 @@
 export { writeToBackendFile, closeFileHandles } from './caption-files.js';
 export { createFilesRouter } from './routes/files.js';
 export { shiftVttContent } from './vtt.js';
+export { createObjectStoreFromEnv, createLocalObjectStore, createS3ObjectStore } from './object-store/index.js';
 
 import { createStorageAdapter, createStorageResolver } from './storage.js';
 import { runFilesDbMigrations } from './db.js';

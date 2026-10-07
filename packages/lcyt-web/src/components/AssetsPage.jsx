@@ -109,6 +109,15 @@ function ThumbnailsIcon() {
   );
 }
 
+function LibraryIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <path d="M2 4.5C2 3.67 2.67 3 3.5 3H6L7 4.5H12.5C13.33 4.5 14 5.17 14 6V12.5C14 13.33 13.33 14 12.5 14H3.5C2.67 14 2 13.33 2 12.5V4.5Z" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M4 8.5H12M4 10.5H9.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function formatDate(value) {
   if (!value) return '—';
   const date = new Date(value);
@@ -141,6 +150,7 @@ function AssetsPageInner() {
   const [actions, setActions] = useState([]);
   const [icons, setIcons] = useState([]);
   const [files, setFiles] = useState([]);
+  const [librarySummary, setLibrarySummary] = useState({ objectCount: 0, totalBytes: 0, areaCount: 0 });
   const [broadcasts, setBroadcasts] = useState([]);
   const [thumbnails, setThumbnails] = useState([]);
   const [videos, setVideos] = useState([]);
@@ -161,6 +171,7 @@ function AssetsPageInner() {
       setActions([]);
       setIcons([]);
       setFiles([]);
+      setLibrarySummary({ objectCount: 0, totalBytes: 0, areaCount: 0 });
       setBroadcasts([]);
       setThumbnails([]);
       setVideos([]);
@@ -179,7 +190,7 @@ function AssetsPageInner() {
       return response.json();
     };
 
-    setLoading({ graphics: true, cues: true, actions: true, icons: true, files: true, broadcasts: true, thumbnails: true, videos: true });
+    setLoading({ graphics: true, cues: true, actions: true, icons: true, files: true, library: true, broadcasts: true, thumbnails: true, videos: true });
 
     try {
       const graphicsData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/templates`, authHeaders);
@@ -234,6 +245,23 @@ function AssetsPageInner() {
       setErrors(prev => ({ ...prev, files: true }));
     } finally {
       setLoading(prev => ({ ...prev, files: false }));
+    }
+
+    try {
+      const libraryData = await fetchJson(`${backendUrl}/file/library?limit=200`, authHeaders);
+      const totals = libraryData?.totals || { objectCount: 0, totalBytes: 0 };
+      const areas = Array.isArray(libraryData?.areas) ? libraryData.areas : [];
+      setLibrarySummary({
+        objectCount: Number(totals.objectCount || 0),
+        totalBytes: Number(totals.totalBytes || 0),
+        areaCount: areas.length,
+      });
+      setErrors(prev => ({ ...prev, library: false }));
+    } catch {
+      setLibrarySummary({ objectCount: 0, totalBytes: 0, areaCount: 0 });
+      setErrors(prev => ({ ...prev, library: true }));
+    } finally {
+      setLoading(prev => ({ ...prev, library: false }));
     }
 
     try {
@@ -435,6 +463,39 @@ function AssetsPageInner() {
           href="/planner"
         />
       )),
+    },
+    {
+      key: 'storage-library',
+      section: 'produced',
+      title: 'Storage library',
+      description: 'Tree view of files currently in caption/media storage.',
+      icon: styledIcon(LibraryIcon, 'green'),
+      color: 'green',
+      status: connected ? (loading.library ? 'partial' : 'ready') : 'partial',
+      statusLabel: connected ? (loading.library ? 'Loading…' : `${librarySummary.objectCount} object${librarySummary.objectCount === 1 ? '' : 's'}`) : 'Connect',
+      headerAction: { label: 'Open', href: '/library' },
+      body: !connected ? (
+        <p className="setup-card__empty">Connect to a project to browse object storage.</p>
+      ) : loading.library ? (
+        <p className="setup-card__empty">Loading…</p>
+      ) : errors.library ? (
+        <p className="setup-card__empty">Storage library could not be loaded right now.</p>
+      ) : librarySummary.objectCount === 0 ? (
+        <p className="setup-card__empty">No objects in storage yet.</p>
+      ) : (
+        <>
+          <SetupItemRow
+            name="All storage areas"
+            meta={`${librarySummary.areaCount} area${librarySummary.areaCount === 1 ? '' : 's'}`}
+            badge={`${librarySummary.objectCount} objects`}
+            extra={<span className="setup-item-row__meta">{formatBytes(librarySummary.totalBytes)}</span>}
+            href="/library"
+          />
+          <p className="setup-card__empty" style={{ marginTop: 8 }}>
+            Open the storage library for full tree view.
+          </p>
+        </>
+      ),
     },
     {
       key: 'broadcasts',

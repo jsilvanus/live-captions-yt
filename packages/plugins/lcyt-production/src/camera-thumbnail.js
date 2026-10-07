@@ -43,6 +43,10 @@ export function thumbnailPath(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR, 
   return join(thumbnailsDir, presetId ? `${cameraId}--${safePresetId(presetId)}.jpg` : `${cameraId}.jpg`);
 }
 
+export function thumbnailObjectKey(cameraId, presetId = null) {
+  return presetId ? `${cameraId}--${safePresetId(presetId)}.jpg` : `${cameraId}.jpg`;
+}
+
 /** Preset ids are operator-chosen strings: keep file names safe. */
 function safePresetId(presetId) {
   return String(presetId).replace(/[^A-Za-z0-9_-]/g, '_');
@@ -84,7 +88,17 @@ async function fetchPreviewJpeg(previewBaseUrl, key) {
  * @param {string} thumbnailsDir
  * @returns {{ ok: true } | { ok: false, error: string, status: number }}
  */
-function writeThumbnailFile(cameraId, buffer, thumbnailsDir, presetId = null) {
+async function writeThumbnailFile(cameraId, buffer, thumbnailsDir, presetId = null, thumbnailStore = null) {
+  if (thumbnailStore) {
+    const key = thumbnailObjectKey(cameraId, presetId);
+    try {
+      await thumbnailStore.put(key, buffer, { contentType: 'image/jpeg' });
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: `Could not write thumbnail object: ${err.message}`, status: 500 };
+    }
+  }
+
   try {
     fs.mkdirSync(thumbnailsDir, { recursive: true });
   } catch (err) {
@@ -116,6 +130,7 @@ function writeThumbnailFile(cameraId, buffer, thumbnailsDir, presetId = null) {
 export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
   const thumbnailsDir = opts.thumbnailsDir ?? DEFAULT_THUMBNAILS_DIR;
   const previewBaseUrl = opts.previewBaseUrl ?? DEFAULT_PREVIEW_BASE_URL;
+  const thumbnailStore = opts.thumbnailStore ?? null;
 
   let fetchResult;
 
@@ -169,7 +184,7 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
   if (!fetchResult.ok) return fetchResult;
 
   const presetId = opts.presetId || null;
-  const writeResult = writeThumbnailFile(camera.id, fetchResult.buffer, thumbnailsDir, presetId);
+  const writeResult = await writeThumbnailFile(camera.id, fetchResult.buffer, thumbnailsDir, presetId, thumbnailStore);
   if (!writeResult.ok) return writeResult;
 
   const thumbnailCapturedAt = new Date().toISOString();
@@ -192,7 +207,15 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
  * @param {string} cameraId
  * @param {string} [thumbnailsDir]
  */
-export function deleteCameraThumbnailFile(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR, presetIds = []) {
+export async function deleteCameraThumbnailFile(cameraId, thumbnailsDir = DEFAULT_THUMBNAILS_DIR, presetIds = [], thumbnailStore = null) {
+  if (thumbnailStore) {
+    for (const presetId of [null, ...presetIds]) {
+      const key = thumbnailObjectKey(cameraId, presetId);
+      await thumbnailStore.delete(key).catch(() => {});
+    }
+    return;
+  }
+
   try {
     for (const presetId of [null, ...presetIds]) {
       const p = thumbnailPath(cameraId, thumbnailsDir, presetId);

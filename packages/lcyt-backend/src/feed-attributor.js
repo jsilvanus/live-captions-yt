@@ -22,6 +22,7 @@
  */
 
 import * as fs from 'node:fs';
+import { Readable } from 'node:stream';
 import { frameDiff, jpegToFingerprint, matchFingerprint, createAttributionState } from 'lcyt-compute/perception/attribution';
 
 const HISTORY = 20;
@@ -38,6 +39,8 @@ export function unknownTag(since = Date.now()) {
  *   previewBaseUrl?: string,
  *   thumbnailsDir?: string,
  *   thumbnailPath: (cameraId: string, dir: string, presetId?: string|null) => string,
+ *   thumbnailsStore?: object,
+ *   thumbnailObjectKey?: (cameraId: string, presetId?: string|null) => string,
  *   fetchFrame?: (apiKey: string) => Promise<{ jpeg: Buffer, capturedAt: number }|null>,
  *   fingerprintJpeg?: (jpeg: Buffer) => Promise<object>,
  *   now?: () => number,
@@ -47,6 +50,8 @@ export function unknownTag(since = Date.now()) {
 export function createFeedAttributor(deps) {
   const {
     db, registry = null, eventBus = null, previewBaseUrl = null, thumbnailsDir = null, thumbnailPath,
+    thumbnailsStore = null,
+    thumbnailObjectKey = null,
     now = () => Date.now(),
     guardMs = Number(process.env.FEED_SWITCH_GUARD_MS ?? 400),
     signalTtlMs = Number(process.env.FEED_SIGNAL_TTL_MS ?? 10 * 60 * 1000),
@@ -175,7 +180,17 @@ export function createFeedAttributor(deps) {
       let fp = loop.refCache.get(key);
       if (!fp) {
         try {
-          fp = await fingerprintJpeg(fs.readFileSync(thumbnailPath(e.cameraId, dir, e.presetId)));
+          let jpeg;
+          if (thumbnailsStore && typeof thumbnailObjectKey === 'function') {
+            const opened = await thumbnailsStore.stream(thumbnailObjectKey(e.cameraId, e.presetId));
+            const source = opened.stream?.pipe ? opened.stream : Readable.fromWeb(opened.stream);
+            const chunks = [];
+            for await (const chunk of source) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+            jpeg = Buffer.concat(chunks);
+          } else {
+            jpeg = fs.readFileSync(thumbnailPath(e.cameraId, dir, e.presetId));
+          }
+          fp = await fingerprintJpeg(jpeg);
           loop.refCache.set(key, fp);
         } catch { continue; } // missing/corrupt reference: skip it
       }
