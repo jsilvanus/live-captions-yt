@@ -5,7 +5,7 @@
  * which can be version-controlled or used for backup/restore operations.
  */
 
-import { readFile, writeFile } from 'fs/promises';
+import { readFile, writeFile, unlink } from 'fs/promises';
 import logger from 'lcyt/logger';
 
 /**
@@ -59,17 +59,23 @@ export async function exportProject(client, apiKey) {
  * Import a project from a JSON export file or object.
  * Creates a new project or updates an existing one.
  * @param {ProjectAdminClient} client - Admin client instance
- * @param {string} filePath - Path to JSON export file
+ * @param {string|Object} filePathOrData - Path to JSON export file or pre-parsed object
  * @param {Object} [options] - Import options
  * @param {boolean} [options.skipExisting=false] - Skip if project already exists
  * @returns {Promise<Object>} Import result with project key
  */
-export async function importProject(client, filePath, options = {}) {
+export async function importProject(client, filePathOrData, options = {}) {
   const skipExisting = options.skipExisting || false;
 
-  logger.info(`Reading import file: ${filePath}`);
-  const fileContent = await readFile(filePath, 'utf-8');
-  const importData = JSON.parse(fileContent);
+  let importData;
+  if (typeof filePathOrData === 'string') {
+    logger.info(`Reading import file: ${filePathOrData}`);
+    const fileContent = await readFile(filePathOrData, 'utf-8');
+    importData = JSON.parse(fileContent);
+  } else {
+    // Pre-parsed object
+    importData = filePathOrData;
+  }
 
   if (!importData.project) {
     throw new Error('Invalid export format: missing "project" field');
@@ -174,21 +180,13 @@ export async function batchImportProjects(client, filePath, options = {}) {
 
   for (const importData of imports) {
     try {
-      const tempFile = `/tmp/lcyt-import-temp-${Date.now()}.json`;
-      await writeFile(tempFile, JSON.stringify(importData));
-
-      const result = await importProject(client, tempFile, { skipExisting });
+      const result = await importProject(client, importData, { skipExisting });
 
       if (result.skipped) {
         results.skipped++;
       } else {
         results.imported++;
       }
-
-      // Clean up temp file
-      try {
-        await import('fs/promises').then(fs => fs.unlink(tempFile));
-      } catch {}
     } catch (err) {
       results.failed++;
       results.errors.push({

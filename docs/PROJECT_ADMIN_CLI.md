@@ -283,7 +283,7 @@ lcyt project import --file backup_2026-10-08.json
 ```bash
 # On development server
 lcyt project export dev_key --output config.json
-bash ./lcyt project generate-script dev_key --output deploy.sh
+lcyt project generate-script dev_key --output deploy.sh
 
 # On production server
 bash deploy.sh --backend-url "https://prod.example.com" --admin-key "$PROD_ADMIN_KEY"
