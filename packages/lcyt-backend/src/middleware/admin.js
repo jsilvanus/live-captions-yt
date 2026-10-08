@@ -83,10 +83,13 @@ export function createAdminMiddleware(db, jwtSecret) {
         }
         return res.status(403).json({ error: 'Invalid admin key' });
       }
+      // X-Admin-Key header is missing but ADMIN_KEY is configured
+      return res.status(401).json({ error: 'X-Admin-Key header required' });
     }
 
-    // --- No valid admin auth ---
-    return res.status(401).json({ error: 'Admin authentication required' });
+    // --- No valid admin auth and ADMIN_KEY not configured ---
+    // Return 503 to indicate admin API is not configured for legacy access
+    return res.status(503).json({ error: 'Admin API not configured' });
   };
 }
 
