@@ -10,6 +10,7 @@ import { YoutubeLiveCaptionSender } from 'lcyt';
 import { loadConfig, saveConfig, buildIngestionUrl, getDefaultConfigPath } from 'lcyt/config';
 import logger from 'lcyt/logger';
 import { InteractiveUI } from '../src/interactive-ui.js';
+import { createProjectAdminCommand, createFeaturesCommand } from '../src/commands/project-admin.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
@@ -122,6 +123,8 @@ const argv = yargs(hideBin(process.argv))
   .example('$0 -b "Hello world"', 'Add caption to batch queue')
   .example('$0 -b "Line 2" -t "2024-01-15T12:00:00.000"', 'Batch with timestamp')
   .example('$0 --send', 'Send all queued batch captions')
+  .command(createProjectAdminCommand())
+  .command(createFeaturesCommand())
   .help('help')
   .alias('help', 'h')
   .version(pkg.version)
