@@ -36,6 +36,9 @@ const FEED_CAMERA_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
  */
 export function IngestionSection() {
   const session = useSessionContext();
+  const connected = session?.connected;
+  const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
   const [feedCameras, setFeedCameras] = useState([]);

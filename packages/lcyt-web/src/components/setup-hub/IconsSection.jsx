@@ -18,6 +18,9 @@ export function IconsSection() {
   const session = useSessionContext();
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
+  const listIcons = session?.listIcons;
+  const uploadIcon = session?.uploadIcon;
+  const deleteIcon = session?.deleteIcon;
   const { showToast } = useToast();
 
   const [icons, setIcons] = useState([]);
@@ -26,17 +29,17 @@ export function IconsSection() {
   const fileRef = useRef(null);
 
   const load = useCallback(async () => {
-    if (!connected) return;
+    if (!connected || !listIcons) return;
     setLoading(true);
     try {
-      const data = await session.listIcons();
+      const data = await listIcons();
       setIcons(data.icons || []);
     } catch {
       setIcons([]);
     } finally {
       setLoading(false);
     }
-  }, [connected, session]);
+  }, [connected, listIcons]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -56,7 +59,8 @@ export function IconsSection() {
     try {
       const arrayBuf = await file.arrayBuffer();
       const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf)));
-      const result = await session.uploadIcon({ filename: file.name, mimeType: file.type, data: base64 });
+      if (!uploadIcon) return;
+      const result = await uploadIcon({ filename: file.name, mimeType: file.type, data: base64 });
       setIcons(prev => [{ id: result.id, filename: result.filename, mimeType: result.mimeType, sizeBytes: result.sizeBytes }, ...prev]);
       showToast(`${result.filename} uploaded`, 'success');
     } catch (err) {
@@ -67,7 +71,8 @@ export function IconsSection() {
   async function handleDelete(id) {
     if (!window.confirm('Delete this icon?')) return;
     try {
-      await session.deleteIcon(id);
+      if (!deleteIcon) return;
+      await deleteIcon(id);
       setIcons(prev => prev.filter(ic => ic.id !== id));
     } catch (err) {
       showToast(err.message || 'Failed to delete icon', 'error');

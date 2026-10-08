@@ -16,6 +16,9 @@ import { Dialog } from '../Dialog.jsx';
  */
 export function WebRadioSection() {
   const session = useSessionContext();
+  const connected = session?.connected;
+  const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);

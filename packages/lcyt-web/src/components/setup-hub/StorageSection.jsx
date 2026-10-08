@@ -16,6 +16,7 @@ export function StorageSection() {
   const session = useSessionContext();
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
 
   const [mode, setMode] = useState('default');
   const [form, setForm] = useState(EMPTY);
@@ -52,7 +53,7 @@ export function StorageSection() {
   }
 
   async function handleSave() {
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token) return;
     setSaving(true);
     setError(null);
@@ -75,7 +76,7 @@ export function StorageSection() {
   }
 
   async function handleReset() {
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token) return;
     setSaving(true);
     setError(null);

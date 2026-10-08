@@ -93,7 +93,7 @@ export function EgressSection() {
   }
 
   async function persistRelayToBackend(entry) {
-    if (!session?.connected) return;
+    if (!connected || !configureRelay) return;
     const targetType = entry.targetType || 'youtube';
     let targetUrl = null;
     let targetName = null;
@@ -106,7 +106,7 @@ export function EgressSection() {
     }
     if (!targetUrl) return;
     try {
-      await session.configureRelay({
+      await configureRelay({
         slot: entry.slot,
         targetUrl,
         targetName,
@@ -155,7 +155,8 @@ export function EgressSection() {
 
   async function handleRelayActive(active) {
     try {
-      await session.setRelayActive(active);
+      if (!setRelayActive) return;
+      await setRelayActive(active);
       setRelayActiveState(active);
       refreshStatus();
     } catch { /* surfaced via refreshStatus() staying at prior state */ }
@@ -189,7 +190,7 @@ export function EgressSection() {
         />
       ))}
 
-      {session?.connected && (
+      {connected && (
         <SetupItemRow
           name="Relay status"
           meta={relayActive ? 'Active — will fan-out when stream arrives' : 'Inactive — incoming stream accepted but not relayed'}

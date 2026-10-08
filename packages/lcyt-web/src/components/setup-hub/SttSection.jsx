@@ -24,6 +24,7 @@ export function SttSection() {
   const session = useSessionContext();
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
 
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -53,7 +54,7 @@ export function SttSection() {
   useEffect(() => { load(); }, [load]);
 
   async function handleSave() {
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token || !config) return;
     setSaving(true);
     setError(null);
