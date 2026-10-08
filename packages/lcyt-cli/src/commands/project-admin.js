@@ -14,6 +14,7 @@
  *   lcyt features get <api-key>
  */
 
+import { writeFile } from 'fs/promises';
 import { ProjectAdminClient } from '../lib/project-client.js';
 import { exportProject, importProject } from '../lib/project-import-export.js';
 import { generateSetupScript } from '../lib/script-generator.js';
@@ -341,8 +342,7 @@ async function handleProjectExport(client, apiKey, outputPath) {
 
   const data = await exportProject(client, apiKey);
   if (outputPath) {
-    const fs = await import('fs/promises');
-    await fs.writeFile(outputPath, JSON.stringify(data, null, 2));
+    await writeFile(outputPath, JSON.stringify(data, null, 2));
     logger.info(`Project exported to ${outputPath}`);
   } else {
     console.log(JSON.stringify(data, null, 2));
@@ -368,8 +368,7 @@ async function handleGenerateScript(client, apiKey, outputPath) {
 
   const script = await generateSetupScript(client, apiKey);
   if (outputPath) {
-    const fs = await import('fs/promises');
-    await fs.writeFile(outputPath, script);
+    await writeFile(outputPath, script);
     logger.info(`Setup script generated: ${outputPath}`);
   } else {
     console.log(script);
@@ -388,8 +387,7 @@ async function handleFeaturesGet(client, apiKey, outputPath) {
   }));
 
   if (outputPath) {
-    const fs = await import('fs/promises');
-    await fs.writeFile(outputPath, JSON.stringify(output, null, 2));
+    await writeFile(outputPath, JSON.stringify(output, null, 2));
     logger.info(`Features exported to ${outputPath}`);
   } else {
     console.log(JSON.stringify(output, null, 2));
@@ -424,14 +422,12 @@ async function handleFeaturesSet(client, apiKey, enableStr, disableStr) {
 }
 
 async function handleFeaturesReset(client, apiKey) {
-  // Reset to default features (all disabled)
+  // Reset all features to default (disabled) by fetching from project
+  // and setting all to false
+  const currentFeatures = await client.getProjectFeatures(apiKey);
   const features = {};
-  const defaultFeatureCodes = [
-    'captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed',
-    'collaboration', 'file-saving', 'files-local', 'graphics-client', 'restream',
-  ];
 
-  for (const code of defaultFeatureCodes) {
+  for (const code of Object.keys(currentFeatures)) {
     features[code] = false;
   }
 

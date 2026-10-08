@@ -183,14 +183,33 @@ export async function generateNodeScript(client, apiKey) {
     throw new Error(`Project not found: ${apiKey}`);
   }
 
-  const enableFeatures = Object.entries(project.features || {})
+  const featureEntries = Object.entries(project.features || {});
+  const enabledFeatures = featureEntries
     .filter(([_, config]) => {
       const enabled = typeof config === 'boolean' ? config : config.enabled;
       return enabled;
     })
     .map(([code]) => code);
+  const disabledFeatures = featureEntries
+    .filter(([_, config]) => {
+      const enabled = typeof config === 'boolean' ? config : config.enabled;
+      return !enabled;
+    })
+    .map(([code]) => code);
 
   const timestamp = new Date().toISOString();
+
+  const featureLines = [];
+  if (enabledFeatures.length > 0) {
+    for (const code of enabledFeatures) {
+      featureLines.push(`      '${code}': true,`);
+    }
+  }
+  if (disabledFeatures.length > 0) {
+    for (const code of disabledFeatures) {
+      featureLines.push(`      '${code}': false,`);
+    }
+  }
 
   return `/**
  * Project Setup Script (Node.js)
@@ -216,9 +235,9 @@ async function setupProject() {
     const project = await client.getProject(PROJECT_KEY);
     console.log('✓ Project found:', project.owner);
 
-    // Apply features
+    // Apply features (both enabled and disabled)
     const features = {
-${enableFeatures.map(code => `      '${code}': true,`).join('\n')}
+${featureLines.join('\n')}
     };
 
     await client.setProjectFeatures(PROJECT_KEY, features);

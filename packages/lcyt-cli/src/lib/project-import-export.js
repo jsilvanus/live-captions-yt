@@ -5,7 +5,7 @@
  * which can be version-controlled or used for backup/restore operations.
  */
 
-import { readFile, writeFile, unlink } from 'fs/promises';
+import { readFile, writeFile } from 'fs/promises';
 import logger from 'lcyt/logger';
 
 /**
