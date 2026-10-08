@@ -1,19 +1,19 @@
----
+﻿---
 id: api/video
-title: "/video — Multilingual HLS Player & Subtitle Sidecar"
+title: "/video â€” Multilingual HLS Player & Subtitle Sidecar"
 methods: [GET]
 auth: [none]
 ---
 
-# /video — Multilingual HLS Player & Subtitle Sidecar
+# /video â€” Multilingual HLS Player & Subtitle Sidecar
 
-A set of public endpoints that serve an embeddable HLS video player with multilingual subtitle tracks. The player combines the live video stream (from `/stream-hls`) with real-time WebVTT subtitle segments automatically generated from the captions and translations delivered to the associated viewer key.
+A set of public endpoints that serve an embeddable HLS video player with multilingual subtitle tracks. The player combines the live video stream (from `/api/v1/stream-hls`) with real-time WebVTT subtitle segments automatically generated from the captions and translations delivered to the associated viewer key.
 
-**CORS:** `Access-Control-Allow-Origin: *` on all `/video/…` routes — embeddable anywhere with `<iframe>`.
+**CORS:** `Access-Control-Allow-Origin: *` on all `/video/â€¦` routes â€” embeddable anywhere with `<iframe>`.
 
-**Authentication:** None — all endpoints are fully public.
+**Authentication:** None â€” all endpoints are fully public.
 
-**Rate limit:** 240 requests per minute per IP across all `/video/…` endpoints.
+**Rate limit:** 240 requests per minute per IP across all `/video/â€¦` endpoints.
 
 ---
 
@@ -21,23 +21,23 @@ A set of public endpoints that serve an embeddable HLS video player with multili
 
 When captions are sent to a **viewer target**, the backend:
 
-1. Writes rolling 6-second **WebVTT segment files** to disk — one set per active language (original + each translation).
+1. Writes rolling 6-second **WebVTT segment files** to disk â€” one set per active language (original + each translation).
 2. Maintains **in-memory HLS subtitle playlists** with `EXT-X-PROGRAM-DATE-TIME` headers so an HLS player can align subtitle cues to video frames by wall clock.
 3. Generates a **master HLS manifest** on demand that includes the live video stream and all active subtitle tracks as `EXT-X-MEDIA TYPE=SUBTITLES` entries.
 
-The viewer key used for `/video/:key` is the same key configured in the CC → Targets tab for a **viewer** target type — no additional setup is needed.
+The viewer key used for `/video/:key` is the same key configured in the CC â†’ Targets tab for a **viewer** target type â€” no additional setup is needed.
 
 ---
 
-## `GET /video/:key` — Embeddable HLS Player Page
+## `GET /video/:key` â€” Embeddable HLS Player Page
 
-Returns a self-contained HTML page with an HLS.js video player. The player loads the master manifest and exposes all available subtitle languages through the browser's **native CC (closed captions) button** in the standard video controls. No custom language picker UI is needed — the browser handles it natively with full accessibility support.
+Returns a self-contained HTML page with an HLS.js video player. The player loads the master manifest and exposes all available subtitle languages through the browser's **native CC (closed captions) button** in the standard video controls. No custom language picker UI is needed â€” the browser handles it natively with full accessibility support.
 
 **URL parameter**
 
 | Parameter | Description |
 |---|---|
-| `:key` | Viewer / HLS key. Same key used for `/viewer/:key` and `/stream-hls/:key`. Must match `/^[a-zA-Z0-9_-]{3,}$/`. |
+| `:key` | Viewer /api/v1/ HLS key. Same key used for `/api/v1/viewer/api/v1/:key` and `/api/v1/stream-hls/api/v1/:key`. Must match `/api/v1/^[a-zA-Z0-9_-]{3,}$/api/v1/`. |
 
 **Query parameters**
 
@@ -45,7 +45,7 @@ Returns a self-contained HTML page with an HLS.js video player. The player loads
 |---|---|---|---|
 | `theme` | `dark`, `light` | `dark` | Colour scheme of the player page |
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: text/html; charset=utf-8
@@ -73,11 +73,11 @@ Returns a full HTML page. The player auto-starts when the stream is live. If the
 
 ---
 
-## `GET /video/:key/master.m3u8` — Master HLS Manifest
+## `GET /video/:key/master.m3u8` â€” Master HLS Manifest
 
 Returns the HLS master manifest combining the live video stream with all active subtitle tracks. Each subtitle track appears as an `EXT-X-MEDIA TYPE=SUBTITLES` entry, one per active language.
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: application/vnd.apple.mpegurl
@@ -97,18 +97,18 @@ Cache-Control: no-cache, no-store
 https://api.example.com/stream-hls/my-event-key/index.m3u8
 ```
 
-If no subtitle languages have arrived yet, the manifest is returned without `EXT-X-MEDIA` entries (video-only). The player still works — subtitles appear as they are generated.
+If no subtitle languages have arrived yet, the manifest is returned without `EXT-X-MEDIA` entries (video-only). The player still works â€” subtitles appear as they are generated.
 
 **Error responses**
 
 | Status | Reason |
 |---|---|
 | `400` | Invalid key format |
-| `404` | Video stream not live (`/stream-hls/:key` not running) |
+| `404` | Video stream not live (`/api/v1/stream-hls/api/v1/:key` not running) |
 
 ---
 
-## `GET /video/:key/subs/:lang/playlist.m3u8` — Subtitle Playlist
+## `GET /video/:key/subs/:lang/playlist.m3u8` â€” Subtitle Playlist
 
 Returns the HLS subtitle playlist for a specific language. Polled by the HLS player every segment interval.
 
@@ -119,7 +119,7 @@ Returns the HLS subtitle playlist for a specific language. Polled by the HLS pla
 | `:key` | Viewer key |
 | `:lang` | BCP-47 language tag (e.g. `fi-FI`, `de-DE`) or `original` for the source language |
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: application/vnd.apple.mpegurl
@@ -150,7 +150,7 @@ seg000042.vtt
 - `EXT-X-TARGETDURATION` = segment duration + 1 second (per RFC 8216).
 - `EXT-X-MEDIA-SEQUENCE` = index of the oldest segment in the rolling window.
 - `EXT-X-PROGRAM-DATE-TIME` appears on every segment so the HLS player can align subtitle cues to video frames by wall clock, regardless of seek position within the DVR window.
-- Empty segments (no cues during the interval) are included — the HLS spec forbids gaps in a live subtitle playlist.
+- Empty segments (no cues during the interval) are included â€” the HLS spec forbids gaps in a live subtitle playlist.
 
 **Error responses**
 
@@ -161,7 +161,7 @@ seg000042.vtt
 
 ---
 
-## `GET /video/:key/subs/:lang/:segment` — WebVTT Segment File
+## `GET /video/:key/subs/:lang/:segment` â€” WebVTT Segment File
 
 Returns a single WebVTT subtitle segment file.
 
@@ -171,9 +171,9 @@ Returns a single WebVTT subtitle segment file.
 |---|---|
 | `:key` | Viewer key |
 | `:lang` | BCP-47 language tag or `original` |
-| `:segment` | Segment filename — must match `seg######.vtt` (6 zero-padded digits) |
+| `:segment` | Segment filename â€” must match `seg######.vtt` (6 zero-padded digits) |
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: text/vtt; charset=utf-8
@@ -192,7 +192,7 @@ Hello and welcome to the broadcast.
 Today we will be discussing...
 ```
 
-**Example WebVTT segment (empty — no captions in this interval):**
+**Example WebVTT segment (empty â€” no captions in this interval):**
 
 ```plaintext
 WEBVTT
@@ -200,7 +200,7 @@ WEBVTT
 
 Cue timestamps are **relative to the segment start** as required by HLS WebVTT. The `EXT-X-PROGRAM-DATE-TIME` tag in the playlist maps each segment's relative timestamps back to wall-clock time.
 
-**Security:** Path traversal is prevented — the resolved file path must be within `HLS_SUBS_ROOT`.
+**Security:** Path traversal is prevented â€” the resolved file path must be within `HLS_SUBS_ROOT`.
 
 **Error responses**
 
@@ -213,7 +213,7 @@ Cue timestamps are **relative to the segment start** as required by HLS WebVTT. 
 
 ## Subtitle Language Tags
 
-The `original` track always contains the source-language caption text (the raw text typed or transcribed by the streamer). Additional tracks correspond to the BCP-47 language codes configured in the CC → Translation tab.
+The `original` track always contains the source-language caption text (the raw text typed or transcribed by the streamer). Additional tracks correspond to the BCP-47 language codes configured in the CC â†’ Translation tab.
 
 Common language tags:
 
@@ -267,5 +267,6 @@ All modern browsers with the native `<video>` controls will show the CC button a
 
 | Endpoint | Relationship |
 |---|---|
-| [`GET /viewer/:key`](./viewer.md) | Same viewer key — the SSE stream for text-only clients (Android TV, custom overlays). `/video/:key` adds a video player on top of the same data feed. |
+| [`GET /viewer/:key`](./viewer.md) | Same viewer key â€” the SSE stream for text-only clients (Android TV, custom overlays). `/video/:key` adds a video player on top of the same data feed. |
 | [`GET /stream-hls/:key/*`](./stream-hls.md) | Provides the video stream referenced in the master manifest. Both must use the same key. |
+

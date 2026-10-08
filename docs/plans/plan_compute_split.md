@@ -1,5 +1,5 @@
----
-title: Compute Split — lcyt-compute Library + Job Contract v1
+﻿---
+title: Compute Split â€” lcyt-compute Library + Job Contract v1
 status: phase 1 implemented; the fffleet runner (`FFMPEG_RUNNER=fleet`) implemented 2026-10-04; see "Status after fffleet"
 design doc: https://claude.ai/code/artifact/a512e3d1-5ef2-40ce-9b1c-60d1c5aaa5f2
 ---
@@ -23,15 +23,15 @@ The full proposal (findings, architecture diagram, contract, Saarnavideo usage, 
 One job resource at `/v1/jobs`, served identically by the orchestrator and every worker:
 
 - **Spec:** `{ contract: 1, id, kind: 'stream'|'batch', type: 'ffmpeg'|'perception', owner, purpose, priority, class, requires[], resources, timeoutMs, inputs[{name, uri}], outputs[{name, uri, contentType}], ffmpeg: { args with {{input:x}}/{{output:x}} placeholders, durationMs }, callbackUrl }`. Client-chosen `id` makes submission idempotent (same spec 200, different spec 409).
-- **States:** `queued → assigned → staging → running → uploading → succeeded`, plus `failed` and `cancelled`; final exactly once, with `exitCode`, `error.code`, outputs and the stderr tail.
-- **Events:** `{ jobId, seq, at, state, progress: { pct, outTimeMs, speed, fps }, error?, outputs? }`, worker → orchestrator → `callbackUrl`, or SSE at `GET /v1/jobs/:id/events`.
+- **States:** `queued â†’ assigned â†’ staging â†’ running â†’ uploading â†’ succeeded`, plus `failed` and `cancelled`; final exactly once, with `exitCode`, `error.code`, outputs and the stderr tail.
+- **Events:** `{ jobId, seq, at, state, progress: { pct, outTimeMs, speed, fps }, error?, outputs? }`, worker â†’ orchestrator â†’ `callbackUrl`, or SSE at `GET /v1/jobs/:id/events`.
 - **API:** `POST /v1/jobs`, `GET /v1/jobs/:id`, `GET /v1/jobs/:id/events`, `DELETE /v1/jobs/:id`, `POST /v1/jobs/:id/stdin` (replaces the caption FIFO endpoint), `GET /v1/capabilities`. Control plane: `/v1/workers/register`, `/heartbeat` (carries running job ids for reconciliation), `/events`.
 - **Auth:** `Authorization: Bearer`, consumer and worker token roles; old headers accepted until the pre-v1 routes go.
 - **Classes and concurrency:** each job has a `class` (e.g. `render`, `upload`, `relay`) and workers declare slots per class, so a long upload never blocks renders.
 
 ## Phases
 
-1. **Extract the library** — done. `packages/lcyt-compute` holds the runners, FIFO helpers and accounting; `lcyt-backend/ffmpeg*` re-export; worker daemon and `lcyt-rtmp` import `lcyt-compute`; worker Dockerfile builds from the repo root.
+1. **Extract the library** â€” done. `packages/lcyt-compute` holds the runners, FIFO helpers and accounting; `lcyt-backend/ffmpeg*` re-export; worker daemon and `lcyt-rtmp` import `lcyt-compute`; worker Dockerfile builds from the repo root.
 2. One dispatch client used by `WorkerFfmpegRunner` and `perception-manager.js`; `COMPUTE_URL`/`COMPUTE_TOKEN` with the old names as deprecated aliases; settings registry updated.
 3. Contract v1 routes beside the old ones; events and heartbeat reconciliation (fixes the capacity leak and the missing `close`).
 4. Batch jobs: input staging (`file:`, `s3:`, `https:`), output upload, `-progress` parsing, timeouts, capability matching.
@@ -50,3 +50,4 @@ The orchestrator and worker became the generic library [fffleet](https://github.
 - **Perception jobs (2026-10-05):** they are plain Node (poll a frame URL, run the stub detector, POST detections back), so fffleet runs them as a job type: `lcyt-compute/perception/fffleet-executor` (`{ type: 'perception', run }`) is loaded by an fffleet worker with `FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor` (fffleet-worker >= 2.0; the worker then claims `type:perception`). `createPerceptionManager` submits `{ kind: 'stream', type: 'perception', perception: plan }` through the shared fleet client when `FFFLEET_URL` is set; with no fleet URL it keeps using `ORCHESTRATOR_URL` / `WORKER_DAEMON_URL`. The runner, frame source and stub detector moved from `lcyt-worker-daemon/src/perception/` to `lcyt-compute/src/perception/` (the daemon imports them from there). `lcyt-worker-daemon` and `lcyt-orchestrator` can be retired once no deployment sets `FFMPEG_RUNNER=worker`, `WORKER_DAEMON_URL` or `ORCHESTRATOR_URL`; that removal is a separate step. The job spec carries the callback `internalToken`, so the fleet's job API must stay private.
 - **Was still on `lcyt-worker-daemon` and `lcyt-orchestrator`:** perception jobs (not ffmpeg), until fffleet has a non-ffmpeg executor or they move into the backend. `FFMPEG_RUNNER=worker` stays until then and is deprecated for ffmpeg.
 - **Not done:** the direct `spawn('ffmpeg')` sites (`hls-manager`, `stt-manager`, `music-manager`, `pcm-extractor`, DSK renderer) are still local.
+

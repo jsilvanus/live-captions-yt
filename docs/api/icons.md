@@ -1,23 +1,23 @@
----
+﻿---
 id: api/icons
-title: "/icons — Viewer Branding Icons"
+title: "/api/v1/icons â€” Viewer Branding Icons"
 methods: [POST, GET, DELETE]
 auth: [bearer, none]
 ---
 
-# /icons — Viewer Branding Icons
+# /icons â€” Viewer Branding Icons
 
-Upload, list, serve, and delete branding icons (PNG or SVG) associated with an API key. Icons are used to brand viewer pages — the streamer uploads a logo in Settings → Icons, then chooses it for a viewer target in CC → Targets.
+Upload, list, serve, and delete branding icons (PNG or SVG) associated with an API key. Icons are used to brand viewer pages â€” the streamer uploads a logo in Settings â†’ Icons, then chooses it for a viewer target in CC â†’ Targets.
 
 Icons are stored on the server filesystem under `$ICONS_DIR/<apiKey>/`.
 
-All `/icons` routes are **rate-limited to 60 requests per minute per IP**.
+All `/api/v1/icons` routes are **rate-limited to 60 requests per minute per IP**.
 
-> **Important:** The `/icons` router is mounted **before** the global JSON body parser. The upload endpoint uses its own 400 KB body parser to support base64-encoded images.
+> **Important:** The `/api/v1/icons` router is mounted **before** the global JSON body parser. The upload endpoint uses its own 400 KB body parser to support base64-encoded images.
 
 ---
 
-## `POST /icons` — Upload an Icon
+## `POST /icons` â€” Upload an Icon
 
 Upload a PNG or SVG icon using a JSON body with base64-encoded image data.
 
@@ -49,7 +49,7 @@ Content-Type: application/json
 - PNG files are validated against the PNG magic bytes (`89 50 4E 47`).
 - SVG files are checked for `<svg` or `<?xml` in the first 512 bytes.
 
-**Response — `201 Created`**
+**Response â€” `201 Created`**
 
 ```json
 {
@@ -73,7 +73,7 @@ Content-Type: application/json
 
 ---
 
-## `GET /icons` — List Icons
+## `GET /icons` â€” List Icons
 
 Return all icons for the authenticated API key.
 
@@ -86,7 +86,7 @@ GET /icons
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -104,7 +104,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `GET /icons/:id` — Serve an Icon (Public)
+## `GET /icons/:id` â€” Serve an Icon (Public)
 
 Serve the raw icon bytes. **Public** (no authentication) so viewer pages can load icons without a JWT.
 
@@ -116,7 +116,7 @@ Serve the raw icon bytes. **Public** (no authentication) so viewer pages can loa
 GET /icons/1
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: image/png   (or image/svg+xml)
@@ -135,7 +135,7 @@ Content-Length: <size>
 
 ---
 
-## `DELETE /icons/:id` — Delete an Icon
+## `DELETE /icons/:id` â€” Delete an Icon
 
 Delete an icon record and its file from disk.
 
@@ -148,7 +148,7 @@ DELETE /icons/1
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 { "ok": true }
@@ -170,3 +170,4 @@ Authorization: Bearer <token>
 | Variable | Default | Description |
 |---|---|---|
 | `ICONS_DIR` | `/data/icons` | Base directory for icon storage. Each API key gets its own subdirectory. |
+

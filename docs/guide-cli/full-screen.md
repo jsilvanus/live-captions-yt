@@ -1,4 +1,4 @@
----
+﻿---
 title: Full-Screen UI
 order: 1
 ---
@@ -59,10 +59,10 @@ Type a slash-command in the input field and press Enter:
 | Command | Description |
 |---------|-------------|
 | `/load <path>` | Load a caption script from a file path or URL |
-| `/batch` | Toggle batch mode — queue captions before sending |
+| `/batch` | Toggle batch mode â€” queue captions before sending |
 | `/send` | Send the batch queue immediately |
 | `/api <path>` | Load a Google API credentials JSON for YouTube status polling |
-| `/stream <url-or-id>` | Set a YouTube video ID or URL to poll for live status |
+| `/api/v1/stream <url-or-id>` | Set a YouTube video ID or URL to poll for live status |
 | `/reset` | Reset the sequence counter to 0 |
 | `/quit` | Exit the full-screen UI |
 
@@ -73,7 +73,7 @@ Type a slash-command in the input field and press Enter:
 Batch mode lets you queue multiple captions and send them as a group:
 
 1. Type `/batch` to enable batch mode.
-2. Enter each caption and press Enter — lines are queued but not sent yet.
+2. Enter each caption and press Enter â€” lines are queued but not sent yet.
 3. Type `/send` (or press the batch-send shortcut) to deliver the whole batch at once.
 
 ---
@@ -83,7 +83,7 @@ Batch mode lets you queue multiple captions and send them as a group:
 | Key | Action |
 |-----|--------|
 | **Enter** | Send current line or command |
-| **↑ / ↓** | Navigate through loaded file lines |
+| **â†‘ / â†“** | Navigate through loaded file lines |
 | **Page Up / Page Down** | Scroll the Sent Captions panel |
 | **Ctrl+C** | Exit |
 
@@ -99,3 +99,4 @@ lcyt --base-url URL          # Override ingestion URL
 lcyt --region reg1           # Set region identifier
 lcyt --verbose               # Enable verbose logging
 ```
+

@@ -1,4 +1,4 @@
----
+﻿---
 title: Interactive Mode
 order: 2
 ---
@@ -24,10 +24,10 @@ Once started, the CLI waits for you to type a line and press **Enter**. Each lin
 
 ```
 $ lcyt -i
-> Hello, welcome to the stream!       ← you type this, then Enter
-✓ Caption sent [seq 1]
+> Hello, welcome to the stream!       â† you type this, then Enter
+âœ“ Caption sent [seq 1]
 > Today we will be discussing...
-✓ Caption sent [seq 2]
+âœ“ Caption sent [seq 2]
 ```
 
 - Each line you enter is sent immediately after pressing Enter.
@@ -89,3 +89,4 @@ done
 - Interactive mode does **not** display the full-screen blessed UI; it is purely text-based and safe to use in CI pipelines, cron jobs, or scripts.
 - The stream key must be configured either via `--stream-key` or stored in `~/.lcyt-config.json` beforehand.
 - Timestamps default to the current system time unless overridden with `--timestamp`.
+

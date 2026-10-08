@@ -1,4 +1,4 @@
-# Firewall & Reverse Proxy Reference
+﻿# Firewall & Reverse Proxy Reference
 
 This document lists every port used by LCYT services, whether it needs to be publicly open, and how it fits into a typical nginx reverse-proxy setup.
 
@@ -8,29 +8,29 @@ This document lists every port used by LCYT services, whether it needs to be pub
 
 | Port | Protocol | Service | Expose publicly? | Via reverse proxy? |
 |------|----------|---------|------------------|--------------------|
-| 80 | TCP | nginx (HTTP → HTTPS redirect) | **Yes** | — |
-| 443 | TCP | nginx (HTTPS / WSS) | **Yes** | — |
-| 1935 | TCP | RTMP ingest (nginx-rtmp or MediaMTX) | **Yes** (RTMP clients) | No — direct |
-| 3000 | TCP | lcyt-backend API | No — loopback only | **Yes** (nginx) |
-| 3001 | TCP | lcyt-mcp-http | No — loopback only | **Yes** (nginx, if exposed) |
-| 5000 | TCP | fffleet-orchestrator (default port) | No — internal | No (internal) |
-| 8080 | TCP | MediaMTX HLS / metrics HTTP | No — loopback only | **Yes** (nginx proxy_pass for `/r/`) |
-| 9997 | TCP | MediaMTX REST API | No — loopback only | No (internal only) |
+| 80 | TCP | nginx (HTTP â†’ HTTPS redirect) | **Yes** | â€” |
+| 443 | TCP | nginx (HTTPS / WSS) | **Yes** | â€” |
+| 1935 | TCP | RTMP ingest (nginx-rtmp or MediaMTX) | **Yes** (RTMP clients) | No â€” direct |
+| 3000 | TCP | lcyt-backend API | No â€” loopback only | **Yes** (nginx) |
+| 3001 | TCP | lcyt-mcp-http | No â€” loopback only | **Yes** (nginx, if exposed) |
+| 5000 | TCP | fffleet-orchestrator (default port) | No â€” internal | No (internal) |
+| 8080 | TCP | MediaMTX HLS / metrics HTTP | No â€” loopback only | **Yes** (nginx proxy_pass for `/r/`) |
+| 9997 | TCP | MediaMTX REST API | No â€” loopback only | No (internal only) |
 
 ---
 
 ## Public-facing ports (open in firewall)
 
-### Port 80 — HTTP (nginx)
+### Port 80 â€” HTTP (nginx)
 - Accepts plain HTTP; redirect all traffic to HTTPS.
 - Rule: `allow tcp 80 from any`
 
-### Port 443 — HTTPS / WSS (nginx)
+### Port 443 â€” HTTPS / WSS (nginx)
 - Main public entry point. nginx terminates TLS and reverse-proxies to backend services.
 - Also handles WebSocket upgrade for SSE long-poll connections.
 - Rule: `allow tcp 443 from any`
 
-### Port 1935 — RTMP
+### Port 1935 â€” RTMP
 - Required for encoder software (OBS, Wirecast, hardware encoders) to push live streams.
 - Cannot go through nginx (RTMP is not HTTP); must be a direct firewall opening.
 - Only needed when `RTMP_RELAY_ACTIVE=1` or MediaMTX / nginx-rtmp is in use.
@@ -38,31 +38,31 @@ This document lists every port used by LCYT services, whether it needs to be pub
 
 ---
 
-## Internal-only ports (loopback / Docker network — do not expose)
+## Internal-only ports (loopback / Docker network â€” do not expose)
 
 All of the following are bound to `127.0.0.1` in `docker-compose.yml` and must **not** be reachable from outside the host. Access is only via nginx reverse proxy or inter-container networking.
 
-### Port 3000 — lcyt-backend API
+### Port 3000 â€” lcyt-backend API
 - Express HTTP server. All public API traffic arrives here via nginx.
 - Configured by: `PORT` env var (default `3000`).
 - nginx proxy target: `http://127.0.0.1:3000`
 
-### Port 3001 — lcyt-mcp-http
+### Port 3001 â€” lcyt-mcp-http
 - Streamable HTTP transport for the Model Context Protocol server.
 - Only expose publicly if AI assistant MCP integration is needed.
 - Configured by: `PORT` env var in the MCP Streamable HTTP process (default `3001`).
 - nginx proxy target: `http://127.0.0.1:3001`
 
-### Port 5000 — fffleet orchestrator
+### Port 5000 â€” fffleet orchestrator
 - Schedules ffmpeg and perception jobs on fffleet workers. Internal only; not part of this repo (https://github.com/jsilvanus/fffleet).
 - Backend reaches it via `FFFLEET_URL`. Workers must be able to reach the RTMP/HLS/preview URLs used in the jobs (see `docs/DEPLOY.md`).
 
-### Port 8080 — MediaMTX HLS / metrics
+### Port 8080 â€” MediaMTX HLS / metrics
 - Serves HLS playlists and segments for audio/video streams.
 - nginx proxies public slug URLs (`/r/<slug>/`) to this port via `NginxManager`-generated location blocks.
 - Configured by: `MEDIAMTX_HLS_BASE_URL` (default `http://mediamtx:8080` in Docker, `http://127.0.0.1:8080` on bare metal).
 
-### Port 9997 — MediaMTX REST API
+### Port 9997 â€” MediaMTX REST API
 - Used by the backend (`RadioManager`) to register/deregister MediaMTX paths dynamically.
 - Never proxied or exposed externally.
 - Configured by: `MEDIAMTX_API_URL` (default `http://mediamtx:9997`).
@@ -78,7 +78,7 @@ server {
     listen 443 ssl;
     server_name api.lcyt.fi;
 
-    # ── Backend API ──────────────────────────────────────────────────────────
+    # â”€â”€ Backend API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location / {
         proxy_pass         http://127.0.0.1:3000;
         proxy_http_version 1.1;
@@ -88,7 +88,7 @@ server {
         proxy_set_header   X-Forwarded-Proto $scheme;
     }
 
-    # ── SSE streams (GET /events, GET /viewer/:key, GET /dsk/:key/events) ───
+    # â”€â”€ SSE streams (GET /events, GET /viewer/:key, GET /dsk/:key/events) â”€â”€â”€
     # Disable buffering so events reach the client immediately.
     location ~* ^/(events|viewer/|dsk/) {
         proxy_pass         http://127.0.0.1:3000;
@@ -102,11 +102,11 @@ server {
         proxy_read_timeout 3600s;
     }
 
-    # ── HLS audio streams via MediaMTX (RADIO_HLS_SOURCE=mediamtx) ──────────
+    # â”€â”€ HLS audio streams via MediaMTX (RADIO_HLS_SOURCE=mediamtx) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     # NginxManager writes slug-based location blocks here automatically.
     # include /etc/nginx/conf.d/lcyt-radio.conf;
 
-    # ── MCP Streamable HTTP server (optional) ──────────────────────────────────
+    # â”€â”€ MCP Streamable HTTP server (optional) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location /mcp-http/ {
         proxy_pass         http://127.0.0.1:3001/;
         proxy_http_version 1.1;
@@ -117,10 +117,10 @@ server {
         proxy_read_timeout 3600s;
     }
 
-    # ssl_certificate / ssl_certificate_key — managed by certbot or similar.
+    # ssl_certificate / ssl_certificate_key â€” managed by certbot or similar.
 }
 
-# HTTP → HTTPS redirect
+# HTTP â†’ HTTPS redirect
 server {
     listen 80;
     server_name api.lcyt.fi;
@@ -138,7 +138,7 @@ server {
     root /var/www/html/lcyt-web;   # symlink to packages/lcyt-web/dist
     index index.html;
 
-    # SPA fallback — serve index.html for any unknown path
+    # SPA fallback â€” serve index.html for any unknown path
     location / {
         try_files $uri $uri/ /index.html;
     }
@@ -157,7 +157,7 @@ server {
         add_header Cache-Control "no-cache";
     }
 
-    # ssl_certificate / ssl_certificate_key — managed by certbot or similar.
+    # ssl_certificate / ssl_certificate_key â€” managed by certbot or similar.
 }
 ```
 
@@ -165,7 +165,7 @@ server {
 
 ## RTMP ingest (nginx-rtmp or MediaMTX)
 
-Port **1935** must be opened directly in the firewall — it cannot be reverse-proxied by nginx (nginx-rtmp is a separate module and standard nginx cannot transparently proxy raw RTMP).
+Port **1935** must be opened directly in the firewall â€” it cannot be reverse-proxied by nginx (nginx-rtmp is a separate module and standard nginx cannot transparently proxy raw RTMP).
 
 **nginx-rtmp** (used when `RTMP_RELAY_ACTIVE=1` with the nginx-rtmp module):
 ```nginx
@@ -192,7 +192,7 @@ rtmp {
 # Public ports
 ufw allow 80/tcp
 ufw allow 443/tcp
-ufw allow 1935/tcp   # RTMP — only if live streaming is in use
+ufw allow 1935/tcp   # RTMP â€” only if live streaming is in use
 
 # Block everything else by default
 ufw default deny incoming
@@ -216,4 +216,5 @@ ufw enable
 | `DSK_LOCAL_SERVER` | `http://localhost:3000` | URL Chromium renderer fetches templates from |
 | `PUBLIC_URL` | _(unset)_ | Server's public URL, used in generated `.env` downloads |
 | `ALLOWED_DOMAINS` | `lcyt.fi,www.lcyt.fi,localhost` | Session CORS allowlist |
-| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Domains allowed to use `/stream` relay |
+| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Domains allowed to use `/api/v1/stream` relay |
+

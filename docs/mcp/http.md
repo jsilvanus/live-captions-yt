@@ -1,4 +1,4 @@
----
+﻿---
 id: mcp/http
 ---
 
@@ -14,9 +14,9 @@ id: mcp/http
 
 The server listens for HTTP connections on a configurable port (default `3001`), exposing a single `/mcp` endpoint that supports three HTTP methods:
 
-- `POST /mcp` — send an MCP JSON-RPC message. An `initialize` request with no `Mcp-Session-Id` header opens a new session; the server returns the new session id in the `Mcp-Session-Id` response header.
-- `GET /mcp` — open the server-initiated SSE stream for an existing session (`Mcp-Session-Id` header required).
-- `DELETE /mcp` — terminate a session (`Mcp-Session-Id` header required).
+- `POST /mcp` â€” send an MCP JSON-RPC message. An `initialize` request with no `Mcp-Session-Id` header opens a new session; the server returns the new session id in the `Mcp-Session-Id` response header.
+- `GET /mcp` â€” open the server-initiated SSE stream for an existing session (`Mcp-Session-Id` header required).
+- `DELETE /mcp` â€” terminate a session (`Mcp-Session-Id` header required).
 
 Caption sessions are held in a **shared in-memory pool** accessible to all HTTP connections. A caption session (identified by `session_id` returned from the `start` tool) survives HTTP reconnects as long as the server process is running, and is independent of the MCP transport session (`Mcp-Session-Id`).
 
@@ -55,7 +55,7 @@ Send an MCP JSON-RPC message to the server.
 | `Mcp-Session-Id` | `string` | No (required after the initial `initialize` call) | Identifies an existing MCP transport session |
 | `X-Api-Key` | `string` | No | API key for usage logging (requires `DB_PATH` to be configured). Required when `MCP_REQUIRE_API_KEY=1` |
 
-**Body:** MCP JSON-RPC message. The first message on a new connection must be an `initialize` request (no `Mcp-Session-Id` header) — the server creates a new transport and session, returning the assigned id in the `Mcp-Session-Id` response header.
+**Body:** MCP JSON-RPC message. The first message on a new connection must be an `initialize` request (no `Mcp-Session-Id` header) â€” the server creates a new transport and session, returning the assigned id in the `Mcp-Session-Id` response header.
 
 **Response:** JSON-RPC result, or `400 Bad Request` if no session id is provided and the request is not an `initialize` request.
 
@@ -136,22 +136,22 @@ When `MCP_REQUIRE_API_KEY=1` is set and no valid API key is provided, the `initi
 ## Architecture
 
 ```
-MCP Client A ──POST /mcp (initialize)────┐
-MCP Client B ──POST /mcp (initialize)────┤
-                                         ▼
+MCP Client A â”€â”€POST /mcp (initialize)â”€â”€â”€â”€â”
+MCP Client B â”€â”€POST /mcp (initialize)â”€â”€â”€â”€â”¤
+                                         â–¼
                               lcyt-mcp-http (HTTP server)
-                                         │
+                                         â”‚
                               Shared caption session pool
                               (in-memory Map<session_id, Sender>)
-                                         │
+                                         â”‚
                               YoutubeLiveCaptionSender instances
-                                         │
-                                         ▼
+                                         â”‚
+                                         â–¼
                               YouTube Live Ingestion API
 
-MCP Client A ──POST /mcp (Mcp-Session-Id: a)──► server processes, returns JSON-RPC response
-MCP Client B ──POST /mcp (Mcp-Session-Id: b)──► server processes, returns JSON-RPC response
-MCP Client A ──GET  /mcp (Mcp-Session-Id: a)──► server-initiated SSE notifications
+MCP Client A â”€â”€POST /mcp (Mcp-Session-Id: a)â”€â”€â–º server processes, returns JSON-RPC response
+MCP Client B â”€â”€POST /mcp (Mcp-Session-Id: b)â”€â”€â–º server processes, returns JSON-RPC response
+MCP Client A â”€â”€GET  /mcp (Mcp-Session-Id: a)â”€â”€â–º server-initiated SSE notifications
 ```
 
 - Multiple HTTP clients can co-exist in the same server process
@@ -167,7 +167,7 @@ MCP Client A ──GET  /mcp (Mcp-Session-Id: a)──► server-initiated SSE n
 curl -i -X POST http://localhost:3001/mcp \
   -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"curl","version":"1.0.0"}}}'
-# → look for the Mcp-Session-Id response header, e.g. Mcp-Session-Id: abc123
+# â†’ look for the Mcp-Session-Id response header, e.g. Mcp-Session-Id: abc123
 
 # 2. Start a caption session
 curl -X POST http://localhost:3001/mcp \
@@ -210,7 +210,7 @@ curl -X POST http://localhost:3001/mcp \
 
 - **DB volume ownership**: if you enable `DB_PATH` and use a Docker volume for persistence, ensure the container runtime user can write the SQLite file. If you see `SqliteError: attempt to write a readonly database`, chown the volume to the runtime UID (e.g., `1000:1000`) before starting the container.
 
-- **Reconnection behaviour**: sessions stored in SQLite are rehydrated on server start without an active sender. Clients should re-register (POST `/live` or call the `start` tool) to obtain a fresh token and re-open the MCP session after a backend restart.
+- **Reconnection behaviour**: sessions stored in SQLite are rehydrated on server start without an active sender. Clients should re-register (POST `/api/v1/live` or call the `start` tool) to obtain a fresh token and re-open the MCP session after a backend restart.
 
 ## Persistence (DB-backed sessions)
 
@@ -227,7 +227,8 @@ DB_PATH=./lcyt.db node packages/lcyt-mcp-http/src/server.js
 - **Lifecycle**: calling the `stop` tool will end the session and remove the persisted row. The `privacy_deletion` tool will also erase session records for the authenticated API key.
 
 - **Operational notes**:
-  - Rehydration starts sender instances at boot — this uses network and CPU resources proportional to the number of persisted sessions. If you prefer a lazy approach (restore metadata but start senders only when a client attaches), request the lazy option and we can update the server to support it.
+  - Rehydration starts sender instances at boot â€” this uses network and CPU resources proportional to the number of persisted sessions. If you prefer a lazy approach (restore metadata but start senders only when a client attaches), request the lazy option and we can update the server to support it.
   - Ensure the SQLite file is writable by the runtime user (see README chown example) to avoid `readonly` errors.
 
 - **Security**: persist only on trusted hosts; stream keys are persisted in the `sessions` table and should be protected accordingly.
+

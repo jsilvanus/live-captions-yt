@@ -1,7 +1,7 @@
-# Deployment Guide
+﻿# Deployment Guide
 
 This guide covers building, configuring, and deploying LCYT in all supported
-configurations — from a single VM with the helper script to a distributed
+configurations â€” from a single VM with the helper script to a distributed
 compute setup on an fffleet fleet.
 
 ---
@@ -10,7 +10,7 @@ compute setup on an fffleet fleet.
 
 1. [Deployment modes](#deployment-modes)
 2. [Prerequisites](#prerequisites)
-3. [Quick start — single VM](#quick-start--single-vm)
+3. [Quick start â€” single VM](#quick-start--single-vm)
 4. [Docker images](#docker-images)
 5. [Build-time configuration](#build-time-configuration)
 6. [Runtime environment variables](#runtime-environment-variables)
@@ -35,7 +35,7 @@ See `docs/plans/plan_cloudfleet.md` for a full comparison of all three tiers
 and the Cloudfleet deployment guide.
 
 In the first three modes the web UI (`lcyt-web`) and the marketing site
-(`lcyt-site`) are built on the host and served by nginx as static files — they
+(`lcyt-site`) are built on the host and served by nginx as static files â€” they
 are **not** baked into any Docker image.
 
 ---
@@ -49,7 +49,7 @@ are **not** baked into any Docker image.
 
 ---
 
-## Quick start — single VM
+## Quick start â€” single VM
 
 ### 1. Configure environment
 
@@ -79,11 +79,11 @@ The script runs these steps in order:
 | Step | What it does |
 |------|-------------|
 | git clone / pull | Fetches latest from `GIT_BRANCH` (default: `main`). Self-updates if `deploy.sh` itself changed. |
-| Build `lcyt-web` | Runs `npm run build -w packages/lcyt-web` → `packages/lcyt-web/dist/` |
+| Build `lcyt-web` | Runs `npm run build -w packages/lcyt-web` â†’ `packages/lcyt-web/dist/` |
 | Capture screenshots | Background job: installs Playwright Chromium, captures UI screenshots for Astro site |
 | `docker compose up` | Builds and starts `lcyt-site` + `mediamtx` containers |
 | Build `lcyt-bridge` | Compiles bridge executables (win/mac/linux/linux-arm64) |
-| Build `lcyt-site` | Runs Astro build → `packages/lcyt-site/dist/` |
+| Build `lcyt-site` | Runs Astro build â†’ `packages/lcyt-site/dist/` |
 
 After the first deploy, create nginx symlinks so the static files are served:
 
@@ -164,7 +164,7 @@ in `docker-compose.yml`. See `scripts/build.env.example` for a template.
 | `RADIO_ACTIVE` | `0` | Install ffmpeg for audio-only HLS (radio) in local-spawn mode. **Not needed** when `RADIO_HLS_SOURCE=mediamtx`. |
 | `HLS_ACTIVE` | `0` | Install ffmpeg for video+audio HLS in local-spawn mode. |
 | `PREVIEW_ACTIVE` | `0` | Install ffmpeg for JPEG thumbnail generation in local-spawn mode. |
-| `GRAPHICS_ENABLED` | `0` | Install Chromium for the DSK Playwright renderer. Also controls the `/images` and `/dsk` endpoints at runtime. |
+| `GRAPHICS_ENABLED` | `0` | Install Chromium for the DSK Playwright renderer. Also controls the `/api/v1/images` and `/api/v1/dsk` endpoints at runtime. |
 
 **When is ffmpeg needed in the image?**
 
@@ -182,7 +182,7 @@ These are passed as environment variables during `npm run build:web`:
 |----------|---------|
 | `VITE_BACKUP_DAYS` | Backup retention value shown in the Privacy modal |
 | `VITE_SITE_URL` | Base URL baked into the web bundle |
-| `VITE_API_KEY` | Optional API key baked into the bundle — **do not commit** |
+| `VITE_API_KEY` | Optional API key baked into the bundle â€” **do not commit** |
 
 ---
 
@@ -214,7 +214,7 @@ before running the backend directly.
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ALLOWED_DOMAINS` | `lcyt.fi,www.lcyt.fi,localhost` | Comma-separated domains permitted as session origins (CORS allowlist) |
-| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Domains allowed to use the `/stream` RTMP relay endpoints |
+| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Domains allowed to use the `/api/v1/stream` RTMP relay endpoints |
 | `FREE_APIKEY_ACTIVE` | _(unset)_ | Set to `1` to enable free-tier API key self-registration at `POST /keys?freetier` |
 | `USE_USER_LOGINS` | _(enabled)_ | Set to `0` to disable user registration and login (`/auth` routes) |
 | `LCYT_INSTALL_MODE` | _(unset)_ | `local` = single-user install with **no login**: requests without credentials act as a built-in local admin that owns every project. Logs a startup warning, binds `127.0.0.1` (or `HOST`), and refuses to start on a non-loopback `HOST` unless `LCYT_LOCAL_ALLOW_REMOTE=1`. Env-only. Never use on a shared or public server |
@@ -419,7 +419,7 @@ Perception jobs run on the same fleet as the `perception` job type (workers star
 `FFFLEET_EXECUTORS=lcyt-compute/perception/fffleet-executor`; image `docker/lcyt-perception-worker/`).
 
 **DSK on the fleet.** With `DSK_RENDER_EXECUTOR=fleet` (and `FFFLEET_URL`) per-viewport DSK streams run as `dsk` jobs: a worker started from `docker/lcyt-dsk-worker/` (`FFFLEET_EXECUTORS=lcyt-dsk/fffleet-executor`) opens the viewport's display page in its own Chromium and pushes the encoded stream to the RTMP URLs itself, so the backend no longer runs Chromium for them. Set `DSK_PAGE_BASE_URL` to the backend's public address (a `localhost` value is refused) and make sure the worker can reach the RTMP ingest. A backend restart that starts the stream again re-attaches to the running job. The legacy per-key renderer stays local.
-The Admin → Metrics page shows a Fleet tile (workers, slots, queue, autoscaler) read from the
+The Admin â†’ Metrics page shows a Fleet tile (workers, slots, queue, autoscaler) read from the
 orchestrator's `/metrics`; the token or client needs the `metrics` scope (a client login asks for
 it automatically, so the client must be allowed `metrics`).
 `FFMPEG_RUNNER=worker` and the old `lcyt-orchestrator` / `lcyt-worker-daemon` packages are gone.
@@ -427,7 +427,7 @@ it automatically, so the client must be allowed `metrics`).
 **Network requirements.** A fleet worker is a different machine, so every input and output
 in an ffmpeg command must be reachable *from the worker*, not from the backend:
 
-- **RTMP relay** (`rtmp://…` ingest and the YouTube/target URLs): the worker pulls the
+- **RTMP relay** (`rtmp://â€¦` ingest and the YouTube/target URLs): the worker pulls the
   stream from your MediaMTX/nginx ingest, so the ingest must listen on an address the worker
   can reach (a public or VPN address, not `localhost`) and its port must be open to the
   worker. The backend's `RTMP_LOCAL_*`/`localhost` defaults only work with the local runner.
@@ -440,7 +440,7 @@ in an ffmpeg command must be reachable *from the worker*, not from the backend:
 - **HLS manager** stays on the backend machine on purpose (it re-muxes a local stream).
 
 **When a fleet job fails.** The backend logs the fleet's error code and message, the worker
-that ran it and the tail of ffmpeg's stderr (`[rtmp] ffmpeg exited with code … : [FFMPEG_EXIT] …`),
+that ran it and the tail of ffmpeg's stderr (`[rtmp] ffmpeg exited with code â€¦ : [FFMPEG_EXIT] â€¦`),
 the stream route `GET /stream` returns `lastExit { at, code, reason, workerId }` while no
 relay is running, and the relay panel shows it as "Relay stopped with an error". Callers of
 `spawnFfmpeg` get the same text on the fake process's `stderr` and as `proc.failure`.
@@ -450,7 +450,7 @@ process), `GET /stream` returns `stderrTail` while a relay runs, and the relay p
 under "Worker log" (refreshed every 5 s). A local ffmpeg has no such field. The fleet returns an
 empty stderr tail for streamed jobs that run to a clean end; only the error code and message are
 available for jobs that fail before ffmpeg starts (`WORKER_LOST`, no worker with the required
-capabilities, …).
+capabilities, â€¦).
 
 ### `FFMPEG_WRAPPER`
 
@@ -466,8 +466,8 @@ Heavy ffmpeg work (relays, STT, music analysis, DSK, perception) can run on othe
 through [fffleet](https://github.com/jsilvanus/fffleet):
 
 ```
-lcyt-backend ──FFFLEET_URL──► fffleet-orchestrator ──► fffleet-worker (one per VM or container)
-                                      └──► autoscaled workers (Docker, Hetzner Cloud, local processes)
+lcyt-backend â”€â”€FFFLEET_URLâ”€â”€â–º fffleet-orchestrator â”€â”€â–º fffleet-worker (one per VM or container)
+                                      â””â”€â”€â–º autoscaled workers (Docker, Hetzner Cloud, local processes)
 ```
 
 Set `FFMPEG_RUNNER=fleet` and `FFFLEET_URL` (see [`fleet`](#fleet) above). Running the orchestrator and
@@ -509,11 +509,11 @@ See `docs/FIREWALL.md` for:
 |------|---------|-----------------|
 | 80 / 443 | nginx | Yes |
 | 1935 | RTMP ingest | Yes (if streaming is in use) |
-| 3000 | lcyt-backend API | No — via nginx only |
-| 3001 | lcyt-mcp-http | No — via nginx if needed |
-| 5000 | fffleet-orchestrator (default) | No — internal |
-| 8080 | MediaMTX HLS | No — via nginx proxy |
-| 9997 | MediaMTX REST API | No — internal |
+| 3000 | lcyt-backend API | No â€” via nginx only |
+| 3001 | lcyt-mcp-http | No â€” via nginx if needed |
+| 5000 | fffleet-orchestrator (default) | No â€” internal |
+| 8080 | MediaMTX HLS | No â€” via nginx proxy |
+| 9997 | MediaMTX REST API | No â€” internal |
 
 ---
 
@@ -530,3 +530,4 @@ BACKUP_DIR=/backups   # volume-mount this directory
 ```
 
 Backups are written once per day to `$BACKUP_DIR/<YYYY-MM-DD>/lcyt-backend.db`.
+

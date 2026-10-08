@@ -1,11 +1,11 @@
----
+﻿---
 id: plan/pyback
-title: "Python Backend Scope Reduction — Unauthenticated CORS Relay"
+title: "Python Backend Scope Reduction â€” Unauthenticated CORS Relay"
 status: implemented
 summary: "Reduce Python backend (python-packages/lcyt-backend) to a minimal, unauthenticated CORS relay for YouTube caption sending. Remove API key management, JWT auth, admin routes, and SQLite database. The full-featured backend is the Node.js lcyt-backend."
 ---
 
-# Python Backend — Unauthenticated CORS Relay
+# Python Backend â€” Unauthenticated CORS Relay
 
 **Date:** 2026-03-27
 **Status:** Implemented
@@ -36,24 +36,24 @@ The Python backend is **not** a replacement for the Node.js backend. It does not
 
 ```
 Browser (lcyt-web or custom client)
-    │
-    │  POST /live      { apiKey?, streamKey, domain }  → { token, sessionId, ... }
-    │  POST /captions  { captions: [...] }             → YouTube result (Bearer token)
-    │  POST /sync                                      → { syncOffset, ... } (Bearer token)
-    │  GET  /health                                    → { ok, features: [...] }
-    │
-    ▼
+    â”‚
+    â”‚  POST /live      { apiKey?, streamKey, domain }  â†’ { token, sessionId, ... }
+    â”‚  POST /captions  { captions: [...] }             â†’ YouTube result (Bearer token)
+    â”‚  POST /sync                                      â†’ { syncOffset, ... } (Bearer token)
+    â”‚  GET  /health                                    â†’ { ok, features: [...] }
+    â”‚
+    â–¼
 Python Flask Backend (CORS relay)
-    │
-    │  HTTP POST (caption ingestion)
-    │
-    ▼
+    â”‚
+    â”‚  HTTP POST (caption ingestion)
+    â”‚
+    â–¼
 YouTube Live Caption API
 ```
 
-The relay follows the same `POST /live` → Bearer token → `POST /captions` flow
+The relay follows the same `POST /live` â†’ Bearer token â†’ `POST /captions` flow
 as the Node.js backend so that **lcyt-web can connect to either backend without
-code changes**. The difference is that no API key database exists — any `apiKey`
+code changes**. The difference is that no API key database exists â€” any `apiKey`
 value is accepted. Session tokens (HS256 JWT) are signed with an auto-generated
 secret and used only to identify which sender to route captions to.
 
@@ -62,11 +62,11 @@ secret and used only to identify which sender to route captions to.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | `GET` | `/health` | None | Server uptime, active sessions, `features` list |
-| `POST` | `/live` | None | Register session → returns JWT token |
-| `GET` | `/live` | Bearer | Session status (sequence, syncOffset) |
-| `DELETE` | `/live` | Bearer | Tear down session |
-| `POST` | `/captions` | Bearer | Send caption(s) to YouTube |
-| `POST` | `/sync` | Bearer | NTP-style clock sync |
+| `POST` | `/api/v1/live` | None | Register session â†’ returns JWT token |
+| `GET` | `/api/v1/live` | Bearer | Session status (sequence, syncOffset) |
+| `DELETE` | `/api/v1/live` | Bearer | Tear down session |
+| `POST` | `/api/v1/captions` | Bearer | Send caption(s) to YouTube |
+| `POST` | `/api/v1/sync` | Bearer | NTP-style clock sync |
 
 ### `GET /health`
 
@@ -116,11 +116,11 @@ Returns `{ syncOffset, roundTripTime, serverTimestamp, statusCode }`.
 
 ## What Was Removed (vs. Original Python Backend)
 
-- **SQLite database** (`db.py`) — no API keys table, no key validation
-- **Admin middleware** (`middleware/admin.py`) — no `X-Admin-Key`
-- **Admin routes** (`routes/keys.py`) — no CRUD for API keys
-- **Dynamic CORS** (`middleware/cors.py`) — replaced with permissive `Access-Control-Allow-Origin: *`
-- **Session store** (`store.py`) — replaced with simple dict sender cache
+- **SQLite database** (`db.py`) â€” no API keys table, no key validation
+- **Admin middleware** (`middleware/admin.py`) â€” no `X-Admin-Key`
+- **Admin routes** (`routes/keys.py`) â€” no CRUD for API keys
+- **Dynamic CORS** (`middleware/cors.py`) â€” replaced with permissive `Access-Control-Allow-Origin: *`
+- **Session store** (`store.py`) â€” replaced with simple dict sender cache
 
 ## Deployment
 
@@ -138,7 +138,7 @@ python run.py
 |---|---|---|
 | `PORT` | HTTP port | `3000` |
 
-No `JWT_SECRET`, `ADMIN_KEY`, or `DB_PATH` needed — this is a stateless relay.
+No `JWT_SECRET`, `ADMIN_KEY`, or `DB_PATH` needed â€” this is a stateless relay.
 
 ## Relationship to Node.js Backend
 
@@ -150,3 +150,4 @@ The Python backend is an alternative for environments where:
 - No authentication or key management is required
 
 For production deployments with multiple users, use the Node.js backend.
+

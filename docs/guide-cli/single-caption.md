@@ -1,4 +1,4 @@
----
+﻿---
 title: Single Caption
 order: 3
 ---
@@ -104,3 +104,4 @@ A successful heartbeat prints a confirmation and exits with code `0`.
 |------|---------|
 | `0` | Caption sent successfully |
 | `1` | Error (network failure, invalid key, etc.) |
+

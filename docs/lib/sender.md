@@ -1,4 +1,4 @@
-# YoutubeLiveCaptionSender
+﻿# YoutubeLiveCaptionSender
 
 ---
 id: lib/sender
@@ -23,7 +23,7 @@ new YoutubeLiveCaptionSender(options)
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `streamKey` | `string` | — | YouTube Live stream key (required unless `ingestionUrl` is provided) |
+| `streamKey` | `string` | â€” | YouTube Live stream key (required unless `ingestionUrl` is provided) |
 | `baseUrl` | `string` | `'http://upload.youtube.com'` | YouTube ingestion base URL |
 | `ingestionUrl` | `string` | built from `baseUrl` + `streamKey` | Override the full ingestion URL |
 | `region` | `string` | `'us'` | YouTube region hint (`us`, `eu`, `asia`) |
@@ -260,3 +260,4 @@ sender.clearQueue();
 
 await sender.end();
 ```
+

@@ -1,4 +1,4 @@
-# LCYT Project Status
+﻿# LCYT Project Status
 
 *Rewritten 2026-10-06 on `main` (7c2e6f9 plus the 2026-10-06 fixes). Replaces the 2026-06-30 snapshot. This is a point-in-time summary; `docs/PLANS.md` is the plan index, `TODO.md` the open work, `CONSIDER.md` the skipped review findings.*
 
@@ -24,3 +24,4 @@ Facebook Live adapter; `deer` chat provider kind.
 ## Deployment
 
 `docker-compose.lcyt.yml` runs LCYT alone. `docker-compose.yml` adds MediaMTX. The fffleet orchestrator and workers and the auditor are separate deployments (see `docs/DEPLOY.md`).
+

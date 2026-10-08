@@ -1,4 +1,4 @@
----
+﻿---
 id: plan/postgres-option
 title: "PostgreSQL as an Optional Backend"
 status: draft
@@ -82,7 +82,7 @@ The goal is not to replace every SQL statement with a generic query builder. Rat
 
 ### 2. Support engine selection through configuration
 
-Make the backend selectable through the repository’s existing environment/config pattern, with Postgres enabled as an optional configuration path rather than a hard-coded fork:
+Make the backend selectable through the repositoryâ€™s existing environment/config pattern, with Postgres enabled as an optional configuration path rather than a hard-coded fork:
 
 - `DB_BACKEND=sqlite|postgres`
 - `DB_URL` for PostgreSQL connection strings
@@ -117,14 +117,14 @@ The implementation should prefer a small set of shared helpers over scattering `
 
 ## Phased implementation plan
 
-### Phase 1 — DB abstraction and configuration
+### Phase 1 â€” DB abstraction and configuration
 
 - Introduce the DB facade and wire it into the core backend bootstrap path.
 - Add environment-based backend selection.
 - Add a PostgreSQL driver dependency and a local development path for running Postgres.
 - Document the new configuration surface in the backend package docs and the repo-level DB documentation.
 
-### Phase 2 — Core backend schema and DB modules
+### Phase 2 â€” Core backend schema and DB modules
 
 - Refactor `packages/lcyt-backend/src/db/schema.js` to use the new migration runner.
 - Port the core DB modules under `packages/lcyt-backend/src/db/` to the shared abstraction.
@@ -135,7 +135,7 @@ The implementation should prefer a small set of shared helpers over scattering `
   - caption targets and translation config
   - file metadata and related tables
 
-### Phase 3 — Plugin DB modules
+### Phase 3 â€” Plugin DB modules
 
 Apply the same abstraction to the plugin-owned DB helpers and schema:
 
@@ -150,14 +150,14 @@ Apply the same abstraction to the plugin-owned DB helpers and schema:
 
 The initial rollout should preserve the current plugin behavior while ensuring each plugin can initialize and migrate with PostgreSQL.
 
-### Phase 4 — Testing and development workflow
+### Phase 4 â€” Testing and development workflow
 
 - Add a test matrix for SQLite and PostgreSQL.
 - Add a local Postgres path for development (for example via Docker Compose or a simple script) so contributors can validate both backends locally.
 - Add or update backend tests to cover the new adapter and migration path.
 - Update operational docs for backup/restore, migrations, and deployment assumptions.
 
-### Phase 5 — Rollout and follow-up
+### Phase 5 â€” Rollout and follow-up
 
 - Keep SQLite as the default for now.
 - Document the supported Postgres deployment pattern and its operational caveats.
@@ -192,3 +192,4 @@ The plan is complete when:
 - The Node.js backend and the major plugin-backed DB modules can initialize and migrate against PostgreSQL.
 - The repository has documentation for configuration, migration, and local development against PostgreSQL.
 - Test coverage exists for both SQLite and PostgreSQL paths.
+

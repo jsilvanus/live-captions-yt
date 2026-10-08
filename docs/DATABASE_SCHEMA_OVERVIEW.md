@@ -1,268 +1,268 @@
-# LCYT Database Schema Overview
+﻿# LCYT Database Schema Overview
 
 ## Entity Relationship Diagram (Conceptual)
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           USERS & AUTHENTICATION                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  users ─────────────┐
-│  ├─ id (PK)         │
-│  ├─ email (UNIQUE)  │
-│  ├─ password_hash   │
-│  ├─ name            │
-│  ├─ active          │
-│  ├─ is_admin        │
-│  └─ created_at      │
-│       │
-│       └──────────────────────────────────┐
-│                                          │
-│  api_keys                        org_members
-│  ├─ id (PK)                      ├─ id (PK)
-│  ├─ key (UNIQUE)                 ├─ org_id (FK)
-│  ├─ user_id (FK)                 ├─ user_id (FK)
-│  ├─ org_id (FK) ◄─────────┐      ├─ role
-│  ├─ owner                 │      ├─ invited_by (FK)
-│  ├─ created_at            │      └─ joined_at
-│  ├─ expires_at            │
-│  ├─ active                │
-│  ├─ daily_limit           │
-│  ├─ lifetime_limit        │      organizations
-│  ├─ lifetime_used         │      ├─ id (PK)
-│  └─ sequence              │      ├─ name
-│                           │      ├─ slug (UNIQUE)
-│                           └─────→├─ owner_user_id (FK)
-│                                  └─ created_at
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                           USERS & AUTHENTICATION                            â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  users â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”œâ”€ id (PK)         â”‚
+â”‚  â”œâ”€ email (UNIQUE)  â”‚
+â”‚  â”œâ”€ password_hash   â”‚
+â”‚  â”œâ”€ name            â”‚
+â”‚  â”œâ”€ active          â”‚
+â”‚  â”œâ”€ is_admin        â”‚
+â”‚  â””â”€ created_at      â”‚
+â”‚       â”‚
+â”‚       â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                                          â”‚
+â”‚  api_keys                        org_members
+â”‚  â”œâ”€ id (PK)                      â”œâ”€ id (PK)
+â”‚  â”œâ”€ key (UNIQUE)                 â”œâ”€ org_id (FK)
+â”‚  â”œâ”€ user_id (FK)                 â”œâ”€ user_id (FK)
+â”‚  â”œâ”€ org_id (FK) â—„â”€â”€â”€â”€â”€â”€â”€â”€â”€â”      â”œâ”€ role
+â”‚  â”œâ”€ owner                 â”‚      â”œâ”€ invited_by (FK)
+â”‚  â”œâ”€ created_at            â”‚      â””â”€ joined_at
+â”‚  â”œâ”€ expires_at            â”‚
+â”‚  â”œâ”€ active                â”‚
+â”‚  â”œâ”€ daily_limit           â”‚
+â”‚  â”œâ”€ lifetime_limit        â”‚      organizations
+â”‚  â”œâ”€ lifetime_used         â”‚      â”œâ”€ id (PK)
+â”‚  â””â”€ sequence              â”‚      â”œâ”€ name
+â”‚                           â”‚      â”œâ”€ slug (UNIQUE)
+â”‚                           â””â”€â”€â”€â”€â”€â†’â”œâ”€ owner_user_id (FK)
+â”‚                                  â””â”€ created_at
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         PROJECTS & TARGETS                                  │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  api_keys (project record)
-│  └─ Represents both auth token AND project configuration
-│     ├─ Points to user/org owner
-│     └─ References multiple caption_targets
-│
-│       ↓
-│  caption_targets ──── (1:many) ────────┐
-│  ├─ id (PK)                            │
-│  ├─ api_key_id (FK)                    │
-│  ├─ type (youtube|viewer|generic)      │ One project can deliver
-│  ├─ config (JSON: streamKey, URL, etc) │ to multiple targets
-│  ├─ enabled                            │ simultaneously
-│  └─ created_at                         │
-│                                        │
-└────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                         PROJECTS & TARGETS                                  â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  api_keys (project record)
+â”‚  â””â”€ Represents both auth token AND project configuration
+â”‚     â”œâ”€ Points to user/org owner
+â”‚     â””â”€ References multiple caption_targets
+â”‚
+â”‚       â†“
+â”‚  caption_targets â”€â”€â”€â”€ (1:many) â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”œâ”€ id (PK)                            â”‚
+â”‚  â”œâ”€ api_key_id (FK)                    â”‚
+â”‚  â”œâ”€ type (youtube|viewer|generic)      â”‚ One project can deliver
+â”‚  â”œâ”€ config (JSON: streamKey, URL, etc) â”‚ to multiple targets
+â”‚  â”œâ”€ enabled                            â”‚ simultaneously
+â”‚  â””â”€ created_at                         â”‚
+â”‚                                        â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CAPTION FLOW & USAGE                                │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  caption_usage ──────────────────┐
-│  ├─ id (PK)                      │
-│  ├─ api_key_id (FK)              │  Per-project daily counters
-│  ├─ date (DATE)                  │  for billing/limits
-│  ├─ character_count              │
-│  ├─ caption_count                │
-│  └─ session_count                │
-│                                  │
-│  caption_errors ─────────────────┤  Error tracking for
-│  ├─ id (PK)                      │  debugging & monitoring
-│  ├─ api_key_id (FK)              │
-│  ├─ error_type                   │
-│  ├─ error_message                │
-│  ├─ occurred_at                  │
-│  └─ source (YouTube/generic/etc) │
-│
-│  usage_rollups ──────────────────┤  Hourly → daily compaction
-│  ├─ id (PK)                      │  for long-term retention
-│  ├─ api_key_id (FK)              │
-│  ├─ period (hourly/daily)        │
-│  ├─ date                         │
-│  └─ character_count              │
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                         CAPTION FLOW & USAGE                                â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  caption_usage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”œâ”€ id (PK)                      â”‚
+â”‚  â”œâ”€ api_key_id (FK)              â”‚  Per-project daily counters
+â”‚  â”œâ”€ date (DATE)                  â”‚  for billing/limits
+â”‚  â”œâ”€ character_count              â”‚
+â”‚  â”œâ”€ caption_count                â”‚
+â”‚  â””â”€ session_count                â”‚
+â”‚                                  â”‚
+â”‚  caption_errors â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Error tracking for
+â”‚  â”œâ”€ id (PK)                      â”‚  debugging & monitoring
+â”‚  â”œâ”€ api_key_id (FK)              â”‚
+â”‚  â”œâ”€ error_type                   â”‚
+â”‚  â”œâ”€ error_message                â”‚
+â”‚  â”œâ”€ occurred_at                  â”‚
+â”‚  â””â”€ source (YouTube/generic/etc) â”‚
+â”‚
+â”‚  usage_rollups â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Hourly â†’ daily compaction
+â”‚  â”œâ”€ id (PK)                      â”‚  for long-term retention
+â”‚  â”œâ”€ api_key_id (FK)              â”‚
+â”‚  â”œâ”€ period (hourly/daily)        â”‚
+â”‚  â”œâ”€ date                         â”‚
+â”‚  â””â”€ character_count              â”‚
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         ACCESS CONTROL                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  site_feature_policies ──┐
-│  ├─ feature_code (PK)    │  Organization-level (can override)
-│  ├─ mode                 │  AND project-level (can further override)
-│  └─ updated_at           │
-│       ↓                  │
-│  org_feature_overrides   │
-│  ├─ org_id (FK)          │
-│  ├─ feature_code         │
-│  └─ mode                 │
-│       ↓
-│  project_features ───────┤  Per-project feature toggles
-│  ├─ api_key_id (FK)      │  (overrides org-level)
-│  ├─ feature_code         │
-│  ├─ mode                 │
-│  └─ set_at               │
-│
-│  project_members ────────┤  Fine-grained per-project roles
-│  ├─ api_key_id (FK)      │  (viewer / editor / admin)
-│  ├─ user_id (FK)         │
-│  ├─ role                 │
-│  └─ granted_at           │
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                         ACCESS CONTROL                                      â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  site_feature_policies â”€â”€â”
+â”‚  â”œâ”€ feature_code (PK)    â”‚  Organization-level (can override)
+â”‚  â”œâ”€ mode                 â”‚  AND project-level (can further override)
+â”‚  â””â”€ updated_at           â”‚
+â”‚       â†“                  â”‚
+â”‚  org_feature_overrides   â”‚
+â”‚  â”œâ”€ org_id (FK)          â”‚
+â”‚  â”œâ”€ feature_code         â”‚
+â”‚  â””â”€ mode                 â”‚
+â”‚       â†“
+â”‚  project_features â”€â”€â”€â”€â”€â”€â”€â”¤  Per-project feature toggles
+â”‚  â”œâ”€ api_key_id (FK)      â”‚  (overrides org-level)
+â”‚  â”œâ”€ feature_code         â”‚
+â”‚  â”œâ”€ mode                 â”‚
+â”‚  â””â”€ set_at               â”‚
+â”‚
+â”‚  project_members â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Fine-grained per-project roles
+â”‚  â”œâ”€ api_key_id (FK)      â”‚  (viewer / editor / admin)
+â”‚  â”œâ”€ user_id (FK)         â”‚
+â”‚  â”œâ”€ role                 â”‚
+â”‚  â””â”€ granted_at           â”‚
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    STREAMING & MEDIA                                        │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  hls_session_metadata ───┐
-│  ├─ id (PK)              │  HLS streaming session
-│  ├─ api_key_id (FK)      │  state (lcyt-rtmp plugin)
-│  ├─ state (recording/live)
-│  ├─ started_at           │
-│  └─ metadata (JSON)      │
-│
-│  preview_active ─────────┤  Live preview stream tracking
-│  ├─ id (PK)              │
-│  ├─ api_key_id (FK)      │
-│  └─ stream_path          │
-│
-│  radio_active ───────────┤  Audio-only stream tracking
-│  ├─ id (PK)              │
-│  ├─ api_key_id (FK)      │
-│  └─ stream_path          │
-│
-│  videos ─────────────────┤  VOD metadata
-│  ├─ id (PK)              │
-│  ├─ api_key_id (FK)      │
-│  ├─ title                │
-│  ├─ path                 │
-│  ├─ duration_ms          │
-│  ├─ created_at           │
-│  └─ metadata (JSON)      │
-│
-│  viewer_tokens ──────────┤  Embedded viewer authentication
-│  ├─ id (PK)              │
-│  ├─ token (UNIQUE)       │
-│  ├─ api_key_id (FK)      │
-│  ├─ expires_at           │
-│  └─ viewer_label         │
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                    STREAMING & MEDIA                                        â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  hls_session_metadata â”€â”€â”€â”
+â”‚  â”œâ”€ id (PK)              â”‚  HLS streaming session
+â”‚  â”œâ”€ api_key_id (FK)      â”‚  state (lcyt-rtmp plugin)
+â”‚  â”œâ”€ state (recording/live)
+â”‚  â”œâ”€ started_at           â”‚
+â”‚  â””â”€ metadata (JSON)      â”‚
+â”‚
+â”‚  preview_active â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Live preview stream tracking
+â”‚  â”œâ”€ id (PK)              â”‚
+â”‚  â”œâ”€ api_key_id (FK)      â”‚
+â”‚  â””â”€ stream_path          â”‚
+â”‚
+â”‚  radio_active â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Audio-only stream tracking
+â”‚  â”œâ”€ id (PK)              â”‚
+â”‚  â”œâ”€ api_key_id (FK)      â”‚
+â”‚  â””â”€ stream_path          â”‚
+â”‚
+â”‚  videos â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  VOD metadata
+â”‚  â”œâ”€ id (PK)              â”‚
+â”‚  â”œâ”€ api_key_id (FK)      â”‚
+â”‚  â”œâ”€ title                â”‚
+â”‚  â”œâ”€ path                 â”‚
+â”‚  â”œâ”€ duration_ms          â”‚
+â”‚  â”œâ”€ created_at           â”‚
+â”‚  â””â”€ metadata (JSON)      â”‚
+â”‚
+â”‚  viewer_tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Embedded viewer authentication
+â”‚  â”œâ”€ id (PK)              â”‚
+â”‚  â”œâ”€ token (UNIQUE)       â”‚
+â”‚  â”œâ”€ api_key_id (FK)      â”‚
+â”‚  â”œâ”€ expires_at           â”‚
+â”‚  â””â”€ viewer_label         â”‚
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    EVENTS & AUDIT LOGS                                      │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  bus_events ──────────────────────┐
-│  ├─ id (PK)                       │  Real-time event stream
-│  ├─ event_type                    │  (captions sent, targets changed, etc)
-│  ├─ data (JSON)                   │  Pub/Sub via SSE; retention policy
-│  ├─ happened_at                   │  (e.g., 30 days)
-│  └─ user_id (FK, nullable)        │
-│
-│  audit_log ────────────────────────  Detailed action trail
-│  ├─ id (PK)                       │  (user created key, org added member, etc)
-│  ├─ action                        │  Searchable by org_id / user_id / action
-│  ├─ org_id (FK, nullable)         │  Retention: 1 year (GDPR)
-│  ├─ user_id (FK, nullable)        │
-│  ├─ api_key_id (FK, nullable)     │
-│  ├─ description                   │
-│  ├─ changes (JSON)                │
-│  └─ created_at                    │
-│
-│  event_log ────────────────────────  Structured event tracking
-│  ├─ id (PK)                       │  (MCP events, perception updates, etc)
-│  ├─ event_type                    │  Indexed by timestamp + type
-│  ├─ api_key_id (FK, nullable)     │
-│  ├─ payload (JSON)                │
-│  └─ created_at                    │
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                    EVENTS & AUDIT LOGS                                      â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  bus_events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”œâ”€ id (PK)                       â”‚  Real-time event stream
+â”‚  â”œâ”€ event_type                    â”‚  (captions sent, targets changed, etc)
+â”‚  â”œâ”€ data (JSON)                   â”‚  Pub/Sub via SSE; retention policy
+â”‚  â”œâ”€ happened_at                   â”‚  (e.g., 30 days)
+â”‚  â””â”€ user_id (FK, nullable)        â”‚
+â”‚
+â”‚  audit_log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  Detailed action trail
+â”‚  â”œâ”€ id (PK)                       â”‚  (user created key, org added member, etc)
+â”‚  â”œâ”€ action                        â”‚  Searchable by org_id / user_id / action
+â”‚  â”œâ”€ org_id (FK, nullable)         â”‚  Retention: 1 year (GDPR)
+â”‚  â”œâ”€ user_id (FK, nullable)        â”‚
+â”‚  â”œâ”€ api_key_id (FK, nullable)     â”‚
+â”‚  â”œâ”€ description                   â”‚
+â”‚  â”œâ”€ changes (JSON)                â”‚
+â”‚  â””â”€ created_at                    â”‚
+â”‚
+â”‚  event_log â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  Structured event tracking
+â”‚  â”œâ”€ id (PK)                       â”‚  (MCP events, perception updates, etc)
+â”‚  â”œâ”€ event_type                    â”‚  Indexed by timestamp + type
+â”‚  â”œâ”€ api_key_id (FK, nullable)     â”‚
+â”‚  â”œâ”€ payload (JSON)                â”‚
+â”‚  â””â”€ created_at                    â”‚
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    MCP & TOKENS                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  mcp_tokens ───────────────────────┐
-│  ├─ id (PK)                        │  MCP server authentication
-│  ├─ token (UNIQUE)                 │  (issued by backend, validated by
-│  ├─ user_id (FK, nullable)         │   tools running in MCP context)
-│  ├─ org_id (FK, nullable)          │
-│  ├─ api_key_id (FK, nullable)      │
-│  ├─ scope (capabilities)           │
-│  ├─ created_at                     │
-│  ├─ expires_at                     │
-│  └─ last_used_at                   │
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                    MCP & TOKENS                                             â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  mcp_tokens â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”œâ”€ id (PK)                        â”‚  MCP server authentication
+â”‚  â”œâ”€ token (UNIQUE)                 â”‚  (issued by backend, validated by
+â”‚  â”œâ”€ user_id (FK, nullable)         â”‚   tools running in MCP context)
+â”‚  â”œâ”€ org_id (FK, nullable)          â”‚
+â”‚  â”œâ”€ api_key_id (FK, nullable)      â”‚
+â”‚  â”œâ”€ scope (capabilities)           â”‚
+â”‚  â”œâ”€ created_at                     â”‚
+â”‚  â”œâ”€ expires_at                     â”‚
+â”‚  â””â”€ last_used_at                   â”‚
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                    SETTINGS & CONFIGURATION                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  server_settings ──────────────────┐
-│  ├─ key (PK)                       │  Deployment-wide KV settings
-│  ├─ value                          │  Hot-reloadable via Admin UI
-│  ├─ type (string/int/bool/json)   │  Examples: SESSION_TTL, JWT_SECRET, etc
-│  ├─ updated_at                     │
-│  └─ updated_by (FK, nullable)      │
-│
-│  session_stats ────────────────────┤  Per-project session metrics
-│  ├─ id (PK)                        │  (tracked for analytics)
-│  ├─ api_key_id (FK)                │
-│  ├─ session_id (from runtime)      │
-│  ├─ duration_ms                    │
-│  ├─ caption_count                  │
-│  ├─ error_count                    │
-│  └─ ended_at                       │
-│
-│  translation_config ────────────────  Per-project i18n config
-│  ├─ id (PK)                         │
-│  ├─ api_key_id (FK)                 │
-│  ├─ source_lang                     │
-│  ├─ target_langs (JSON)             │
-│  └─ provider (Google/DeepL/etc)    │
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                    SETTINGS & CONFIGURATION                                 â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  server_settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”œâ”€ key (PK)                       â”‚  Deployment-wide KV settings
+â”‚  â”œâ”€ value                          â”‚  Hot-reloadable via Admin UI
+â”‚  â”œâ”€ type (string/int/bool/json)   â”‚  Examples: SESSION_TTL, JWT_SECRET, etc
+â”‚  â”œâ”€ updated_at                     â”‚
+â”‚  â””â”€ updated_by (FK, nullable)      â”‚
+â”‚
+â”‚  session_stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Per-project session metrics
+â”‚  â”œâ”€ id (PK)                        â”‚  (tracked for analytics)
+â”‚  â”œâ”€ api_key_id (FK)                â”‚
+â”‚  â”œâ”€ session_id (from runtime)      â”‚
+â”‚  â”œâ”€ duration_ms                    â”‚
+â”‚  â”œâ”€ caption_count                  â”‚
+â”‚  â”œâ”€ error_count                    â”‚
+â”‚  â””â”€ ended_at                       â”‚
+â”‚
+â”‚  translation_config â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  Per-project i18n config
+â”‚  â”œâ”€ id (PK)                         â”‚
+â”‚  â”œâ”€ api_key_id (FK)                 â”‚
+â”‚  â”œâ”€ source_lang                     â”‚
+â”‚  â”œâ”€ target_langs (JSON)             â”‚
+â”‚  â””â”€ provider (Google/DeepL/etc)    â”‚
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                PLUGIN-OWNED TABLES (Partial)                               │
-├─────────────────────────────────────────────────────────────────────────────┤
-│
-│  ┌─ lcyt-dsk ────────────────┐
-│  │ ├─ dsk_templates          │  Graphics overlay templates
-│  │ ├─ dsk_jobs               │  Rendering jobs
-│  │ └─ dsk_* (render state)   │
-│  └────────────────────────────┘
-│
-│  ┌─ lcyt-files ──────────────┐
-│  │ ├─ file_storage_config    │  File backend configuration
-│  │ ├─ files                  │  Caption file references
-│  │ └─ file_* (per-backend)   │
-│  └────────────────────────────┘
-│
-│  ┌─ lcyt-cues ───────────────┐
-│  │ ├─ cue_patterns           │  Cue definitions
-│  │ ├─ cue_matches            │  Matched cues (event records)
-│  │ └─ cue_* (config)         │
-│  └────────────────────────────┘
-│
-│  ┌─ lcyt-rtmp ───────────────┐
-│  │ ├─ (see hls_*, preview_*, radio_* above)
-│  │ └─ additional RTMP state  │
-│  └────────────────────────────┘
-│
-│  ┌─ lcyt-production ─────────┐
-│  │ ├─ device_roles           │  Camera / mixer roles
-│  │ ├─ device_* (state)       │
-│  │ └─ production_* (config)  │
-│  └────────────────────────────┘
-│
-└─────────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                PLUGIN-OWNED TABLES (Partial)                               â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚
+â”‚  â”Œâ”€ lcyt-dsk â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”‚ â”œâ”€ dsk_templates          â”‚  Graphics overlay templates
+â”‚  â”‚ â”œâ”€ dsk_jobs               â”‚  Rendering jobs
+â”‚  â”‚ â””â”€ dsk_* (render state)   â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+â”‚
+â”‚  â”Œâ”€ lcyt-files â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”‚ â”œâ”€ file_storage_config    â”‚  File backend configuration
+â”‚  â”‚ â”œâ”€ files                  â”‚  Caption file references
+â”‚  â”‚ â””â”€ file_* (per-backend)   â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+â”‚
+â”‚  â”Œâ”€ lcyt-cues â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”‚ â”œâ”€ cue_patterns           â”‚  Cue definitions
+â”‚  â”‚ â”œâ”€ cue_matches            â”‚  Matched cues (event records)
+â”‚  â”‚ â””â”€ cue_* (config)         â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+â”‚
+â”‚  â”Œâ”€ lcyt-rtmp â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”‚ â”œâ”€ (see hls_*, preview_*, radio_* above)
+â”‚  â”‚ â””â”€ additional RTMP state  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+â”‚
+â”‚  â”Œâ”€ lcyt-production â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  â”‚ â”œâ”€ device_roles           â”‚  Camera / mixer roles
+â”‚  â”‚ â”œâ”€ device_* (state)       â”‚
+â”‚  â”‚ â””â”€ production_* (config)  â”‚
+â”‚  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ## Table Counts by Category
@@ -350,3 +350,4 @@ CREATE INDEX idx_event_log_timestamp_range ON event_log
 ---
 
 See also: [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md), [docs/plans/plan_postgres_migration.md](docs/plans/plan_postgres_migration.md)
+

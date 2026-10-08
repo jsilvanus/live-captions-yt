@@ -1,17 +1,17 @@
----
+﻿---
 id: plan/vertical-crop
-title: "Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop"
+title: "Vertical Crop Output â€” Live-Repositionable Landscapeâ†’Portrait Crop"
 status: implemented
-summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 → 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) — with dedicated UI for editing positions per set (set selector, sources×sets overview grid, activate-set control) — shifted live via runtime ffmpeg filter commands (stdin `C` commands; originally zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 → camera 2 → camera 1/preset 2, each with its own crop position)."
+summary: "Adds a per-project cropped rendition of the landscape RTMP ingest (typically 16:9 â†’ 9:16 vertical) produced by one long-running ffmpeg at the incoming resolution, published to a {key}-crop MediaMTX path and consumable by relay slots (sourceView: 'crop') and the HLS proxy. Crop positions are named presets organised into switchable preset SETS (banks) â€” with dedicated UI for editing positions per set (set selector, sourcesÃ—sets overview grid, activate-set control) â€” shifted live via runtime ffmpeg filter commands (stdin `C` commands; originally zmq), no process restart and no black gap, with optional animated transitions, and can automatically follow mixer program switches and camera PTZ preset recalls (camera 1/preset 1 â†’ camera 2 â†’ camera 1/preset 2, each with its own crop position)."
 related: plan/prod, plan/video_perception
 ---
 
-# Vertical Crop Output — Live-Repositionable Landscape→Portrait Crop
+# Vertical Crop Output â€” Live-Repositionable Landscapeâ†’Portrait Crop
 
 ## Context
 
 Productions increasingly need a **vertical (9:16) simulcast** of the same event that
-is being streamed in landscape: YouTube Shorts–style live, TikTok Live, Instagram —
+is being streamed in landscape: YouTube Shortsâ€“style live, TikTok Live, Instagram â€”
 all RTMP targets the relay fan-out can already reach. Today the relay pipeline
 (`packages/plugins/lcyt-rtmp/src/rtmp-manager.js`) can transcode per slot
 (`scale`/`fps`/bitrate, Phase 7) but a naive `scale=1080:1920` squeezes or letterboxes
@@ -21,8 +21,8 @@ landscape frame, like a virtual portrait camera inside the program feed.
 Three hard requirements shape the design:
 
 1. **Crop at incoming quality.** The crop window must be cut from the decoded frames
-   of the raw ingest at its native resolution (e.g. a 608×1080 window out of
-   1920×1080), *not* from an already-downscaled rendition such as `plan_mixer_feed_sources.md`'s
+   of the raw ingest at its native resolution (e.g. a 608Ã—1080 window out of
+   1920Ã—1080), *not* from an already-downscaled rendition such as `plan_mixer_feed_sources.md`'s
    low-res `{key}-preview`.
 2. **Preset crop positions, switchable live.** The interesting subject moves when the
    mixer cuts: camera 1 on preset 1 needs the crop over the lectern, camera 2 needs it
@@ -30,7 +30,7 @@ Three hard requirements shape the design:
    combination can have its own crop position, and the active position must follow
    the production.
 3. **No empty/black delay when the position shifts.** Restarting ffmpeg to change
-   `crop=...:x:y` costs 1–3 s of dead air on the vertical output at exactly the moment
+   `crop=...:x:y` costs 1â€“3 s of dead air on the vertical output at exactly the moment
    the audience is watching a cut. Position changes must happen inside the running
    process.
 
@@ -39,13 +39,13 @@ Three hard requirements shape the design:
 One long-running ffmpeg per api_key ("crop renderer") reads the raw ingest back from
 MediaMTX over RTSP (same pattern as the CEA-708/DSK fan-out in `rtmp-manager.js`),
 applies a named crop filter `crop@vcrop=W:H:x:y` (window size fixed at start, position
-runtime-adjustable), optionally scales to the delivery size (default 1080×1920), and
+runtime-adjustable), optionally scales to the delivery size (default 1080Ã—1920), and
 pushes H.264/AAC back into MediaMTX on the **`{key}-crop`** path. Relay slots gain a
 `sourceView` field (`'program'` default, `'crop'`) so any existing RTMP target can be
-pointed at the vertical rendition; the existing `/stream-hls/:key/*` proxy serves it to
+pointed at the vertical rendition; the existing `/api/v1/stream-hls/api/v1/:key/api/v1/*` proxy serves it to
 browsers as `{key}-crop` with zero new code. Crop *position* changes are delivered to
 the running process as libavfilter **runtime commands** (`crop@vcrop x 656`) over the
-ffmpeg's interactive stdin (originally the `zmq` filter, replaced 2026-10, see below) —
+ffmpeg's interactive stdin (originally the `zmq` filter, replaced 2026-10, see below) â€”
 the position takes effect within a few frames, so a preset switch is glitch-free, and short eased interpolation gives an optional "camera pan" transition.
 A `crop_source_map` table plus hooks in `lcyt-production`'s mixer-switch and
 camera-preset routes make the active preset follow the program bus automatically.
@@ -53,16 +53,16 @@ camera-preset routes make the active preset follow the program bus automatically
 ## Why stdin commands (and the fallbacks)
 
 ffmpeg's `crop` filter supports runtime commands for `x`/`y` (and `w`/`h`, which we
-deliberately keep fixed — resizing the window mid-stream would change the scaler's
+deliberately keep fixed â€” resizing the window mid-stream would change the scaler's
 input and is not needed for "shift the crop position"). Delivery to a live process:
 
 | Mechanism | Latency | Requirements | Verdict |
 |---|---|---|---|
 | Interactive stdin: `Ccrop@vcrop -1 x <px>\n` (ffmpeg started **without** `-nostdin`) | measured ~120 ms (~4 frames @30 fps, ffmpeg's own pipeline queue; `test/crop-stdin.test.js`) | stock ffmpeg; a runner that exposes ffmpeg's stdin (`spawn`, `fleet`) | **Primary** (implemented 2026-10). No libzmq build, no control port, works as an fffleet stream job (`stdin: true`, `writeStdin`). |
 | `zmq` filter + ZeroMQ REQ client | next frame | ffmpeg built with `--enable-libzmq`; `zeromq` npm package | **Removed** (was the original primary). Needed a custom ffmpeg build and a 127.0.0.1 port per renderer. |
-| `sendcmd` filter | n/a | command file parsed once at init | Rejected — not live. |
-| Double-run + MediaMTX publisher swap (`overridePublisher`) | ~0.5–1 s splice | nothing special | Not built; the restart fallback below is used instead. |
-| Restart per move | ~0.5–1 s splice | MediaMTX keeps the path alive | **Fallback** when the runner cannot give stdin (`FFMPEG_RUNNER=docker`) or the stdin pipe is gone. |
+| `sendcmd` filter | n/a | command file parsed once at init | Rejected â€” not live. |
+| Double-run + MediaMTX publisher swap (`overridePublisher`) | ~0.5â€“1 s splice | nothing special | Not built; the restart fallback below is used instead. |
+| Restart per move | ~0.5â€“1 s splice | MediaMTX keeps the path alive | **Fallback** when the runner cannot give stdin (`FFMPEG_RUNNER=docker`) or the stdin pipe is gone. |
 
 `GET /crop/status` reports `repositionMode: 'live' | 'restart'` (`'live'` = stdin
 commands). The earlier `caps.hasZmq` probe, `CROP_ZMQ_PORT_BASE` and the optional
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS crop_config (
 );
 
 -- Named crop positions. x/y are stored NORMALISED (0..1 of the max travel range)
--- so presets survive an input-resolution change (720p rehearsal → 1080p show).
+-- so presets survive an input-resolution change (720p rehearsal â†’ 1080p show).
 CREATE TABLE IF NOT EXISTS crop_presets (
   id          TEXT PRIMARY KEY,
   api_key     TEXT NOT NULL,
@@ -98,8 +98,8 @@ CREATE TABLE IF NOT EXISTS crop_presets (
 );
 
 -- Preset sets ("banks"): a named grouping of crop positions, so one production
--- can keep several complete position layouts — e.g. "Sermon", "Concert",
--- "Panel" — and switch which set is active as a whole. crop_presets rows
+-- can keep several complete position layouts â€” e.g. "Sermon", "Concert",
+-- "Panel" â€” and switch which set is active as a whole. crop_presets rows
 -- belong to a set; the source-map resolves within the ACTIVE set only.
 CREATE TABLE IF NOT EXISTS crop_preset_sets (
   id          TEXT PRIMARY KEY,
@@ -127,15 +127,15 @@ CREATE TABLE IF NOT EXISTS crop_source_map (
 CREATE INDEX IF NOT EXISTS idx_crop_source_map_key ON crop_source_map(api_key);
 ```
 
-Source-map rows reference presets, and presets live in sets — so mapping "camera 1 /
-preset 2 → crop position C" once per set gives each set its own complete follow
+Source-map rows reference presets, and presets live in sets â€” so mapping "camera 1 /
+preset 2 â†’ crop position C" once per set gives each set its own complete follow
 behaviour. Activating a different set (e.g. between event segments) instantly changes
 what every subsequent program switch resolves to, and re-applies the active source's
 position from the new set (a live, gapless shift like any other preset activation).
 
 Pixel values are derived at runtime: `cropW = round_even(inH * aspect_w / aspect_h)`
 (clamped to `inW`), `cropH = inH`, `x = round_even(x_norm * (inW - cropW))`,
-`y = round_even(y_norm * (inH - cropH))`. For the canonical 16:9→9:16 case `y` travel
+`y = round_even(y_norm * (inH - cropH))`. For the canonical 16:9â†’9:16 case `y` travel
 is zero and presets are effectively a horizontal slider, but the schema doesn't assume
 that (a 4:3 source cropped to 9:16 has vertical travel too).
 
@@ -158,10 +158,10 @@ ffmpeg -rtsp_transport tcp -i rtsp://127.0.0.1:8554/{key}
 ```
 
 Notes:
-- Input is the **raw ingest path** — full incoming quality, one decode. The RTSP
+- Input is the **raw ingest path** â€” full incoming quality, one decode. The RTSP
   read-back (rather than a second RTMP pull) matches the fan-out convention and the
   now-enabled `rtsp: yes` in `docker/mediamtx.yml`.
-- The output URL is bare `{key}-crop` (no RTMP app prefix) — MediaMTX path names are
+- The output URL is bare `{key}-crop` (no RTMP app prefix) â€” MediaMTX path names are
   the full URL path (same fix as `outRtmpUrl()`).
 - ffmpeg's stdin stays open (runner `stdin: 'pipe'`); position changes are written as
   `Ccrop@vcrop -1 x <px>\nCcrop@vcrop -1 y <px>\n`.
@@ -179,9 +179,9 @@ async applyPosition(apiKey, { xNorm, yNorm, transitionMs })
 ```
 - clamps to `[0,1]`, converts to even pixel offsets;
 - `transitionMs === 0` (or fallback mode): a single `crop@vcrop x <px>` + `y <px>`
-  command pair — the shift lands on the next frame;
+  command pair â€” the shift lands on the next frame;
 - `transitionMs > 0` and live mode: an interpolation ticker (~30 ms steps, cubic
-  ease-in-out) sends a short burst of commands, producing a smooth virtual pan —
+  ease-in-out) sends a short burst of commands, producing a smooth virtual pan â€”
   useful when the crop moves *within* one shot rather than on a cut;
 - commands go over a per-process ZeroMQ REQ socket (optional `zeromq` dependency,
   lazily imported exactly like `@google-cloud/speech` in `google-stt.js`; if the
@@ -191,7 +191,7 @@ async applyPosition(apiKey, { xNorm, yNorm, transitionMs })
   `_upsertPath`), wait for B's publish to be ready (`isPathPublishing`), then stop A.
   The path is never publisher-less, so downstream players see a splice, not black.
 
-**Lifecycle:** started from the `/rtmp` on_publish callback when
+**Lifecycle:** started from the `/api/v1/rtmp` on_publish callback when
 `crop_config.enabled` (exactly parallel to the relay fan-out block in
 `routes/rtmp.js`), stopped on publish_done; also start/stoppable explicitly via the
 routes below. The renderer keeps the last-applied position across source restarts
@@ -202,56 +202,56 @@ routes below. The renderer keeps the last-applied position across source restart
   `source_view TEXT DEFAULT 'program'` (`'program' | 'crop'`). In
   `RtmpRelayManager.start()`, slots with `sourceView === 'crop'` are registered as a
   runOnPublish fan-out on `{key}-crop` instead of `{key}` (plain-relay branch; a
-  crop-view slot never participates in CEA-708/transcode/DSK modes — the crop
+  crop-view slot never participates in CEA-708/transcode/DSK modes â€” the crop
   renderer already re-encodes). This is how a vertical YouTube/TikTok RTMP target is
   configured with zero new delivery code.
 - **Browsers**: `GET /stream-hls/{key}-crop/index.m3u8` already passes `HLS_KEY_RE`
-  and proxies to MediaMTX — the vertical preview in the web UI is free.
+  and proxies to MediaMTX â€” the vertical preview in the web UI is free.
 - **Thumbnails**: `GET /preview/{key}-crop/incoming.jpg` likewise.
 
 ## 3. HTTP API (`packages/plugins/lcyt-rtmp/src/routes/crop.js`, session Bearer)
 
 ```
-GET    /crop/config                — config + { running, repositionMode, inW, inH, cropW, cropH }
-PUT    /crop/config                — { enabled?, aspectW?, aspectH?, outW?, outH?, videoBitrate?, followProgram?, transitionMs? }
-GET    /crop/presets               — list (?setId= filter; default: active set)
-POST   /crop/presets               — { name, xNorm, yNorm, setId?, sortOrder? }
-PUT    /crop/presets/:id           — update
-DELETE /crop/presets/:id           — delete (cascades crop_source_map rows)
-POST   /crop/presets/:id/activate  — { transitionMs? } → applyPosition; remembers active preset
-GET/POST/PUT/DELETE /crop/sets[/:id] — preset-set (bank) CRUD; POST supports
+GET    /crop/config                â€” config + { running, repositionMode, inW, inH, cropW, cropH }
+PUT    /crop/config                â€” { enabled?, aspectW?, aspectH?, outW?, outH?, videoBitrate?, followProgram?, transitionMs? }
+GET    /crop/presets               â€” list (?setId= filter; default: active set)
+POST   /crop/presets               â€” { name, xNorm, yNorm, setId?, sortOrder? }
+PUT    /crop/presets/:id           â€” update
+DELETE /crop/presets/:id           â€” delete (cascades crop_source_map rows)
+POST   /crop/presets/:id/activate  â€” { transitionMs? } â†’ applyPosition; remembers active preset
+GET/POST/PUT/DELETE /crop/sets[/:id] â€” preset-set (bank) CRUD; POST supports
                                        { cloneFromSetId? } to duplicate a whole set
-POST   /crop/sets/:id/activate     — make this set active; re-resolves and applies
+POST   /crop/sets/:id/activate     â€” make this set active; re-resolves and applies
                                        the current program source's position from it
-POST   /crop/position              — { xNorm, yNorm, transitionMs? } — free positioning (drag UI)
-GET    /crop/status                — { running, activePresetId, xNorm, yNorm, repositionMode }
-GET/POST/DELETE /crop/source-map[/:id] — follow-program mapping CRUD
+POST   /crop/position              â€” { xNorm, yNorm, transitionMs? } â€” free positioning (drag UI)
+GET    /crop/status                â€” { running, activePresetId, xNorm, yNorm, repositionMode }
+GET/POST/DELETE /crop/source-map[/:id] â€” follow-program mapping CRUD
 ```
 
 Mounted in `createRtmpRouters()` / `lcyt-backend/src/server.js` under `/crop`
 alongside the other RTMP routers (gated by `RTMP_RELAY_ACTIVE=1`). Feature-gated on a
 new `crop` project feature code (registered in `FEATURE_DEPS`, dependent on `ingest`)
-when `FEATURE_GATE_ENFORCE=1` — same pattern as `ingest` in `routes/ingestion.js`.
+when `FEATURE_GATE_ENFORCE=1` â€” same pattern as `ingest` in `routes/ingestion.js`.
 
 ## 4. Production follow (mixer & PTZ integration)
 
 `lcyt-production` must not import `lcyt-rtmp`; use the repo's setter-injection
 convention (cf. `sttManager.setDeliveryHelpers()`):
 
-- `lcyt-production` exports `registry.onProgramChanged(cb)` — invoked by
+- `lcyt-production` exports `registry.onProgramChanged(cb)` â€” invoked by
   `POST /production/mixers/:id/switch/:inputNumber` (`routes/mixers.js:124-160`)
   after a successful `registry.switchSource()`, with
-  `{ apiKey, mixerId, inputNumber }` — and `registry.onCameraPresetRecalled(cb)`
+  `{ apiKey, mixerId, inputNumber }` â€” and `registry.onCameraPresetRecalled(cb)`
   from `POST /production/cameras/:id/preset/:preset`, with
-  `{ apiKey, cameraId, preset }`. (Switches performed outside LCYT — on the
-  physical mixer panel — are only visible if a tally/status poll exists; that is
+  `{ apiKey, cameraId, preset }`. (Switches performed outside LCYT â€” on the
+  physical mixer panel â€” are only visible if a tally/status poll exists; that is
   Roland-adapter work explicitly out of scope for v1 and the reason manual
   `POST /crop/presets/:id/activate` and cue/action triggers exist.)
 - `lcyt-backend/src/server.js` wires both callbacks to
   `cropManager.applyForSource(apiKey, { mixerId, inputNumber, cameraId, cameraPreset })`,
   which (when `crop_config.follow_program`) resolves the most-specific
-  `crop_source_map` row — `(camera_id, camera_preset)` match beats
-  `(mixer_id, mixer_input)` match — and activates its preset with the configured
+  `crop_source_map` row â€” `(camera_id, camera_preset)` match beats
+  `(mixer_id, mixer_input)` match â€” and activates its preset with the configured
   `transition_ms`. The manager tracks the last program input and each camera's
   last-recalled PTZ preset so "camera 1 back on program, now on preset 2" resolves
   correctly regardless of whether the preset was recalled while off-program.
@@ -264,33 +264,33 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
   active camera from the shared program feed). Rather than each plan wiring its own
   callback into `lcyt-production`, **promote `onProgramChanged`/
   `onCameraPresetRecalled` from ad-hoc setter-injected callbacks to real EventBus
-  events** (e.g. `production.source_changed`) when this phase is built — with two
+  events** (e.g. `production.source_changed`) when this phase is built â€” with two
   real consumers now needing the same signal, a shared bus event avoids each plan
   wiring its own direct callback into `lcyt-production`. That plan's camera/preset
   `overlaps_with` metadata is also the intended
   future input for smarter follow logic here (which camera to follow to, not just
-  whether to follow) — not required for this phase's `crop_source_map` v1, worth
+  whether to follow) â€” not required for this phase's `crop_source_map` v1, worth
   keeping in mind before treating the source-map schema as final.
 
 ## 5. Web UI (`packages/lcyt-web`)
 
-- **Settings → CC/Egress area**: "Vertical crop" card — enable toggle, aspect/output
+- **Settings â†’ CC/Egress area**: "Vertical crop" card â€” enable toggle, aspect/output
   size, bitrate, default transition, follow-program toggle.
 - **Preset editor**: over the existing incoming-preview thumbnail
   (`/preview/:key/incoming.jpg`), render a draggable 9:16 rectangle; drag emits
   throttled `POST /crop/position` (live WYSIWYG when the stream is up), "Save as
   preset" persists `x_norm`/`y_norm`. A row of preset buttons calls
-  `POST /crop/presets/:id/activate` — this is also the operator's manual switcher.
-- **Preset-set (bank) UI — explicit requirement.** Crop positions must be editable
+  `POST /crop/presets/:id/activate` â€” this is also the operator's manual switcher.
+- **Preset-set (bank) UI â€” explicit requirement.** Crop positions must be editable
   and browsable *per set*, not as one flat list:
-  - a **set selector** (tabs or dropdown) at the top of the crop editor — every
+  - a **set selector** (tabs or dropdown) at the top of the crop editor â€” every
     preset shown/edited below belongs to the selected set; "New set", "Duplicate
     set" (clone all positions as a starting point), "Rename", "Delete";
   - a **set overview grid**: rows = sources (mixer inputs / camera+PTZ-preset
     combos from the source map), columns = sets; each cell shows that source's
     crop position in that set as a mini-thumbnail (the 9:16 rectangle drawn over a
     scaled preview frame). Clicking a cell opens the draggable editor for exactly
-    that (source, set) pair — this is where "camera 1 preset 1 / camera 2 /
+    that (source, set) pair â€” this is where "camera 1 preset 1 / camera 2 /
     camera 1 preset 2, each with different positions" is authored at a glance;
   - an **"Activate set" control** on the operate surface (Broadcast page) next to
     the preset switcher, calling `POST /crop/sets/:id/activate`, with the active
@@ -298,7 +298,7 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
     drawing from.
 - **Source-map editor**: table binding mixer inputs / camera+preset combos to crop
   presets (scoped to the selected set; the overview grid above is its visual form).
-- **Vertical monitor**: an HLS.js tile playing `/stream-hls/{key}-crop/index.m3u8`.
+- **Vertical monitor**: an HLS.js tile playing `/api/v1/stream-hls/api/v1/{key}-crop/api/v1/index.m3u8`.
 
 ## 6. Ops / environment
 
@@ -310,64 +310,64 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
 
 ## 7. Testing
 
-- **Geometry unit tests** (pure): aspect→pixel derivation, even rounding, clamping,
-  normalised↔pixel round-trip across resolution changes, ease interpolation steps.
+- **Geometry unit tests** (pure): aspectâ†’pixel derivation, even rounding, clamping,
+  normalisedâ†”pixel round-trip across resolution changes, ease interpolation steps.
 - **Manager tests** with `FFMPEG_RUNNER=worker` + mock daemon (pattern established in
   `test/rtmp-manager-restart.test.js`): start/stop lifecycle, restart-fallback
   publisher swap ordering (B publishing before A stops), no state wipe on restart.
 - **Route tests** with in-memory SQLite (pattern: `test/stream.test.js`): CRUD,
   activate, feature gate, source-map resolution specificity.
-- **Follow tests**: fake registry callbacks → correct preset chosen for the
+- **Follow tests**: fake registry callbacks â†’ correct preset chosen for the
   camera-1/preset-2 scenario from the requirements.
 - Manual verification recipe in the plan's implementation PR: `ffmpeg -re -i
-  testsrc2` publish → activate presets while watching `{key}-crop` HLS — confirm no
+  testsrc2` publish â†’ activate presets while watching `{key}-crop` HLS â€” confirm no
   black frames on switch (live mode) and splice-only (fallback mode).
 
 ## Phases
 
-1. **Static crop rendition** ✅ (implemented 2026-07-13) — schema (`crop_config`,
+1. **Static crop rendition** âœ… (implemented 2026-07-13) â€” schema (`crop_config`,
    `crop_presets`, `crop_preset_sets`, `crop_source_map` in
    `packages/plugins/lcyt-rtmp/src/db/crop.js`), CropManager
-   (`src/crop-manager.js`) started/stopped from the `/rtmp` publish callbacks,
+   (`src/api/v1/crop-manager.js`) started/api/v1/stopped from the `/api/v1/rtmp` publish callbacks,
    `{key}-crop` path, relay `source_view` column + crop-slot fan-out in
    `rtmp-manager.js`, `/crop` router (`src/routes/crop.js`) mounted by
    lcyt-backend, `crop` feature code (dep: `ingest`).
-2. **Live reposition** ✅ core (implemented 2026-07-13) — `hasZmq` probe in
-   `probeFfmpeg()`, lazy-imported `zeromq` REQ client (optional dep — absence
+2. **Live reposition** âœ… core (implemented 2026-07-13) â€” `hasZmq` probe in
+   `probeFfmpeg()`, lazy-imported `zeromq` REQ client (optional dep â€” absence
    downgrades to restart mode), `applyPosition` with clamped instant moves +
    eased transitions, restart fallback (position carried across the swap),
    `/crop/position`, `/crop/presets/:id/activate`, `/crop/sets/:id/activate`
    (re-applies the same-named preset from the new set), `/crop/status`.
    Remaining from this phase: the `overridePublisher` pre-config on the
    `{key}-crop` path for a cleaner splice in restart mode.
-3. **Web UI** ✅ (implemented 2026-07-18) — `/production/crop`
+3. **Web UI** âœ… (implemented 2026-07-18) â€” `/api/v1/production/api/v1/crop`
    (`packages/lcyt-web/src/components/production/ProductionCropPage.jsx` +
    `production/crop/{useCropEditor,CropPresetPanel,CropCanvas,CropSourcePanel}.jsx`,
-   linked from the main `/production` console header). Three-column operator
+   linked from the main `/api/v1/production` console header). Three-column operator
    layout (left: preset-set tabs + preset library; center: draggable WYSIWYG
    crop editor over the incoming preview + a live `{key}-crop` HLS vertical
-   monitor tile; right: camera/PTZ-preset source picker with bind/unbind) —
-   chosen over the plan's original sources×sets matrix-grid sketch per
-   explicit operator UI direction, since the same source→preset binding is
+   monitor tile; right: camera/PTZ-preset source picker with bind/unbind) â€”
+   chosen over the plan's original sourcesÃ—sets matrix-grid sketch per
+   explicit operator UI direction, since the same sourceâ†’preset binding is
    reachable per-set through the set tabs without a dedicated grid view.
    Config (aspect/output/bitrate/transition/follow-program) lives in a
-   settings dialog on the same page rather than a separate Settings→CC/Egress
+   settings dialog on the same page rather than a separate Settingsâ†’CC/Egress
    card, keeping the whole crop workflow on one operate surface. Enable
    toggle, set create/rename/duplicate/delete/activate, preset CRUD +
    activate, drag-to-reposition (throttled `POST /crop/position`), and
    source bind/unbind are all wired to the real `/crop/*` API.
-4. **Production follow** ✅ core (implemented 2026-07-20) — `DeviceRegistry`
+4. **Production follow** âœ… core (implemented 2026-07-20) â€” `DeviceRegistry`
    (`packages/plugins/lcyt-production/src/registry.js`) gained
    `onProgramChanged(cb)`/`onCameraPresetRecalled(cb)` (subscribe) +
    `notifyProgramChanged(data)`/`notifyCameraPresetRecalled(data)` (fire).
    Fired from the **route handlers** (`routes/mixers.js`'s
    `POST /:id/switch/:inputNumber`, `routes/cameras.js`'s
-   `POST /:id/preset/:presetId`) after *either* transport succeeds — direct
-   `registry.switchSource()`/`callPreset()` **or** a bridge-relayed command —
+   `POST /:id/preset/:presetId`) after *either* transport succeeds â€” direct
+   `registry.switchSource()`/`callPreset()` **or** a bridge-relayed command â€”
    since a bridge-routed switch (the common case for real roland/amx/atem
    hardware) never calls `switchSource()` at all, only the route sees both
    paths. `apiKey` comes from the acting session
-   (`req.session.apiKey`) — `prod_mixers`/`prod_cameras` are not
+   (`req.session.apiKey`) â€” `prod_mixers`/`prod_cameras` are not
    project-scoped tables (see `lcyt-production`'s `db.js`), so "which
    project's crop follows this switch" is the operator who performed it, not
    a device-ownership lookup. `routes/mixers.js` previously had **no**
@@ -378,56 +378,56 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
    cameraId?, cameraPreset? })` (`packages/plugins/lcyt-rtmp/src/crop-manager.js`)
    tracks, per apiKey, the last program mixer input and each camera's
    last-recalled preset, resolves the most-specific `crop_source_map` row via
-   the existing `resolveCropPresetForSource()`, and applies it live — a
+   the existing `resolveCropPresetForSource()`, and applies it live â€” a
    preset recalled while its camera is off program is remembered but not
    applied until that camera is actually cut to program. Wired together in
    `lcyt-backend/src/server.js`. A `crop.list_presets`/`crop.activate_preset`
    tool pair (`packages/lcyt-tools/src/tools/crop.js`) mirrors
    `camera.preset`/`mixer.switch` exactly and is in the Production
    Assistant role's `available_tools` (`lcyt-agent`'s `ai-roles.js`).
-   **Schema adaptation:** `crop_source_map.camera_preset` — described above
-   as an "INTEGER... PTZ preset number" — turned out not to match how camera
+   **Schema adaptation:** `crop_source_map.camera_preset` â€” described above
+   as an "INTEGER... PTZ preset number" â€” turned out not to match how camera
    presets actually work in this codebase: `POST /production/cameras/:id/preset/:presetId`
    and every camera adapter (`amx.js`, `visca-ip.js`) key off an arbitrary
    per-camera string `presetId` (`prod_cameras.control_config.presets[].id`
-   — `'wide'`, a UUID, ...), not a universal numeric PTZ preset number (AMX
+   â€” `'wide'`, a UUID, ...), not a universal numeric PTZ preset number (AMX
    cameras have no numeric preset concept at all, only named commands). The
    column keeps its `INTEGER` declaration (SQLite type affinity tolerates a
-   non-numeric TEXT value in it — no migration needed) but
+   non-numeric TEXT value in it â€” no migration needed) but
    `createCropSourceMapEntry()`/`resolveCropPresetForSource()`
    (`db/crop.js`) now treat it as an opaque string identifier, comparing
    both sides as strings so pre-existing numeric-looking rows still resolve.
-   **Not done — premise mismatch found, not built:** the `crop_preset`
-   *named-action/cue* half of this phase. `lcyt-actions` is pure storage —
+   **Not done â€” premise mismatch found, not built:** the `crop_preset`
+   *named-action/cue* half of this phase. `lcyt-actions` is pure storage â€”
    parsing and execution of `@name` composite macros live entirely in
    `lcyt-web`'s `metacode-actions.js`, which has no production-control atom
    for *any* device (camera/mixer included), only `audio:`/`api:`/persistent
    variable-assignment atoms. Cue rules' `action` JSON is likewise
-   descriptive-only — `cue-processor.js` emits it on the `cue_fired` SSE
+   descriptive-only â€” `cue-processor.js` emits it on the `cue_fired` SSE
    event for the frontend to interpret (rundown-pointer navigation); no
    cue-fired action, for any type, is ever executed server-side today.
    Building a working `crop_preset` named-action or cue action for real
    needs either an `lcyt-web` metacode-atom change or a new backend
-   cue-action-dispatcher — both bigger, more architecturally-loaded changes
+   cue-action-dispatcher â€” both bigger, more architecturally-loaded changes
    than "add crop_preset following the existing pattern," because no
    existing pattern for driving production hardware from either system
    exists to follow. Logged in `CONSIDER.md` rather than forced.
-5. **Ops & polish** ✅ (implemented 2026-07-20) — `docker/lcyt-ffmpeg/Dockerfile`
+5. **Ops & polish** âœ… (implemented 2026-07-20) â€” `docker/lcyt-ffmpeg/Dockerfile`
    rebuilt as a multi-stage image that compiles ffmpeg from source with
    `--enable-gpl --enable-libx264 --enable-libzmq` (libzmq was dropped again in 2026-10, see the Addendum; neither Debian's nor
-   Ubuntu's official `ffmpeg` apt packages are built with libzmq — installing
+   Ubuntu's official `ffmpeg` apt packages are built with libzmq â€” installing
    just the `libzmq3-dev` *library* alongside the old apt-installed binary,
    as an earlier revision of this section suggested, would not have added
    the filter; it has to be compiled into ffmpeg's own libavfilter). Not
    build-verified against a real `docker build` in the session that wrote it
-   (no Docker daemon in that sandbox) — verify with
+   (no Docker daemon in that sandbox) â€” verify with
    `docker run --rm lcyt-ffmpeg:local ffmpeg -hide_banner -filters | grep zmq`
    before relying on it in a real deployment. `PORTS.md` documents
    `CROP_ZMQ_PORT_BASE`'s loopback-only port range; `docker/mediamtx.yml`'s
    path-naming comment block now lists `{key}-crop`. The `crop` feature-gate
    code (dependent on `ingest`) was already registered in
    `lcyt-backend/src/db/project-features.js`'s `FEATURE_DEPS` as part of
-   Phase 1 — nothing left to do there.
+   Phase 1 â€” nothing left to do there.
 
 ## Open questions
 
@@ -435,8 +435,8 @@ convention (cf. `sttManager.setDeliveryHelpers()`):
   one-row-per-key today; going multi-rendition would move `crop_config` to
   one-row-per-rendition with `{key}-crop-{slug}` paths. Deferred until needed.
 - Should the crop follow *tally* (mixer-initiated switches on the panel) rather than
-  only LCYT-initiated switches? Requires Roland/OBS tally polling in the adapters —
-  tracked as a follow-up, not v1 (see §4).
+  only LCYT-initiated switches? Requires Roland/OBS tally polling in the adapters â€”
+  tracked as a follow-up, not v1 (see Â§4).
 - Audio for short-form platforms is passed through (`-c:a copy`); if a target
   requires specific AAC profiles the per-slot `audioBitrate` idiom can be reused.
 
@@ -449,3 +449,4 @@ the zmq filter. Removed: `hasZmq` probe, zmq filter in the graph, `CROP_ZMQ_PORT
 crop (image intentionally left unchanged here). The docker runner does not expose
 ffmpeg's stdin, so it stays restart-mode. Measured with a synthetic red|green source:
 see `packages/plugins/lcyt-rtmp/test/crop-stdin.test.js`.
+

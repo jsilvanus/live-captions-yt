@@ -1,4 +1,4 @@
----
+﻿---
 id: plan/translations
 title: "Caption Translation Pipeline"
 status: implemented
@@ -20,7 +20,7 @@ Captions can be translated into one or more target languages before delivery. Tr
 
 `packages/lcyt-web/src/components/TranslationModal.jsx`
 
-Accessed via Settings → CC → Translation tab. Each translation entry specifies:
+Accessed via Settings â†’ CC â†’ Translation tab. Each translation entry specifies:
 
 | Field | Description |
 |-------|-------------|
@@ -33,7 +33,7 @@ Accessed via Settings → CC → Translation tab. Each translation entry specifi
 
 | Mode | What it does |
 |------|-------------|
-| `captions` | Translation is embedded in the YouTube caption (composed with the original text). Only one translation target may use this mode at a time — it is the "caption language". |
+| `captions` | Translation is embedded in the YouTube caption (composed with the original text). Only one translation target may use this mode at a time â€” it is the "caption language". |
 | `backend-file` | Translation is stored in a server-side caption file (downloaded later via `GET /file/:id`). The original is always stored alongside it. |
 | `file` | Translation is written to a local browser file in real time using the File System Access API. |
 
@@ -85,20 +85,20 @@ const { translationsMap, captionLang, localFileEntries } =
 ```
 
 For each enabled translation entry:
-1. If source language matches target language → use original text as translation (no API call).
-2. Otherwise → call `translateText(text, sourceLang, targetLang)` via the configured vendor.
+1. If source language matches target language â†’ use original text as translation (no API call).
+2. Otherwise â†’ call `translateText(text, sourceLang, targetLang)` via the configured vendor.
 3. Route result based on `entry.target`:
-   - `file` → push to `localFileEntries` for client-side file writing.
-   - `captions` or `backend-file` → add to `translationsMap`; record `captionLang` if mode is `captions`.
+   - `file` â†’ push to `localFileEntries` for client-side file writing.
+   - `captions` or `backend-file` â†’ add to `translationsMap`; record `captionLang` if mode is `captions`.
 
 All vendor calls are made in parallel (`Promise.allSettled`), so multiple translations do not add latency sequentially.
 
 **Returns:**
 ```js
 {
-  translationsMap: { 'fi-FI': '…', 'de-DE': '…' },   // sent to backend
+  translationsMap: { 'fi-FI': 'â€¦', 'de-DE': 'â€¦' },   // sent to backend
   captionLang: 'fi-FI',                                // the "captions" target language (or null)
-  localFileEntries: [{ lang: 'sv-SE', text: '…', format: 'vtt' }]
+  localFileEntries: [{ lang: 'sv-SE', text: 'â€¦', format: 'vtt' }]
 }
 ```
 
@@ -124,7 +124,7 @@ All functions return `Promise<string>` (the translated text). On failure they th
 
 ## 3. Sending Translations to the Backend
 
-`packages/lcyt/src/backend-sender.js` — `send()` and `sendBatch()`
+`packages/lcyt/src/backend-sender.js` â€” `send()` and `sendBatch()`
 
 The `translationsMap` and related metadata are included in the caption payload:
 
@@ -154,7 +154,7 @@ Content-Type: application/json
 
 ### 4.1 Caption Composition
 
-`composeCaptionText(text, captionLang, translations, showOriginal)` — from `caption-files.js`:
+`composeCaptionText(text, captionLang, translations, showOriginal)` â€” from `caption-files.js`:
 
 | Scenario | YouTube caption |
 |----------|----------------|
@@ -177,7 +177,7 @@ File handles remain open for the session lifetime to allow efficient appending. 
 
 ### 4.3 Viewer SSE Fan-Out
 
-`packages/lcyt-backend/src/routes/viewer.js` — `broadcastToViewers()`
+`packages/lcyt-backend/src/routes/viewer.js` â€” `broadcastToViewers()`
 
 All viewer targets receive the full translation metadata, not just the composed text:
 
@@ -254,7 +254,7 @@ Viewer renders a column per language key in the map. Useful for sign-language or
 
 ### 5.3 `composedText` Rendering
 
-The `<br>` string within `composedText` is split by the viewer into separate React `<span>` elements — no `dangerouslySetInnerHTML`. The original and translated lines appear stacked.
+The `<br>` string within `composedText` is split by the viewer into separate React `<span>` elements â€” no `dangerouslySetInnerHTML`. The original and translated lines appear stacked.
 
 ---
 
@@ -274,8 +274,8 @@ For translation targets with `target: 'file'`:
 2. The file name is `captions-<lang>-<date>.<format>` (e.g. `captions-fi-FI-2026-03-23.vtt`).
 3. The file handle is kept open for the session. Each caption appends immediately.
 4. **Formats:**
-   - `vtt` — WebVTT with cue IDs and timestamps.
-   - `youtube` — Plain text, one caption per line.
+   - `vtt` â€” WebVTT with cue IDs and timestamps.
+   - `youtube` â€” Plain text, one caption per line.
 
 Client-side files are useful for local archiving or post-production without needing a server.
 
@@ -288,13 +288,13 @@ When captions are sent from any embed widget (`/embed/audio`, `/embed/input`, `/
 ```js
 {
   type: 'lcyt:caption',
-  requestId: '…',
+  requestId: 'â€¦',
   text: 'Hello, world!',
-  timestamp: '…'
+  timestamp: 'â€¦'
 }
 ```
 
-The `/embed/sentlog` widget subscribes and shows delivery status. The `translations` field is not currently included in the BroadcastChannel message — only the primary sent text.
+The `/embed/sentlog` widget subscribes and shows delivery status. The `translations` field is not currently included in the BroadcastChannel message â€” only the primary sent text.
 
 ---
 
@@ -302,41 +302,41 @@ The `/embed/sentlog` widget subscribes and shows delivery status. The `translati
 
 ```
 User input (text / STT)
-        │
-        ▼
-┌──────────────────────┐
-│   translateAll()      │  (client-side, parallel vendor calls)
-│                       │
-│  • MyMemory           │
-│  • Google             │
-│  • DeepL              │
-│  • LibreTranslate     │
-└──────────┬────────────┘
-           │  translationsMap, captionLang, localFileEntries
-           │
-    ┌──────┴──────┐
-    │             │
-    ▼             ▼
+        â”‚
+        â–¼
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚   translateAll()      â”‚  (client-side, parallel vendor calls)
+â”‚                       â”‚
+â”‚  â€¢ MyMemory           â”‚
+â”‚  â€¢ Google             â”‚
+â”‚  â€¢ DeepL              â”‚
+â”‚  â€¢ LibreTranslate     â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+           â”‚  translationsMap, captionLang, localFileEntries
+           â”‚
+    â”Œâ”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”
+    â”‚             â”‚
+    â–¼             â–¼
 Local files    POST /captions
 (File API)     { text, translations, captionLang, showOriginal }
-                   │
-                   ▼
-          ┌────────────────────────────────────────────┐
-          │  captions.js — composeCaptionText()         │
-          │  + backend file writing                     │
-          └──────────────────────┬─────────────────────┘
-                                 │
-              ┌──────────────────┼────────────────────┐
-              ▼                  ▼                     ▼
+                   â”‚
+                   â–¼
+          â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+          â”‚  captions.js â€” composeCaptionText()         â”‚
+          â”‚  + backend file writing                     â”‚
+          â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                 â”‚
+              â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+              â–¼                  â–¼                     â–¼
       YouTube targets     Viewer targets       Generic targets
       (composedText)      (full payload)       (full payload)
-              │                  │
-              │                  ▼
-              │          /viewer/:key SSE
-              │          (browser, Android TV,
-              │           embedded iframes)
-              │
-              ▼
+              â”‚                  â”‚
+              â”‚                  â–¼
+              â”‚          /viewer/:key SSE
+              â”‚          (browser, Android TV,
+              â”‚           embedded iframes)
+              â”‚
+              â–¼
      SSE /events
      caption_result
 ```
@@ -349,16 +349,17 @@ Local files    POST /captions
 |------|------|
 | `packages/lcyt-web/src/components/TranslationModal.jsx` | Translation settings UI |
 | `packages/lcyt-web/src/lib/translate.js` | `translateAll()`, `translateText()`, vendor implementations |
-| `packages/lcyt-web/src/components/AudioPanel.jsx` | STT → translation → send pipeline |
-| `packages/lcyt-web/src/components/InputBar.jsx` | Manual text → translation → send |
+| `packages/lcyt-web/src/components/AudioPanel.jsx` | STT â†’ translation â†’ send pipeline |
+| `packages/lcyt-web/src/components/InputBar.jsx` | Manual text â†’ translation â†’ send |
 | `packages/lcyt-web/src/components/ViewerPage.jsx` | SSE subscriber; language-selectable display |
 | `packages/lcyt-web/src/components/EmbedViewerPage.jsx` | Embeddable viewer widget |
 | `packages/lcyt-web/src/lib/viewerUtils.js` | `resolveViewerText()`, `collectLangTexts()` |
 | `packages/lcyt/src/backend-sender.js` | Passes `translations` metadata to `POST /captions` |
 | `packages/lcyt-backend/src/routes/captions.js` | Composition, file writing, fan-out |
 | `packages/lcyt-backend/src/caption-files.js` | `composeCaptionText()`, VTT helpers |
-| `packages/lcyt-backend/src/routes/viewer.js` | `broadcastToViewers()` — full payload SSE |
+| `packages/lcyt-backend/src/routes/viewer.js` | `broadcastToViewers()` â€” full payload SSE |
 | `packages/lcyt-backend/src/hls-subs-manager.js` | Per-language WebVTT segment rolling writer |
 | `packages/lcyt-backend/src/routes/video.js` | HLS subtitle playlist + segment serving |
 | `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/SseClient.kt` | Android TV SSE subscriber |
 | `android/lcyt-tv/app/src/main/java/fi/lcyt/tv/MainActivity.kt` | Android TV display (`composedText`) |
+

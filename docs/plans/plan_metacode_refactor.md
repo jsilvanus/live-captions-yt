@@ -1,13 +1,13 @@
-# Metacode Refactor Plan
+﻿# Metacode Refactor Plan
 
-**Status:** implemented — metacode handling now lives in dedicated `packages/lcyt-web/src/lib/metacode-*.js` modules (parser, registry, runtime, planner, active-codes, actions, variables, ttl).
+**Status:** implemented â€” metacode handling now lives in dedicated `packages/lcyt-web/src/lib/metacode-*.js` modules (parser, registry, runtime, planner, active-codes, actions, variables, ttl).
 
 > **See also `plan_metacode_variable_unification.md`.** This plan is a mechanical relocation of
 > the *existing* scattered metacode handling into dedicated `*metacode*` files, preserving the
-> current `if (key === …)` / per-family-regex dispatch as-is. The unification plan reframes that
+> current `if (key === â€¦)` / per-family-regex dispatch as-is. The unification plan reframes that
 > same dispatch as a registry-driven single variable namespace. If the unification plan is
 > adopted, build the registry *during* these moves rather than relocating the scattered handling
-> first and rewriting it later (touching the same code twice) — treat this plan as folded into
+> first and rewriting it later (touching the same code twice) â€” treat this plan as folded into
 > that one. Executed standalone, this plan is still valid as a pure clarity refactor.
 
 Scope guardrails:
@@ -18,7 +18,7 @@ Scope guardrails:
 Rationale: the captions route currently mixes request validation, queueing, file writing, target fan-out, and the one core metacode step that strips/processes caption text before delivery.
 
 2. Limit the backend helper to core responsibilities only: accept caption text plus codes, invoke injected processors exactly as today, and return cleaned caption payloads without changing plugin contracts.
-Rationale: this keeps plugin metacodes untouched while making the backend’s own metacode handoff explicit and easier to test in isolation.
+Rationale: this keeps plugin metacodes untouched while making the backendâ€™s own metacode handoff explicit and easier to test in isolation.
 
 3. Split frontend file parsing from generic file utilities by moving `parseFileContent()` and its regex/helpers into a dedicated parser file such as `packages/lcyt-web/src/lib/file-metacode-parser.js`, then re-export from `fileUtils.js` during the transition.
 Rationale: parser behavior is the densest metacode logic on the client, and a compatibility re-export keeps `useFileStore` and existing imports stable.

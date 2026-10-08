@@ -1,18 +1,18 @@
----
+﻿---
 id: plan/backend
 title: "lcyt-backend Express Relay Backend"
 status: implemented
-summary: "Original v1 plan for lcyt-backend: CORS relay for YouTube caption ingestion, JWT auth, SQLite API-key management, admin CLI. All v1 features described here shipped as designed, but the backend has since grown far beyond this scope (user accounts/orgs, target-array fan-out, SSE events, broadcasts, translation, RTMP/DSK/STT, MCP, admin panel, AI roles) — see packages/lcyt-backend/CLAUDE.md for the current route list and plan_captions.md for the current caption-delivery pipeline."
+summary: "Original v1 plan for lcyt-backend: CORS relay for YouTube caption ingestion, JWT auth, SQLite API-key management, admin CLI. All v1 features described here shipped as designed, but the backend has since grown far beyond this scope (user accounts/orgs, target-array fan-out, SSE events, broadcasts, translation, RTMP/DSK/STT, MCP, admin panel, AI roles) â€” see packages/lcyt-backend/CLAUDE.md for the current route list and plan_captions.md for the current caption-delivery pipeline."
 related: [plan_captions.md, plan_authentication_refactor.md, plan_team_org_backend.md, plan_selfservice_config_backend.md, plan_userprojects.md, plan_mcp.md, plan_admin.md]
 ---
 
-# lcyt-backend — Plan
+# lcyt-backend â€” Plan
 
-> **Historical note:** this is the original v1 design doc for `lcyt-backend`. It was implemented as written (single `streamKey` per session, SQLite-only API key registry, no user accounts). Since then the backend grew substantially: user accounts/login (`plan_authentication_refactor.md`), orgs/teams (`plan_team_org_backend.md`), server-persisted multi-target fan-out and SSE delivery results (`plan_captions.md`, superseding the synchronous single-`streamKey` `/captions` response shape described below), self-service target/translation config (`plan_selfservice_config_backend.md`), broadcasts, RTMP/DSK/STT plugins, an admin panel, and MCP integration. The endpoint list and session shape below reflect the v1 design only — see `packages/lcyt-backend/CLAUDE.md` for the current full route table.
+> **Historical note:** this is the original v1 design doc for `lcyt-backend`. It was implemented as written (single `streamKey` per session, SQLite-only API key registry, no user accounts). Since then the backend grew substantially: user accounts/api/v1/login (`plan_authentication_refactor.md`), orgs/api/v1/teams (`plan_team_org_backend.md`), server-persisted multi-target fan-out and SSE delivery results (`plan_captions.md`, superseding the synchronous single-`streamKey` `/api/v1/captions` response shape described below), self-service target/api/v1/translation config (`plan_selfservice_config_backend.md`), broadcasts, RTMP/api/v1/DSK/api/v1/STT plugins, an admin panel, and MCP integration. The endpoint list and session shape below reflect the v1 design only â€” see `packages/api/v1/lcyt-backend/api/v1/CLAUDE.md` for the current full route table.
 
 ## Purpose
 
-A small Node.js backend that acts as a **CORS relay** for YouTube Live caption ingestion. Clients (browsers, web apps) cannot POST directly to `upload.youtube.com` due to CORS restrictions. This backend accepts captions from web clients, forwards them to YouTube via the `lcyt` library, and returns the result — with CORS headers set to match the caller's registered domain.
+A small Node.js backend that acts as a **CORS relay** for YouTube Live caption ingestion. Clients (browsers, web apps) cannot POST directly to `upload.youtube.com` due to CORS restrictions. This backend accepts captions from web clients, forwards them to YouTube via the `lcyt` library, and returns the result â€” with CORS headers set to match the caller's registered domain.
 
 ## Key Features
 
@@ -43,35 +43,35 @@ A small Node.js backend that acts as a **CORS relay** for YouTube Live caption i
 
 ```
 packages/lcyt-backend/
-├── package.json
-├── Dockerfile             # Minimal container image for self-hosting
-├── .dockerignore
-├── lcyt-backend.db        # SQLite database (created at runtime, gitignored)
-├── bin/
-│   └── lcyt-backend-admin # CLI for managing API keys (ESM, shebang script)
-├── src/
-│   ├── server.js          # Express app setup, middleware, routes, graceful shutdown
-│   ├── routes/
-│   │   ├── live.js        # GET/POST/DELETE /live
-│   │   ├── captions.js    # POST /captions
-│   │   ├── sync.js        # POST /sync
-│   │   ├── keys.js        # CRUD /keys (admin)
-│   │   └── health.js      # GET /health
-│   ├── middleware/
-│   │   ├── auth.js        # JWT verification middleware
-│   │   ├── admin.js       # Admin API key verification middleware
-│   │   └── cors.js        # Dynamic CORS middleware
-│   ├── db.js              # SQLite database setup + API key queries
-│   ├── store.js           # In-memory session store (active sessions + cleanup sweep)
-│   └── index.js           # Entry point (start server)
-└── test/
-    ├── live.test.js
-    ├── captions.test.js
-    ├── sync.test.js
-    ├── health.test.js
-    ├── keys.test.js
-    ├── db.test.js
-    └── store.test.js
+â”œâ”€â”€ package.json
+â”œâ”€â”€ Dockerfile             # Minimal container image for self-hosting
+â”œâ”€â”€ .dockerignore
+â”œâ”€â”€ lcyt-backend.db        # SQLite database (created at runtime, gitignored)
+â”œâ”€â”€ bin/
+â”‚   â””â”€â”€ lcyt-backend-admin # CLI for managing API keys (ESM, shebang script)
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ server.js          # Express app setup, middleware, routes, graceful shutdown
+â”‚   â”œâ”€â”€ routes/
+â”‚   â”‚   â”œâ”€â”€ live.js        # GET/POST/DELETE /live
+â”‚   â”‚   â”œâ”€â”€ captions.js    # POST /captions
+â”‚   â”‚   â”œâ”€â”€ sync.js        # POST /sync
+â”‚   â”‚   â”œâ”€â”€ keys.js        # CRUD /keys (admin)
+â”‚   â”‚   â””â”€â”€ health.js      # GET /health
+â”‚   â”œâ”€â”€ middleware/
+â”‚   â”‚   â”œâ”€â”€ auth.js        # JWT verification middleware
+â”‚   â”‚   â”œâ”€â”€ admin.js       # Admin API key verification middleware
+â”‚   â”‚   â””â”€â”€ cors.js        # Dynamic CORS middleware
+â”‚   â”œâ”€â”€ db.js              # SQLite database setup + API key queries
+â”‚   â”œâ”€â”€ store.js           # In-memory session store (active sessions + cleanup sweep)
+â”‚   â””â”€â”€ index.js           # Entry point (start server)
+â””â”€â”€ test/
+    â”œâ”€â”€ live.test.js
+    â”œâ”€â”€ captions.test.js
+    â”œâ”€â”€ sync.test.js
+    â”œâ”€â”€ health.test.js
+    â”œâ”€â”€ keys.test.js
+    â”œâ”€â”€ db.test.js
+    â””â”€â”€ store.test.js
 ```
 
 ### Dependencies
@@ -92,7 +92,7 @@ packages/lcyt-backend/
 
 ## Data Model
 
-### SQLite Database — API Keys (`src/db.js`)
+### SQLite Database â€” API Keys (`src/db.js`)
 
 Persistent storage for registered API keys. The database file lives at `DB_PATH` env var or defaults to `./lcyt-backend.db` relative to the package root.
 
@@ -113,23 +113,23 @@ CREATE TABLE api_keys (
 
 ```js
 initDb(dbPath?)                        // Create tables if not exist, return db instance
-validateApiKey(db, key) → { valid, owner, expiresAt } | { valid: false, reason }
-getAllKeys(db) → Array<ApiKeyRow>
-getKey(db, key) → ApiKeyRow | null
-createKey(db, { key?, owner, expiresAt? }) → ApiKeyRow  // auto-generates key if omitted
-revokeKey(db, key) → boolean
-deleteKey(db, key) → boolean
-renewKey(db, key, newExpiresAt) → boolean
+validateApiKey(db, key) â†’ { valid, owner, expiresAt } | { valid: false, reason }
+getAllKeys(db) â†’ Array<ApiKeyRow>
+getKey(db, key) â†’ ApiKeyRow | null
+createKey(db, { key?, owner, expiresAt? }) â†’ ApiKeyRow  // auto-generates key if omitted
+revokeKey(db, key) â†’ boolean
+deleteKey(db, key) â†’ boolean
+renewKey(db, key, newExpiresAt) â†’ boolean
 ```
 
 **Validation logic (`validateApiKey`):**
 1. Look up key in `api_keys` table
-2. If not found → `{ valid: false, reason: "unknown_key" }`
-3. If `active = 0` → `{ valid: false, reason: "revoked" }`
-4. If `expires_at` is set and in the past → `{ valid: false, reason: "expired" }`
-5. Otherwise → `{ valid: true, owner, expiresAt }`
+2. If not found â†’ `{ valid: false, reason: "unknown_key" }`
+3. If `active = 0` â†’ `{ valid: false, reason: "revoked" }`
+4. If `expires_at` is set and in the past â†’ `{ valid: false, reason: "expired" }`
+5. Otherwise â†’ `{ valid: true, owner, expiresAt }`
 
-### Session Store — Active Sessions (in-memory Map, `src/store.js`)
+### Session Store â€” Active Sessions (in-memory Map, `src/store.js`)
 
 ```
 Map<sessionId, Session>
@@ -156,13 +156,13 @@ function makeSessionId(apiKey, streamKey, domain) {
   sequence: number,           // current caption sequence number
   syncOffset: number,         // clock sync offset (ms)
   sender: YoutubeLiveCaptionSender,  // reusable sender instance
-  startedAt: number,          // Date.now() at session creation — used to resolve relative `time` values
+  startedAt: number,          // Date.now() at session creation â€” used to resolve relative `time` values
   createdAt: Date,
   lastActivityAt: Date        // updated on every caption send, sync, or heartbeat
 }
 ```
 
-Multiple sessions can share the same `apiKey` — enabling one client to send captions to multiple YouTube streams from multiple domains.
+Multiple sessions can share the same `apiKey` â€” enabling one client to send captions to multiple YouTube streams from multiple domains.
 
 **Session cleanup:** The store runs a periodic sweep (every 5 minutes) that removes sessions idle for longer than `SESSION_TTL` (default: 2 hours). On removal, `sender.end()` is called to clean up the YouTube ingestion slot. The sweep interval and TTL are configurable via environment variables.
 
@@ -170,7 +170,7 @@ Multiple sessions can share the same `apiKey` — enabling one client to send ca
 
 ## API Endpoints
 
-### `POST /live` — Register Session
+### `POST /live` â€” Register Session
 
 **Request body (JSON):**
 
@@ -191,7 +191,7 @@ Multiple sessions can share the same `apiKey` — enabling one client to send ca
 **Behavior:**
 
 1. Validate required fields
-2. **Validate API key against SQLite** — call `validateApiKey(db, apiKey)`. Reject with 401 if unknown, revoked, or expired.
+2. **Validate API key against SQLite** â€” call `validateApiKey(db, apiKey)`. Reject with 401 if unknown, revoked, or expired.
 3. Generate hashed session ID: `sha256(apiKey:streamKey:domain)` (first 16 hex chars)
 4. If session already exists, return existing JWT (idempotent)
 5. Create a `YoutubeLiveCaptionSender` instance with `{ streamKey, sequence }`
@@ -213,13 +213,13 @@ Multiple sessions can share the same `apiKey` — enabling one client to send ca
 }
 ```
 
-- `startedAt`: Unix timestamp (ms) of when the session was created on the server. Clients using relative `time` values in `/captions` can use this as their reference epoch.
+- `startedAt`: Unix timestamp (ms) of when the session was created on the server. Clients using relative `time` values in `/api/v1/captions` can use this as their reference epoch.
 
 **CORS:** Response includes `Access-Control-Allow-Origin: <domain>` from request body.
 
 ---
 
-### `GET /live` — Get Session Status
+### `GET /live` â€” Get Session Status
 
 **Headers:**
 
@@ -244,7 +244,7 @@ Authorization: Bearer <jwt>
 
 ---
 
-### `DELETE /live` — Remove Session
+### `DELETE /live` â€” Remove Session
 
 **Headers:**
 
@@ -271,7 +271,7 @@ Authorization: Bearer <jwt>
 
 ---
 
-### `POST /captions` — Send Captions (Authenticated)
+### `POST /captions` â€” Send Captions (Authenticated)
 
 **Headers:**
 
@@ -309,7 +309,7 @@ Content-Type: application/json
 7. Update `session.lastActivityAt`
 8. Return result from YouTube
 
-**Response (200) — single caption:**
+**Response (200) â€” single caption:**
 
 ```json
 {
@@ -320,7 +320,7 @@ Content-Type: application/json
 }
 ```
 
-**Response (200) — batch:**
+**Response (200) â€” batch:**
 
 ```json
 {
@@ -343,7 +343,7 @@ Content-Type: application/json
 
 ---
 
-### `GET /health` — Health Check
+### `GET /health` â€” Health Check
 
 No authentication required. Used by reverse proxies, load balancers, and container orchestrators to verify the service is running.
 
@@ -362,7 +362,7 @@ No authentication required. Used by reverse proxies, load balancers, and contain
 
 ---
 
-### `POST /sync` — Clock Synchronization (Authenticated)
+### `POST /sync` â€” Clock Synchronization (Authenticated)
 
 Triggers an NTP-style clock sync between the backend and YouTube's server for the session's sender. This updates the `syncOffset` used for all subsequent caption timestamps.
 
@@ -378,7 +378,7 @@ Authorization: Bearer <jwt>
 
 1. Verify JWT
 2. Look up session by `sessionId` from JWT payload
-3. Call `sender.sync()` — sends a heartbeat to YouTube, measures round-trip time, computes clock offset
+3. Call `sender.sync()` â€” sends a heartbeat to YouTube, measures round-trip time, computes clock offset
 4. Update `session.syncOffset` with the new value
 5. Return sync result
 
@@ -404,7 +404,7 @@ Authorization: Bearer <jwt>
 
 ---
 
-### `GET /keys` — List API Keys (Admin)
+### `GET /keys` â€” List API Keys (Admin)
 
 **Headers:**
 
@@ -436,7 +436,7 @@ X-Admin-Key: <admin-key>
 
 ---
 
-### `POST /keys` — Create API Key (Admin)
+### `POST /keys` â€” Create API Key (Admin)
 
 **Headers:**
 
@@ -473,7 +473,7 @@ Content-Type: application/json
 
 ---
 
-### `GET /keys/:key` — Get API Key Details (Admin)
+### `GET /keys/:key` â€” Get API Key Details (Admin)
 
 **Headers:**
 
@@ -501,7 +501,7 @@ X-Admin-Key: <admin-key>
 
 ---
 
-### `PATCH /keys/:key` — Update API Key (Admin)
+### `PATCH /keys/:key` â€” Update API Key (Admin)
 
 Used to renew expiration or update owner label.
 
@@ -537,7 +537,7 @@ Content-Type: application/json
 
 ---
 
-### `DELETE /keys/:key` — Revoke API Key (Admin)
+### `DELETE /keys/:key` â€” Revoke API Key (Admin)
 
 Soft-deletes (deactivates) the key. The key remains in the database but can no longer be used to create sessions.
 
@@ -551,7 +551,7 @@ X-Admin-Key: <admin-key>
 
 - `permanent=true` (optional): Permanently removes the key from the database instead of soft-deleting.
 
-**Response (200) — soft delete:**
+**Response (200) â€” soft delete:**
 
 ```json
 {
@@ -560,7 +560,7 @@ X-Admin-Key: <admin-key>
 }
 ```
 
-**Response (200) — permanent:**
+**Response (200) â€” permanent:**
 
 ```json
 {
@@ -585,8 +585,8 @@ Rather than a single static CORS origin, this middleware:
    - `Access-Control-Allow-Headers: Content-Type, Authorization`
    - `Access-Control-Allow-Credentials: true`
 4. If no match, omits CORS headers (browser will block the request)
-5. For `POST /live` (registration), CORS is permissive — any origin can register
-6. For `/keys` routes (admin), no CORS headers are set — admin endpoints are intended for server-side use only, not browser calls
+5. For `POST /live` (registration), CORS is permissive â€” any origin can register
+6. For `/api/v1/keys` routes (admin), no CORS headers are set â€” admin endpoints are intended for server-side use only, not browser calls
 
 ### JWT Auth (`middleware/auth.js`)
 
@@ -598,13 +598,13 @@ Rather than a single static CORS origin, this middleware:
 
 ### Admin Auth (`middleware/admin.js`)
 
-Protects the `/keys` routes. Only allows requests with the correct admin key.
+Protects the `/api/v1/keys` routes. Only allows requests with the correct admin key.
 
 1. Extract `X-Admin-Key` header from request
 2. Compare against `ADMIN_KEY` environment variable (constant-time comparison via `crypto.timingSafeEqual`)
 3. Reject with 401 if header missing
 4. Reject with 403 if key does not match
-5. If `ADMIN_KEY` env var is not set, all `/keys` routes return 503 ("Admin API not configured")
+5. If `ADMIN_KEY` env var is not set, all `/api/v1/keys` routes return 503 ("Admin API not configured")
 
 ---
 
@@ -612,23 +612,23 @@ Protects the `/keys` routes. Only allows requests with the correct admin key.
 
 ```
 Browser (https://example.com)           lcyt-backend              YouTube
-  │                                         │                        │
-  │─── POST /live ──────────────────────────>│                        │
-  │    {apiKey, streamKey, domain}           │                        │
-  │<── {token, sequence, syncOffset} ───────│                        │
-  │    + CORS: Access-Control-Allow-Origin  │                        │
-  │                                         │                        │
-  │─── POST /captions ─────────────────────>│                        │
-  │    Authorization: Bearer <jwt>          │                        │
-  │    {captions: [{text: "Hi"}]}           │── POST /closedcaption─>│
-  │                                         │   ?cid=KEY&seq=N       │
-  │                                         │<── 200 ───────────────│
-  │<── {sequence, statusCode} ─────────────│                        │
-  │    + CORS headers                       │                        │
-  │                                         │                        │
-  │─── DELETE /live ────────────────────────>│                        │
-  │    Authorization: Bearer <jwt>          │                        │
-  │<── {removed: true} ────────────────────│                        │
+  â”‚                                         â”‚                        â”‚
+  â”‚â”€â”€â”€ POST /live â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚                        â”‚
+  â”‚    {apiKey, streamKey, domain}           â”‚                        â”‚
+  â”‚<â”€â”€ {token, sequence, syncOffset} â”€â”€â”€â”€â”€â”€â”€â”‚                        â”‚
+  â”‚    + CORS: Access-Control-Allow-Origin  â”‚                        â”‚
+  â”‚                                         â”‚                        â”‚
+  â”‚â”€â”€â”€ POST /captions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚                        â”‚
+  â”‚    Authorization: Bearer <jwt>          â”‚                        â”‚
+  â”‚    {captions: [{text: "Hi"}]}           â”‚â”€â”€ POST /closedcaptionâ”€>â”‚
+  â”‚                                         â”‚   ?cid=KEY&seq=N       â”‚
+  â”‚                                         â”‚<â”€â”€ 200 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚
+  â”‚<â”€â”€ {sequence, statusCode} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚                        â”‚
+  â”‚    + CORS headers                       â”‚                        â”‚
+  â”‚                                         â”‚                        â”‚
+  â”‚â”€â”€â”€ DELETE /live â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€>â”‚                        â”‚
+  â”‚    Authorization: Bearer <jwt>          â”‚                        â”‚
+  â”‚<â”€â”€ {removed: true} â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”‚                        â”‚
 ```
 
 ---
@@ -669,7 +669,7 @@ lcyt-backend-admin info <key>                    # Show details for a key
 
 ---
 
-## `BackendCaptionSender` — Client for `lcyt-backend` (in `packages/lcyt`)
+## `BackendCaptionSender` â€” Client for `lcyt-backend` (in `packages/lcyt`)
 
 A new class in the `lcyt` library that mirrors the `YoutubeLiveCaptionSender` API but sends captions through an `lcyt-backend` instance instead of directly to YouTube. This lets browser/web clients use the same familiar interface.
 
@@ -682,13 +682,13 @@ new BackendCaptionSender({
   backendUrl: string,         // e.g. "https://captions.example.com"
   apiKey: string,             // API key (must exist in backend's SQLite db)
   streamKey: string,          // YouTube stream key
-  domain?: string,            // CORS origin — defaults to globalThis.location?.origin || 'http://localhost'
+  domain?: string,            // CORS origin â€” defaults to globalThis.location?.origin || 'http://localhost'
   sequence?: number,          // Starting sequence (default: 0, overridden by backend on start())
   verbose?: boolean           // Enable verbose logging
 })
 ```
 
-### API — Same shape as `YoutubeLiveCaptionSender`
+### API â€” Same shape as `YoutubeLiveCaptionSender`
 
 | Method | Behavior | Backend call |
 | --- | --- | --- |
@@ -696,27 +696,27 @@ new BackendCaptionSender({
 | `send(text, timestamp?)` | Send single caption via backend relay | `POST /captions` with `{ captions: [{ text, timestamp }] }` |
 | `send(text, { time })` | Send single caption with relative time (ms since session start) | `POST /captions` with `{ captions: [{ text, time }] }` |
 | `sendBatch(captions?)` | Send multiple captions (or drain local queue). Each caption can use `timestamp` or `time`. | `POST /captions` with `{ captions: [...] }` |
-| `construct(text, timestamp?)` | Queue locally (identical to original — no network) | — |
-| `getQueue()` | Return local queue copy | — |
-| `clearQueue()` | Clear local queue | — |
+| `construct(text, timestamp?)` | Queue locally (identical to original â€” no network) | â€” |
+| `getQueue()` | Return local queue copy | â€” |
+| `clearQueue()` | Clear local queue | â€” |
 | `sync()` | Trigger clock sync on the backend sender | `POST /sync` |
 | `heartbeat()` | Check session status, return sequence + syncOffset | `GET /live` |
 | `end()` | Tear down backend session, clear JWT | `DELETE /live` |
-| `getSequence()` | Return local sequence (updated from backend responses) | — |
-| `setSequence(seq)` | Set local sequence | — |
-| `getSyncOffset()` | Return local syncOffset (updated from backend responses) | — |
-| `setSyncOffset(offset)` | Set local syncOffset | — |
+| `getSequence()` | Return local sequence (updated from backend responses) | â€” |
+| `setSequence(seq)` | Set local sequence | â€” |
+| `getSyncOffset()` | Return local syncOffset (updated from backend responses) | â€” |
+| `setSyncOffset(offset)` | Set local syncOffset | â€” |
 
 ### Key differences from `YoutubeLiveCaptionSender`
 
-1. **`start()` is async** — it must call `POST /live` to register. Returns `Promise<BackendCaptionSender>`.
-2. **No `ingestionUrl`/`baseUrl`/`region`/`cue`** — these are handled server-side.
-3. **No `sendTest()`** — test payloads are a YouTube-direct concern.
-4. **Uses `fetch()`** — works in browsers and Node 18+. No `http` module dependency.
+1. **`start()` is async** â€” it must call `POST /live` to register. Returns `Promise<BackendCaptionSender>`.
+2. **No `ingestionUrl`/`baseUrl`/`region`/`cue`** â€” these are handled server-side.
+3. **No `sendTest()`** â€” test payloads are a YouTube-direct concern.
+4. **Uses `fetch()`** â€” works in browsers and Node 18+. No `http` module dependency.
 5. **Stores JWT** internally after `start()`, attaches as `Authorization: Bearer` header.
-6. **Sequence/syncOffset are synced** — updated from every backend response so the client always has current values.
-7. **`startedAt` stored** — the server's session start timestamp (from `POST /live` response) is stored locally. Available via `getStartedAt()`.
-8. **Relative `time` support** — `send()` accepts `{ time }` (ms since session start) as an alternative to absolute `timestamp`. The backend resolves it to an absolute timestamp using `startedAt + time + syncOffset`. Ideal for browser clients using `performance.now()` or `Date.now() - localStart`.
+6. **Sequence/syncOffset are synced** â€” updated from every backend response so the client always has current values.
+7. **`startedAt` stored** â€” the server's session start timestamp (from `POST /live` response) is stored locally. Available via `getStartedAt()`.
+8. **Relative `time` support** â€” `send()` accepts `{ time }` (ms since session start) as an alternative to absolute `timestamp`. The backend resolves it to an absolute timestamp using `startedAt + time + syncOffset`. Ideal for browser clients using `performance.now()` or `Date.now() - localStart`.
 
 ### Internal `_fetch` helper
 
@@ -805,12 +805,12 @@ const sender = new BackendCaptionSender({
   streamKey: 'YOUR_YOUTUBE_KEY'
 });
 
-await sender.start();             // POST /live → registers, gets JWT + startedAt
-await sender.send('Hello!');      // POST /captions → relayed to YouTube
+await sender.start();             // POST /live â†’ registers, gets JWT + startedAt
+await sender.send('Hello!');      // POST /captions â†’ relayed to YouTube
 await sender.send('Timed!', { time: 5000 }); // relative: 5s after session start
-await sender.sync();              // POST /sync → NTP sync via backend
-const status = await sender.heartbeat(); // GET /live → { sequence, syncOffset }
-await sender.end();               // DELETE /live → tears down session
+await sender.sync();              // POST /sync â†’ NTP sync via backend
+const status = await sender.heartbeat(); // GET /live â†’ { sequence, syncOffset }
+await sender.end();               // DELETE /live â†’ tears down session
 ```
 
 ### Browser usage
@@ -846,13 +846,13 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 
 ### Step 2: SQLite database layer (`src/db.js`)
 
-- `initDb(dbPath?)` — open/create database, run `CREATE TABLE IF NOT EXISTS`
-- `validateApiKey(db, key)` — check existence, active status, expiration
-- `createKey(db, { key?, owner, expiresAt? })` — insert new key, auto-generate UUID if not provided
-- `getAllKeys(db)`, `getKey(db, key)` — read operations
-- `revokeKey(db, key)` — set `active = 0`
-- `deleteKey(db, key)` — permanent removal
-- `renewKey(db, key, newExpiresAt)` — update expiration
+- `initDb(dbPath?)` â€” open/create database, run `CREATE TABLE IF NOT EXISTS`
+- `validateApiKey(db, key)` â€” check existence, active status, expiration
+- `createKey(db, { key?, owner, expiresAt? })` â€” insert new key, auto-generate UUID if not provided
+- `getAllKeys(db)`, `getKey(db, key)` â€” read operations
+- `revokeKey(db, key)` â€” set `active = 0`
+- `deleteKey(db, key)` â€” permanent removal
+- `renewKey(db, key, newExpiresAt)` â€” update expiration
 
 ### Step 3: Admin CLI (`bin/lcyt-backend-admin`)
 
@@ -864,7 +864,7 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 
 - Implement `SessionStore` class with Map-based storage
 - Methods: `create(apiKey, streamKey, domain, sequence)`, `get(sessionId)`, `getByDomain(domain)`, `remove(sessionId)`, `has(sessionId)`, `all()`, `stopCleanup()`
-- Session ID generated via `sha256(apiKey:streamKey:domain)` (first 16 hex chars) — avoids exposing the API key in JWTs
+- Session ID generated via `sha256(apiKey:streamKey:domain)` (first 16 hex chars) â€” avoids exposing the API key in JWTs
 - Each session holds a `YoutubeLiveCaptionSender` instance
 - Track `lastActivityAt` on every caption send, sync, or heartbeat
 - **Periodic cleanup sweep**: Run every `CLEANUP_INTERVAL` (default: 5 min) to remove sessions idle longer than `SESSION_TTL` (default: 2 hours). Call `sender.end()` on removed sessions to free YouTube ingestion slots.
@@ -872,7 +872,7 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 ### Step 5: CORS middleware (`src/middleware/cors.js`)
 
 - Dynamic origin matching against registered domains in the session store
-- **`POST /live` and `GET /health` are permissive** — any origin can call them. The API key in the request body is the real authentication gate for `/live`; CORS is not a security boundary here.
+- **`POST /live` and `GET /health` are permissive** â€” any origin can call them. The API key in the request body is the real authentication gate for `/live`; CORS is not a security boundary here.
 - Preflight (`OPTIONS`) support
 
 ### Step 6: Auth middleware (`src/middleware/auth.js`)
@@ -881,17 +881,17 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 - Secret from `JWT_SECRET` env var or auto-generated
 - Attaches decoded session info to `req.session`
 
-### Step 7: Routes — `/live` (`src/routes/live.js`)
+### Step 7: Routes â€” `/api/v1/live` (`src/api/v1/routes/api/v1/live.js`)
 
 - `POST`: Validate API key against SQLite, create session + sender, generate JWT, return token
 - `GET`: Auth required, return sequence + syncOffset
 - `DELETE`: Auth required, tear down sender, remove session
 
-### Step 8: Routes — `/captions` (`src/routes/captions.js`)
+### Step 8: Routes â€” `/api/v1/captions` (`src/api/v1/routes/api/v1/captions.js`)
 
 - `POST`: Auth required, look up session, call `sender.send()` or `sender.sendBatch()`, return result
 
-### Step 9: Routes — `/sync` (`src/routes/sync.js`)
+### Step 9: Routes â€” `/api/v1/sync` (`src/api/v1/routes/api/v1/sync.js`)
 
 - `POST`: Auth required, look up session, call `sender.sync()`, return sync result
 
@@ -900,8 +900,8 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 - Create Express app
 - Initialize SQLite database via `initDb()`
 - Mount middleware:
-  - JSON body parser with **64KB size limit** (`express.json({ limit: '64kb' })`) — caption payloads should never be large; this prevents abuse
-  - **Request logging** middleware — log each request to stdout: `method path statusCode duration`. Use a simple custom middleware (no external dependency needed):
+  - JSON body parser with **64KB size limit** (`express.json({ limit: '64kb' })`) â€” caption payloads should never be large; this prevents abuse
+  - **Request logging** middleware â€” log each request to stdout: `method path statusCode duration`. Use a simple custom middleware (no external dependency needed):
     ```js
     app.use((req, res, next) => {
       const start = Date.now();
@@ -915,7 +915,7 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
   - Dynamic CORS middleware
 - Mount routes (pass `db` and `store` to route factories)
 - Mount `/health` endpoint
-- **Graceful shutdown**: Handle `SIGTERM` and `SIGINT` signals — iterate all active sessions, call `sender.end()` on each, then close the HTTP server and SQLite database connection:
+- **Graceful shutdown**: Handle `SIGTERM` and `SIGINT` signals â€” iterate all active sessions, call `sender.end()` on each, then close the HTTP server and SQLite database connection:
   ```js
   async function shutdown() {
     console.log('Shutting down...');
@@ -932,12 +932,12 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 - `index.js`: Start server on `PORT` env var (default: 3000)
 - Log a **loud warning** at startup if `JWT_SECRET` is not set:
   ```
-  ⚠ JWT_SECRET is not set — using a random secret. Tokens will not survive restarts.
+  âš  JWT_SECRET is not set â€” using a random secret. Tokens will not survive restarts.
     Set JWT_SECRET in your environment for production use.
   ```
 - Log an **info notice** at startup if `ADMIN_KEY` is not set:
   ```
-  ℹ ADMIN_KEY is not set — /keys admin endpoints are disabled.
+  â„¹ ADMIN_KEY is not set â€” /keys admin endpoints are disabled.
     Set ADMIN_KEY in your environment to enable API key management via HTTP.
   ```
 - Export app for testing
@@ -945,25 +945,25 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 ### Step 11: `BackendCaptionSender` (`packages/lcyt/src/backend-sender.js`)
 
 - Implement class with `fetch()`-based `_fetch` helper
-- `start()` → `POST /live`, store JWT, update sequence/syncOffset
-- `send()` / `sendBatch()` → `POST /captions` with JWT auth
-- `construct()` / `getQueue()` / `clearQueue()` — local queue (same as original)
-- `sync()` → `POST /sync`
-- `heartbeat()` → `GET /live`
-- `end()` → `DELETE /live`
+- `start()` â†’ `POST /live`, store JWT, update sequence/syncOffset
+- `send()` / `sendBatch()` â†’ `POST /captions` with JWT auth
+- `construct()` / `getQueue()` / `clearQueue()` â€” local queue (same as original)
+- `sync()` â†’ `POST /sync`
+- `heartbeat()` â†’ `GET /live`
+- `end()` â†’ `DELETE /live`
 - Update sequence/syncOffset from every backend response
 
 ### Step 12: `BackendCaptionSender` types + exports
 
 - Create `packages/lcyt/src/backend-sender.d.ts`
 - Add `"./backend"` entry to `packages/lcyt/package.json` exports map
-- Update `packages/lcyt/scripts/build-cjs.js` to include `backend-sender.js` → `backend-sender.cjs`
+- Update `packages/lcyt/scripts/build-cjs.js` to include `backend-sender.js` â†’ `backend-sender.cjs`
 
 ### Step 13: `BackendCaptionSender` tests
 
 - Unit tests in `packages/lcyt/test/backend-sender.test.js`
 - Mock `fetch()` globally to simulate backend responses
-- Test full lifecycle: start → send → sendBatch → sync → heartbeat → end
+- Test full lifecycle: start â†’ send â†’ sendBatch â†’ sync â†’ heartbeat â†’ end
 - Test error cases: invalid API key, expired session, network failure
 
 ### Step 14: Backend tests
@@ -1014,7 +1014,7 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 | ------------------ | -------------------- | ---------------------------------------- |
 | `PORT`             | `3000`               | Server listen port                       |
 | `JWT_SECRET`       | (auto-generated)     | Secret for signing/verifying JWTs. If not set, a random secret is generated at startup and a **loud warning** is logged. Tokens will not survive restarts without this set. |
-| `ADMIN_KEY`        | (none)               | Admin API key for `/keys` CRUD endpoints. If not set, admin endpoints return 503. Should be a long random string (e.g., `openssl rand -hex 32`). |
+| `ADMIN_KEY`        | (none)               | Admin API key for `/api/v1/keys` CRUD endpoints. If not set, admin endpoints return 503. Should be a long random string (e.g., `openssl rand -hex 32`). |
 | `DB_PATH`          | `./lcyt-backend.db`  | Path to SQLite database file             |
 | `SESSION_TTL`      | `7200000` (2 hours)  | Idle session timeout in milliseconds. Sessions with no activity for this duration are automatically cleaned up. |
 | `CLEANUP_INTERVAL` | `300000` (5 minutes) | How often the session cleanup sweep runs, in milliseconds. |
@@ -1029,10 +1029,11 @@ Since `BackendCaptionSender` uses `fetch()` and has no Node-specific dependencie
 
 3. **Key format**: UUID v4 via `crypto.randomUUID()`. Can be overridden with `--key` in the admin CLI.
 
-4. **HTTPS / Deployment**: HTTP only — assume deployment behind nginx/Cloudflare/etc. A Dockerfile is provided for easy self-hosting.
+4. **HTTPS / Deployment**: HTTP only â€” assume deployment behind nginx/Cloudflare/etc. A Dockerfile is provided for easy self-hosting.
 
 ## Open Questions / Future Enhancements
 
-1. **Rate limiting**: Not in v1 as originally planned; since added via `express-rate-limit` on several routes (`/auth/login`+`/auth/register` via `LOGIN_RATE_LIMIT_MAX`, `/live/recording`, `/video`, `/icons`, `/events/publish`, `/mcp`, admin feature-policy routes) — see `packages/lcyt-backend/CLAUDE.md`. `/captions` itself is not rate-limited by IP; sequencing is serialized per-session via `_sendQueue` instead.
+1. **Rate limiting**: Not in v1 as originally planned; since added via `express-rate-limit` on several routes (`/api/v1/auth/api/v1/login`+`/api/v1/auth/api/v1/register` via `LOGIN_RATE_LIMIT_MAX`, `/api/v1/live/api/v1/recording`, `/api/v1/video`, `/api/v1/icons`, `/api/v1/events/api/v1/publish`, `/api/v1/mcp`, admin feature-policy routes) â€” see `packages/api/v1/lcyt-backend/api/v1/CLAUDE.md`. `/api/v1/captions` itself is not rate-limited by IP; sequencing is serialized per-session via `_sendQueue` instead.
 
-2. **WebSocket support**: HTTP POST per caption adds a round-trip per message. Not built — the shipped design instead made `/captions` asynchronous (202 + `requestId`, real result delivered over the `GET /events` SSE stream, see `plan_captions.md` §5/§7), which addresses the same latency concern without a WebSocket upgrade.
+2. **WebSocket support**: HTTP POST per caption adds a round-trip per message. Not built â€” the shipped design instead made `/api/v1/captions` asynchronous (202 + `requestId`, real result delivered over the `GET /api/v1/events` SSE stream, see `plan_captions.md` Â§5/api/v1/Â§7), which addresses the same latency concern without a WebSocket upgrade.
+

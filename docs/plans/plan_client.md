@@ -1,14 +1,14 @@
----
+﻿---
 id: plan/client
 title: "Web GUI Client (lcyt-web)"
 status: implemented
-summary: "Original MVP plan for lcyt-web (file management, session lifecycle, STT integration, embed widgets); shipped as described here as a vanilla-JS SPA, then rewritten onto React + wouter — see plan_ui.md and packages/lcyt-web/CLAUDE.md for the current architecture."
+summary: "Original MVP plan for lcyt-web (file management, session lifecycle, STT integration, embed widgets); shipped as described here as a vanilla-JS SPA, then rewritten onto React + wouter â€” see plan_ui.md and packages/lcyt-web/CLAUDE.md for the current architecture."
 related: [plan_ui.md, plan_stt.md]
 ---
 
-# Web GUI Client Plan — `lcyt-web`
+# Web GUI Client Plan â€” `lcyt-web`
 
-> **Historical note:** this document is the original MVP plan and describes a **vanilla JS, no-framework** implementation (see "Architecture" below). That plan was carried out and shipped, but `lcyt-web` was subsequently rewritten onto **React + Vite + wouter** (sidebar navigation, dozens of routed pages) across the v2/v3/v4 iterations documented in `plan_ui.md` — see `packages/lcyt-web/CLAUDE.md` for the current architecture and route table. The feature set this plan describes (file management, session lifecycle, STT integration) still exists in the current app, just not in the vanilla-JS file layout below. Phase 2 (browser STT) also shipped, superseded/extended by `plan_stt.md`.
+> **Historical note:** this document is the original MVP plan and describes a **vanilla JS, no-framework** implementation (see "Architecture" below). That plan was carried out and shipped, but `lcyt-web` was subsequently rewritten onto **React + Vite + wouter** (sidebar navigation, dozens of routed pages) across the v2/v3/v4 iterations documented in `plan_ui.md` â€” see `packages/lcyt-web/CLAUDE.md` for the current architecture and route table. The feature set this plan describes (file management, session lifecycle, STT integration) still exists in the current app, just not in the vanilla-JS file layout below. Phase 2 (browser STT) also shipped, superseded/extended by `plan_stt.md`.
 
 ## Overview
 
@@ -20,11 +20,11 @@ A browser-based GUI client that mirrors the UX of `lcyt-cli` fullscreen mode. It
 
 ### BackendCaptionSender Integration
 
-`packages/lcyt/src/backend-sender.js` already exists and uses the Fetch API — it is browser-compatible out of the box. The web client imports it directly. The sender handles:
+`packages/lcyt/src/backend-sender.js` already exists and uses the Fetch API â€” it is browser-compatible out of the box. The web client imports it directly. The sender handles:
 
-- `POST /live` — register a session (returns JWT)
-- `POST /captions` — send captions
-- `POST /sync` — NTP-style clock sync
+- `POST /live` â€” register a session (returns JWT)
+- `POST /captions` â€” send captions
+- `POST /sync` â€” NTP-style clock sync
 - JWT storage and per-request `Authorization` header
 
 ### File Management Model
@@ -69,40 +69,40 @@ Persisted (except token) in `localStorage`.
 packages/lcyt-web/
 ```
 
-A new npm workspace package. Built with **Vite** (zero-config, ESM-native, excellent for vanilla JS or lightweight frameworks). The app is pure **vanilla JS + HTML/CSS** (no React/Vue/Svelte) — the UI state is simple enough that a framework adds more weight than benefit for MVP.
+A new npm workspace package. Built with **Vite** (zero-config, ESM-native, excellent for vanilla JS or lightweight frameworks). The app is pure **vanilla JS + HTML/CSS** (no React/Vue/Svelte) â€” the UI state is simple enough that a framework adds more weight than benefit for MVP.
 
 ### Directory Structure
 
 ```
 packages/lcyt-web/
-├── index.html               # Single HTML entry point
-├── package.json
-├── vite.config.js
-├── src/
-│   ├── main.js              # App bootstrap
-│   ├── session.js           # BackendCaptionSender wrapper + session state
-│   ├── file-store.js        # File list, pointer management, localStorage sync
-│   ├── sent-log.js          # In-memory sent captions ring buffer
-│   ├── ui/
-│   │   ├── app-shell.js     # Top-level layout manager
-│   │   ├── drop-zone.js     # Drag-and-drop + file-picker component
-│   │   ├── file-tabs.js     # Tab bar for loaded files
-│   │   ├── caption-view.js  # Line list with active-line highlight + pointer
-│   │   ├── sent-panel.js    # Right panel: sent captions log
-│   │   ├── input-bar.js     # Bottom input bar + send button
-│   │   ├── status-bar.js    # Sequence, connection state, sync
-│   │   └── settings-modal.js # Stream key, API key, backend URL, sync
-│   └── styles/
-│       ├── reset.css
-│       ├── layout.css
-│       └── components.css
-└── public/
-    └── favicon.ico
+â”œâ”€â”€ index.html               # Single HTML entry point
+â”œâ”€â”€ package.json
+â”œâ”€â”€ vite.config.js
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ main.js              # App bootstrap
+â”‚   â”œâ”€â”€ session.js           # BackendCaptionSender wrapper + session state
+â”‚   â”œâ”€â”€ file-store.js        # File list, pointer management, localStorage sync
+â”‚   â”œâ”€â”€ sent-log.js          # In-memory sent captions ring buffer
+â”‚   â”œâ”€â”€ ui/
+â”‚   â”‚   â”œâ”€â”€ app-shell.js     # Top-level layout manager
+â”‚   â”‚   â”œâ”€â”€ drop-zone.js     # Drag-and-drop + file-picker component
+â”‚   â”‚   â”œâ”€â”€ file-tabs.js     # Tab bar for loaded files
+â”‚   â”‚   â”œâ”€â”€ caption-view.js  # Line list with active-line highlight + pointer
+â”‚   â”‚   â”œâ”€â”€ sent-panel.js    # Right panel: sent captions log
+â”‚   â”‚   â”œâ”€â”€ input-bar.js     # Bottom input bar + send button
+â”‚   â”‚   â”œâ”€â”€ status-bar.js    # Sequence, connection state, sync
+â”‚   â”‚   â””â”€â”€ settings-modal.js # Stream key, API key, backend URL, sync
+â”‚   â””â”€â”€ styles/
+â”‚       â”œâ”€â”€ reset.css
+â”‚       â”œâ”€â”€ layout.css
+â”‚       â””â”€â”€ components.css
+â””â”€â”€ public/
+    â””â”€â”€ favicon.ico
 ```
 
 ### Runtime Dependencies
 
-- `lcyt` (workspace: `../lcyt`) — for `BackendCaptionSender`
+- `lcyt` (workspace: `../lcyt`) â€” for `BackendCaptionSender`
 - Vite (dev + build)
 - No UI framework dependencies in MVP
 
@@ -111,27 +111,27 @@ packages/lcyt-web/
 ## Layout Design
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  lcyt-web  [● Connected]  Seq: 42  [⚙ Settings]                    │  ← header/status-bar
-├─────────────────────────┬───────────────────────────────────────────┤
-│ [file1.txt] [file2.txt] │                                           │  ← file-tabs (left) | sent-panel (right)
-├─────────────────────────┤  Sent Captions                           │
-│ ╔══════════════════════╗│  ─────────────────────────────────────   │
-│ ║  DROP FILES HERE     ║│  #42 [12:03:01] Hello world              │
-│ ║  (or click to open)  ║│  #41 [12:02:58] Good morning             │
-│ ╚══════════════════════╝│  #40 [12:02:51] Welcome to the stream    │
-│                         │                                           │
-│  caption-view           │                                           │
-│  ─────────────────────  │                                           │
-│    Line 1               │                                           │
-│    Line 2               │                                           │
-│  ► Line 3 (active)      │                                           │
-│    Line 4               │                                           │
-│    Line 5               │                                           │
-│                         │                                           │
-├─────────────────────────┴───────────────────────────────────────────┤
-│  > [input box — Enter: send current line | type: send custom]  [▶] │  ← input-bar
-└─────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚  lcyt-web  [â— Connected]  Seq: 42  [âš™ Settings]                    â”‚  â† header/status-bar
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚ [file1.txt] [file2.txt] â”‚                                           â”‚  â† file-tabs (left) | sent-panel (right)
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤  Sent Captions                           â”‚
+â”‚ â•”â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•—â”‚  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€   â”‚
+â”‚ â•‘  DROP FILES HERE     â•‘â”‚  #42 [12:03:01] Hello world              â”‚
+â”‚ â•‘  (or click to open)  â•‘â”‚  #41 [12:02:58] Good morning             â”‚
+â”‚ â•šâ•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â”‚  #40 [12:02:51] Welcome to the stream    â”‚
+â”‚                         â”‚                                           â”‚
+â”‚  caption-view           â”‚                                           â”‚
+â”‚  â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€  â”‚                                           â”‚
+â”‚    Line 1               â”‚                                           â”‚
+â”‚    Line 2               â”‚                                           â”‚
+â”‚  â–º Line 3 (active)      â”‚                                           â”‚
+â”‚    Line 4               â”‚                                           â”‚
+â”‚    Line 5               â”‚                                           â”‚
+â”‚                         â”‚                                           â”‚
+â”œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¤
+â”‚  > [input box â€” Enter: send current line | type: send custom]  [â–¶] â”‚  â† input-bar
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 When no file is loaded, the left panel shows the drop-zone prominently. Once files are loaded, the drop-zone collapses to a small "+" tab in the tab bar and the caption-view takes over.
@@ -142,7 +142,7 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 
 ---
 
-### Milestone 1 — Project Scaffold & Backend Connection
+### Milestone 1 â€” Project Scaffold & Backend Connection
 
 **Goal:** Runnable skeleton in the browser that can establish a session with `lcyt-backend`.
 
@@ -155,28 +155,28 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 
 2. **Vite configuration**
    - `vite.config.js`: resolve `lcyt` from workspace, set `root: '.'`, `build.outDir: 'dist'`
-   - Configure Vite dev server to proxy `/live`, `/captions`, `/sync` to backend (avoids CORS in dev)
+   - Configure Vite dev server to proxy `/api/v1/live`, `/api/v1/captions`, `/api/v1/sync` to backend (avoids CORS in dev)
 
 3. **HTML skeleton**
-   - `index.html`: basic semantic structure — `<header>`, `<main>`, `<footer>` placeholders
+   - `index.html`: basic semantic structure â€” `<header>`, `<main>`, `<footer>` placeholders
    - Link `src/main.js` as ES module
 
 4. **CSS reset and layout grid**
    - `reset.css`: box-sizing, margin/padding normalization
-   - `layout.css`: CSS grid — two-column main (60/40), fixed header, fixed footer input bar
+   - `layout.css`: CSS grid â€” two-column main (60/40), fixed header, fixed footer input bar
 
 5. **Session module (`src/session.js`)**
    - Wrap `BackendCaptionSender` from `lcyt`
-   - `connect({ backendUrl, apiKey, streamKey })` — calls `sender.start()`, stores returned JWT/sessionId/sequence
-   - `disconnect()` — calls `sender.end()` (DELETE /live)
-   - `send(text)` / `sendBatch(captions)` — delegates to sender
-   - `sync()` — delegates to sender
+   - `connect({ backendUrl, apiKey, streamKey })` â€” calls `sender.start()`, stores returned JWT/sessionId/sequence
+   - `disconnect()` â€” calls `sender.end()` (DELETE /live)
+   - `send(text)` / `sendBatch(captions)` â€” delegates to sender
+   - `sync()` â€” delegates to sender
    - Persist `{ backendUrl, apiKey, streamKey }` to `localStorage`
    - Emit custom DOM events on state changes: `lcyt:connected`, `lcyt:disconnected`, `lcyt:sequence-updated`
 
 6. **Settings modal (basic)**
    - Input fields: Backend URL, API Key, Stream Key
-   - "Connect" button — calls `session.connect()`
+   - "Connect" button â€” calls `session.connect()`
    - "Disconnect" button
    - Load persisted values from `localStorage` on open
    - Show connection error messages inline
@@ -194,7 +194,7 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 
 ---
 
-### Milestone 2 — File Loading & Multi-File Management
+### Milestone 2 â€” File Loading & Multi-File Management
 
 **Goal:** Users can load text files, see their contents line by line, and navigate between files.
 
@@ -202,11 +202,11 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 
 1. **File store (`src/file-store.js`)**
    - Internal array of file objects: `{ id, name, lines, pointer }`
-   - `loadFile(file: File)` — reads via `FileReader`, splits on `\n`, filters blank lines, assigns UUID
-   - `setActive(id)` — marks a file as active
-   - `getActive()` — returns current active file object
-   - `setPointer(id, lineIndex)` — updates pointer for a file
-   - `advancePointer(id)` — increments pointer (wraps at end)
+   - `loadFile(file: File)` â€” reads via `FileReader`, splits on `\n`, filters blank lines, assigns UUID
+   - `setActive(id)` â€” marks a file as active
+   - `getActive()` â€” returns current active file object
+   - `setPointer(id, lineIndex)` â€” updates pointer for a file
+   - `advancePointer(id)` â€” increments pointer (wraps at end)
    - Pointer positions persisted to `localStorage` under key `lcyt-pointers` as `{ [filename]: lineIndex }`
    - On load, restore pointer from localStorage if filename matches
    - Emit `lcyt:files-changed` and `lcyt:active-changed` events
@@ -222,16 +222,16 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 3. **File tabs component (`src/ui/file-tabs.js`)**
    - Render one tab per loaded file showing filename (truncated to 20 chars)
    - Active tab is visually distinct
-   - Click tab → `fileStore.setActive(id)`
-   - "×" close button on each tab → remove file from store (confirm if file has pointer > 0)
-   - "+" tab at end → triggers file picker (same as drop-zone click)
+   - Click tab â†’ `fileStore.setActive(id)`
+   - "Ã—" close button on each tab â†’ remove file from store (confirm if file has pointer > 0)
+   - "+" tab at end â†’ triggers file picker (same as drop-zone click)
    - Listen to `lcyt:files-changed` to re-render
 
 4. **Caption view component (`src/ui/caption-view.js`)**
    - Renders lines of active file as `<li>` elements inside a scrollable `<ul>`
-   - Active line gets class `caption-line--active` with left arrow indicator `►`
+   - Active line gets class `caption-line--active` with left arrow indicator `â–º`
    - Auto-scroll: keep active line visible (`scrollIntoView({ block: 'center' })`)
-   - Click on any line → `fileStore.setPointer(activeId, clickedIndex)` (allows manual repositioning)
+   - Click on any line â†’ `fileStore.setPointer(activeId, clickedIndex)` (allows manual repositioning)
    - Listen to `lcyt:active-changed` and `lcyt:files-changed` to re-render
    - Performance: for files >1000 lines, use virtual scrolling (render only visible window + buffer)
 
@@ -241,37 +241,37 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
    - When switching files, caption-view scrolls to that file's saved pointer
 
 6. **Manual integration test**
-   - Drag a `.txt` file — tabs appear, content displayed, pointer at line 0
-   - Load second file — two tabs visible, switching between them restores pointer per file
-   - Reload page — pointer positions restored from localStorage
+   - Drag a `.txt` file â€” tabs appear, content displayed, pointer at line 0
+   - Load second file â€” two tabs visible, switching between them restores pointer per file
+   - Reload page â€” pointer positions restored from localStorage
 
 ---
 
-### Milestone 3 — Caption Sending
+### Milestone 3 â€” Caption Sending
 
 **Goal:** Sending captions to YouTube via the backend, with the same UX logic as lcyt-cli.
 
 #### Steps
 
 1. **Input bar component (`src/ui/input-bar.js`)**
-   - `<input type="text" placeholder="Enter: send current line | type text: send custom">` + `<button>▶</button>`
+   - `<input type="text" placeholder="Enter: send current line | type text: send custom">` + `<button>â–¶</button>`
    - On Enter key or button click:
-     - If input is empty → send-pointer mode (see step 3)
-     - If input has text → send-custom mode (see step 4)
+     - If input is empty â†’ send-pointer mode (see step 3)
+     - If input has text â†’ send-custom mode (see step 4)
    - Up/Down arrow keys navigate pointer (prevent default page scroll when focused)
    - Input clears after successful send
    - Disable input and button when not connected
 
 2. **Sent log (`src/sent-log.js`)**
    - Ring buffer of max 500 entries: `{ sequence, text, timestamp }` (ISO string, local)
-   - `add(entry)` — push to buffer, emit `lcyt:sent-updated`
-   - `getAll()` — return array newest-first
+   - `add(entry)` â€” push to buffer, emit `lcyt:sent-updated`
+   - `getAll()` â€” return array newest-first
 
 3. **Send-pointer mode**
    - Get active file's current pointer line
    - If no file loaded or file is empty: do nothing (flash input bar red briefly)
-   - Call `session.send(lineText)` → on success:
-     - `fileStore.advancePointer(activeId)` — caption-view scrolls to new active line
+   - Call `session.send(lineText)` â†’ on success:
+     - `fileStore.advancePointer(activeId)` â€” caption-view scrolls to new active line
      - `sentLog.add({ sequence, text, timestamp })`
      - Emit `lcyt:sequence-updated`
    - On error: show inline error in status bar
@@ -289,21 +289,21 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
    - Listen to `lcyt:sent-updated` to re-render
 
 6. **Sequence display**
-   - Status bar shows `Seq: <number>` — updated on `lcyt:sequence-updated`
+   - Status bar shows `Seq: <number>` â€” updated on `lcyt:sequence-updated`
 
 7. **Error handling**
-   - Network errors: "Network error — retrying…" in status bar (no auto-retry in MVP)
-   - HTTP 401: "Session expired — please reconnect" + auto-disconnect
+   - Network errors: "Network error â€” retryingâ€¦" in status bar (no auto-retry in MVP)
+   - HTTP 401: "Session expired â€” please reconnect" + auto-disconnect
    - HTTP 4xx/5xx from YouTube (passed through): show code + message in status bar
 
 8. **Manual integration test**
-   - Load file, connect, press Enter repeatedly — lines advance, sent panel fills, sequence increments
-   - Type custom text, press Enter — sent panel shows it, pointer unchanged
-   - Disconnect — input disables; reconnect — sending resumes
+   - Load file, connect, press Enter repeatedly â€” lines advance, sent panel fills, sequence increments
+   - Type custom text, press Enter â€” sent panel shows it, pointer unchanged
+   - Disconnect â€” input disables; reconnect â€” sending resumes
 
 ---
 
-### Milestone 4 — Settings, Stream Key, and Persistence
+### Milestone 4 â€” Settings, Stream Key, and Persistence
 
 **Goal:** Full settings panel, persistent configuration, and operational controls.
 
@@ -317,7 +317,7 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
    - Show last-connected time
 
 2. **Stream key masking**
-   - Stream key and API key fields show `●●●●●●●●●●●●` by default
+   - Stream key and API key fields show `â—â—â—â—â—â—â—â—â—â—â—â—` by default
    - Eye icon to reveal/hide
    - Values never logged to console
 
@@ -331,36 +331,36 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
    - "Heartbeat" button: calls `POST /captions` with empty heartbeat; shows round-trip time
 
 5. **Keyboard shortcut: open settings**
-   - `Ctrl+,` or `⌘+,` opens settings modal
+   - `Ctrl+,` or `âŒ˜+,` opens settings modal
    - `Escape` closes modal
 
 6. **Auto-reconnect on page load**
    - If persisted config exists and `autoConnect` flag is set, attempt `session.connect()` on startup
-   - Show "Connecting…" in status bar during attempt
+   - Show "Connectingâ€¦" in status bar during attempt
    - Opt-in checkbox in settings: "Auto-connect on startup"
 
 7. **Manual integration test**
-   - Reload page — config fields populated from localStorage
+   - Reload page â€” config fields populated from localStorage
    - Auto-connect connects automatically
    - Sync Now updates syncOffset display
 
 ---
 
-### Milestone 5 — Polish, Keyboard Navigation, and Packaging
+### Milestone 5 â€” Polish, Keyboard Navigation, and Packaging
 
 **Goal:** Production-ready MVP suitable for actual use during a live stream.
 
 #### Steps
 
 1. **Keyboard navigation (when caption-view is focused)**
-   - `↑` / `↓` — move pointer up/down one line
-   - `Page Up` / `Page Down` — move pointer 10 lines
-   - `Home` / `End` — jump to first/last line
-   - `Tab` — cycle between loaded file tabs
+   - `â†‘` / `â†“` â€” move pointer up/down one line
+   - `Page Up` / `Page Down` â€” move pointer 10 lines
+   - `Home` / `End` â€” jump to first/last line
+   - `Tab` â€” cycle between loaded file tabs
    - Keyboard focus ring visible on caption-view (accessibility)
 
 2. **Visual pointer indicator**
-   - Active line has `►` in the left gutter, distinct background color, and bold text
+   - Active line has `â–º` in the left gutter, distinct background color, and bold text
    - Previous-active line gets a faint "sent" indicator for 2 seconds after sending
 
 3. **Scroll behavior**
@@ -403,7 +403,7 @@ When no file is loaded, the left panel shows the drop-zone prominently. Once fil
 
 ---
 
-## Phase 2 — Browser Audio → Google STT → Captions
+## Phase 2 â€” Browser Audio â†’ Google STT â†’ Captions
 
 ### Overview
 
@@ -414,15 +414,15 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 ### New Components
 
 #### Frontend
-- **Audio source selector** — microphone enumeration via `MediaDevices.enumerateDevices()`
-- **Audio capture** — `getUserMedia` → `AudioWorkletNode` (PCM extraction) → WebSocket/binary streaming
-- **STT result panel** — live interim/final transcript display alongside caption-view
-- **STT controls** — start/stop listening, language selector, confidence threshold slider
+- **Audio source selector** â€” microphone enumeration via `MediaDevices.enumerateDevices()`
+- **Audio capture** â€” `getUserMedia` â†’ `AudioWorkletNode` (PCM extraction) â†’ WebSocket/binary streaming
+- **STT result panel** â€” live interim/final transcript display alongside caption-view
+- **STT controls** â€” start/stop listening, language selector, confidence threshold slider
 
 #### Backend additions
-- **`POST /stt/start`** — create Google STT streaming session, return WebSocket URL or session token
-- **`WS /stt/stream`** — WebSocket endpoint: receives binary PCM audio from client, relays to Google STT, emits transcript events back to client
-- **`POST /stt/stop`** — close STT session
+- **`POST /stt/start`** â€” create Google STT streaming session, return WebSocket URL or session token
+- **`WS /stt/stream`** â€” WebSocket endpoint: receives binary PCM audio from client, relays to Google STT, emits transcript events back to client
+- **`POST /stt/stop`** â€” close STT session
 
 #### Python backend additions (mirror)
 - Same `stt` Blueprint with identical API
@@ -433,7 +433,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 ---
 
-### P2-Milestone 1 — Audio Source Selection UI
+### P2-Milestone 1 â€” Audio Source Selection UI
 
 **Goal:** Users can enumerate audio sources and grant microphone permission.
 
@@ -442,24 +442,24 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 1. Add "Audio" section to settings modal with a "Sources" sub-panel
 2. On open, call `navigator.mediaDevices.enumerateDevices()` and filter to `audioinput`
 3. Render a `<select>` of available microphones (label + deviceId)
-4. "Request permission" button — calls `getUserMedia({ audio: { deviceId } })` and immediately stops tracks (permission prompt only)
+4. "Request permission" button â€” calls `getUserMedia({ audio: { deviceId } })` and immediately stops tracks (permission prompt only)
 5. Show permission status: Granted / Denied / Prompt
 6. Persist selected `deviceId` to `localStorage`
 7. Show audio level meter (live `AnalyserNode` visualization) when a source is selected and active
 
 ---
 
-### P2-Milestone 2 — Browser Microphone Capture & PCM Pipeline
+### P2-Milestone 2 â€” Browser Microphone Capture & PCM Pipeline
 
 **Goal:** Capture microphone audio and convert to raw PCM suitable for Google STT.
 
 #### Steps
 
 1. Create `src/audio/capture.js`
-   - `startCapture(deviceId)` — `getUserMedia` → `AudioContext` → `MediaStreamSourceNode`
+   - `startCapture(deviceId)` â€” `getUserMedia` â†’ `AudioContext` â†’ `MediaStreamSourceNode`
    - Attach `AudioWorkletProcessor` (inline WASM or JS) to extract raw 16-bit PCM at 16kHz
    - PCM chunks emitted as `ArrayBuffer` events at ~100ms intervals
-   - `stopCapture()` — stops tracks, closes AudioContext
+   - `stopCapture()` â€” stops tracks, closes AudioContext
 
 2. Create `AudioWorklet` processor (`src/audio/pcm-processor.js`)
    - Input: float32 stereo/mono frames at device sample rate
@@ -468,15 +468,15 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
    - Post message to main thread
 
 3. Audio level meter component (`src/ui/audio-meter.js`)
-   - `AnalyserNode` → `getByteTimeDomainData` → canvas bar render
+   - `AnalyserNode` â†’ `getByteTimeDomainData` â†’ canvas bar render
    - Updates at 60fps via `requestAnimationFrame`
-   - Show RMS level as colored bar (green → yellow → red)
+   - Show RMS level as colored bar (green â†’ yellow â†’ red)
 
 4. Unit test: capture 1 second of silence, verify output is `Int16Array` at 16kHz
 
 ---
 
-### P2-Milestone 3 — Google STT Backend Integration
+### P2-Milestone 3 â€” Google STT Backend Integration
 
 **Goal:** Backend can open and manage a Google Cloud STT streaming session.
 
@@ -485,12 +485,12 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 1. Add `@google-cloud/speech` (Node.js) or `google-cloud-speech` (Python) dependency to `lcyt-backend`
 2. Add `GOOGLE_APPLICATION_CREDENTIALS` or `GOOGLE_API_KEY` env var support
 3. Create `src/routes/stt.js` (Node.js) / `routes/stt.py` (Python):
-   - `POST /stt/start` — validate JWT, create STT streaming client with config (language, encoding, sampleRate), return `{ sttSessionId }`
-   - `WS /stt/stream/:sttSessionId` — WebSocket handler:
+   - `POST /stt/start` â€” validate JWT, create STT streaming client with config (language, encoding, sampleRate), return `{ sttSessionId }`
+   - `WS /stt/stream/:sttSessionId` â€” WebSocket handler:
      - Validate JWT from query param or first message
      - On binary message: pipe PCM chunk to STT stream
      - On STT response: emit `{ type: 'interim'|'final', transcript, confidence }` as JSON text frame
-   - `POST /stt/stop/:sttSessionId` — close STT stream, clean up
+   - `POST /stt/stop/:sttSessionId` â€” close STT stream, clean up
 
 4. Add WebSocket support to backend server (`ws` library for Node.js, `flask-sock` for Python)
 5. Session store: track active STT sessions alongside caption sessions, same TTL cleanup
@@ -499,20 +499,20 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 ---
 
-### P2-Milestone 4 — Frontend STT WebSocket Client
+### P2-Milestone 4 â€” Frontend STT WebSocket Client
 
 **Goal:** Browser connects to backend STT relay, streams audio, receives transcripts.
 
 #### Steps
 
 1. Create `src/audio/stt-client.js`
-   - `connect(backendUrl, token)` — POST `/stt/start`, then open WebSocket to `/stt/stream/:id`
-   - `sendChunk(pcmBuffer)` — send `ArrayBuffer` binary frame
+   - `connect(backendUrl, token)` â€” POST `/api/v1/stt/api/v1/start`, then open WebSocket to `/api/v1/stt/api/v1/stream/api/v1/:id`
+   - `sendChunk(pcmBuffer)` â€” send `ArrayBuffer` binary frame
    - Events: `interim`, `final`, `error`, `closed`
-   - `disconnect()` — POST `/stt/stop`, close WebSocket
+   - `disconnect()` â€” POST `/api/v1/stt/api/v1/stop`, close WebSocket
 
 2. Wire capture pipeline to STT client:
-   - `capture.on('pcm')` → `sttClient.sendChunk(pcmBuffer)`
+   - `capture.on('pcm')` â†’ `sttClient.sendChunk(pcmBuffer)`
 
 3. STT result panel (`src/ui/stt-panel.js`)
    - Shows interim transcript in italic, greyed text (updates in place)
@@ -521,14 +521,14 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
    - Auto-send mode toggle: final results automatically sent to `session.send()`
 
 4. Auto-send pipeline:
-   - When auto-send enabled: `sttClient.on('final')` → `session.send(transcript)` → `sentLog.add(...)`
+   - When auto-send enabled: `sttClient.on('final')` â†’ `session.send(transcript)` â†’ `sentLog.add(...)`
    - Debounce: if another `final` arrives within 500ms, concatenate before sending (avoids choppy captions)
 
-5. STT status indicator in status bar: 🎤 (listening) / — (idle)
+5. STT status indicator in status bar: ðŸŽ¤ (listening) / â€” (idle)
 
 ---
 
-### P2-Milestone 5 — STT Configuration & Quality Controls
+### P2-Milestone 5 â€” STT Configuration & Quality Controls
 
 **Goal:** Expose meaningful Google STT parameters in the UI.
 
@@ -539,10 +539,10 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
    - Punctuation: enable/disable automatic punctuation
    - Profanity filter: enable/disable
    - Model selector: `latest_long`, `latest_short`, `telephony`, `video` (Google STT model names)
-   - Max alternatives slider (1–5)
+   - Max alternatives slider (1â€“5)
    - Word confidence: show per-word confidence in STT panel if > 1 alternative
 
-2. Confidence threshold slider (0.0–1.0, default 0.7)
+2. Confidence threshold slider (0.0â€“1.0, default 0.7)
    - Interim results below threshold shown in red; not auto-sent (see P2-Milestone 4, step 4)
    - Final results below threshold shown with warning indicator
 
@@ -554,7 +554,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 ---
 
-### P2-Milestone 6 — Audio Monitoring & Debug Panel
+### P2-Milestone 6 â€” Audio Monitoring & Debug Panel
 
 **Goal:** Operational visibility into the audio/STT pipeline for production use.
 
@@ -570,7 +570,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 3. Auto-reconnect for STT WebSocket:
    - On disconnect: exponential backoff reconnect (1s, 2s, 4s, max 30s)
-   - Re-POST `/stt/start` to get new session, then reconnect WebSocket
+   - Re-POST `/api/v1/stt/api/v1/start` to get new session, then reconnect WebSocket
    - Resume streaming without user intervention
 
 4. Export transcript: "Save transcript" button exports the full `sttPanel` history as `.txt`
@@ -581,7 +581,7 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 
 - Multi-user collaboration (one client per session)
 - Caption editing/deletion after send
-- ~~YouTube API integration (stream status polling) — out of scope for web client MVP; may add in a patch~~ — **Done** (`tmp_plan_tier3.md` Item 5): `YouTubeTab.jsx` polls `listScheduledBroadcasts()` every 20s while signed in, paused via `visibilitychange` when the tab is backgrounded.
+- ~~YouTube API integration (stream status polling) â€” out of scope for web client MVP; may add in a patch~~ â€” **Done** (`tmp_plan_tier3.md` Item 5): `YouTubeTab.jsx` polls `listScheduledBroadcasts()` every 20s while signed in, paused via `visibilitychange` when the tab is backgrounded.
 - Mobile app (PWA is fine as a side effect, not a primary target)
 - Offline mode
 
@@ -596,3 +596,4 @@ Phase 2 adds a real-time speech-to-text pipeline: capture audio from a browser m
 3. **AudioWorklet cross-origin isolation**: `AudioWorklet` requires `Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp` headers. The backend must set these when serving the static client, or the workaround is to use `ScriptProcessorNode` (deprecated but works without COOP/COEP). Evaluate at P2-M2 time.
 
 4. **Google STT billing**: Phase 2 requires a Google Cloud project with STT API enabled and billing configured. The backend handles credentials; the frontend only sends audio.
+

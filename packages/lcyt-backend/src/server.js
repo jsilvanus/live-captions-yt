@@ -1083,7 +1083,7 @@ if (musicManager) {
 }
 
 // Mount all API routes under /api prefix
-app.use('/api', apiRouter);
+app.use('/api/v1', apiRouter);
 
 // ---------------------------------------------------------------------------
 // SPA fallback (must be LAST, after all API routes)

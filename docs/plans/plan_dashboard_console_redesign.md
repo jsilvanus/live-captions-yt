@@ -1,8 +1,8 @@
----
+﻿---
 id: plan/dashboard-console-redesign
 title: "Dashboard / Console Redesign"
 status: implemented
-summary: "Restructures lcyt-web's information architecture around a Claude Design mockup: Broadcast becomes the operate surface (Live + Settings tabs), root route becomes a contextual project summary, /setup becomes a persistent device/service catalog, plus new Team/Assets pages and extended Account/Admin. Frontend-only — zero backend changes; every real gap is a visible, disabled 'Coming soon' element."
+summary: "Restructures lcyt-web's information architecture around a Claude Design mockup: Broadcast becomes the operate surface (Live + Settings tabs), root route becomes a contextual project summary, /setup becomes a persistent device/service catalog, plus new Team/Assets pages and extended Account/Admin. Frontend-only â€” zero backend changes; every real gap is a visible, disabled 'Coming soon' element."
 ---
 
 # Plan: Dashboard / Console Redesign
@@ -12,7 +12,7 @@ summary: "Restructures lcyt-web's information architecture around a Claude Desig
 A Claude Design mockup (`Dashboard.dc.html`, project `LCYT`) proposed a new IA: a
 "Projects" hub, a per-project device/service "Setup" catalog, a "Team"/Org screen,
 a richer "Profile", an "Assets" library, and a restyled Admin panel. This plan
-implements that IA against the real app, making every mockup category visible —
+implements that IA against the real app, making every mockup category visible â€”
 while clearly flagging (not faking) anything where the backend doesn't support it
 yet.
 
@@ -20,9 +20,9 @@ Key finding from the codebase survey: **no "Organization/Team" data model exists
 anywhere in the backend** (all membership is per-project, via `project_members`).
 This is the largest structural gap between the mockup (which assumes an org
 owning multiple projects) and reality. Much of the rest of the mockup is
-**already implemented, just scattered across separate pages** — Cameras/Mixers/
+**already implemented, just scattered across separate pages** â€” Cameras/Mixers/
 Encoders/Bridges (`lcyt-production`), Egress/stream targets (`lcyt-rtmp`),
-Viewports (`lcyt-dsk`), STT config, per-key Storage override — these needed
+Viewports (`lcyt-dsk`), STT config, per-key Storage override â€” these needed
 **consolidation**, not new backend work.
 
 ## Routing model (supersedes the mockup's literal nesting)
@@ -33,33 +33,33 @@ Viewports (`lcyt-dsk`), STT config, per-key Storage override — these needed
   layer (`BROADCAST_PRESETS`) on top of the existing fully-customizable
   drag/resize edit mode. The old Encoder/YouTube/Stream-relay config
   (`BroadcastModal`) becomes the **Settings** tab of the same page.
-- **Root route `/` is now contextual**: an active/connected project → that
+- **Root route `/` is now contextual**: an active/connected project â†’ that
   project's summary view (`ProjectSettingsPage`, Summary tab, implicit active
-  session key); no active project + `login` feature present → redirect to
+  session key); no active project + `login` feature present â†’ redirect to
   `/projects`; no active project + no `login` feature (minimal-mode backend,
-  no multi-project concept) → render the Live tab directly.
-- The "Dashboard" nav item is removed — its destination and meaning are fully
+  no multi-project concept) â†’ render the Live tab directly.
+- The "Dashboard" nav item is removed â€” its destination and meaning are fully
   absorbed by `/` (project summary) and `/broadcast` (live operate).
 - The Broadcast nav item is no longer gated on `feature:'rtmp'` (it now hosts
   the always-relevant caption-operate surface); only the RTMP-relay portion of
   Settings stays conditioned on the `rtmp` feature internally.
 
-## Design ⇄ Implementation Gap Matrix
+## Design â‡„ Implementation Gap Matrix
 
 | Design category | Backend status | Treatment in this pass |
 |---|---|---|
 | Projects list | Exists (`ProjectsPage.jsx`) | Kept; "Manage" now navigates to `/projects/:key` |
 | Project Settings (summary/features/team/danger) | Exists, nested in a modal | Un-nested into routed `ProjectSettingsPage`; also serves as `/`'s contextual summary |
 | Setup: Cameras/Mixers/Encoders/Bridges | Fully implemented | Consolidated into `SetupHubPage`; CRUD logic extracted into `*Manager` components reused by both the existing standalone routes and the hub |
-| Setup: Egress (stream targets) | Fully implemented (4-slot) | Summary card linking to Broadcast → Settings |
+| Setup: Egress (stream targets) | Fully implemented (4-slot) | Summary card linking to Broadcast â†’ Settings |
 | Setup: Ingestion | Implicit flag only, no dedicated entity | Visible, status-only card, "Coming soon" for dedicated config |
 | Setup: Web Radio | Flag + read-only status only | Visible, status-only card, "Coming soon" for config |
-| Setup: Viewports | Fully implemented | Summary card linking to Graphics → Viewports |
-| Setup: Caption targets | No backend (localStorage only) | Visible card linking to CC → Targets, flagged client-only |
+| Setup: Viewports | Fully implemented | Summary card linking to Graphics â†’ Viewports |
+| Setup: Caption targets | No backend (localStorage only) | Visible card linking to CC â†’ Targets, flagged client-only |
 | Setup: Languages/translation | No backend (localStorage only) | Visible card linking to Translations page, flagged client-only |
 | Setup: STT service | Fully implemented (`GET/PUT /stt/config`) | Embeds existing `SttPanel` wired to the real per-key config endpoint |
 | Setup: Storage (S3/WebDAV) | Real endpoint (`GET/PUT /file/storage-config`), feature-gated, no prior frontend | New minimal panel wired to the real endpoint |
-| Setup: AI Models (tracker/describer/assistant) | Partial — one embedding slot only (`/ai/config`) | Current slot shown; 3-role split marked "Coming soon" |
+| Setup: AI Models (tracker/describer/assistant) | Partial â€” one embedding slot only (`/ai/config`) | Current slot shown; 3-role split marked "Coming soon" |
 | Setup: API Connectors | Implemented (`lcyt-connectors` plugin, see `plan_api_connectors_variables.md`) | Live card with full CRUD inline (`ConnectorsSection`), same convention as Cameras/Bridges/Storage; deep-linkable via `/setup/connectors` |
 | Setup: Workflows | No backend; mockup itself stubs this | Visible, disabled, "Coming soon" |
 | Assets (captions/rundowns/graphics/translations/broadcasts/thumbnails) | No counting backend except Graphics (`GET /dsk/:key/templates`) | New `AssetsPage`; real count for Graphics, "not tracked yet" elsewhere (no fabricated 0s) |
@@ -73,11 +73,11 @@ Viewports (`lcyt-dsk`), STT config, per-key Storage override — these needed
 
 1. **No per-project route nesting.** The app operates on one "active session"
    project at a time. `ProjectSettingsPage` is the one exception that takes an
-   explicit `:key` (to manage *any* project from the list) — Setup/Assets/
+   explicit `:key` (to manage *any* project from the list) â€” Setup/Assets/
    Broadcast/Graphics stay keyed to the active session, as before.
 2. **`/setup` is repurposed** from the one-time onboarding wizard to the
    persistent device/service catalog (`SetupHubPage`). The wizard is not
-   deleted — reachable from the hub via "Run setup wizard".
+   deleted â€” reachable from the hub via "Run setup wizard".
 3. **Old standalone Production CRUD routes are kept working, not deleted.**
    Camera/Mixer/Encoder/Bridge list+dialog logic was extracted into `*Manager`
    components (`CamerasManager`, `MixersManager`, `EncodersManager`,
@@ -104,53 +104,53 @@ this pass (every corresponding UI element is visibly marked "Coming soon"):
 - Account deletion / data export endpoints (`AccountPage` danger zone).
 - Dedicated Ingestion entity and Web Radio config endpoints (today both are
   implicit flags/read-only status only).
-- Multi-role AI Models (tracker/describer/assistant) — only a single
+- Multi-role AI Models (tracker/describer/assistant) â€” only a single
   embedding-provider slot exists today (`ai_config` table / `/ai/config`).
 - Real org/Team data model spanning multiple projects with shared roles and
-  org-wide defaults — the single biggest structural gap identified; `/team`
+  org-wide defaults â€” the single biggest structural gap identified; `/team`
   and the Admin "Teams" tab are placeholders pending this work.
-- Admin "Site Features" — no global (cross-project) feature-flag concept
+- Admin "Site Features" â€” no global (cross-project) feature-flag concept
   exists server-side; today's feature flags are always per-project or
   per-user.
 
 ### Follow-up status (updated 2026-07-20)
 
 Most of the above has since shipped via later dedicated plans, and the
-corresponding UI is no longer a "Coming soon" stub — but not all of it, and
+corresponding UI is no longer a "Coming soon" stub â€” but not all of it, and
 two items only shipped partially:
 
-- **Name-edit endpoint** — shipped. `AccountPage`'s `AccountInfoForm` calls
+- **Name-edit endpoint** â€” shipped. `AccountPage`'s `AccountInfoForm` calls
   a real `PATCH /auth/me`.
-- **Account deletion / data export** — shipped. `DangerZonePanel` wires
+- **Account deletion / data export** â€” shipped. `DangerZonePanel` wires
   "Export data" / "Remove all data" / "Delete account" to real
   `GET /auth/me/export`, `DELETE /auth/me/data`, `DELETE /auth/me`.
-- **Ingestion + Web Radio config endpoints** — shipped via
+- **Ingestion + Web Radio config endpoints** â€” shipped via
   `plan_selfservice_config_backend.md` (`GET/PATCH /ingestion/config`,
   `GET/PUT /radio/config`), consumed by the Setup Hub's
   `setup-hub/IngestionSection.jsx` / `WebRadioSection.jsx`. One sub-piece
-  remains a deliberate `501` (`PATCH /ingestion/config`'s `dsk` sub-object —
+  remains a deliberate `501` (`PATCH /ingestion/config`'s `dsk` sub-object â€”
   no DSK-ingest gate exists yet), per that plan's own header.
-- **Multi-role AI Models** — partially shipped. `plan_ai_roles_framework.md`
+- **Multi-role AI Models** â€” partially shipped. `plan_ai_roles_framework.md`
   (status: in-progress) built the real backend (`GET /roles/catalog`,
   per-role `GET/PUT /roles/:roleCode/config`, per-key `ai_models` CRUD).
   The old frontend (`AiModelsSection.jsx`) only ever exposed a single
   hardcoded `assistant` role against a disconnected `ai_model_configs` table
   no inference code read from, and was deleted 2026-07-20 (ROADMAP.md
-  Tier 0) — Setup Assistant and Asset Control Assistant, and a real
+  Tier 0) â€” Setup Assistant and Asset Control Assistant, and a real
   registry-backed model picker for all roles, still have no frontend
   surface (`plan_ai_model_registry.md` Phase 3).
-- **Real org/Team data model** — mostly shipped. `plan_team_org_backend.md`
+- **Real org/Team data model** â€” mostly shipped. `plan_team_org_backend.md`
   (status: in-progress) added real `organizations`/`org_members` tables, and
   `TeamPage.jsx` now does real aggregation against `/orgs*` routes (no longer
   a placeholder). The gap keeping that plan in-progress: org membership today
-  grants no baseline access to individual member projects' resources — the
+  grants no baseline access to individual member projects' resources â€” the
   designed `getEffectiveProjectAccessLevel()` resolver doesn't exist yet.
-- **Admin "Site Features"** — shipped, via `plan_site_feature_policies.md`
+- **Admin "Site Features"** â€” shipped, via `plan_site_feature_policies.md`
   (status: implemented). `AdminSiteFeaturesPage.jsx` is wired to real
   `GET/PUT /admin/feature-policies` and `.../orgs/:id/feature-overrides`.
 
 Net: the claim that these items "have all since shipped via later plans" is
-accurate for four of six and an overstatement for two — AI Models and
+accurate for four of six and an overstatement for two â€” AI Models and
 Team/Org shipped at the backend-and-partial-frontend level, but their own
 plans are still `status: in-progress`, not `implemented`.
 
@@ -162,3 +162,4 @@ in summary: `BroadcastPage.jsx` + `broadcast/LiveTab.jsx` + presets,
 (new, replacing `ProjectDetailModal.jsx`), `TeamPage.jsx` (new),
 `AssetsPage.jsx` (new), `AccountPage.jsx` (extended), Admin tab shell +
 `AdminSiteFeaturesPage.jsx` / `AdminTeamsPage.jsx` (new stubs), `navConfig.js`.
+

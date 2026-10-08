@@ -1,19 +1,19 @@
-# lcyt-backend — Implementation Todo (Steps 5–16)
+﻿# lcyt-backend â€” Implementation Todo (Steps 5â€“16)
 
 ---
 id: todo_backend
 ---
 
-Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
+Steps 1â€“4 are complete (package scaffolding, db.js, admin CLI, store.js).
 
 ---
 
 ## Step 5: CORS middleware (`src/middleware/cors.js`)
 
 - [ ] Create `packages/lcyt-backend/src/middleware/` directory
-- [ ] Create `cors.js` — read `Origin` header from incoming request
+- [ ] Create `cors.js` â€” read `Origin` header from incoming request
 - [ ] For `POST /live` and `GET /health`: set permissive CORS headers (any origin allowed)
-- [ ] For `/keys` routes: omit all CORS headers (admin endpoints — server-side use only)
+- [ ] For `/api/v1/keys` routes: omit all CORS headers (admin endpoints â€” server-side use only)
 - [ ] For all other routes: look up sessions via `store.getByDomain(origin)`. If match found, set `Access-Control-Allow-Origin: <origin>`, `Allow-Methods`, `Allow-Headers`, `Allow-Credentials`
 - [ ] Handle `OPTIONS` preflight requests: respond `204` with appropriate CORS headers
 - [ ] Export middleware factory `createCorsMiddleware(store)`
@@ -34,7 +34,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 
 ---
 
-## Step 7: Routes — `/live` (`src/routes/live.js`)
+## Step 7: Routes â€” `/api/v1/live` (`src/api/v1/routes/api/v1/live.js`)
 
 - [ ] Create `packages/lcyt-backend/src/routes/live.js`
 - [ ] Export router factory `createLiveRouter(db, store, jwtSecret)`
@@ -64,7 +64,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 
 ---
 
-## Step 8: Routes — `/captions` (`src/routes/captions.js`)
+## Step 8: Routes â€” `/api/v1/captions` (`src/api/v1/routes/api/v1/captions.js`)
 
 - [ ] Create `packages/lcyt-backend/src/routes/captions.js`
 - [ ] Export router factory `createCaptionsRouter(store)`
@@ -82,7 +82,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 
 ---
 
-## Step 9: Routes — `/sync` (`src/routes/sync.js`)
+## Step 9: Routes â€” `/api/v1/sync` (`src/api/v1/routes/api/v1/sync.js`)
 
 - [ ] Create `packages/lcyt-backend/src/routes/sync.js`
 - [ ] Export router factory `createSyncRouter(store)`
@@ -97,7 +97,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 
 ---
 
-## Step 10: Admin middleware + `/keys` routes
+## Step 10: Admin middleware + `/api/v1/keys` routes
 
 - [ ] Create `packages/lcyt-backend/src/middleware/admin.js`
   - [ ] Read `X-Admin-Key` header
@@ -129,10 +129,10 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
   - [ ] Mount request logging middleware (method, path, status, duration)
   - [ ] Mount dynamic CORS middleware
   - [ ] Mount `/health` route: `GET /health` returns `{ ok: true, uptime, activeSessions }` (no auth)
-  - [ ] Mount `/live` router (factory with db, store, jwtSecret)
-  - [ ] Mount `/captions` router (factory with store, auth middleware injected)
-  - [ ] Mount `/sync` router (factory with store, auth middleware injected)
-  - [ ] Mount `/keys` router (factory with db)
+  - [ ] Mount `/api/v1/live` router (factory with db, store, jwtSecret)
+  - [ ] Mount `/api/v1/captions` router (factory with store, auth middleware injected)
+  - [ ] Mount `/api/v1/sync` router (factory with store, auth middleware injected)
+  - [ ] Mount `/api/v1/keys` router (factory with db)
   - [ ] Implement graceful shutdown: on `SIGTERM`/`SIGINT`, end all sessions, stop cleanup, close db, close server
   - [ ] Export `{ app, db, store }` for testing
 - [ ] Create `packages/lcyt-backend/src/index.js`:
@@ -166,7 +166,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 
 - [ ] Create `packages/lcyt/src/backend-sender.d.ts` with full type definitions (see plan)
 - [ ] Add `"./backend"` export entry to `packages/lcyt/package.json` (ESM import, CJS require, types)
-- [ ] Update `packages/lcyt/scripts/build-cjs.js` to transform `backend-sender.js` → `dist/backend-sender.cjs`
+- [ ] Update `packages/lcyt/scripts/build-cjs.js` to transform `backend-sender.js` â†’ `dist/backend-sender.cjs`
 - [ ] Run `npm run build` in `packages/lcyt` and verify `dist/backend-sender.cjs` is generated
 - [ ] Commit: "Step 13: Add BackendCaptionSender types and package exports"
 
@@ -184,8 +184,8 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 - [ ] Test `heartbeat()`: verify `GET /live` called, values updated
 - [ ] Test `end()`: verify `DELETE /live` called, isStarted false
 - [ ] Test `construct()` / `getQueue()` / `clearQueue()`: local queue operations, no network
-- [ ] Test error: invalid API key → `start()` throws `NetworkError`
-- [ ] Test error: network failure → throws
+- [ ] Test error: invalid API key â†’ `start()` throws `NetworkError`
+- [ ] Test error: network failure â†’ throws
 - [ ] Run `npm test` in `packages/lcyt` and verify all tests pass
 - [ ] Commit: "Step 14: Add BackendCaptionSender tests"
 
@@ -200,7 +200,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 - [ ] Create `store.test.js`: test `SessionStore` with mock senders
   - [ ] `create`, `get`, `has`, `getByDomain`, `remove`, `all`, `touch`, `size`, `stopCleanup`
   - [ ] Cleanup sweep: verify idle sessions removed and `sender.end()` called
-- [ ] Create `live.test.js`: integration tests for `/live` endpoints (mock `YoutubeLiveCaptionSender`)
+- [ ] Create `live.test.js`: integration tests for `/api/v1/live` endpoints (mock `YoutubeLiveCaptionSender`)
   - [ ] `POST /live`: success, idempotent re-register, missing fields, invalid API key
   - [ ] `GET /live`: success, no auth, session not found
   - [ ] `DELETE /live`: success, no auth, session not found
@@ -210,7 +210,7 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 - [ ] Create `sync.test.js`: integration tests for `POST /sync`
   - [ ] Success, sync failure (YouTube unreachable), no auth
 - [ ] Create `health.test.js`: test `GET /health` response shape
-- [ ] Create `keys.test.js`: integration tests for `/keys` CRUD endpoints
+- [ ] Create `keys.test.js`: integration tests for `/api/v1/keys` CRUD endpoints
   - [ ] List, create, get, patch, revoke (soft), delete (permanent); missing admin key, wrong key
 - [ ] Run `npm test` in `packages/lcyt-backend` and verify all tests pass
 - [ ] Commit: "Step 15: Add backend integration and unit tests"
@@ -224,3 +224,4 @@ Steps 1–4 are complete (package scaffolding, db.js, admin CLI, store.js).
 - [ ] Create `packages/lcyt-backend/Dockerfile` (multi-stage, node:20-slim; see plan for exact content)
 - [ ] Create `packages/lcyt-backend/.dockerignore` (exclude `node_modules`, `.git`, `test/`, `*.db`, `*.md`)
 - [ ] Commit: "Step 16: Add Dockerfile, .dockerignore, and start:backend script"
+

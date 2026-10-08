@@ -1,21 +1,21 @@
----
+﻿---
 id: api/files
-title: "/file — Caption File Management"
+title: "/api/v1/file â€” Caption File Management"
 methods: [GET, DELETE]
 auth: [bearer]
 ---
 
-# /file — Caption File Management
+# /file â€” Caption File Management
 
 List, download, and delete caption and translation files that were saved on the backend during a session.
 
 Backend file saving is only active for API keys that have `backend_file_enabled = true`. By default this is disabled (free-tier keys). An admin can enable it via `PATCH /keys/:key` with `{ "backend_file_enabled": true }`.
 
-All `/file` routes are rate-limited to **60 requests per minute** per IP.
+All `/api/v1/file` routes are rate-limited to **60 requests per minute** per IP.
 
 ---
 
-## `GET /file` — List Files
+## `GET /file` â€” List Files
 
 Return all caption files stored for the authenticated API key.
 
@@ -28,7 +28,7 @@ GET /file
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -68,9 +68,9 @@ Authorization: Bearer <token>
 
 ---
 
-## `GET /file/:id` — Download File
+## `GET /file/:id` â€” Download File
 
-Download a specific caption file. Supports the `?token=` query parameter for use in direct download links (e.g. `<a href="/file/1?token=...">Download</a>`).
+Download a specific caption file. Supports the `?token=` query parameter for use in direct download links (e.g. `<a href="/api/v1/file/api/v1/1?token=...">Download</api/v1/a>`).
 
 **Authentication:** Bearer JWT **or** `?token=<jwt>` query parameter
 
@@ -87,7 +87,7 @@ Or as a direct link:
 GET /file/1?token=<jwt>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 The file is returned as a file download with the appropriate `Content-Type`:
 
@@ -109,7 +109,7 @@ The `Content-Disposition` header is set to `attachment; filename="<filename>"`.
 
 ---
 
-## `DELETE /file/:id` — Delete File
+## `DELETE /file/:id` â€” Delete File
 
 Delete a caption file. Removes both the database record and the file from disk.
 
@@ -122,7 +122,7 @@ DELETE /file/1
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 { "ok": true }
@@ -148,9 +148,9 @@ Files are stored under `$FILES_DIR/<sanitised-api-key>/` on the server. The file
 ```
 
 For example:
-- `2024-01-01-a1b2c3d4-fi_FI.txt` — Finnish translation in YouTube format
-- `2024-01-01-a1b2c3d4-original.txt` — Original language in YouTube format
-- `2024-01-01-a1b2c3d4-en_US.vtt` — English in WebVTT format
+- `2024-01-01-a1b2c3d4-fi_FI.txt` â€” Finnish translation in YouTube format
+- `2024-01-01-a1b2c3d4-original.txt` â€” Original language in YouTube format
+- `2024-01-01-a1b2c3d4-en_US.vtt` â€” English in WebVTT format
 
 Files are appended as captions arrive during the session. A new file is created for each unique combination of session, language, and format.
 
@@ -172,7 +172,7 @@ Content-Type: application/json
 
 The `backend_file_enabled` field is included in all key read responses (`GET /keys` and `GET /keys/:key`).
 
-See [`/keys`](./keys.md) for full API key management reference.
+See [`/api/v1/keys`](./api/v1/keys.md) for full API key management reference.
 
 ---
 
@@ -181,3 +181,4 @@ See [`/keys`](./keys.md) for full API key management reference.
 | Variable | Default | Description |
 |---|---|---|
 | `FILES_DIR` | `/data/files` | Base directory where caption files are stored. Each API key gets its own subdirectory. |
+

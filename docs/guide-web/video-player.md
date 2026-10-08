@@ -1,25 +1,25 @@
----
+﻿---
 title: Multilingual Video Player
 order: 9
 ---
 
 # Multilingual Video Player
 
-When you configure a **viewer target** in the CC → Targets tab, the backend automatically generates an embeddable video player at:
+When you configure a **viewer target** in the CC â†’ Targets tab, the backend automatically generates an embeddable video player at:
 
 ```
 https://api.example.com/video/<viewer-key>
 ```
 
-This player combines your live video stream with real-time subtitle tracks in every language you have configured under CC → Translation. Viewers can select their preferred language using their browser's **built-in CC (closed captions) button** — no custom controls are needed.
+This player combines your live video stream with real-time subtitle tracks in every language you have configured under CC â†’ Translation. Viewers can select their preferred language using their browser's **built-in CC (closed captions) button** â€” no custom controls are needed.
 
 ---
 
 ## What you need
 
-1. **HLS video stream** — the RTMP stream you send to the server must have `hls_enabled = true` on your API key (set by an admin). The video and subtitle tracks share the same key.
-2. **Viewer target** — configure a viewer target in CC → Targets with the same key you use for the HLS stream. Every caption you send is automatically transcribed into subtitle segments.
-3. **Translations** _(optional)_ — add one or more translation languages in CC → Translation. Each language appears as a separate subtitle track in the player.
+1. **HLS video stream** â€” the RTMP stream you send to the server must have `hls_enabled = true` on your API key (set by an admin). The video and subtitle tracks share the same key.
+2. **Viewer target** â€” configure a viewer target in CC â†’ Targets with the same key you use for the HLS stream. Every caption you send is automatically transcribed into subtitle segments.
+3. **Translations** _(optional)_ â€” add one or more translation languages in CC â†’ Translation. Each language appears as a separate subtitle track in the player.
 
 ---
 
@@ -27,7 +27,7 @@ This player combines your live video stream with real-time subtitle tracks in ev
 
 ### 1. Configure a viewer target
 
-Open **CC** → **Targets** tab and add a target:
+Open **CC** â†’ **Targets** tab and add a target:
 
 | Field | Value |
 |-------|-------|
@@ -38,7 +38,7 @@ Use the same key for the HLS video stream (the stream key configured in nginx-rt
 
 ### 2. Add translation languages _(optional)_
 
-Open **CC** → **Translation** tab and add any languages you want as subtitle tracks. Each enabled language will appear in the player's CC menu as a selectable track.
+Open **CC** â†’ **Translation** tab and add any languages you want as subtitle tracks. Each enabled language will appear in the player's CC menu as a selectable track.
 
 The original caption text is always included as the **Original** track regardless of whether any translations are configured.
 
@@ -82,11 +82,11 @@ Add `?theme=light` for a light background:
 
 The player exposes all active subtitle tracks through the browser's **native CC button** in the standard video controls:
 
-- **Chrome / Edge / Firefox** — click the CC (⧉) button in the video controls to open the language menu.
-- **Safari (macOS / iOS)** — click the CC button or the subtitles option in AirPlay / fullscreen controls.
-- **Android Chrome** — tap the CC button in the controls.
+- **Chrome / Edge / Firefox** â€” click the CC (â§‰) button in the video controls to open the language menu.
+- **Safari (macOS / iOS)** â€” click the CC button or the subtitles option in AirPlay / fullscreen controls.
+- **Android Chrome** â€” tap the CC button in the controls.
 
-Tracks appear as soon as the first captions arrive for that language — you do not need to reload the player.
+Tracks appear as soon as the first captions arrive for that language â€” you do not need to reload the player.
 
 ---
 
@@ -98,7 +98,7 @@ Each time a caption is sent, the backend:
 2. Updates an **HLS subtitle playlist** per language, using `EXT-X-PROGRAM-DATE-TIME` headers so the player can align subtitle cues to the video by wall clock.
 3. Serves a **master HLS manifest** that references both the video stream and all subtitle playlists.
 
-Because the subtitle system uses the same viewer key as the SSE viewer endpoint (`/viewer/:key`), there is no extra configuration — any key that receives captions automatically gets a subtitle sidecar.
+Because the subtitle system uses the same viewer key as the SSE viewer endpoint (`/viewer/:key`), there is no extra configuration â€” any key that receives captions automatically gets a subtitle sidecar.
 
 ---
 
@@ -109,7 +109,7 @@ Because the subtitle system uses the same viewer key as the SSE viewer endpoint 
 | Original | The raw text typed or captured via speech recognition |
 | Finnish / Suomi | Translation to Finnish, if configured |
 | German / Deutsch | Translation to German, if configured |
-| _(other languages)_ | Determined by which languages are enabled in CC → Translation |
+| _(other languages)_ | Determined by which languages are enabled in CC â†’ Translation |
 
 ---
 
@@ -127,3 +127,4 @@ Because the subtitle system uses the same viewer key as the SSE viewer endpoint 
 ## Technical details
 
 For the full API reference, including manifest format, WebVTT segment format, and environment variables, see [API: /video](../api/video.md).
+

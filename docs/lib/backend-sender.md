@@ -1,4 +1,4 @@
-# BackendCaptionSender
+﻿# BackendCaptionSender
 
 ---
 id: lib/backend-sender
@@ -32,10 +32,10 @@ new BackendCaptionSender(options)
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `backendUrl` | `string` | — | Base URL of the `lcyt-backend` server (required) |
-| `apiKey` | `string` | — | API key issued by the backend (required) |
-| `streamKey` | `string` | — | YouTube Live stream key (required) |
-| `domain` | `string` | — | Registered origin domain for this session (required) |
+| `backendUrl` | `string` | â€” | Base URL of the `lcyt-backend` server (required) |
+| `apiKey` | `string` | â€” | API key issued by the backend (required) |
+| `streamKey` | `string` | â€” | YouTube Live stream key (required) |
+| `domain` | `string` | â€” | Registered origin domain for this session (required) |
 | `sequence` | `number` | `0` | Initial sequence number |
 | `verbose` | `boolean` | `false` | Enable verbose logging |
 
@@ -76,16 +76,16 @@ const result = await sender.send('Hello!', undefined, {
 | `text` | `string` | Caption text (original language) |
 | `timestamp` | `string \| number \| {time: number}` | Optional. ISO string, Unix ms, or `{time: ms}` (milliseconds since session start) |
 | `extraOpts` | `object` | Optional extra fields included in the caption request body |
-| `extraOpts.translations` | `object` | Map of BCP-47 code → translated text, e.g. `{ "fi-FI": "Hei!" }` |
+| `extraOpts.translations` | `object` | Map of BCP-47 code â†’ translated text, e.g. `{ "fi-FI": "Hei!" }` |
 | `extraOpts.captionLang` | `string` | BCP-47 code of the translation to use as the YouTube caption text |
 | `extraOpts.showOriginal` | `boolean` | If `true`, sends `"original<br>translated"` to YouTube; otherwise sends only the translation |
 
 > **Timestamp formats**
 > - ISO string: `'2024-01-01T12:00:00.000'`
 > - Unix milliseconds: `1704067200000`
-> - Relative: `{ time: 5000 }` — 5 seconds after the session `startedAt` (resolved by the server)
+> - Relative: `{ time: 5000 }` â€” 5 seconds after the session `startedAt` (resolved by the server)
 
-When `translations` are provided, the backend composes the final caption text and (if enabled on the API key) writes the original and each translation to separate files. See the [backend `/captions` docs](../../docs/api/captions.md) for the full composition rules.
+When `translations` are provided, the backend composes the final caption text and (if enabled on the API key) writes the original and each translation to separate files. See the [backend `/api/v1/captions` docs](../api/v1/../api/v1/docs/api/v1/api/api/v1/captions.md) for the full composition rules.
 
 **Returns:** `Promise<{ok: true, requestId: string}>`
 
@@ -252,3 +252,4 @@ console.log('Queued with requestId:', requestId);
 
 await sender.end();
 ```
+

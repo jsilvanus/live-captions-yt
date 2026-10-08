@@ -1,12 +1,12 @@
-# FFmpeg Docker Usage (wrapper and runner)
+﻿# FFmpeg Docker Usage (wrapper and runner)
 
 This document describes the minimal wrapper and runner support added for running ffmpeg inside Docker or on the host.
 
 Files added:
-- `docker/lcyt-ffmpeg/Dockerfile` — Debian-slim image with ffmpeg and common codecs.
-- `scripts/ffmpeg-in-container.sh` — portable wrapper to run host ffmpeg or container ffmpeg.
-- `packages/lcyt-backend/src/ffmpeg/docker-runner.js` — Docker runner updated to forward stdin (-i) and pipe stdio.
-- `packages/lcyt-backend/src/ffmpeg/index.js` — factory now reads `FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_WRAPPER`.
+- `docker/lcyt-ffmpeg/Dockerfile` â€” Debian-slim image with ffmpeg and common codecs.
+- `scripts/ffmpeg-in-container.sh` â€” portable wrapper to run host ffmpeg or container ffmpeg.
+- `packages/lcyt-backend/src/ffmpeg/docker-runner.js` â€” Docker runner updated to forward stdin (-i) and pipe stdio.
+- `packages/lcyt-backend/src/ffmpeg/index.js` â€” factory now reads `FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_WRAPPER`.
 
 Quick usage
 
@@ -38,9 +38,9 @@ Notes and limitations
 - The Docker image is intentionally minimal. If you need additional codecs (libfdk-aac, NVENC), build a custom image.
 
 Environment variables
-- `FFMPEG_RUNNER` — `spawn` (default) or `docker`.
-- `FFMPEG_IMAGE` — image to use when `FFMPEG_RUNNER=docker` (default `lcyt-ffmpeg:latest`).
-- `FFMPEG_WRAPPER` — path to an alternative local wrapper/ffmpeg binary; when set, the backend factory will prefer it.
+- `FFMPEG_RUNNER` â€” `spawn` (default) or `docker`.
+- `FFMPEG_IMAGE` â€” image to use when `FFMPEG_RUNNER=docker` (default `lcyt-ffmpeg:latest`).
+- `FFMPEG_WRAPPER` â€” path to an alternative local wrapper/ffmpeg binary; when set, the backend factory will prefer it.
 
 Testing
 - An integration smoke test is added at `packages/lcyt-backend/test/integration/ffmpeg.docker.smoke.test.js`. It is skipped unless `DOCKER_AVAILABLE=1`.
@@ -70,3 +70,4 @@ Testing
  ```
  
  - Note: Some CI/test runners may not have `pytest` installed by default; installing the requirements file above ensures `pytest` and test dependencies are available.
+

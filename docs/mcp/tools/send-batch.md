@@ -1,11 +1,11 @@
----
-title: "send_batch — Send Multiple Captions"
+﻿---
+title: "send_batch â€” Send Multiple Captions"
 stdio: true
 sse: true
 id: mcp/tools/send-batch
 ---
 
-# `send_batch` — Send Multiple Captions
+# `send_batch` â€” Send Multiple Captions
 
 Send an array of captions in a single HTTP request to YouTube.
 
@@ -37,3 +37,4 @@ Send an array of captions in a single HTTP request to YouTube.
 | `ok` | `boolean` | `true` on success |
 | `sequence` | `number` | Sequence number of the last caption in the batch |
 | `count` | `number` | Number of captions delivered |
+

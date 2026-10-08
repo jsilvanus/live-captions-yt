@@ -1,4 +1,4 @@
-# Error Classes
+﻿# Error Classes
 
 ---
 id: lib/errors
@@ -19,10 +19,10 @@ const { LCYTError, ConfigError, NetworkError, ValidationError } = require('lcyt/
 
 ```
 Error
-└── LCYTError
-    ├── ConfigError
-    ├── NetworkError  (+ statusCode)
-    └── ValidationError  (+ field)
+â””â”€â”€ LCYTError
+    â”œâ”€â”€ ConfigError
+    â”œâ”€â”€ NetworkError  (+ statusCode)
+    â””â”€â”€ ValidationError  (+ field)
 ```
 
 ---
@@ -126,19 +126,20 @@ try {
   await sender.send(text);
 } catch (err) {
   if (err instanceof ValidationError) {
-    // Input problem — fix the request
+    // Input problem â€” fix the request
     console.error(`Bad input for field "${err.field}"`);
   } else if (err instanceof NetworkError) {
-    // HTTP/transport problem — may be transient
+    // HTTP/transport problem â€” may be transient
     console.error(`Network error (${err.statusCode ?? 'no status'}):`, err.message);
   } else if (err instanceof ConfigError) {
-    // Config problem — check ~/.lcyt-config.json
+    // Config problem â€” check ~/.lcyt-config.json
     console.error('Configuration error:', err.message);
   } else if (err instanceof LCYTError) {
     // Unknown lcyt error
     console.error('lcyt error:', err.message);
   } else {
-    throw err; // unexpected error — rethrow
+    throw err; // unexpected error â€” rethrow
   }
 }
 ```
+

@@ -1,6 +1,6 @@
----
+﻿---
 id: lib/python/config
-title: "Python — Configuration"
+title: "Python â€” Configuration"
 ---
 
 # Configuration (Python)
@@ -34,7 +34,7 @@ By default, configuration is stored at `~/.lcyt-config.json`. The file is plain 
 }
 ```
 
-> The Python library accepts both `snake_case` and `camelCase` keys when reading — making the config file interoperable with the Node.js library.
+> The Python library accepts both `snake_case` and `camelCase` keys when reading â€” making the config file interoperable with the Node.js library.
 
 ---
 
@@ -135,7 +135,7 @@ url = build_ingestion_url(config)
 |---|---|---|
 | `config` | `LCYTConfig` | Must have a non-empty `stream_key` |
 
-**Returns:** `str` — full ingestion URL
+**Returns:** `str` â€” full ingestion URL
 
 **Raises:** `ConfigError` if `stream_key` is empty.
 
@@ -161,3 +161,4 @@ save_config(config)
 url = build_ingestion_url(config)
 print("Sending to:", url)
 ```
+

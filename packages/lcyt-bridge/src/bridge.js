@@ -158,7 +158,7 @@ export class Bridge extends EventEmitter {
       return;
     }
 
-    const url = `${this._backendUrl}/production/bridge/commands?token=${encodeURIComponent(this._token)}`;
+    const url = `${this._backendUrl}/api/v1/production/bridge/commands?token=${encodeURIComponent(this._token)}`;
     this.emit('connecting', url);
 
     const es = new EventSource(url);
@@ -357,7 +357,7 @@ export class Bridge extends EventEmitter {
   async _fetchSecurityPolicy() {
     const seq = ++this._policyFetchSeq;
     try {
-      const url = `${this._backendUrl}/production/bridge/security-rules/for-agent?token=${encodeURIComponent(this._token)}`;
+      const url = `${this._backendUrl}/api/v1/production/bridge/security-rules/for-agent?token=${encodeURIComponent(this._token)}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
@@ -371,7 +371,7 @@ export class Bridge extends EventEmitter {
 
   async _postStatus(body) {
     try {
-      await fetch(`${this._backendUrl}/production/bridge/status`, {
+      await fetch(`${this._backendUrl}/api/v1/production/bridge/status`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,18 +1,18 @@
----
+﻿---
 id: plan/rtmp
 title: "RTMP Processing Pipeline"
 status: implemented
 summary: "Orchestrate ffmpeg subprocesses from a single RTMP ingest: audio-only HLS, video+audio HLS, RTMP relay/fan-out, DSK overlays, thumbnails."
 superseded_by:
-  - "plan/dock-ffmpeg (partially: adds an opt-in Docker/worker execution alternative via FFMPEG_RUNNER; bare spawn() is still the default runner — see plan_dock_ffmpeg.md's own 'Key constraints' note)"
-  - "plan/mediamtx (radio/audio-HLS §1a and stream previews §2b are now fully MediaMTX-only — no ffmpeg fallback remains in radio-manager.js/preview-manager.js; video HLS §2a also defaults to MediaMTX, with ffmpeg passthrough only when a local RTMP source is explicitly configured. RTMP relay fan-out §3a-3e, CEA-708 §3e, and DSK overlay §3c remain ffmpeg-driven in RtmpRelayManager, with MediaMTX used only as an optional target broker there)"
+  - "plan/dock-ffmpeg (partially: adds an opt-in Docker/worker execution alternative via FFMPEG_RUNNER; bare spawn() is still the default runner â€” see plan_dock_ffmpeg.md's own 'Key constraints' note)"
+  - "plan/mediamtx (radio/audio-HLS Â§1a and stream previews Â§2b are now fully MediaMTX-only â€” no ffmpeg fallback remains in radio-manager.js/preview-manager.js; video HLS Â§2a also defaults to MediaMTX, with ffmpeg passthrough only when a local RTMP source is explicitly configured. RTMP relay fan-out Â§3a-3e, CEA-708 Â§3e, and DSK overlay Â§3c remain ffmpeg-driven in RtmpRelayManager, with MediaMTX used only as an optional target broker there)"
 ---
 
-# RTMP Processing Pipeline — Plan
+# RTMP Processing Pipeline â€” Plan
 
 > **Current-state note (2026-07-20):** Sections 1a (Internet Radio) and 2b (HLS Previews) below
 > describe the original ffmpeg-based implementation; that code has since been fully replaced by
-> MediaMTX (`radio-manager.js` and `preview-manager.js` now contain no ffmpeg code path at all —
+> MediaMTX (`radio-manager.js` and `preview-manager.js` now contain no ffmpeg code path at all â€”
 > see `packages/plugins/lcyt-rtmp/src/api.js`'s header comment: "HLS and radio are served by
 > MediaMTX... ffmpeg is only used for CEA-708 caption injection and DSK overlay composition").
 > Section 2a (HLS video embed) also now defaults to MediaMTX (`hls-manager.js`), falling back to a
@@ -27,22 +27,22 @@ source for a configurable set of output targets. The backend orchestrates one or
 subprocesses that read from that local stream and deliver content to each target type.
 
 ```
-                         ┌─────────────────────────────────────────────┐
-  Broadcaster            │            nginx-rtmp server                │
-  OBS / hardware ───RTMP─▶  rtmp://<host>/live/<apiKey>                │
-                         │  on_publish → POST /rtmp or /radio          │
-                         └────────────────────┬────────────────────────┘
-                                              │ local RTMP (127.0.0.1)
-                                              ▼
-                         ┌─────────────────────────────────────────────┐
-                         │           lcyt-backend (Node.js)            │
-                         │                                             │
-                         │   RadioManager      RtmpRelayManager        │
-                         │   (audio targets)   (video/RTMP targets)    │
-                         └──────┬──────────────────────┬──────────────┘
-                                │                      │
-             ┌──────────────────┼──────────────┐       │
-             ▼                  ▼              ▼       ▼
+                         â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+  Broadcaster            â”‚            nginx-rtmp server                â”‚
+  OBS / hardware â”€â”€â”€RTMPâ”€â–¶  rtmp://<host>/live/<apiKey>                â”‚
+                         â”‚  on_publish â†’ POST /rtmp or /radio          â”‚
+                         â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                              â”‚ local RTMP (127.0.0.1)
+                                              â–¼
+                         â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                         â”‚           lcyt-backend (Node.js)            â”‚
+                         â”‚                                             â”‚
+                         â”‚   RadioManager      RtmpRelayManager        â”‚
+                         â”‚   (audio targets)   (video/RTMP targets)    â”‚
+                         â””â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                                â”‚                      â”‚
+             â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”       â”‚
+             â–¼                  â–¼              â–¼       â–¼
        Audio target        HLS targets    RTMP targets
        (internet radio,    (browser embed, (relay copy,
         STT relay)          preview)        transcoded)
@@ -88,7 +88,7 @@ rtmp {
 
 Extract audio from the incoming RTMP stream and deliver it to audio-only consumers.
 
-#### 1a. Internet Radio — audio-only HLS ✅ *Implemented*
+#### 1a. Internet Radio â€” audio-only HLS âœ… *Implemented*
 
 **Purpose:** Let anyone with a web browser listen to the stream without video, using a
 simple embeddable `<audio>` player.
@@ -121,7 +121,7 @@ simple embeddable `<audio>` player.
 
 ---
 
-#### 1b. STT Audio Relay — audio-only stream for speech recognition 📋 *Planned*
+#### 1b. STT Audio Relay â€” audio-only stream for speech recognition ðŸ“‹ *Planned*
 
 **Purpose:** Forward the audio stream to a speech-to-text endpoint (Google Cloud STT,
 Whisper, Azure, etc.) so the backend can auto-generate captions without a browser tab open.
@@ -143,9 +143,9 @@ Whisper, Azure, etc.) so the backend can auto-generate captions without a browse
 
 **Planned API:**
 ```
-POST /stt/start  — start STT relay for the current session
-POST /stt/stop   — stop STT relay
-GET  /stt/status — running state + partial transcript buffer
+POST /stt/start  â€” start STT relay for the current session
+POST /stt/stop   â€” stop STT relay
+GET  /stt/status â€” running state + partial transcript buffer
 ```
 
 ---
@@ -154,7 +154,7 @@ GET  /stt/status — running state + partial transcript buffer
 
 Deliver full video+audio (or audio-only) to HTTP Live Streaming consumers.
 
-#### 2a. HLS Browser Embed — live stream in a `<video>` element ✅ *Implemented*
+#### 2a. HLS Browser Embed â€” live stream in a `<video>` element âœ… *Implemented*
 
 **Purpose:** Let viewers watch the full video stream in a browser without any RTMP player.
 Useful for embedding a stream preview on a website or dashboard.
@@ -171,8 +171,8 @@ Useful for embedding a stream preview on a website or dashboard.
 |------------------|--------------------------|------------------------------|
 | Element          | `<audio>`                | `<video>`                    |
 | ffmpeg flags     | `-vn -c:a aac`           | `-c copy` or transcode       |
-| Bandwidth        | ~128 kbps                | ~1–4 Mbps                    |
-| Latency          | ~4–8 s (same HLS window) | ~4–8 s (same HLS window)     |
+| Bandwidth        | ~128 kbps                | ~1â€“4 Mbps                    |
+| Latency          | ~4â€“8 s (same HLS window) | ~4â€“8 s (same HLS window)     |
 | Use case         | Listen-only audience     | Full viewer                  |
 
 **Gating flag:** `hls_enabled` on `api_keys`
@@ -193,7 +193,7 @@ Useful for embedding a stream preview on a website or dashboard.
 
 ---
 
-#### 2b. HLS Previews — real-time thumbnails / short clips ✅ *Implemented*
+#### 2b. HLS Previews â€” real-time thumbnails / short clips âœ… *Implemented*
 
 **Purpose:** Generate a low-bandwidth preview of the incoming stream for monitoring in the
 web UI (`EmbedRtmpPage` or a new `StreamMonitorPage`).
@@ -205,7 +205,7 @@ web UI (`EmbedRtmpPage` or a new `StreamMonitorPage`).
 **Implementation (`PreviewManager` / `/preview` route):**
 - ffmpeg `-vf fps=1/5 -update 1 -q:v 3 -f image2 -y` to continuously overwrite a single JPEG
 - Backend serves the file with `Cache-Control: public, max-age=5, must-revalidate` and `Last-Modified`
-- Supports `If-Modified-Since` conditional requests → 304 when thumbnail hasn't changed
+- Supports `If-Modified-Since` conditional requests â†’ 304 when thumbnail hasn't changed
 - Web UI can poll the thumbnail URL every 5 s inside an `<img>` tag
 - Separate thumbnail per key at `/preview/<key>/incoming.jpg`
 
@@ -225,14 +225,14 @@ separate permission flag needed.
 
 Forward or transform the incoming RTMP stream and push it to one or more RTMP destinations.
 
-#### 3a. RTMP Relay (stream copy) ✅ *Implemented*
+#### 3a. RTMP Relay (stream copy) âœ… *Implemented*
 
 **Purpose:** Fan-out the stream unchanged to up to 4 RTMP destinations simultaneously
 (e.g. YouTube, Twitch, Facebook Live).
 
-**Implementation (`RtmpRelayManager` / `/stream` + `/rtmp` routes):**
-- ffmpeg tee muxer: `[f=flv]url1|[f=flv]url2|…`
-- `-c copy` — no re-encoding; video/audio pass through unchanged
+**Implementation (`RtmpRelayManager` /api/v1/ `/api/v1/stream` + `/api/v1/rtmp` routes):**
+- ffmpeg tee muxer: `[f=flv]url1|[f=flv]url2|â€¦`
+- `-c copy` â€” no re-encoding; video/audio pass through unchanged
 - Up to 4 slots per API key (`rtmp_relays` table)
 - Stats tracked in `rtmp_stream_stats` and `rtmp_anon_daily_stats`
 
@@ -240,15 +240,15 @@ Forward or transform the incoming RTMP stream and push it to one or more RTMP de
 
 **API:**
 ```
-GET/POST/PUT/DELETE /stream        — manage relay slots
-PUT /stream/active                 — toggle relay on/off
-GET /stream/history                — per-stream usage history
-POST /rtmp                         — nginx-rtmp lifecycle callback
+GET/POST/PUT/DELETE /stream        â€” manage relay slots
+PUT /stream/active                 â€” toggle relay on/off
+GET /stream/history                â€” per-stream usage history
+POST /rtmp                         â€” nginx-rtmp lifecycle callback
 ```
 
 ---
 
-#### 3b. Resolution / Frame-rate Transcoding ✅ *Implemented*
+#### 3b. Resolution / Frame-rate Transcoding âœ… *Implemented*
 
 **Purpose:** Scale or re-encode the stream before relaying, e.g. to reduce bitrate for
 downstream targets that have bandwidth or resolution limits.
@@ -286,7 +286,7 @@ incompatible with the filter_complex approach). CEA-708 takes priority when both
 
 ---
 
-#### 3c. DSK (Downstream Key) — overlay graphics ✅ *Implemented*
+#### 3c. DSK (Downstream Key) â€” overlay graphics âœ… *Implemented*
 
 **Purpose:** Add a graphics overlay (lower-third, logo, sponsor bug) to the video stream
 before relaying. The overlay image is driven by the `<!-- graphics:shorthand -->` caption
@@ -298,7 +298,7 @@ metadata code.
 events; the `DskPage` renders the overlay in a browser window captured by OBS.
 
 **Server-side DSK (implemented):**
-- `RtmpRelayManager.setDskOverlay(apiKey, names, imagePaths)` — updates the overlay state
+- `RtmpRelayManager.setDskOverlay(apiKey, names, imagePaths)` â€” updates the overlay state
   and restarts the relay process with the new ffmpeg overlay filter configuration
 - ffmpeg `overlay` filter composites up to N images in metacode order:
   ```
@@ -323,7 +323,7 @@ to `relayManager.setDskOverlay()`.
 
 ---
 
-#### 3d. Caption Burn-in 📋 *Planned*
+#### 3d. Caption Burn-in ðŸ“‹ *Planned*
 
 **Purpose:** Hard-encode caption text directly into the video pixels (open captions / burned-in
 subtitles) before relaying to targets that do not support caption side-channels.
@@ -334,13 +334,13 @@ subtitles) before relaying to targets that do not support caption side-channels.
 - Font, size, position, outline, background configurable per API key
 
 **Caption sources:** Text comes from the normal caption pipeline (same text that goes to
-YouTube HTTP captions / viewer SSE) — no separate input required.
+YouTube HTTP captions / viewer SSE) â€” no separate input required.
 
 **Integration:** Per-slot option `captionMode: 'burn-in'` in `rtmp_relays`.
 
 ---
 
-#### 3e. Video Delay + CEA-708 Closed Captions ✅ *Implemented*
+#### 3e. Video Delay + CEA-708 Closed Captions âœ… *Implemented*
 
 **Purpose:** Introduce a configurable video delay so that CEA-608/708 caption cues arrive
 at the decoder precisely timed with the video frame they describe. Broadcasters adjust the
@@ -360,12 +360,12 @@ ffmpeg -re -i rtmp://source/live/key -f subrip -i pipe:0 \
   -f tee "[f=flv]url1|[f=flv]url2"
 ```
 
-Caption text is injected in real-time via `POST /captions` → `relayManager.writeCaption()`.
+Caption text is injected in real-time via `POST /captions` â†’ `relayManager.writeCaption()`.
 The backend converts each caption to SRT format and pipes it to ffmpeg stdin.
 
 **Timing strategy (implemented):**
-- If `speechStart` (VAD onset) is available → use as cue start (most accurate)
-- Otherwise → `timestamp - CEA708_OFFSET_MS` (configurable, default 2 s)
+- If `speechStart` (VAD onset) is available â†’ use as cue start (most accurate)
+- Otherwise â†’ `timestamp - CEA708_OFFSET_MS` (configurable, default 2 s)
 - Backtrack guard: never start a cue more than `CEA708_MAX_BACKTRACK_MS` (default 5 s) before now
 
 **Re-enablement (implemented):**
@@ -382,15 +382,15 @@ Only activates when at least one slot has `captionMode: 'cea708'` and ffmpeg has
 
 | Phase | Features                                             | Status        |
 |-------|------------------------------------------------------|---------------|
-| 1     | RTMP relay (copy, fan-out)                           | ✅ Done        |
-| 2     | Internet radio (audio-only HLS)                      | ✅ Done        |
-| 3     | HLS browser embed (video+audio)                      | ✅ Done        |
-| 4     | HLS previews (incoming thumbnails)                   | ✅ Done        |
-| 5     | CEA-708 caption delay                                | ✅ Done        |
-| 6     | Caption burn-in                                      | 📋 Planned     |
-| 7     | Resolution / frame-rate transcoding per slot         | ✅ Done        |
-| 8     | Server-side DSK overlay                              | ✅ Done        |
-| 9     | STT audio relay (auto-caption from stream)           | 📋 Planned     |
+| 1     | RTMP relay (copy, fan-out)                           | âœ… Done        |
+| 2     | Internet radio (audio-only HLS)                      | âœ… Done        |
+| 3     | HLS browser embed (video+audio)                      | âœ… Done        |
+| 4     | HLS previews (incoming thumbnails)                   | âœ… Done        |
+| 5     | CEA-708 caption delay                                | âœ… Done        |
+| 6     | Caption burn-in                                      | ðŸ“‹ Planned     |
+| 7     | Resolution / frame-rate transcoding per slot         | âœ… Done        |
+| 8     | Server-side DSK overlay                              | âœ… Done        |
+| 9     | STT audio relay (auto-caption from stream)           | ðŸ“‹ Planned     |
 
 ---
 
@@ -451,8 +451,8 @@ sends POST with `application/x-www-form-urlencoded` body containing `app`, `name
 | `POST /stream-hls/on_publish`     | HLS embed start   | nginx separate-URL style           |
 | `POST /stream-hls/on_publish_done`| HLS embed stop    | nginx separate-URL style           |
 
-`/rtmp`, `/radio`, and `/stream-hls` can all be configured as `on_publish` / `on_publish_done`
-callbacks in the nginx RTMP application block — they run independently for each feature.
+`/api/v1/rtmp`, `/api/v1/radio`, and `/api/v1/stream-hls` can all be configured as `on_publish` /api/v1/ `on_publish_done`
+callbacks in the nginx RTMP application block â€” they run independently for each feature.
 
 ---
 
@@ -460,23 +460,24 @@ callbacks in the nginx RTMP application block — they run independently for eac
 
 ```
 packages/lcyt-backend/src/
-├── radio-manager.js       ✅ RTMP → audio-only HLS (RadioManager)
-├── hls-manager.js         ✅ RTMP → video+audio HLS embed (HlsManager)
-├── preview-manager.js     ✅ RTMP → JPEG thumbnail (PreviewManager)
-├── rtmp-manager.js        ✅ RTMP relay fan-out (RtmpRelayManager)
-│                             • stream copy (Phase 1)
-│                             • CEA-708 stdin SRT pipe + libx264 (Phase 5)
-│                             • per-slot filter_complex transcoding (Phase 7)
-├── routes/
-│   ├── radio.js           ✅ /radio — nginx callbacks + audio HLS + player.js
-│   ├── stream-hls.js      ✅ /stream-hls — nginx callbacks + video HLS + player.js
-│   ├── preview.js         ✅ /preview — incoming thumbnail endpoint (JPEG)
-│   ├── rtmp.js            ✅ /rtmp — nginx relay callbacks
-│   ├── stream.js          ✅ /stream — relay CRUD + transcode field validation
-│   └── dsk.js             ✅ /dsk — browser-side DSK SSE + images (existing; routes /dsk/:key/events, /images)
-└── db/
-    ├── relay.js           ✅ isRelayAllowed, isRelayActive, isRadioEnabled, isHlsEnabled
-    │                         upsertRelay now stores scale/fps/video_bitrate/audio_bitrate
-    │                         📋 isSttRelayEnabled (planned)
-    └── keys.js            ✅ formatKey/createKey/updateKey carry cea708_delay_ms
+â”œâ”€â”€ radio-manager.js       âœ… RTMP â†’ audio-only HLS (RadioManager)
+â”œâ”€â”€ hls-manager.js         âœ… RTMP â†’ video+audio HLS embed (HlsManager)
+â”œâ”€â”€ preview-manager.js     âœ… RTMP â†’ JPEG thumbnail (PreviewManager)
+â”œâ”€â”€ rtmp-manager.js        âœ… RTMP relay fan-out (RtmpRelayManager)
+â”‚                             â€¢ stream copy (Phase 1)
+â”‚                             â€¢ CEA-708 stdin SRT pipe + libx264 (Phase 5)
+â”‚                             â€¢ per-slot filter_complex transcoding (Phase 7)
+â”œâ”€â”€ routes/
+â”‚   â”œâ”€â”€ radio.js           âœ… /radio â€” nginx callbacks + audio HLS + player.js
+â”‚   â”œâ”€â”€ stream-hls.js      âœ… /stream-hls â€” nginx callbacks + video HLS + player.js
+â”‚   â”œâ”€â”€ preview.js         âœ… /preview â€” incoming thumbnail endpoint (JPEG)
+â”‚   â”œâ”€â”€ rtmp.js            âœ… /rtmp â€” nginx relay callbacks
+â”‚   â”œâ”€â”€ stream.js          âœ… /stream â€” relay CRUD + transcode field validation
+â”‚   â””â”€â”€ dsk.js             âœ… /dsk â€” browser-side DSK SSE + images (existing; routes /dsk/:key/events, /images)
+â””â”€â”€ db/
+    â”œâ”€â”€ relay.js           âœ… isRelayAllowed, isRelayActive, isRadioEnabled, isHlsEnabled
+    â”‚                         upsertRelay now stores scale/fps/video_bitrate/audio_bitrate
+    â”‚                         ðŸ“‹ isSttRelayEnabled (planned)
+    â””â”€â”€ keys.js            âœ… formatKey/createKey/updateKey carry cea708_delay_ms
 ```
+

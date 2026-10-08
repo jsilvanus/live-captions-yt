@@ -1,17 +1,17 @@
----
+﻿---
 id: api/sessions
-title: "/live — Session Management"
+title: "/api/v1/live â€” Session Management"
 methods: [POST, GET, PATCH, DELETE]
 auth: [none, bearer]
 ---
 
-# /live — Session Management
+# /live â€” Session Management
 
 Endpoints for creating, querying, updating, and deleting caption relay sessions.
 
 ---
 
-## `POST /live` — Register Session
+## `POST /live` â€” Register Session
 
 Create a new caption relay session. Returns a JWT token for all subsequent requests in this session. Registration is idempotent: if a session with the same `sessionId` (derived from `apiKey + streamKey + domain`) already exists, the existing session is returned.
 
@@ -24,7 +24,7 @@ POST /live
 Content-Type: application/json
 ```
 
-**Target-array mode** (recommended) — pass all YouTube stream keys and optional generic webhook targets inside the `targets` array and omit `streamKey`:
+**Target-array mode** (recommended) â€” pass all YouTube stream keys and optional generic webhook targets inside the `targets` array and omit `streamKey`:
 
 ```json
 {
@@ -43,7 +43,7 @@ Content-Type: application/json
 }
 ```
 
-**Legacy single-target mode** — pass a single stream key as `streamKey`. Additional targets can still be supplied via the `targets` array.
+**Legacy single-target mode** â€” pass a single stream key as `streamKey`. Additional targets can still be supplied via the `targets` array.
 
 ```json
 {
@@ -65,7 +65,7 @@ Content-Type: application/json
 
 Each entry in the `targets` array describes one delivery destination. Two target types are supported.
 
-**YouTube target** — delivers captions via the YouTube Live HTTP caption ingestion API:
+**YouTube target** â€” delivers captions via the YouTube Live HTTP caption ingestion API:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -73,7 +73,7 @@ Each entry in the `targets` array describes one delivery destination. Two target
 | `type` | `string` | Yes | Must be `"youtube"` |
 | `streamKey` | `string` | Yes | YouTube Live stream key for this target |
 
-**Generic (webhook) target** — POSTs caption data as JSON to an arbitrary HTTP endpoint:
+**Generic (webhook) target** â€” POSTs caption data as JSON to an arbitrary HTTP endpoint:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -101,7 +101,7 @@ Generic targets receive a JSON body structured as follows (see also [`POST /capt
 }
 ```
 
-**Viewer target** — broadcasts captions to audience members via the public [`GET /viewer/:key`](./viewer.md) SSE endpoint:
+**Viewer target** â€” broadcasts captions to audience members via the public [`GET /viewer/:key`](./viewer.md) SSE endpoint:
 
 | Field | Type | Required | Description |
 |---|---|---|---|
@@ -109,7 +109,7 @@ Generic targets receive a JSON body structured as follows (see also [`POST /capt
 | `type` | `string` | Yes | Must be `"viewer"` |
 | `viewerKey` | `string` | Yes | Short URL-safe key (letters, digits, hyphens, underscores; min 3 characters). Viewers subscribe at `GET /viewer/:viewerKey`. |
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -139,7 +139,7 @@ Generic targets receive a JSON body structured as follows (see also [`POST /capt
 
 ---
 
-## `GET /live` — Session Status
+## `GET /live` â€” Session Status
 
 Return the current sequence number and clock offset for the authenticated session.
 
@@ -152,7 +152,7 @@ GET /live
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -168,7 +168,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `PATCH /live` — Update Session
+## `PATCH /live` â€” Update Session
 
 Update mutable session fields. Supports advancing the sequence counter and replacing the active caption targets at runtime.
 
@@ -196,7 +196,7 @@ Content-Type: application/json
 | `sequence` | `number` | No | New sequence counter value. Setting `0` explicitly resets the persisted per-key sequence. |
 | `targets` | `array` | No | Replace all active caption targets. Uses the same format as `POST /live`. Old YouTube senders are stopped before the new ones start. |
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -212,7 +212,7 @@ Content-Type: application/json
 
 ---
 
-## `DELETE /live` — End Session
+## `DELETE /live` â€” End Session
 
 Tear down the session. The YouTube sender is stopped, final session statistics are written to the database, and the JWT is invalidated.
 
@@ -225,7 +225,7 @@ DELETE /live
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -244,16 +244,16 @@ Authorization: Bearer <token>
 ## Session Lifecycle
 
 ```
-POST /live  →  JWT token issued
-     ↓
-GET/PATCH /live  (optional — inspect or update state)
-     ↓
+POST /live  â†’  JWT token issued
+     â†“
+GET/PATCH /live  (optional â€” inspect or update state)
+     â†“
 POST /sync  (recommended after registration)
-     ↓
-POST /captions  (send captions — see captions.md)
-GET /events     (receive results — see captions.md)
-     ↓
-DELETE /live  →  session closed, stats recorded
+     â†“
+POST /captions  (send captions â€” see captions.md)
+GET /events     (receive results â€” see captions.md)
+     â†“
+DELETE /live  â†’  session closed, stats recorded
 ```
 
 Sessions expire automatically after `SESSION_TTL` milliseconds of inactivity (default 2 hours). Expiry emits a `session_closed` SSE event.
@@ -278,8 +278,9 @@ The caption sequence counter is persisted **per API key** across sessions. When 
 
 Sessions are stored in the `sessions` SQLite table and **rehydrated automatically** when the server starts. On restart:
 
-1. All previously active sessions are restored into memory (without active YouTube senders — senders are not serialisable).
+1. All previously active sessions are restored into memory (without active YouTube senders â€” senders are not serialisable).
 2. Sequence counters, clock offsets, and metadata are preserved.
 3. When a client calls `POST /live` for a rehydrated session, the server issues a **fresh JWT** and attaches a new `YoutubeLiveCaptionSender`. Captions can then be sent normally without any client-side change.
 
-This means clients that reconnect after a server restart do not lose caption history or sequence continuity — they simply need to call `POST /live` again to obtain a new token.
+This means clients that reconnect after a server restart do not lose caption history or sequence continuity â€” they simply need to call `POST /live` again to obtain a new token.
+

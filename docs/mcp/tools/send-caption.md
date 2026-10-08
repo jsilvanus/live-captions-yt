@@ -1,11 +1,11 @@
----
-title: "send_caption — Send a Single Caption"
+﻿---
+title: "send_caption â€” Send a Single Caption"
 stdio: true
 sse: true
 id: mcp/tools/send-caption
 ---
 
-# `send_caption` — Send a Single Caption
+# `send_caption` â€” Send a Single Caption
 
 Send one caption to YouTube for an active session.
 
@@ -36,3 +36,4 @@ Send one caption to YouTube for an active session.
 | `sequence` | `number` | Sequence number used for this caption |
 
 **Throws** if the session is not found or YouTube returns an error.
+

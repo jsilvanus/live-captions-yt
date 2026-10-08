@@ -1,4 +1,4 @@
----
+﻿---
 title: "License"
 ---
 
@@ -6,7 +6,7 @@ title: "License"
 
 The `lcyt` core library (Node.js and Python) and the `lcyt-cli` command-line tool are licensed under the **European Union Public Licence (EUPL) v. 1.2**. This page reproduces the licence text in full; the canonical copy lives in each package's `LICENSE` file (`packages/lcyt/LICENSE`, `packages/lcyt-cli/LICENSE`) and at [eupl.eu/1.2/en](https://eupl.eu/1.2/en/).
 
-> Other parts of the LCYT monorepo (backends, web UI, plugins, etc.) may be licensed differently — check each package's own `LICENSE` file.
+> Other parts of the LCYT monorepo (backends, web UI, plugins, etc.) may be licensed differently â€” check each package's own `LICENSE` file.
 
 ---
 
@@ -68,7 +68,7 @@ The grant of the rights mentioned above is subject to some restrictions and obli
 
 **Attribution right:** The Licensee shall keep intact all copyright, patent or trademarks notices and all notices that refer to the Licence and to the disclaimer of warranties. The Licensee must include a copy of such notices and a copy of the Licence with every copy of the Work he/she distributes or communicates. The Licensee must cause any Derivative Work to carry prominent notices stating that the Work has been modified and the date of modification.
 
-**Copyleft clause:** If the Licensee distributes or communicates copies of the Original Works or Derivative Works thereof, this Distribution or Communication will be done under the terms of this Licence or of a later version of this Licence unless the Original Work is expressly distributed only under this version of the Licence — for example by the communication of "EUPL v. 1.2 only". The Licensee (becoming Licensor) cannot offer or impose any additional terms or conditions on the Work or Derivative Work that alter or restrict the terms of the Licence.
+**Copyleft clause:** If the Licensee distributes or communicates copies of the Original Works or Derivative Works thereof, this Distribution or Communication will be done under the terms of this Licence or of a later version of this Licence unless the Original Work is expressly distributed only under this version of the Licence â€” for example by the communication of "EUPL v. 1.2 only". The Licensee (becoming Licensor) cannot offer or impose any additional terms or conditions on the Work or Derivative Work that alter or restrict the terms of the Licence.
 
 **Compatibility clause:** If the Licensee distributes or communicates Derivative Works or copies thereof based upon both the Work and another work licensed under a compatible licence, this Distribution or Communication can be done under the terms of this compatible licence. For the sake of this clause, "compatible licence" refers to the licences listed in the appendix attached to this Licence. Should the Licensee's obligations under the compatible licence conflict with his/her obligations under this Licence, the obligations of the compatible licence shall prevail.
 
@@ -146,4 +146,5 @@ However, this choice will not deprive the Licensee of the protection granted by 
 
 ---
 
-Copyright (c) 2026 Juha Itäleino
+Copyright (c) 2026 Juha ItÃ¤leino
+

@@ -1,4 +1,4 @@
-# Logger
+﻿# Logger
 
 ---
 id: lib/logger
@@ -13,7 +13,7 @@ import logger from 'lcyt/logger';
 const logger = require('lcyt/logger').default;
 ```
 
-The module exports a **global singleton** instance — all modules in the same process share the same logger state.
+The module exports a **global singleton** instance â€” all modules in the same process share the same logger state.
 
 ---
 
@@ -135,3 +135,4 @@ import logger from 'lcyt/logger';
 logger.setVerbose(true);
 logger.debug('This shows detailed internals'); // now visible
 ```
+

@@ -1,17 +1,17 @@
----
+﻿---
 id: api/contact
-title: "/contact — Contact"
+title: "/contact â€” Contact"
 methods: [GET]
 auth: [none]
 ---
 
-# /contact — Contact
+# /contact â€” Contact
 
 Return the operator's contact details. Fields are configured via environment variables and are optional.
 
 ---
 
-## `GET /contact` — Contact Information
+## `GET /contact` â€” Contact Information
 
 **Authentication:** None
 
@@ -21,7 +21,7 @@ Return the operator's contact details. Fields are configured via environment var
 GET /contact
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -42,3 +42,4 @@ Fields that are not configured in the server environment are omitted from the re
 | `website` | `string` | `CONTACT_WEBSITE` | Operator website URL |
 
 If none of the contact environment variables are set, the response body will be an empty object (`{}`).
+

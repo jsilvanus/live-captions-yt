@@ -1,4 +1,4 @@
-# Configuration
+﻿# Configuration
 
 ---
 id: lib/config
@@ -125,7 +125,7 @@ const url = buildIngestionUrl({
 |---|---|---|
 | `config` | `LCYTConfig` | Configuration object (must include `baseUrl`, `streamKey`, `region`) |
 
-**Returns:** `string` — Full ingestion URL
+**Returns:** `string` â€” Full ingestion URL
 
 ---
 
@@ -161,3 +161,4 @@ saveConfig(config);
 const url = buildIngestionUrl(config);
 console.log('Sending to:', url);
 ```
+

@@ -1,12 +1,12 @@
----
+﻿---
 id: plan/named_actions
-title: "Named Actions — @name Composite Action Macros (backend registry + editor UI)"
+title: "Named Actions â€” @name Composite Action Macros (backend registry + editor UI)"
 status: implemented
-summary: "Named, composite action macros — the imperative sibling of the cue system's declarative named/composite matchers. A named action is a reusable bundle of metacode 'atoms' (audio/timer/goto/file/api/graphics/variable assignments) run together as a one-shot at send. Syntax mirrors cues: invoke `<!-- action: @intro -->`, inline composite `<!-- action: audio:start | graphics:+banner | section:Intro -->` (| = ordered 'then', NOT boolean), inline definition `<!-- action-def: intro: … -->`. Atoms dispatch through the Phase-3 reserved-name registry. Decisions: fire on SEND; nesting allowed with a cycle guard; NO conditionals in v1 (future `when:` guards noted); backend `action_defs` table + `/actions` CRUD. `NamedActionsManager` shipped early but was never mounted anywhere until 2026-07-18, when it was rewritten to match the Cues editor's Dialog/SetupItemRow pattern and given a real home: a standalone `/actions` page (linked from the Assets 'Global actions' card) plus an embedded Actions tab in the Planner's right-column `PlannerAssistPanel`; the registry's action taxonomy is refined so timer/audio/goto/file are tagged pointer-fired vs. named actions send-fired."
+summary: "Named, composite action macros â€” the imperative sibling of the cue system's declarative named/composite matchers. A named action is a reusable bundle of metacode 'atoms' (audio/timer/goto/file/api/graphics/variable assignments) run together as a one-shot at send. Syntax mirrors cues: invoke `<!-- action: @intro -->`, inline composite `<!-- action: audio:start | graphics:+banner | section:Intro -->` (| = ordered 'then', NOT boolean), inline definition `<!-- action-def: intro: â€¦ -->`. Atoms dispatch through the Phase-3 reserved-name registry. Decisions: fire on SEND; nesting allowed with a cycle guard; NO conditionals in v1 (future `when:` guards noted); backend `action_defs` table + `/actions` CRUD. `NamedActionsManager` shipped early but was never mounted anywhere until 2026-07-18, when it was rewritten to match the Cues editor's Dialog/SetupItemRow pattern and given a real home: a standalone `/actions` page (linked from the Assets 'Global actions' card) plus an embedded Actions tab in the Planner's right-column `PlannerAssistPanel`; the registry's action taxonomy is refined so timer/audio/goto/file are tagged pointer-fired vs. named actions send-fired."
 related: plan/metacode_variable_unification, plan/cues, plan/api_connectors_variables, plan/dsk, plan/dashboard_console_redesign
 ---
 
-# Named Actions — `@name` Composite Action Macros
+# Named Actions â€” `@name` Composite Action Macros
 
 ## Concept
 
@@ -36,35 +36,35 @@ literally "apply these metacodes," dispatched through the same registry handlers
 <!-- action-def: intro: audio:start | graphics:+banner --> inline definition (parallels cue-def)
 ```
 
-- **`|` means "then / also run"** — an **ordered sequence**, NOT boolean OR. This
+- **`|` means "then / also run"** â€” an **ordered sequence**, NOT boolean OR. This
   is the key difference from cues: `|+`/`|-` (AND/NOT) do **not** apply to actions.
   Flag this in docs so `|` doesn't mislead.
 - **`@name`** is a named reference, exactly like cues' `@named`. Since it lives in
-  `action:` (vs `cue:`), there is no collision — `@` uniformly means "named ref".
+  `action:` (vs `cue:`), there is no collision â€” `@` uniformly means "named ref".
 - **Atoms** are ordinary metacodes: `audio:`, `timer:`, `goto:`, `file:`,
   `file[server]:`, `api:`/`!api:`/`api!:`, `graphics:`/`graphics[vp]:`, and
   variable assignments (`section:Intro`, including `=>` TTL). Each atom runs
   through its existing registry handler / runtime path.
 
-## Semantics — DECIDED
+## Semantics â€” DECIDED
 
 - **Composite = ordered sequence** of atoms, executed in order. (No conditionals
-  in v1 — see Future.)
+  in v1 â€” see Future.)
 - **Fire on SEND.** A named action runs at the instant the line is sent, alongside
-  that line's own inline codes — one call site in `InputBar.doSend()`. (Not on
+  that line's own inline codes â€” one call site in `InputBar.doSend()`. (Not on
   pointer arrival; see the registry taxonomy note below for why that distinction
   now matters.)
 - **Nesting allowed.** An action definition may reference other `@actions`;
-  expansion carries a **visited-set cycle guard** — a cycle drops the offending
+  expansion carries a **visited-set cycle guard** â€” a cycle drops the offending
   ref with a console warning rather than looping.
 - **No conditionals (v1).** `when:section=Intro -> audio:start`-style guards are a
-  **future** idea (they reintroduce cue-style matching *inside* an action) —
+  **future** idea (they reintroduce cue-style matching *inside* an action) â€”
   noted, not built.
 
 ## Registry taxonomy refinement (the `timer` "kind" fix)
 
 Phase 3's `RESERVED_METACODES` marks `timer`/`audio`/`goto`/`file`/`file[server]`
-as `kind: 'action'` — but those fire on **pointer arrival** (drained by
+as `kind: 'action'` â€” but those fire on **pointer arrival** (drained by
 `drainActions` in `metacode-runtime.js`), whereas a named `action:` fires on
 **send**. Conflating both under `kind: 'action'` is now wrong.
 
@@ -76,13 +76,13 @@ as `kind: 'action'` — but those fire on **pointer arrival** (drained by
 | `action` (new) | `kind: 'action', fires: 'send'` |
 | `action-def` (new) | `kind: 'definition'` (registers, never fires) |
 | `cue` | matcher (unchanged; `lexer: 'dedicated'`) |
-| `api` | tiered — pointer/send/prefetch per its own `apiTriggers` (unchanged) |
+| `api` | tiered â€” pointer/send/prefetch per its own `apiTriggers` (unchanged) |
 
 `fires` is orthogonal to `kind`, so it's additive and behavior-preserving for the
 existing pointer-fired one-shots; it just makes the timing explicit and lets the
 named-action executor know it runs in the send path.
 
-## Backend — `action_defs` table + `/actions` CRUD
+## Backend â€” `action_defs` table + `/actions` CRUD
 
 Project-scoped (`api_key`), parallel to `cue_rules` / `api_connectors`:
 
@@ -100,10 +100,10 @@ CREATE TABLE IF NOT EXISTS action_defs (
 );
 ```
 
-- **Routes:** `GET/POST/PUT/DELETE /actions[/:slug]` — project auth (same as
+- **Routes:** `GET/POST/PUT/DELETE /actions[/:slug]` â€” project auth (same as
   `/variables`). CRUD only; execution is client-side (below).
 - **Ownership:** a new `lcyt-actions` plugin (schema, CRUD, an expand/parse
-  helper) parallel to `lcyt-connectors`/`lcyt-cues` — **open decision** vs.
+  helper) parallel to `lcyt-connectors`/`lcyt-cues` â€” **open decision** vs.
   folding into `lcyt-cues` (both are trigger/behaviour systems). Recommend a new
   plugin for a clean seam.
 
@@ -116,7 +116,7 @@ inventing a new engine:
 
 1. `useActions()` hook fetches defs (`GET /actions`) + subscribes to changes,
    exactly like `useVariables`/connectors.
-2. The parser turns `<!-- action: … -->` into a structured `actions` entry on
+2. The parser turns `<!-- action: â€¦ -->` into a structured `actions` entry on
    `lineCodes` (dedicated lexer, like `cue`/`api`); `action-def` registers a
    file-local named def (parallel to `cue-def` / `CUE_DEF_RE`).
 3. `InputBar.doSend()`, on a line carrying `actions`, **expands** each `@name`
@@ -126,7 +126,7 @@ inventing a new engine:
    via `variables.refresh`, `section:`/`graphics:` via the merged `codes`
    payload / `writeFileCode`.
 
-## UI — Named Actions editor
+## UI â€” Named Actions editor
 
 ### Original design (superseded, see "Status (2026-07-18)" below)
 
@@ -137,46 +137,46 @@ A Named Actions manager on `/assets` (`AssetsPage`), from the start:
 - parallels the planned cue-rules editor UI.
 
 `/assets` is the cross-content library view (`plan_dashboard_console_redesign.md`)
-— named actions are a natural asset kind to surface there.
+â€” named actions are a natural asset kind to surface there.
 
 ### Status (2026-07-18): mounted, not embedded in Assets
 
 `NamedActionsManager.jsx` was written early (per "Implementation status"
 below) but, contrary to that section's original claim, was never imported by
-`AssetsPage` or any route — it sat unmounted until this pass. Rebuilt on the
+`AssetsPage` or any route â€” it sat unmounted until this pass. Rebuilt on the
 same `Dialog`/`SetupItemRow` primitives `CuesManager` uses (list rows +
 add/edit `Dialog`, confirm-delete `Dialog`; no `enabled`/toggle column since
 `action_defs` has none), it now has two real homes, both backed by the same
 component with an `embedded` prop (same convention as `CuesManager`/
 `LanguagesManager`):
 
-- **`/actions`** (`NamedActionsPage.jsx`, non-embedded) — reached from the
+- **`/actions`** (`NamedActionsPage.jsx`, non-embedded) â€” reached from the
   Assets page's "Global actions" card, same link-out pattern as the Graphics
-  and Global cues cards (not an inline dialog on `/assets` itself — a
+  and Global cues cards (not an inline dialog on `/assets` itself â€” a
   composite-atom editor doesn't fit a `SetupItemRow` dialog any better than
   the cue-rules editor did).
-- **Planner's right-column `PlannerAssistPanel`** (embedded) — an "⚡ Actions"
-  tab alongside "📋 Cues", above the AI assistant chat. This is the primary
+- **Planner's right-column `PlannerAssistPanel`** (embedded) â€” an "âš¡ Actions"
+  tab alongside "ðŸ“‹ Cues", above the AI assistant chat. This is the primary
   motivation for the rewrite: named actions (like cues) are properties of a
   rundown file, authored from inside the Planner, not a separate library page
-  — see `plan_cues.md`'s Phase 10 status note for the parallel reasoning and
+  â€” see `plan_cues.md`'s Phase 10 status note for the parallel reasoning and
   `packages/lcyt-web/src/components/planner/PlannerAssistPanel.jsx`.
 
 ## Implementation status
 
 - **Done:** registry `fires` taxonomy + `action`/`action-def` entries; parser
-  (`ACTION_DEF_RE`/`ACTION_RE` → `lineCodes.actions` + returned `actionDefs`);
+  (`ACTION_DEF_RE`/`ACTION_RE` â†’ `lineCodes.actions` + returned `actionDefs`);
   `metacode-actions.js` (`parseActionItems`/`expandActionItems` cycle guard/
   `applyAtoms`); `lcyt-actions` backend plugin (`action_defs` + `/actions` CRUD,
   wired into `lcyt-backend`); `useActions` hook; `useFileStore` surfaces
   `actionDefs`; `InputBar` send-time expand-and-apply; `NamedActionsManager` CRUD
   UI, mounted at `/actions` and embedded in the Planner's `PlannerAssistPanel`
-  (2026-07-18 — see "Status" above; it existed earlier but wasn't mounted
+  (2026-07-18 â€” see "Status" above; it existed earlier but wasn't mounted
   anywhere until this pass). Tests: lcyt-web node 411 + vitest 402 (repo-wide
   totals, including `test/components/NamedActionsManager.test.jsx` and
   `test/components/PlannerAssistPanel.test.jsx`), lcyt-actions 4.
 - **v1 scope / follow-ons:** send-fired actions apply **persistent/variable/
-  graphics atoms** (→ codes + durable variables), **`api:`** (→ connector
+  graphics atoms** (â†’ codes + durable variables), **`api:`** (â†’ connector
   refresh), and **`audio:`**; **pointer/navigation atoms** (`goto`/`file`/
   `timer`) are parsed but **skipped with a warning** inside a send action (they'd
   need post-send sequencing). `graphics:` atoms merge into `codes` (best-effort;
@@ -190,16 +190,16 @@ component with an `embedded` prop (same convention as `CuesManager`/
 - `lcyt-actions` plugin: schema + CRUD + expand/parse helper (small-medium,
   mirrors `lcyt-connectors`' shape).
 - Registry: `fires` field + `action`/`action-def` entries; parser dedicated
-  lexer for `action:`/`action-def:` → `lineCodes.actions` (small-medium — mirrors
+  lexer for `action:`/`action-def:` â†’ `lineCodes.actions` (small-medium â€” mirrors
   the `cue`/`api` parsing).
-- Frontend: `useActions` hook; `doSend` expand-and-apply (medium — the one real
+- Frontend: `useActions` hook; `doSend` expand-and-apply (medium â€” the one real
   new runtime seam; reuses existing atom paths).
-- Assets-page editor (medium-large — real UI, same caveat every sibling plan
+- Assets-page editor (medium-large â€” real UI, same caveat every sibling plan
   makes about frontend scope).
 
 ## Future ideas (noted, not built)
 
-- **Conditional guards** — `when:<cue-expression> -> <atom>` inside an action,
+- **Conditional guards** â€” `when:<cue-expression> -> <atom>` inside an action,
   reusing the cue matcher grammar for imperative guards. The main reason a
   composite might one day want cue-style boolean logic back.
 - **Parallel atoms** (vs the v1 ordered sequence); **error handling** if an atom
@@ -212,5 +212,6 @@ component with an `embedded` prop (same convention as `CuesManager`/
 Add to `docs/PLANS.md`'s Draft table:
 
 ```
-| [plan_named_actions.md](plans/plan_named_actions.md) | Named Actions — @name Composite Action Macros | Named/composite action macros (imperative sibling of cues): a named action is a bundle of metacode atoms (audio/timer/goto/file/api/graphics/variable) run together as a one-shot at send. Invoke `@name`, inline composite with `|` (ordered "then", not boolean), inline `action-def`, dispatched through the Phase-3 registry. Decisions: fire on send; nesting + cycle guard; no conditionals in v1 (future `when:` guards); backend `action_defs` table + `/actions` CRUD; registry action taxonomy refined (timer/audio/goto/file = pointer-fired vs named actions = send-fired). `NamedActionsManager` editor mounted 2026-07-18 at `/actions` + embedded in the Planner's `PlannerAssistPanel` (was built earlier but never actually wired to a route). |
+| [plan_named_actions.md](plans/plan_named_actions.md) | Named Actions â€” @name Composite Action Macros | Named/composite action macros (imperative sibling of cues): a named action is a bundle of metacode atoms (audio/timer/goto/file/api/graphics/variable) run together as a one-shot at send. Invoke `@name`, inline composite with `|` (ordered "then", not boolean), inline `action-def`, dispatched through the Phase-3 registry. Decisions: fire on send; nesting + cycle guard; no conditionals in v1 (future `when:` guards); backend `action_defs` table + `/actions` CRUD; registry action taxonomy refined (timer/audio/goto/file = pointer-fired vs named actions = send-fired). `NamedActionsManager` editor mounted 2026-07-18 at `/actions` + embedded in the Planner's `PlannerAssistPanel` (was built earlier but never actually wired to a route). |
 ```
+

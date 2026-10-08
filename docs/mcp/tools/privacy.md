@@ -1,11 +1,11 @@
----
-title: "privacy — Privacy Notice"
+﻿---
+title: "privacy â€” Privacy Notice"
 stdio: false
 sse: true
 id: mcp/tools/privacy
 ---
 
-# `privacy` — Privacy Notice
+# `privacy` â€” Privacy Notice
 
 Return the service privacy notice as plain text.
 
@@ -20,3 +20,4 @@ None.
 ## Returns
 
 Plain text privacy statement.
+

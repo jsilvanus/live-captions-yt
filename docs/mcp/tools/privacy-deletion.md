@@ -1,11 +1,11 @@
----
-title: "privacy_deletion — Request Data Deletion"
+﻿---
+title: "privacy_deletion â€” Request Data Deletion"
 stdio: false
 sse: true
 id: mcp/tools/privacy-deletion
 ---
 
-# `privacy_deletion` — Request Data Deletion
+# `privacy_deletion` â€” Request Data Deletion
 
 Submit a GDPR right-to-erasure request. Requires a configured database (`DB_PATH`) and a valid API key.
 
@@ -39,3 +39,4 @@ Submit a GDPR right-to-erasure request. Requires a configured database (`DB_PATH
 - Deletes associated session stats, caption errors, and auth events
 
 **Requires:** `DB_PATH` environment variable set on the SSE server.
+

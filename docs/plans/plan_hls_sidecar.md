@@ -1,11 +1,11 @@
----
+﻿---
 id: plan/hls-sidecar
 title: "HLS Multilingual Caption Sidecar"
 status: implemented
 summary: "Rolling WebVTT subtitle segments sidecar for HLS stream; HLS.js player at /video/:key with CC language selection."
 ---
 
-# PLAN.md — HLS Multilingual Caption Sidecar
+# PLAN.md â€” HLS Multilingual Caption Sidecar
 
 ## Goal
 
@@ -14,7 +14,7 @@ Add a multilingual HLS subtitle sidecar to `packages/lcyt-backend` that:
 1. Converts real-time caption + translation cues into rolling WebVTT segment files on disk
 2. Maintains a per-language HLS subtitle playlist (`.m3u8`) for each active language
 3. Generates a master HLS manifest combining the existing delayed video stream with all subtitle tracks
-4. Serves an HLS.js-based player page at `GET /video/:key` — public, CORS `*`, `iframe`-embeddable
+4. Serves an HLS.js-based player page at `GET /video/:key` â€” public, CORS `*`, `iframe`-embeddable
 5. Lets any website embed a fully-working multilingual video player with `<iframe src="https://api.lcyt.fi/video/myevent">`
 
 ---
@@ -25,7 +25,7 @@ LCYT already:
 - Sends captions in real time to YouTube (one language per YouTube target)
 - Produces translations for all active languages simultaneously
 - Delays the video stream ~30 s to let ASR finish, so captions and video arrive in sync at the viewer
-- Runs its own FFmpeg/nginx-RTMP → HLS pipeline for the delayed stream (`/stream-hls/:key/…`)
+- Runs its own FFmpeg/api/v1/nginx-RTMP â†’ HLS pipeline for the delayed stream (`/api/v1/stream-hls/api/v1/:key/api/v1/â€¦`)
 
 What's missing: a user-selectable, embeddable multilingual player. YouTube only accepts one caption language per stream. The new sidecar solves this by writing an HLS subtitle sidecar in parallel with the existing video HLS pipeline, producing a master manifest that carries every translation as a selectable subtitle track.
 
@@ -37,40 +37,40 @@ What's missing: a user-selectable, embeddable multilingual player. YouTube only 
 
 ```
 lcyt-web (streamer)
-  └─▶ POST /captions { text, translations: { 'fi-FI': '...', 'de-DE': '...' } }
-        └─▶ captions.js (async _sendQueue)
-              └─▶ broadcastToViewers(viewerKey, { text, composedText, translations, timestamp, sequence })
-                    ├─▶ SSE → GET /viewer/:key          (Android TV, embed widgets)   [existing]
-                    └─▶ hlsSubsManager.addCue(...)       (per-language WebVTT writer)  [NEW]
+  â””â”€â–¶ POST /captions { text, translations: { 'fi-FI': '...', 'de-DE': '...' } }
+        â””â”€â–¶ captions.js (async _sendQueue)
+              â””â”€â–¶ broadcastToViewers(viewerKey, { text, composedText, translations, timestamp, sequence })
+                    â”œâ”€â–¶ SSE â†’ GET /viewer/:key          (Android TV, embed widgets)   [existing]
+                    â””â”€â–¶ hlsSubsManager.addCue(...)       (per-language WebVTT writer)  [NEW]
 
 Segment timer fires every 6 s per active viewer key:
-  └─▶ _flush(viewerKey)
-        └─▶ write /tmp/hls-subs/<key>/<lang>/seg<N>.vtt   for each language
-              └─▶ update in-memory playlist per language
+  â””â”€â–¶ _flush(viewerKey)
+        â””â”€â–¶ write /tmp/hls-subs/<key>/<lang>/seg<N>.vtt   for each language
+              â””â”€â–¶ update in-memory playlist per language
 
 HTTP (public, CORS *, embeddable):
-  GET /video/:key                            → HLS.js player HTML
-  GET /video/:key/master.m3u8               → master HLS manifest (video + subs)
-  GET /video/:key/subs/:lang/playlist.m3u8  → HLS subtitle playlist
-  GET /video/:key/subs/:lang/seg:N.vtt      → WebVTT segment file
+  GET /video/:key                            â†’ HLS.js player HTML
+  GET /video/:key/master.m3u8               â†’ master HLS manifest (video + subs)
+  GET /video/:key/subs/:lang/playlist.m3u8  â†’ HLS subtitle playlist
+  GET /video/:key/subs/:lang/seg:N.vtt      â†’ WebVTT segment file
 ```
 
 ### Integration Point
 
 The new `HlsSubsManager` is instantiated in `server.js` and injected into two places:
 
-- `createViewerRouter(db, hlsSubsManager)` — calls `addCue()` inside `broadcastToViewers()`
-- `createVideoRouter(db, hlsManager, hlsSubsManager)` — serves manifests + segments
+- `createViewerRouter(db, hlsSubsManager)` â€” calls `addCue()` inside `broadcastToViewers()`
+- `createVideoRouter(db, hlsManager, hlsSubsManager)` â€” serves manifests + segments
 
 No changes are needed to `captions.js` or `store.js`.
 
 ```
 server.js
-  ├─ hlsManager      (existing)  — ffmpeg RTMP → video segments
-  ├─ hlsSubsManager  (NEW)       — caption cues → WebVTT segments
-  ├─ /stream-hls  → createStreamHlsRouter(db, hlsManager)          [unchanged]
-  ├─ /viewer      → createViewerRouter(db, hlsSubsManager)          [MODIFIED signature]
-  └─ /video       → createVideoRouter(db, hlsManager, hlsSubsManager) [NEW]
+  â”œâ”€ hlsManager      (existing)  â€” ffmpeg RTMP â†’ video segments
+  â”œâ”€ hlsSubsManager  (NEW)       â€” caption cues â†’ WebVTT segments
+  â”œâ”€ /stream-hls  â†’ createStreamHlsRouter(db, hlsManager)          [unchanged]
+  â”œâ”€ /viewer      â†’ createViewerRouter(db, hlsSubsManager)          [MODIFIED signature]
+  â””â”€ /video       â†’ createVideoRouter(db, hlsManager, hlsSubsManager) [NEW]
 ```
 
 ---
@@ -81,15 +81,15 @@ All new code lives inside `packages/lcyt-backend/`:
 
 ```
 packages/lcyt-backend/
-├── src/
-│   ├── hls-subs-manager.js          NEW  WebVTT segment writer + in-memory playlist manager
-│   ├── routes/
-│   │   ├── viewer.js                MOD  accept hlsSubsManager param; call addCue() in broadcastToViewers()
-│   │   ├── video.js                 NEW  GET /video/:key — player, master manifest, subs serving
-│   │   └── stream-hls.js                 unchanged
-│   └── server.js                    MOD  instantiate HlsSubsManager; register /video router
-└── test/
-    └── hls-subs-manager.test.js     NEW  unit tests for the subs manager
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ hls-subs-manager.js          NEW  WebVTT segment writer + in-memory playlist manager
+â”‚   â”œâ”€â”€ routes/
+â”‚   â”‚   â”œâ”€â”€ viewer.js                MOD  accept hlsSubsManager param; call addCue() in broadcastToViewers()
+â”‚   â”‚   â”œâ”€â”€ video.js                 NEW  GET /video/:key â€” player, master manifest, subs serving
+â”‚   â”‚   â””â”€â”€ stream-hls.js                 unchanged
+â”‚   â””â”€â”€ server.js                    MOD  instantiate HlsSubsManager; register /video router
+â””â”€â”€ test/
+    â””â”€â”€ hls-subs-manager.test.js     NEW  unit tests for the subs manager
 ```
 
 No new npm packages are required. Everything uses Node.js stdlib (`node:fs/promises`, `node:path`, `node:timers`).
@@ -103,7 +103,7 @@ No new npm packages are required. Everything uses Node.js stdlib (`node:fs/promi
 **Decision: inside `lcyt-backend`, not a separate service.**
 
 Rationale:
-- The translation data is already present in the viewer broadcast payload — no round-trip needed.
+- The translation data is already present in the viewer broadcast payload â€” no round-trip needed.
 - The existing HLS video infrastructure (`hls-manager.js`, `stream-hls.js`) lives here; the master manifest must reference both.
 - Single deployment unit, no inter-process coordination.
 - The `hls_enabled` column on `api_keys` already gates the feature at the DB level.
@@ -113,8 +113,8 @@ Rationale:
 **Decision: 6-second segments, 10-segment rolling window.**
 
 - 6 s > 4 s video segments, ensuring each subtitle segment cleanly covers at least one video segment worth of content without splitting cues mid-segment.
-- 10 segments = 60 s of subtitle history always available — enough for HLS players to seek back within the DVR window.
-- Empty segments (no cues in window) **must** be written — the HLS spec forbids gaps in a live subtitle playlist. An empty WebVTT file (`WEBVTT\n`) satisfies this.
+- 10 segments = 60 s of subtitle history always available â€” enough for HLS players to seek back within the DVR window.
+- Empty segments (no cues in window) **must** be written â€” the HLS spec forbids gaps in a live subtitle playlist. An empty WebVTT file (`WEBVTT\n`) satisfies this.
 - Configurable via `HLS_SUBS_SEGMENT_DURATION` and `HLS_SUBS_WINDOW_SIZE` env vars.
 
 ### 3. Timestamp Alignment
@@ -126,7 +126,7 @@ FFmpeg inserts `EXT-X-PROGRAM-DATE-TIME` into the video playlist (wall-clock tim
 Cue timestamps within a segment are expressed relative to the segment's wall-clock start:
 ```
 cueStart = abs_caption_timestamp_ms - segmentStartMs
-cueEnd   = cueStart + DEFAULT_CUE_DURATION_MS   (default 3500 ms, or next cue start − 50 ms)
+cueEnd   = cueStart + DEFAULT_CUE_DURATION_MS   (default 3500 ms, or next cue start âˆ’ 50 ms)
 ```
 
 ### 4. Language Tags and File Paths
@@ -142,15 +142,15 @@ Human-readable language names for the player UI are resolved from a small built-
 
 ```
 ${HLS_SUBS_ROOT}/            default: /tmp/hls-subs
-└── <viewerKey>/
-    ├── original/
-    │   ├── seg000042.vtt
-    │   └── seg000043.vtt
-    ├── fi-FI/
-    │   ├── seg000042.vtt
-    │   └── seg000043.vtt
-    └── de-DE/
-        └── ...
+â””â”€â”€ <viewerKey>/
+    â”œâ”€â”€ original/
+    â”‚   â”œâ”€â”€ seg000042.vtt
+    â”‚   â””â”€â”€ seg000043.vtt
+    â”œâ”€â”€ fi-FI/
+    â”‚   â”œâ”€â”€ seg000042.vtt
+    â”‚   â””â”€â”€ seg000043.vtt
+    â””â”€â”€ de-DE/
+        â””â”€â”€ ...
 ```
 
 Playlists are held **in memory** (never written to disk) and served on demand. Only `.vtt` segment files are written to disk.
@@ -182,11 +182,11 @@ Cleanup: `stopSubs(viewerKey)` removes the key's directory. Called automatically
 - Served from an inline HTML template in `video.js` (no separate static file needed at this size).
 - Loads **hls.js 1.5.15** from jsDelivr CDN (same version as the existing `stream-hls` player snippet).
 - Points at `/video/:key/master.m3u8`.
-- **No custom language selector UI.** HLS.js wires subtitle tracks from the master manifest directly to the `<video>` element's `textTracks` API. The browser's **native CC button** in the standard video controls then exposes all languages for user selection — no extra JavaScript or UI needed.
+- **No custom language selector UI.** HLS.js wires subtitle tracks from the master manifest directly to the `<video>` element's `textTracks` API. The browser's **native CC button** in the standard video controls then exposes all languages for user selection â€” no extra JavaScript or UI needed.
 - Safari/iOS use native HLS and get the same CC button behaviour for free.
 - `?theme=light` query param switches to a light colour scheme; default is dark.
-- No `X-Frame-Options` header → embeddable anywhere.
-- CORS `*` on all `/video/…` routes.
+- No `X-Frame-Options` header â†’ embeddable anywhere.
+- CORS `*` on all `/video/â€¦` routes.
 - Minimal CSS; responsive (`width: 100%; max-width: 960px`).
 
 > **Why native CC?** The browser already presents a polished, accessible, localised CC picker (language names, keyboard nav, screen reader support). Building a custom `<select>` on top of it would be redundant and worse UX. HLS.js takes care of the plumbing; the browser takes care of the UI.
@@ -196,7 +196,7 @@ Cleanup: `stopSubs(viewerKey)` removes the key's directory. Called automatically
 - Key validation: `/^[a-zA-Z0-9_-]{3,}$/` (same regex as viewer and HLS video keys).
 - Path traversal guard: `resolve(requestedPath).startsWith(resolve(HLS_SUBS_ROOT) + sep)` on every segment file serve.
 - Language tag validation: `/^[a-zA-Z0-9_-]{2,20}$/` before use in file paths.
-- No authentication required (`/video/…` is fully public by design).
+- No authentication required (`/video/â€¦` is fully public by design).
 - Rate limiting: 120 req/min/IP (reuse existing `hlsRateLimit` from `stream-hls.js`).
 
 ---
@@ -216,16 +216,16 @@ export class HlsSubsManager {
   addCue(viewerKey, lang, text, timestamp)
 
   // Return the active language tags for a viewer key. [] if none.
-  getLanguages(viewerKey)          // → string[]
+  getLanguages(viewerKey)          // â†’ string[]
 
   // Return HLS subtitle playlist m3u8 string for a language, or null if not found.
-  getPlaylist(viewerKey, lang)     // → string | null
+  getPlaylist(viewerKey, lang)     // â†’ string | null
 
   // Stop tracking a viewer key and delete its segment files.
-  stopSubs(viewerKey)              // → Promise<void>
+  stopSubs(viewerKey)              // â†’ Promise<void>
 
   // Stop all keys (call on graceful shutdown).
-  stopAll()                        // → Promise<void>
+  stopAll()                        // â†’ Promise<void>
 }
 ```
 
@@ -259,13 +259,13 @@ Tervetuloa kirkolliskokoukseen
 Welcome to the church assembly
 ```
 
-Empty segment (no cues in window — required to avoid playlist gaps):
+Empty segment (no cues in window â€” required to avoid playlist gaps):
 ```
 WEBVTT
 ```
 
 - Timestamps are relative to `segmentStartMs`.
-- `cueEnd` = next cue's `cueStart − 50 ms`, capped at segment duration.
+- `cueEnd` = next cue's `cueStart âˆ’ 50 ms`, capped at segment duration.
 - Cue identifiers are omitted (not required by HLS WebVTT).
 
 ---
@@ -291,14 +291,14 @@ seg000041.vtt
 seg000042.vtt
 ```
 
-- `EXT-X-TARGETDURATION` = `segmentDuration + 1` (per RFC 8216 §4.3.3.1).
+- `EXT-X-TARGETDURATION` = `segmentDuration + 1` (per RFC 8216 Â§4.3.3.1).
 - `EXT-X-MEDIA-SEQUENCE` = index of the oldest segment in the window.
 - `EXT-X-PROGRAM-DATE-TIME` on every segment (required for wall-clock alignment with video).
 - Playlist is regenerated in-memory on every `GET /video/:key/subs/:lang/playlist.m3u8` request.
 
 ---
 
-## New Routes: `GET /video/…`
+## New Routes: `GET /video/â€¦`
 
 | Method | Path | Response | CORS |
 |--------|------|----------|------|
@@ -306,7 +306,7 @@ seg000042.vtt
 | `GET` | `/video/:key/master.m3u8` | Master HLS manifest | `*` |
 | `GET` | `/video/:key/subs/:lang/playlist.m3u8` | Subtitle HLS playlist | `*` |
 | `GET` | `/video/:key/subs/:lang/:segment` | WebVTT segment file | `*` |
-| `OPTIONS` | `/video/:key/…` | CORS preflight 204 | `*` |
+| `OPTIONS` | `/video/:key/â€¦` | CORS preflight 204 | `*` |
 
 All responses: `Cache-Control: no-cache, no-store` for playlists and player; `Cache-Control: public, max-age=60` for segment files.
 
@@ -324,20 +324,20 @@ All responses: `Cache-Control: no-cache, no-store` for playlists and player; `Ca
 
 ## Implementation Phases
 
-### Phase 1 — `HlsSubsManager` core
+### Phase 1 â€” `HlsSubsManager` core
 
 Files: `src/hls-subs-manager.js`, `test/hls-subs-manager.test.js`
 
 - Constructor: read env vars, initialise per-key state map
 - `addCue()`: validate key/lang/timestamp; start timer on first cue; buffer cue in `pendingCues`
 - Segment timer: call `_flush(viewerKey)` every `segmentDuration` seconds
-- `_flush()`: for each language, build WebVTT text from pending cues → write `seg<N>.vtt` → update `langs` rolling window → advance `segmentIndex`
+- `_flush()`: for each language, build WebVTT text from pending cues â†’ write `seg<N>.vtt` â†’ update `langs` rolling window â†’ advance `segmentIndex`
 - `_buildWebVTT(cues, segStartMs)`: format timestamps relative to segment start; compute cue end times
 - `_buildPlaylist(langState)`: generate m3u8 string from rolling segment list
 - `getLanguages()`, `getPlaylist()`, `stopSubs()`, `stopAll()`
 - Unit tests covering: empty segments, cue timestamp math, rolling window eviction, playlist format
 
-### Phase 2 — Viewer route integration
+### Phase 2 â€” Viewer route integration
 
 File: `src/routes/viewer.js`
 
@@ -345,7 +345,7 @@ File: `src/routes/viewer.js`
 - Extend `broadcastToViewers(viewerKey, data, hlsSubsManager)` (or call directly after broadcast):
   - For each key in `data.translations`: `hlsSubsManager.addCue(viewerKey, lang, text, data.timestamp)`
   - For the original text: `hlsSubsManager.addCue(viewerKey, 'original', data.text, data.timestamp)`
-- Call `hlsSubsManager.stopSubs(key)` when the last SSE client disconnects from a viewer key (already tracked in `viewerSubs` — when `clients.size === 0` after remove)
+- Call `hlsSubsManager.stopSubs(key)` when the last SSE client disconnects from a viewer key (already tracked in `viewerSubs` â€” when `clients.size === 0` after remove)
 
 File: `src/server.js`
 
@@ -353,30 +353,30 @@ File: `src/server.js`
 - Pass it to `createViewerRouter` and `createVideoRouter`
 - Call `hlsSubsManager.stopAll()` in graceful shutdown handler
 
-### Phase 3 — `/video` routes
+### Phase 3 â€” `/video` routes
 
 File: `src/routes/video.js`
 
 - `createVideoRouter(db, hlsManager, hlsSubsManager)` factory
-- `GET /video/:key` — inline HTML template with `KEY` and `BACKEND_URL` substituted
-- `GET /video/:key/master.m3u8` — build manifest string from `hlsManager.isRunning()` + `hlsSubsManager.getLanguages()`
-- `GET /video/:key/subs/:lang/playlist.m3u8` — return `hlsSubsManager.getPlaylist(key, lang)` or 404
-- `GET /video/:key/subs/:lang/:segment` — validate filename (`/^seg\d{6}\.vtt$/`), serve file with path-traversal guard
+- `GET /video/:key` â€” inline HTML template with `KEY` and `BACKEND_URL` substituted
+- `GET /video/:key/master.m3u8` â€” build manifest string from `hlsManager.isRunning()` + `hlsSubsManager.getLanguages()`
+- `GET /video/:key/subs/:lang/playlist.m3u8` â€” return `hlsSubsManager.getPlaylist(key, lang)` or 404
+- `GET /video/:key/subs/:lang/:segment` â€” validate filename (`/^seg\d{6}\.vtt$/`), serve file with path-traversal guard
 - CORS `*` + rate limiting on all routes
 
-### Phase 4 — Player HTML
+### Phase 4 â€” Player HTML
 
 Inline in `video.js` (template literal):
 
 - `<video>` element, `controls`, `autoplay="false"`
 - HLS.js from jsDelivr CDN (version 1.5.15, matching `stream-hls.js`)
 - `hls.loadSource('/video/:key/master.m3u8')`; `hls.attachMedia(video)`
-- HLS.js automatically maps `EXT-X-MEDIA TYPE=SUBTITLES` tracks onto the `<video>` element's native `textTracks` — the **browser's own CC button** handles language selection with no custom UI
+- HLS.js automatically maps `EXT-X-MEDIA TYPE=SUBTITLES` tracks onto the `<video>` element's native `textTracks` â€” the **browser's own CC button** handles language selection with no custom UI
 - Set `hls.subtitleDisplay = true` so HLS.js renders the active subtitle track into the video; the CC button controls which track is active
 - CSS: dark theme default, `?theme=light` override, `max-width: 960px`, mobile-safe viewport meta
 - Short "Stream not live" overlay when video errors with `MEDIA_ATTACH_ERROR` or `FATAL`
 
-### Phase 5 — Cleanup and polish
+### Phase 5 â€” Cleanup and polish
 
 - Startup sweep: on `server.js` init, remove `/tmp/hls-subs/*` dirs older than `SESSION_TTL`
 - Graceful shutdown: `hlsSubsManager.stopAll()` alongside existing `hlsManager.stopAll()`
@@ -389,9 +389,10 @@ Inline in `video.js` (template literal):
 
 | Item | Notes |
 |---|---|
-| **Source language tag** | The viewer payload has no explicit `sourceLang` field. Using `'original'` as the key is safe and unambiguous. Passing the actual BCP-47 source tag (e.g. `'en'`) requires either a session config lookup or an extra field on the broadcast payload — defer to a follow-up PR. |
-| **Video CODECS string** | ~~The master manifest hard-codes `avc1.4d401f,mp4a.40.2`~~ — **Done**: `HlsManager.probeStreamInfo()` (`tmp_plan_tier3.md` Item 6) now probes the real stream via ffprobe and builds an RFC-6381-correct `avc1.PPCCLL` string; the hard-coded value remains only as the fallback when probing fails. |
-| **Subtitle-only mode** | If no video stream is running, still serve subtitle playlists (useful for testing captioning without video). The master manifest can reference a dummy stream-inf pointing at a non-live video URL — the player will show an error for video but subtitles remain accessible. |
-| **CEA-708 embedding** | Future: embed captions directly into `.ts` segments via ffmpeg `mov_text`/`cea608` — enables closed-caption rendering on devices that don't support WebVTT sidecar (e.g. Smart TVs). Out of scope here. |
+| **Source language tag** | The viewer payload has no explicit `sourceLang` field. Using `'original'` as the key is safe and unambiguous. Passing the actual BCP-47 source tag (e.g. `'en'`) requires either a session config lookup or an extra field on the broadcast payload â€” defer to a follow-up PR. |
+| **Video CODECS string** | ~~The master manifest hard-codes `avc1.4d401f,mp4a.40.2`~~ â€” **Done**: `HlsManager.probeStreamInfo()` (`tmp_plan_tier3.md` Item 6) now probes the real stream via ffprobe and builds an RFC-6381-correct `avc1.PPCCLL` string; the hard-coded value remains only as the fallback when probing fails. |
+| **Subtitle-only mode** | If no video stream is running, still serve subtitle playlists (useful for testing captioning without video). The master manifest can reference a dummy stream-inf pointing at a non-live video URL â€” the player will show an error for video but subtitles remain accessible. |
+| **CEA-708 embedding** | Future: embed captions directly into `.ts` segments via ffmpeg `mov_text`/`cea608` â€” enables closed-caption rendering on devices that don't support WebVTT sidecar (e.g. Smart TVs). Out of scope here. |
 | **Rate limit tuning** | 120 req/min/IP was designed for video segments. Subtitle playlists are polled at the same frequency; the limit covers both. Monitor in production and tune if needed. |
 | **Horizontal scaling** | `HlsSubsManager` state is in-process. Fine for the current single-VPS deployment. For multi-instance, move segment files to shared storage (NFS/S3) and playlist state to Redis. |
+

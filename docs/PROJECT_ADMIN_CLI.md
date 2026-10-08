@@ -1,4 +1,4 @@
-# Project Admin CLI Tool
+﻿# Project Admin CLI Tool
 
 The Project Admin CLI tool provides comprehensive CRUD operations for managing projects and their setup settings via the backend admin API.
 
@@ -6,10 +6,10 @@ The Project Admin CLI tool provides comprehensive CRUD operations for managing p
 
 This tool allows you to:
 
-1. **Manage Projects** — Create, list, retrieve, update, and delete projects (API keys)
-2. **Manage Features** — Enable/disable feature flags for projects
-3. **Export/Import** — Backup and restore project configurations as JSON
-4. **Generate Scripts** — Create runnable bash scripts to deploy configurations
+1. **Manage Projects** â€” Create, list, retrieve, update, and delete projects (API keys)
+2. **Manage Features** â€” Enable/disable feature flags for projects
+3. **Export/Import** â€” Backup and restore project configurations as JSON
+4. **Generate Scripts** â€” Create runnable bash scripts to deploy configurations
 
 ## Installation
 
@@ -322,7 +322,7 @@ BACKUP_KEY=$(lcyt project create \
 lcyt features set "$BACKUP_KEY" \
   --enable captions
 
-echo "✓ Projects created:"
+echo "âœ“ Projects created:"
 echo "  Main Stream: $MAIN_KEY"
 echo "  Backup Stream: $BACKUP_KEY"
 ```
@@ -334,20 +334,20 @@ bash setup-projects.sh
 
 ## Environment Variables
 
-- `LCYT_BACKEND_URL` — Backend API URL (default: http://localhost:3000)
-- `ADMIN_KEY` — Admin key for authentication
-- `JWT_TOKEN` — JWT token for authentication (alternative to ADMIN_KEY)
+- `LCYT_BACKEND_URL` â€” Backend API URL (default: http://localhost:3000)
+- `ADMIN_KEY` â€” Admin key for authentication
+- `JWT_TOKEN` â€” JWT token for authentication (alternative to ADMIN_KEY)
 
 ## API Endpoints Used
 
 The CLI tool interacts with these backend admin API endpoints:
 
-- `POST /admin/keys` — Create project
-- `GET /admin/keys` — List projects
-- `GET /admin/projects/:key` — Get project details
-- `PUT /admin/projects/:key` — Update project
-- `DELETE /admin/projects/:key` — Delete project
-- `PUT /admin/projects/:key/features` — Set features
+- `POST /admin/keys` â€” Create project
+- `GET /admin/keys` â€” List projects
+- `GET /admin/projects/:key` â€” Get project details
+- `PUT /admin/projects/:key` â€” Update project
+- `DELETE /admin/projects/:key` â€” Delete project
+- `PUT /admin/projects/:key/features` â€” Set features
 
 ## Error Handling
 
@@ -454,3 +454,4 @@ lcyt project export sk_abc123def456 | jq .
 - Backend admin API documentation: `packages/lcyt-backend/src/routes/admin.js`
 - Project features: `packages/lcyt-backend/src/db/project-features.js`
 - CLI package: `packages/lcyt-cli/CLAUDE.md`
+

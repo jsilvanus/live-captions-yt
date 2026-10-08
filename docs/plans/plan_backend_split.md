@@ -1,15 +1,15 @@
----
+﻿---
 id: plan/backend-split
 title: "lcyt-backend Modularization & Plugin Extraction Assessment"
 status: reference
-summary: "Structural analysis of lcyt-backend: plugin extraction complete for exactly 4 plugins traceable to this document — lcyt-rtmp, lcyt-dsk, lcyt-production (already extracted pre-analysis) and lcyt-files (recommended here as a candidate, later built via plan_files3.md, which cites this doc as its origin). docs/PLANS.md's index line for this file (lcyt-rtmp, lcyt-dsk, lcyt-agent, lcyt-music, lcyt-cues) is wrong — lcyt-agent/lcyt-music/lcyt-cues are unrelated plugins with their own separate plan docs, never discussed anywhere in this file. Internal refactoring done (route group factories, DB module split). The lcyt-translate plugin proposal was never built as designed; its STT gap was closed by a simpler mechanism inside lcyt-rtmp instead — see plan_translate.md's 2026-07-20 status note."
+summary: "Structural analysis of lcyt-backend: plugin extraction complete for exactly 4 plugins traceable to this document â€” lcyt-rtmp, lcyt-dsk, lcyt-production (already extracted pre-analysis) and lcyt-files (recommended here as a candidate, later built via plan_files3.md, which cites this doc as its origin). docs/PLANS.md's index line for this file (lcyt-rtmp, lcyt-dsk, lcyt-agent, lcyt-music, lcyt-cues) is wrong â€” lcyt-agent/lcyt-music/lcyt-cues are unrelated plugins with their own separate plan docs, never discussed anywhere in this file. Internal refactoring done (route group factories, DB module split). The lcyt-translate plugin proposal was never built as designed; its STT gap was closed by a simpler mechanism inside lcyt-rtmp instead â€” see plan_translate.md's 2026-07-20 status note."
 ---
 
-# lcyt-backend — Modularization Assessment
+# lcyt-backend â€” Modularization Assessment
 
 ## Summary
 
-The backend is **already well-partitioned** for its scale. Three substantial plugins have been extracted (`lcyt-rtmp` ~5,700 LOC, `lcyt-production` ~3,300 LOC, `lcyt-dsk` ~2,300 LOC), leaving a ~5,200 LOC core that handles authentication, session management, caption delivery, and key/user administration. This document assesses what — if anything — should be extracted further, and why.
+The backend is **already well-partitioned** for its scale. Three substantial plugins have been extracted (`lcyt-rtmp` ~5,700 LOC, `lcyt-production` ~3,300 LOC, `lcyt-dsk` ~2,300 LOC), leaving a ~5,200 LOC core that handles authentication, session management, caption delivery, and key/user administration. This document assesses what â€” if anything â€” should be extracted further, and why.
 
 ---
 
@@ -47,11 +47,11 @@ This "optional heavy-lifting feature" profile is what made extraction clean and 
 
 ### The caption delivery core (do not extract)
 
-Routes `/live`, `/captions`, `/events`, `/sync`, `/mic` form an inseparable unit. They all depend on `SessionStore` (`store.js`), share sequence tracking and send queue, and together implement the caption delivery contract. Splitting them into a plugin would gain nothing — they *are* the core product.
+Routes `/api/v1/live`, `/api/v1/captions`, `/api/v1/events`, `/api/v1/sync`, `/api/v1/mic` form an inseparable unit. They all depend on `SessionStore` (`store.js`), share sequence tracking and send queue, and together implement the caption delivery contract. Splitting them into a plugin would gain nothing â€” they *are* the core product.
 
 `store.js` itself is the session spine. Its DSK SSE subscription helpers are slightly out of place (graphics concerns in a session store), but extracting them would add more complexity than it removes.
 
-### Route clusters that could become plugins — but probably shouldn't
+### Route clusters that could become plugins â€” but probably shouldn't
 
 Three clusters in the remaining codebase have reasonably clean boundaries:
 
@@ -60,25 +60,25 @@ Three clusters in the remaining codebase have reasonably clean boundaries:
 Files: `src/routes/auth.js` + `keys.js` + `project-members.js` + `project-features.js` + `device-roles.js` and their matching `src/db/` modules (~1,700 LOC combined).
 
 These form a coherent "IAM" cluster. However:
-- They are **always required** — a backend without auth is not usable.
-- They are **tightly inter-dependent**: device-roles check project membership; project-features gate which routes are available; keys carry user ownership FKs. A plugin boundary here would require passing 4–5 DB modules across the boundary.
+- They are **always required** â€” a backend without auth is not usable.
+- They are **tightly inter-dependent**: device-roles check project membership; project-features gate which routes are available; keys carry user ownership FKs. A plugin boundary here would require passing 4â€“5 DB modules across the boundary.
 - Moving them to `packages/plugins/lcyt-authz` would add a package with no operational toggle and a larger import surface than what it replaces.
 
 **Verdict: Keep in core. Refactor intra-file if individual files grow beyond ~400 LOC.**
 
-#### B. Analytics (`/stats`, `/usage`, `/viewer`)
+#### B. Analytics (`/api/v1/stats`, `/api/v1/usage`, `/api/v1/viewer`)
 
 Files: `src/routes/stats.js`, `usage.js`, `viewer.js` and matching DB modules (~350 LOC).
 
-These are read-only, DB-only routes with no shared services. They could move to `lcyt-analytics`, but the gain is marginal — each file is small, and they have no background services to manage.
+These are read-only, DB-only routes with no shared services. They could move to `lcyt-analytics`, but the gain is marginal â€” each file is small, and they have no background services to manage.
 
 **Verdict: Keep in core. No compelling reason to extract.**
 
-#### C. Caption file management (`/file`)
+#### C. Caption file management (`/api/v1/file`)
 
 Files: `src/routes/files.js`, `src/caption-files.js`, `src/db/files.js` (~320 LOC).
 
-Self-contained filesystem + DB operations with no external dependencies. Same argument as analytics — small, no background services.
+Self-contained filesystem + DB operations with no external dependencies. Same argument as analytics â€” small, no background services.
 
 **Verdict: Keep in core.**
 
@@ -93,15 +93,15 @@ The codebase does not suffer from a plugin-extraction problem. It suffers from *
 Group related route imports into logical namespaces that can be initialized together.
 
 ```js
-// src/routes/session/index.js — exports createSessionRouters(db, store, jwtSecret, auth)
+// src/routes/session/index.js â€” exports createSessionRouters(db, store, jwtSecret, auth)
 //   mounts: /live, /captions, /events, /sync, /mic
 //   returns a single Express router
 
-// src/routes/account/index.js — exports createAccountRouters(db, opts)
+// src/routes/account/index.js â€” exports createAccountRouters(db, opts)
 //   mounts: /auth, /keys, /keys/:key/features, /keys/:key/members, /keys/:key/device-roles
 //   returns a single Express router
 
-// src/routes/content/index.js — exports createContentRouters(db, auth, managers)
+// src/routes/content/index.js â€” exports createContentRouters(db, auth, managers)
 //   mounts: /file, /stats, /usage, /viewer, /video, /stt, /youtube
 //   returns a single Express router
 ```
@@ -122,9 +122,9 @@ This keeps all code in `lcyt-backend` (no new packages, no new `package.json`) b
 
 A cleaner pattern: expose a narrow `EventBus` (or reuse Node's `EventEmitter`) that both `store.js` and `lcyt-dsk` can import, removing graphics state from the session object entirely.
 
-This is a low-urgency refactor — it doesn't affect correctness — but it would make `store.js` easier to reason about.
+This is a low-urgency refactor â€” it doesn't affect correctness â€” but it would make `store.js` easier to reason about.
 
-### Recommendation 3: `src/db/index.js` — split schema from barrel
+### Recommendation 3: `src/db/index.js` â€” split schema from barrel
 
 `src/db/index.js` does two things: defines all 17 table schemas (with migrations and backfill logic, 348 LOC) and re-exports all domain DB modules. These responsibilities could be separated into `src/db/schema.js` (schema + migrations only) and `src/db/index.js` (barrel re-export only). No functional change, just easier to navigate.
 
@@ -136,13 +136,13 @@ A new plugin is warranted when:
 1. It has a meaningful operational toggle (can be disabled at deploy time).
 2. It manages background services or external client lifecycles.
 3. It introduces external dependencies that the core backend does not need.
-4. It has a natural injection point — a seam where the core can call it without knowing its internals.
+4. It has a natural injection point â€” a seam where the core can call it without knowing its internals.
 
 Based on current features, no remaining cluster met all four criteria in the initial assessment. Two subsequent discussions changed that: the potential move to S3 for file storage, and the gap in server-side translation for STT-originated captions.
 
 ---
 
-## Candidate Plugin: `lcyt-files` — Caption File Storage
+## Candidate Plugin: `lcyt-files` â€” Caption File Storage
 
 ### Why the S3 migration changes the calculus
 
@@ -184,8 +184,8 @@ adapter.list(apiKey)                           // returns file rows from DB
 ```
 
 **Adapters:**
-- `src/adapters/local.js` — migrated from current `caption-files.js`; `FILES_DIR` env var
-- `src/adapters/s3.js` — `@aws-sdk/client-s3`; `S3_BUCKET`, `S3_REGION`, `S3_PREFIX` env vars; keeps the same DB metadata rows, stores object keys instead of local paths
+- `src/adapters/local.js` â€” migrated from current `caption-files.js`; `FILES_DIR` env var
+- `src/adapters/s3.js` â€” `@aws-sdk/client-s3`; `S3_BUCKET`, `S3_REGION`, `S3_PREFIX` env vars; keeps the same DB metadata rows, stores object keys instead of local paths
 
 **Plugin entry (`src/api.js`):**
 ```js
@@ -200,7 +200,7 @@ const { adapter: fileStorage, createFileRouter } = initFileStorage(db);
 // inject into captions router:
 app.use(createSessionRouters(db, store, jwtSecret, auth, { relayManager, dskCaptionProcessor, fileStorage }));
 // mount /file routes:
-app.use('/file', createFileRouter(db, auth, store, jwtSecret));
+app.use('/api/v1/file', createFileRouter(db, auth, store, jwtSecret));
 ```
 
 **`captions.js` change (single injection point):**
@@ -224,28 +224,28 @@ export function createCaptionsRouter(store, auth, db, relayManager, dskProcessor
 ### Migration path
 
 1. Create plugin package, move existing local adapter code in.
-2. Wire `FILE_STORAGE=local` as default — **zero behavioural change** for existing deployments.
+2. Wire `FILE_STORAGE=local` as default â€” **zero behavioural change** for existing deployments.
 3. Implement S3 adapter; test against MinIO locally.
 4. Update CLAUDE.md to list new env vars.
 
-**Verdict: Recommended when S3 migration is planned. No urgency until then — the existing local code works fine.**
+**Verdict: Recommended when S3 migration is planned. No urgency until then â€” the existing local code works fine.**
 
 ---
 
-## Candidate Plugin: `lcyt-translate` — Server-Side Translation
+## Candidate Plugin: `lcyt-translate` â€” Server-Side Translation
 
 ### Current state
 
 Translation is **entirely client-side** today. The lcyt-web app:
 1. Calls external vendor APIs directly from the browser (MyMemory, Google, DeepL, LibreTranslate) via `src/lib/translate.js`
 2. Sends already-translated text in the `captions` payload: `{ text, translations: { 'fi-FI': '...' }, captionLang, showOriginal }`
-3. The backend's `captions.js` is a pass-through — it writes the `translations` blob to files and forwards it to viewer/generic targets, but never produces translations itself
+3. The backend's `captions.js` is a pass-through â€” it writes the `translations` blob to files and forwards it to viewer/generic targets, but never produces translations itself
 
 There is **no translation route, no translation DB table, no server-side vendor call** in the backend today.
 
 ### Why a server-side plugin would be valuable
 
-**The STT gap.** When `SttManager` injects transcripts server-side (via `POST /stt/start`), those transcripts bypass the browser entirely. A Finnish speaker streams audio, Google STT transcribes in Finnish, the transcript goes straight into the send queue — but no English translation is ever sent, because the browser translation pipeline never ran. A `lcyt-translate` plugin closes this gap by translating transcripts before they reach the send queue.
+**The STT gap.** When `SttManager` injects transcripts server-side (via `POST /stt/start`), those transcripts bypass the browser entirely. A Finnish speaker streams audio, Google STT transcribes in Finnish, the transcript goes straight into the send queue â€” but no English translation is ever sent, because the browser translation pipeline never ran. A `lcyt-translate` plugin closes this gap by translating transcripts before they reach the send queue.
 
 **API key security.** Vendor API keys (DeepL, Google Cloud) currently live in browser `localStorage`. Moving translation server-side means API keys stay in environment variables.
 
@@ -258,14 +258,14 @@ There is **no translation route, no translation DB table, no server-side vendor 
 **Translation adapter interface:**
 ```js
 // Each vendor adapter exposes one method:
-adapter.translate(text, sourceLang, targetLang)  // → Promise<string>
+adapter.translate(text, sourceLang, targetLang)  // â†’ Promise<string>
 ```
 
 **Adapters:**
-- `src/adapters/mymemory.js` — free tier, no key required
-- `src/adapters/google.js` — Google Cloud Translation v2 REST API
-- `src/adapters/deepl.js` — DeepL REST API (free + pro)
-- `src/adapters/libretranslate.js` — self-hosted LibreTranslate
+- `src/adapters/mymemory.js` â€” free tier, no key required
+- `src/adapters/google.js` â€” Google Cloud Translation v2 REST API
+- `src/adapters/deepl.js` â€” DeepL REST API (free + pro)
+- `src/adapters/libretranslate.js` â€” self-hosted LibreTranslate
 
 **Per-key translation config** (new DB table `project_translations`):
 ```sql
@@ -282,15 +282,15 @@ CREATE TABLE project_translations (
 ```js
 export function initTranslate(db, { vendor, apiKey, libreUrl } = {})
 // returns { translate, createTranslateRouter }
-// translate(apiKey, text, sourceLang) → Promise<{ [lang]: string }>
+// translate(apiKey, text, sourceLang) â†’ Promise<{ [lang]: string }>
 //   reads per-key target list from DB, calls adapter for each enabled target
 ```
 
 **Routes added by plugin:**
 ```
-GET  /translate/config         — get per-key translation settings (Bearer token)
-PUT  /translate/config         — update per-key translation settings (Bearer token)
-POST /translate/test           — test translation for a given text + lang (Bearer token)
+GET  /translate/config         â€” get per-key translation settings (Bearer token)
+PUT  /translate/config         â€” update per-key translation settings (Bearer token)
+POST /translate/test           â€” test translation for a given text + lang (Bearer token)
 ```
 
 **Injection into `captions.js` (single point):**
@@ -302,7 +302,7 @@ export function createCaptionsRouter(store, auth, db, relayManager, dskProcessor
   }
 ```
 
-The `if (!caption.translations)` guard means: if the client already translated (browser mode), the server translation is skipped — no double-translation.
+The `if (!caption.translations)` guard means: if the client already translated (browser mode), the server translation is skipped â€” no double-translation.
 
 **Injection into `SttManager` (the main new capability):**
 ```js
@@ -323,7 +323,7 @@ session._sendQueue = session._sendQueue.then(() =>
 | `TRANSLATE_API_KEY` | Vendor API key | none |
 | `TRANSLATE_LIBRE_URL` | LibreTranslate base URL | none |
 
-Note: `TRANSLATE_VENDOR` being unset disables the plugin entirely — no config, no routes, zero overhead.
+Note: `TRANSLATE_VENDOR` being unset disables the plugin entirely â€” no config, no routes, zero overhead.
 
 ### Relationship to existing client-side translation
 
@@ -338,7 +338,7 @@ The two pipelines are complementary, not competing:
 
 Migrating fully to server-side translation is a separate future decision. Initially, both pipelines can coexist: the browser still translates by default, the server translates STT transcripts.
 
-**Verdict: Recommended — primarily to serve STT-originated captions. The gap is real and will grow as STT adoption increases. The plugin boundary is clean and the injection point in `captions.js` already exists (empty today).**
+**Verdict: Recommended â€” primarily to serve STT-originated captions. The gap is real and will grow as STT adoption increases. The plugin boundary is clean and the injection point in `captions.js` already exists (empty today).**
 
 ---
 
@@ -346,12 +346,13 @@ Migrating fully to server-side translation is a separate future decision. Initia
 
 | Recommendation | Priority | Type | Effort | Status |
 |---|---|---|---|---|
-| Group routes into 3 sub-routers (`session/`, `account/`, `content/`) | Medium | Internal refactor | Small | ✅ Done |
-| Move DSK event/state out of `store.js` into DskBus | Low | Internal refactor | Small | ✅ Done |
-| Split `src/db/index.js` schema from barrel | Low | Internal refactor | Trivial | ✅ Done |
-| Extract caption file storage into `lcyt-files` plugin | Medium | Plugin | Medium | ✅ Done — via `plan_files3.md` (local/S3/WebDAV adapters, `packages/plugins/lcyt-files`) |
-| Add server-side translation as `lcyt-translate` plugin | Medium | Plugin | Medium | Superseded — the STT gap was closed via `packages/plugins/lcyt-rtmp/src/translate-server.js` instead of a standalone plugin package; see `plan_translate.md`'s 2026-07-20 status note. The non-STT gap (API/generic/CLI clients with no server-side translation) remains open. |
-| Extract user/IAM cluster into `lcyt-authz` plugin | Not recommended | Plugin | Large | — |
-| Extract analytics into `lcyt-analytics` plugin | Not recommended | Plugin | Small | — |
+| Group routes into 3 sub-routers (`session/`, `account/`, `content/`) | Medium | Internal refactor | Small | âœ… Done |
+| Move DSK event/state out of `store.js` into DskBus | Low | Internal refactor | Small | âœ… Done |
+| Split `src/db/index.js` schema from barrel | Low | Internal refactor | Trivial | âœ… Done |
+| Extract caption file storage into `lcyt-files` plugin | Medium | Plugin | Medium | âœ… Done â€” via `plan_files3.md` (local/S3/WebDAV adapters, `packages/plugins/lcyt-files`) |
+| Add server-side translation as `lcyt-translate` plugin | Medium | Plugin | Medium | Superseded â€” the STT gap was closed via `packages/plugins/lcyt-rtmp/src/translate-server.js` instead of a standalone plugin package; see `plan_translate.md`'s 2026-07-20 status note. The non-STT gap (API/generic/CLI clients with no server-side translation) remains open. |
+| Extract user/IAM cluster into `lcyt-authz` plugin | Not recommended | Plugin | Large | â€” |
+| Extract analytics into `lcyt-analytics` plugin | Not recommended | Plugin | Small | â€” |
 
-**The backend is not monolithic in a problematic sense.** The three internal refactors (route groups, DskBus, db split) are now done. Of the two candidate plugins this document proposed: `lcyt-files` shipped (via `plan_files3.md`), and `lcyt-translate`'s STT-gap motivation was satisfied without a new plugin package (see `plan_translate.md`). This document's own plugin-extraction scope is therefore fully resolved — 4 plugins total (`lcyt-rtmp`, `lcyt-dsk`, `lcyt-production`, `lcyt-files`), not the 5 currently listed in `docs/PLANS.md`'s index line for this file.
+**The backend is not monolithic in a problematic sense.** The three internal refactors (route groups, DskBus, db split) are now done. Of the two candidate plugins this document proposed: `lcyt-files` shipped (via `plan_files3.md`), and `lcyt-translate`'s STT-gap motivation was satisfied without a new plugin package (see `plan_translate.md`). This document's own plugin-extraction scope is therefore fully resolved â€” 4 plugins total (`lcyt-rtmp`, `lcyt-dsk`, `lcyt-production`, `lcyt-files`), not the 5 currently listed in `docs/PLANS.md`'s index line for this file.
+

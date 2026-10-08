@@ -1,14 +1,14 @@
----
+﻿---
 id: plan/pr-phase6-7-hetzner
-title: "PR: Phase 6–7 Hetzner provisioning and autoscaling scaffolding"
+title: "PR: Phase 6â€“7 Hetzner provisioning and autoscaling scaffolding"
 status: reference
-summary: "PR artifact for plan/dock-ffmpeg phases 6–7: Hetzner provisioning, snapshot boot, autoscaling scaffolding, operator runbook."
+summary: "PR artifact for plan/dock-ffmpeg phases 6â€“7: Hetzner provisioning, snapshot boot, autoscaling scaffolding, operator runbook."
 ---
 
-# PR: Phase 6–7: Hetzner provisioning, snapshot, and autoscaling scaffolding
+# PR: Phase 6â€“7: Hetzner provisioning, snapshot, and autoscaling scaffolding
 
 Branch: `director/phase6-7-hetzner`
-PR title: "Phase 6–7: Hetzner provisioning, snapshot, and autoscaling scaffolding"
+PR title: "Phase 6â€“7: Hetzner provisioning, snapshot, and autoscaling scaffolding"
 
 Summary
 - Add Hetzner provisioning support and autoscaling scaffolding in the Compute Orchestrator (`packages/lcyt-orchestrator`).
@@ -71,3 +71,4 @@ Rollback plan
 
 Notes
 - This patch adds the prepared cloud-init and systemd artifacts for operators to use when creating a Hetzner snapshot. The `scripts/prepare_snapshot.sh` helper documents interactive snapshot preparation steps.
+

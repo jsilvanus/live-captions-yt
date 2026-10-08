@@ -1,4 +1,4 @@
----
+﻿---
 title: Caption Settings (CC)
 order: 4
 ---
@@ -13,14 +13,14 @@ Click **CC** in the top status bar to open the Closed Captions modal. It has up 
 
 The **Receivers** tab is the first tab and manages all caption delivery destinations.
 
-![CC modal — Receivers tab](/screenshots/modal-cc-receivers-light.png)
+![CC modal â€” Receivers tab](/screenshots/modal-cc-receivers-light.png)
 
 Click **+ Add target** to add a new entry. Each entry can be:
 
 | Type | Description |
 |------|-------------|
-| **YouTube** | A YouTube stream key — captions are sent to that stream via YouTube's HTTP POST caption ingestion API |
-| **Viewer** | A viewer key — captions are broadcast to audience members via the public SSE endpoint at `/viewer/:key`. Viewers open the viewer page at `/view/:key` or the embed widget at `/embed/viewer`. |
+| **YouTube** | A YouTube stream key â€” captions are sent to that stream via YouTube's HTTP POST caption ingestion API |
+| **Viewer** | A viewer key â€” captions are broadcast to audience members via the public SSE endpoint at `/viewer/:key`. Viewers open the viewer page at `/view/:key` or the embed widget at `/embed/viewer`. |
 | **Generic** | A custom HTTP POST endpoint with optional JSON headers |
 
 You can add multiple targets (e.g. two YouTube streams and a viewer feed). Each target has an enable toggle. Only enabled targets receive captions.
@@ -31,7 +31,7 @@ Each target can also have **Disable batch sending** enabled, which forces captio
 
 ### Viewer targets
 
-Viewer targets broadcast captions to anyone with the viewer page URL — no YouTube account required. After adding a viewer target you'll see a shareable link:
+Viewer targets broadcast captions to anyone with the viewer page URL â€” no YouTube account required. After adding a viewer target you'll see a shareable link:
 
 ```
 https://app.lcyt.fi/view/<your-viewer-key>?server=https://api.lcyt.fi
@@ -45,7 +45,7 @@ https://app.lcyt.fi/embed/viewer?key=<your-viewer-key>&server=https://api.lcyt.f
 
 The viewer page displays the current caption prominently with a dimmed history list. It connects to the backend via Server-Sent Events and reconnects automatically on disconnect.
 
-You can optionally assign an **icon** (PNG or SVG logo) to a viewer target. The icon is shown in the viewer page header. Upload icons in **Settings → Icons** (see below).
+You can optionally assign an **icon** (PNG or SVG logo) to a viewer target. The icon is shown in the viewer page header. Upload icons in **Settings â†’ Icons** (see below).
 
 ---
 
@@ -53,7 +53,7 @@ You can optionally assign an **icon** (PNG or SVG logo) to a viewer target. The 
 
 The **Service** tab controls which speech-to-text engine is used and how it is configured.
 
-![CC modal — Service tab](/screenshots/modal-cc-service-light.png)
+![CC modal â€” Service tab](/screenshots/modal-cc-service-light.png)
 
 ### STT engine
 
@@ -82,7 +82,7 @@ Additional Cloud STT options: **Auto-punctuation**, **Profanity filter**, **Conf
 
 ### Utterance end button _(advanced mode only)_
 
-Shows a 🗣 icon on the audio meter during active speech recognition. Click it to force-end the current utterance immediately (commits the partial transcript as a final caption).
+Shows a ðŸ—£ icon on the audio meter during active speech recognition. Click it to force-end the current utterance immediately (commits the partial transcript as a final caption).
 
 ### Utterance end timer _(advanced mode only)_
 
@@ -92,17 +92,17 @@ Automatically force-ends the utterance after N seconds (0 = disabled). Useful fo
 
 ## Details tab _(advanced mode only)_ {#details}
 
-> This tab is only visible when **Show advanced options** is enabled in Settings → Basic.
+> This tab is only visible when **Show advanced options** is enabled in Settings â†’ Basic.
 
 ### Batching
 
 | Setting | Description |
 |---------|-------------|
-| **Batch window** | `0` = send each caption immediately. `1–20 s` = collect captions over the window, then send as a single batch. |
+| **Batch window** | `0` = send each caption immediately. `1â€“20 s` = collect captions over the window, then send as a single batch. |
 
 ### Transcription offset
 
-Shifts the caption timestamp relative to when the transcription arrives. Use a negative value (e.g. `−5 s`) to compensate for transcription processing delay, so captions line up with the moment the speaker started talking in the YouTube stream.
+Shifts the caption timestamp relative to when the transcription arrives. Use a negative value (e.g. `âˆ’5 s`) to compensate for transcription processing delay, so captions line up with the moment the speaker started talking in the YouTube stream.
 
 Double-click the slider to reset to 0.
 
@@ -122,7 +122,7 @@ Double-click the slider to reset to 0.
 
 The **Translation** tab configures real-time caption translation.
 
-![CC modal — Translation tab](/screenshots/modal-cc-translation-light.png)
+![CC modal â€” Translation tab](/screenshots/modal-cc-translation-light.png)
 
 Click **+ Add translation** to add a target language. Each entry specifies:
 
@@ -145,4 +145,5 @@ Click **+ Add translation** to add a target language. Each entry specifies:
 ### Show original
 
 Enable **Show original** to include the original text alongside the translation in the YouTube caption stream (separated by a line break).
+
 

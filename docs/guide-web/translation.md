@@ -1,4 +1,4 @@
----
+﻿---
 title: Translation
 order: 5
 ---
@@ -28,7 +28,7 @@ Click **+ Add translation** to add a new row. Each row defines one translation o
 
 | Field | Options | Description |
 |-------|---------|-------------|
-| **Enabled** | ☑ | Toggle this translation on/off without deleting it |
+| **Enabled** | â˜‘ | Toggle this translation on/off without deleting it |
 | **Language** | Any supported language | Target language for translation |
 | **Target** | `captions`, `file`, `backend-file` | Where the translated text is delivered |
 | **Format** | `youtube`, `vtt` | Caption format (for file targets only) |
@@ -47,7 +47,7 @@ Click **+ Add translation** to add a new row. Each row defines one translation o
 
 ## Multilingual video player
 
-Every enabled translation language automatically becomes a **selectable subtitle track** in the embeddable video player at `GET /video/:key` — no extra configuration required. Viewers use their browser's built-in CC button to switch languages.
+Every enabled translation language automatically becomes a **selectable subtitle track** in the embeddable video player at `GET /video/:key` â€” no extra configuration required. Viewers use their browser's built-in CC button to switch languages.
 
 See [Multilingual Video Player](./video-player.md) for setup instructions and embed code.
 
@@ -72,4 +72,5 @@ Enable **Show original** to keep the original caption text in the stream alongsi
 1. Deploy a LibreTranslate instance (or use a public one).
 2. Enter the server URL (e.g. `https://translate.example.com`).
 3. Optionally enter an API key if your server requires one.
+
 

@@ -1,9 +1,9 @@
----
+﻿---
 id: lib/python/readme
-title: "Python Library — lcyt"
+title: "Python Library â€” lcyt"
 ---
 
-# Python Library — lcyt
+# Python Library â€” lcyt
 
 `lcyt` is the Python core library for sending live captions to YouTube Live via Google's HTTP POST caption ingestion API.
 
@@ -29,10 +29,10 @@ pip install -e python-packages/lcyt
 
 | Module | Purpose |
 |---|---|
-| `lcyt.sender` | [`YoutubeLiveCaptionSender`](#python-sender) — direct YouTube caption delivery |
-| `lcyt.backend_sender` | [`BackendCaptionSender`](#python-backend-sender) — relay via lcyt-backend |
-| `lcyt.config` | [Configuration utilities](#python-config) — load/save config, build ingestion URL |
-| `lcyt.errors` | [Error classes](#python-errors) — typed exception hierarchy |
+| `lcyt.sender` | [`YoutubeLiveCaptionSender`](#python-sender) â€” direct YouTube caption delivery |
+| `lcyt.backend_sender` | [`BackendCaptionSender`](#python-backend-sender) â€” relay via lcyt-backend |
+| `lcyt.config` | [Configuration utilities](#python-config) â€” load/save config, build ingestion URL |
+| `lcyt.errors` | [Error classes](#python-errors) â€” typed exception hierarchy |
 
 ---
 
@@ -81,7 +81,7 @@ sender.end()
 | `"YYYY-MM-DDTHH:MM:SS.mmm"` | ISO string used as-is |
 | `None` | Current time (sync offset applied if enabled) |
 
-ISO strings must not include a trailing `Z` or `+00:00` — they are stripped automatically.
+ISO strings must not include a trailing `Z` or `+00:00` â€” they are stripped automatically.
 
 ---
 
@@ -91,3 +91,4 @@ ISO strings must not include a trailing `Z` or `+00:00` — they are stripped au
 - [BackendCaptionSender](#python-backend-sender)
 - [Configuration](#python-config)
 - [Errors](#python-errors)
+

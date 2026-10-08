@@ -1,6 +1,6 @@
----
+﻿---
 id: lib/python/sender
-title: "Python — YoutubeLiveCaptionSender"
+title: "Python â€” YoutubeLiveCaptionSender"
 ---
 
 # YoutubeLiveCaptionSender (Python)
@@ -168,7 +168,7 @@ sender.send_batch()
 | `text` | `str` | Caption text (required string) |
 | `timestamp` | `str \| datetime \| int \| float \| None` | Optional timestamp |
 
-**Returns:** `int` — current queue length.
+**Returns:** `int` â€” current queue length.
 
 **Raises:** `ValidationError` if text is empty or not a string.
 
@@ -250,7 +250,7 @@ Clear all captions from the internal queue.
 
 ```python
 count = sender.clear_queue()
-# int — number of captions cleared
+# int â€” number of captions cleared
 ```
 
 **Returns:** `int`
@@ -319,3 +319,4 @@ sender.send_batch()  # drains the queue
 
 sender.end()
 ```
+

@@ -1,14 +1,14 @@
----
+﻿---
 id: plan/server-stt
 title: "Server-side Speech-to-Text (STT)"
 status: implemented
 related: [plan_stt.md]
-summary: "Phases 1–4 fully implemented and verified against the actual code (2026-07-06 — the Todo checklist below was badly stale before this pass, showing only Phase 1 checked when everything through Phase 4 was already built): HlsSegmentFetcher, GoogleSttAdapter (REST + gRPC with auto-restart), WhisperHttpAdapter, OpenAiAdapter, ffmpeg RTMP/WHEP PCM fallback, confidence filtering, empty-segment skip, punctuation normalisation, /stt/* routes, StatusBar STT chip (with mode), and a live server-transcript panel built into AudioPanel.jsx. Phase 5 (multi-language source/target routing) is fully implemented, backend and UI: stt_source_languages table + fast-switch endpoint, per-target caption_target_id/show_original routing, server-side translation for server-STT transcripts, and the Languages Setup Hub card's source-language quick-switcher + per-target destination picker (screenshot-verified). AudioPanel's browser-STT selector now reads the shared list via a new `useSourceLanguages()` hook (falls back to `COMMON_LANGUAGES` when disconnected/empty). Only the live-operate-surface quick-toggle (outside Setup Hub) remains undone."
+summary: "Phases 1â€“4 fully implemented and verified against the actual code (2026-07-06 â€” the Todo checklist below was badly stale before this pass, showing only Phase 1 checked when everything through Phase 4 was already built): HlsSegmentFetcher, GoogleSttAdapter (REST + gRPC with auto-restart), WhisperHttpAdapter, OpenAiAdapter, ffmpeg RTMP/WHEP PCM fallback, confidence filtering, empty-segment skip, punctuation normalisation, /stt/* routes, StatusBar STT chip (with mode), and a live server-transcript panel built into AudioPanel.jsx. Phase 5 (multi-language source/target routing) is fully implemented, backend and UI: stt_source_languages table + fast-switch endpoint, per-target caption_target_id/show_original routing, server-side translation for server-STT transcripts, and the Languages Setup Hub card's source-language quick-switcher + per-target destination picker (screenshot-verified). AudioPanel's browser-STT selector now reads the shared list via a new `useSourceLanguages()` hook (falls back to `COMMON_LANGUAGES` when disconnected/empty). Only the live-operate-surface quick-toggle (outside Setup Hub) remains undone."
 ---
 
 # Server-side Speech-to-Text (STT)
 
-**Scope:** New `HlsSegmentFetcher` and `SttManager` in `packages/plugins/lcyt-rtmp`; new `/stt` routes in `packages/lcyt-backend`; UI additions in `packages/lcyt-web`.
+**Scope:** New `HlsSegmentFetcher` and `SttManager` in `packages/api/v1/plugins/api/v1/lcyt-rtmp`; new `/api/v1/stt` routes in `packages/api/v1/lcyt-backend`; UI additions in `packages/api/v1/lcyt-web`.
 
 ---
 
@@ -17,9 +17,9 @@ summary: "Phases 1–4 fully implemented and verified against the actual code (2
 The existing STT is entirely browser-based. Server-side STT removes the browser dependency:
 
 - Audio source is a live fMP4 HLS stream already flowing through MediaMTX.
-- Segments are fetched directly as HTTP requests and posted to the STT provider — no ffmpeg decode pipeline.
+- Segments are fetched directly as HTTP requests and posted to the STT provider â€” no ffmpeg decode pipeline.
 - Timestamps come from the HLS playlist itself (`#EXT-X-PROGRAM-DATE-TIME`).
-- HLS segment duration is the natural utterance boundary — no VAD, no manual chunk sizing.
+- HLS segment duration is the natural utterance boundary â€” no VAD, no manual chunk sizing.
 - Transcripts are delivered into the existing caption-send pipeline like any other caption source.
 - Useful for: automated captioning of hardware streams, headless deployments, unattended operation.
 
@@ -29,26 +29,26 @@ The existing STT is entirely browser-based. Server-side STT removes the browser 
 
 ```
 MediaMTX (fMP4 HLS output)
-  /{streamKey}/index.m3u8        ←── HlsSegmentFetcher (polls playlist)
-  /{streamKey}/init.mp4               │
-  /{streamKey}/seg001.mp4             │  Buffer + timestamp (from EXT-X-PROGRAM-DATE-TIME)
-  /{streamKey}/seg002.mp4             │
-                                      ▼
+  /{streamKey}/index.m3u8        â†â”€â”€ HlsSegmentFetcher (polls playlist)
+  /{streamKey}/init.mp4               â”‚
+  /{streamKey}/seg001.mp4             â”‚  Buffer + timestamp (from EXT-X-PROGRAM-DATE-TIME)
+  /{streamKey}/seg002.mp4             â”‚
+                                      â–¼
                                  SttAdapter
-                                 ├─ GoogleSttAdapter  [Phase 1]
-                                 ├─ WhisperHttpAdapter [Phase 2]
-                                 └─ OpenAiAdapter      [Phase 2]
-                                      │
+                                 â”œâ”€ GoogleSttAdapter  [Phase 1]
+                                 â”œâ”€ WhisperHttpAdapter [Phase 2]
+                                 â””â”€ OpenAiAdapter      [Phase 2]
+                                      â”‚
                                  { text, timestamp }
-                                      │
-                                      ▼
+                                      â”‚
+                                      â–¼
                                  session._sendQueue
-                                 ├─ YouTube targets
-                                 ├─ viewer targets
-                                 └─ generic targets
+                                 â”œâ”€ YouTube targets
+                                 â”œâ”€ viewer targets
+                                 â””â”€ generic targets
 ```
 
-RTMP and WHEP sources use an ffmpeg PCM pipe fallback — see [Phase 3](#phase-3--rtmpwhep-fallback).
+RTMP and WHEP sources use an ffmpeg PCM pipe fallback â€” see [Phase 3](#phase-3--rtmpwhep-fallback).
 
 ---
 
@@ -112,7 +112,7 @@ await sttManager.start(apiKey, {
 
 await sttManager.stop(apiKey)
 sttManager.isRunning(apiKey)
-sttManager.getStatus(apiKey)  // → { running, provider, language, startedAt, segmentsSent, lastTranscript }
+sttManager.getStatus(apiKey)  // â†’ { running, provider, language, startedAt, segmentsSent, lastTranscript }
 await sttManager.stopAll()
 ```
 
@@ -154,14 +154,14 @@ class SttAdapter extends EventEmitter {
 
 [Phase 1] Google Cloud Speech-to-Text v1. Supports Finnish (`fi-FI`) and 125+ languages.
 
-**HLS path:** POST the fMP4 segment buffer to `https://speech.googleapis.com/v1/speech:recognize` as base64-encoded audio with `encoding: MP4` (or `encoding: LINEAR16` after a ffmpeg-free remux is confirmed unnecessary — to be verified against the API). The `#EXT-X-PROGRAM-DATE-TIME`-derived timestamp is used directly.
+**HLS path:** POST the fMP4 segment buffer to `https://speech.googleapis.com/v1/speech:recognize` as base64-encoded audio with `encoding: MP4` (or `encoding: LINEAR16` after a ffmpeg-free remux is confirmed unnecessary â€” to be verified against the API). The `#EXT-X-PROGRAM-DATE-TIME`-derived timestamp is used directly.
 
 **gRPC streaming mode** (Phase 4): bidirectional stream via `@google-cloud/speech`; auto-restarts at the 5-minute API limit.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `GOOGLE_APPLICATION_CREDENTIALS` | — | Service account JSON path |
-| `GOOGLE_STT_KEY` | — | API key for REST fallback |
+| `GOOGLE_APPLICATION_CREDENTIALS` | â€” | Service account JSON path |
+| `GOOGLE_STT_KEY` | â€” | API key for REST fallback |
 | `GOOGLE_STT_MODE` | `rest` | `rest` or `grpc` |
 
 `@google-cloud/speech` is an optional peer dependency; the adapter fails with a clear message if not installed.
@@ -172,11 +172,11 @@ class SttAdapter extends EventEmitter {
 
 **HLS path:** POST the fMP4 segment buffer to `{WHISPER_HTTP_URL}/inference` as `multipart/form-data` with filename `segment.mp4`. whisper.cpp accepts MP4 directly. Uses playlist timestamp.
 
-**ffmpeg fallback path:** accumulate PCM → encode as WAV in memory → POST.
+**ffmpeg fallback path:** accumulate PCM â†’ encode as WAV in memory â†’ POST.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WHISPER_HTTP_URL` | — | whisper.cpp server URL |
+| `WHISPER_HTTP_URL` | â€” | whisper.cpp server URL |
 | `WHISPER_HTTP_MODEL` | (server default) | Model name (optional) |
 
 ### OpenAiAdapter
@@ -187,13 +187,13 @@ class SttAdapter extends EventEmitter {
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `OPENAI_API_KEY` | — | API key |
+| `OPENAI_API_KEY` | â€” | API key |
 | `OPENAI_STT_MODEL` | `whisper-1` | Model name |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for local/Azure endpoints |
 
 ---
 
-## Transcript → Caption Delivery
+## Transcript â†’ Caption Delivery
 
 ```js
 // SttManager._onTranscript()
@@ -223,7 +223,7 @@ CREATE TABLE IF NOT EXISTS stt_config (
   provider     TEXT NOT NULL DEFAULT 'google',
   language     TEXT NOT NULL DEFAULT 'en-US',
   audio_source TEXT NOT NULL DEFAULT 'hls',
-  stream_key   TEXT,         -- NULL → use api_key as the MediaMTX path
+  stream_key   TEXT,         -- NULL â†’ use api_key as the MediaMTX path
   auto_start   INTEGER NOT NULL DEFAULT 0,
   created_at   INTEGER NOT NULL DEFAULT (strftime('%s','now')),
   updated_at   INTEGER NOT NULL DEFAULT (strftime('%s','now'))
@@ -234,15 +234,15 @@ CREATE TABLE IF NOT EXISTS stt_config (
 
 ## API Routes
 
-Mounted at `/stt` in `packages/lcyt-backend/src/routes/stt.js`. All endpoints require the standard session Bearer token.
+Mounted at `/api/v1/stt` in `packages/api/v1/lcyt-backend/api/v1/src/api/v1/routes/api/v1/stt.js`. All endpoints require the standard session Bearer token.
 
 ```
-GET  /stt/status    — current STT state for the authenticated API key
-POST /stt/start     — start STT (body: { provider?, language?, audioSource?, streamKey? })
-POST /stt/stop      — stop STT
-GET  /stt/events    — SSE stream of transcript events (Bearer or ?token=)
-GET  /stt/config    — get per-key STT config from DB
-PUT  /stt/config    — update per-key STT config
+GET  /stt/status    â€” current STT state for the authenticated API key
+POST /stt/start     â€” start STT (body: { provider?, language?, audioSource?, streamKey? })
+POST /stt/stop      â€” stop STT
+GET  /stt/events    â€” SSE stream of transcript events (Bearer or ?token=)
+GET  /stt/config    â€” get per-key STT config from DB
+PUT  /stt/config    â€” update per-key STT config
 ```
 
 ### SSE events (`GET /stt/events`)
@@ -279,12 +279,12 @@ if (cfg?.auto_start) {
 | `STT_PROVIDER` | `google` | Default provider: `google` \| `whisper_http` \| `openai` |
 | `STT_DEFAULT_LANGUAGE` | `en-US` | Default recognition language (BCP-47) |
 | `STT_AUDIO_SOURCE` | `hls` | Default audio source: `hls` \| `rtmp` \| `whep` |
-| `GOOGLE_APPLICATION_CREDENTIALS` | — | Google service account JSON path |
-| `GOOGLE_STT_KEY` | — | Google API key (REST) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | â€” | Google service account JSON path |
+| `GOOGLE_STT_KEY` | â€” | Google API key (REST) |
 | `GOOGLE_STT_MODE` | `rest` | `rest` or `grpc` |
-| `WHISPER_HTTP_URL` | — | whisper.cpp HTTP server URL |
-| `WHISPER_HTTP_MODEL` | — | Whisper model name (optional) |
-| `OPENAI_API_KEY` | — | OpenAI API key |
+| `WHISPER_HTTP_URL` | â€” | whisper.cpp HTTP server URL |
+| `WHISPER_HTTP_MODEL` | â€” | Whisper model name (optional) |
+| `OPENAI_API_KEY` | â€” | OpenAI API key |
 | `OPENAI_STT_MODEL` | `whisper-1` | Model name |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | OpenAI-compatible base URL |
 
@@ -294,24 +294,24 @@ if (cfg?.auto_start) {
 
 ---
 
-### Phase 1 — HLS + Google STT
+### Phase 1 â€” HLS + Google STT
 
 **Goal:** Headless captioning from any MediaMTX stream using Google Cloud STT. No ffmpeg in the hot path.
 
 **Backend:**
 - `HlsSegmentFetcher`: playlist poll, EXT-X-MEDIA-SEQUENCE tracking, EXT-X-PROGRAM-DATE-TIME timestamp derivation, segment buffer fetch.
-- `SttManager`: wires fetcher → adapter → transcript → `_sendQueue`.
+- `SttManager`: wires fetcher â†’ adapter â†’ transcript â†’ `_sendQueue`.
 - `GoogleSttAdapter`: REST mode, fMP4 segment POST, Finnish and multilingual support.
 - DB migration for `stt_config`.
-- `/stt` routes: `start`, `stop`, `status`, `config`.
+- `/api/v1/stt` routes: `start`, `stop`, `status`, `config`.
 - `on_publish` / `on_publish_done` auto-start hook.
 
 **UI (lcyt-web):**
-- `StatusBar`: small server-STT chip — shows provider and language when active (e.g. "STT: google / fi-FI"), greyed out when inactive. No new page or modal.
+- `StatusBar`: small server-STT chip â€” shows provider and language when active (e.g. "STT: google / fi-FI"), greyed out when inactive. No new page or modal.
 
 ---
 
-### Phase 2 — Additional STT providers
+### Phase 2 â€” Additional STT providers
 
 **Goal:** Support local/self-hosted STT without a Google dependency.
 
@@ -329,13 +329,13 @@ if (cfg?.auto_start) {
 
 ---
 
-### Phase 3 — RTMP / WHEP fallback
+### Phase 3 â€” RTMP / WHEP fallback
 
 **Goal:** Support audio sources where HLS is not available.
 
 **Backend:**
 - `SttManager` ffmpeg PCM pipe path for `audioSource: 'rtmp'` and `audioSource: 'whep'`.
-- WHEP requires ffmpeg ≥ 6.1; probe version on startup, log warning if unavailable.
+- WHEP requires ffmpeg â‰¥ 6.1; probe version on startup, log warning if unavailable.
 - All three adapters implement `write(pcmChunk)` for the fallback path, with internal silence-based buffering (energy threshold) and a max chunk duration cap.
 - DB: add `audio_source` selector and expose via `PUT /stt/config`.
 
@@ -345,7 +345,7 @@ if (cfg?.auto_start) {
 
 ---
 
-### Phase 4 — gRPC streaming + quality controls
+### Phase 4 â€” gRPC streaming + quality controls
 
 **Goal:** Lower recognition latency and filter low-quality output.
 
@@ -357,49 +357,49 @@ if (cfg?.auto_start) {
 - `GET /stt/events` SSE endpoint for live transcript monitoring.
 
 **UI (lcyt-web):**
-- Live transcript panel (collapsible, in `SentPanel` area or a new tab) fed by `GET /stt/events` — shows rolling server-STT transcripts with timestamps.
+- Live transcript panel (collapsible, in `SentPanel` area or a new tab) fed by `GET /stt/events` â€” shows rolling server-STT transcripts with timestamps.
 - Confidence threshold slider in settings.
 - Mode indicator in StatusBar chip: "STT: google/gRPC / fi-FI".
 
 ---
 
-### Phase 5 — Multi-language source/target routing
+### Phase 5 â€” Multi-language source/target routing
 
-**Added 2026-07-06, not yet implemented.** Goal: let an operator quickly switch the active *source* (recognition) language from a predefined list during a live production, and independently route each *target* (translation) language to a specific delivery destination — including a destination dedicated to a particular screen/monitor — while keeping today's YouTube "original on one line, translation on the next" behavior available per destination rather than as one global flag. Applies identically whether the transcript comes from server-side STT (this doc) or the existing browser-based STT (`plan_stt.md`'s WebKit/Cloud engines) — **this phase does not make STT server-only**; both origins are expected to keep working side by side.
+**Added 2026-07-06, not yet implemented.** Goal: let an operator quickly switch the active *source* (recognition) language from a predefined list during a live production, and independently route each *target* (translation) language to a specific delivery destination â€” including a destination dedicated to a particular screen/monitor â€” while keeping today's YouTube "original on one line, translation on the next" behavior available per destination rather than as one global flag. Applies identically whether the transcript comes from server-side STT (this doc) or the existing browser-based STT (`plan_stt.md`'s WebKit/Cloud engines) â€” **this phase does not make STT server-only**; both origins are expected to keep working side by side.
 
-**Builds on, does not replace**, the already-implemented `translation_targets` / `translation_vendor_config` / `caption_targets` tables (`plan_selfservice_config_backend.md` §1) — no new "languages" table from scratch, two additive columns plus a real fan-out pipeline change.
+**Builds on, does not replace**, the already-implemented `translation_targets` / `translation_vendor_config` / `caption_targets` tables (`plan_selfservice_config_backend.md` Â§1) â€” no new "languages" table from scratch, two additive columns plus a real fan-out pipeline change.
 
-> Note found while drafting this: `plan_selfservice_config_backend.md`'s "Implementation status" note currently says the Languages/translation card has no frontend consumer yet ("still the pre-existing plain link-out card"). That's now stale on both counts — a real Languages Setup Hub card exists, but as of this writing it was built against the old **localStorage** `lib/translationConfig.js` instead of the already-implemented `GET/PUT /translation/config*` routes described in that same doc. That's a bug to fix independently of this phase, tracked in `docs/TODO.md`/a follow-up session, not folded into the schema changes below.
+> Note found while drafting this: `plan_selfservice_config_backend.md`'s "Implementation status" note currently says the Languages/translation card has no frontend consumer yet ("still the pre-existing plain link-out card"). That's now stale on both counts â€” a real Languages Setup Hub card exists, but as of this writing it was built against the old **localStorage** `lib/translationConfig.js` instead of the already-implemented `GET/PUT /translation/config*` routes described in that same doc. That's a bug to fix independently of this phase, tracked in `docs/TODO.md`/a follow-up session, not folded into the schema changes below.
 
 #### Source language: predefined list + fast switch
 
-Today `stt_config.language` is a single free-text BCP-47 string (`packages/plugins/lcyt-rtmp/src/db.js`), edited via `SttPanel`'s plain text input — one language, no predefined list, no quick-switch affordance; changing it means opening the full STT settings dialog.
+Today `stt_config.language` is a single free-text BCP-47 string (`packages/plugins/lcyt-rtmp/src/db.js`), edited via `SttPanel`'s plain text input â€” one language, no predefined list, no quick-switch affordance; changing it means opening the full STT settings dialog.
 
-- New `stt_source_languages` table: `{ api_key, lang (BCP-47), label?, sort_order }` — the project's curated list of languages the operator expects to switch between during a service/event (e.g. "usually English, sometimes Finnish for the visiting choir"). A table, not a JSON column, for consistency with `translation_targets`'s existing list-per-key pattern and to allow per-entry labels/ordering.
-- `stt_config.language` keeps its existing shape and meaning — the single **currently active** source language. Nothing about `SttManager`'s or the adapters' consumption of it changes.
-- New lightweight endpoint, distinct from the full `PUT /stt/config`: `POST /stt/config/source-language { lang }` — validates `lang` is in the project's predefined list, updates `stt_config.language`, and restarts recognition with the new language if STT is currently running (Google/Whisper/OpenAI all take `language` as a start-time parameter, not a live one). This is the shape a live quick-toggle control calls — a full settings round-trip is the wrong tool for "the choir just switched to Finnish, flip it now."
-- Applies to browser STT too: `AudioPanel`'s own language selector should read from this same server-persisted predefined list once it exists, rather than maintaining its own separate one — one shared list, two recognition engines.
+- New `stt_source_languages` table: `{ api_key, lang (BCP-47), label?, sort_order }` â€” the project's curated list of languages the operator expects to switch between during a service/event (e.g. "usually English, sometimes Finnish for the visiting choir"). A table, not a JSON column, for consistency with `translation_targets`'s existing list-per-key pattern and to allow per-entry labels/ordering.
+- `stt_config.language` keeps its existing shape and meaning â€” the single **currently active** source language. Nothing about `SttManager`'s or the adapters' consumption of it changes.
+- New lightweight endpoint, distinct from the full `PUT /stt/config`: `POST /stt/config/source-language { lang }` â€” validates `lang` is in the project's predefined list, updates `stt_config.language`, and restarts recognition with the new language if STT is currently running (Google/Whisper/OpenAI all take `language` as a start-time parameter, not a live one). This is the shape a live quick-toggle control calls â€” a full settings round-trip is the wrong tool for "the choir just switched to Finnish, flip it now."
+- Applies to browser STT too: `AudioPanel`'s own language selector should read from this same server-persisted predefined list once it exists, rather than maintaining its own separate one â€” one shared list, two recognition engines.
 
 #### Target languages: route to a specific delivery destination
 
-Confirmed by reading the actual fan-out code (`packages/lcyt-backend/src/routes/captions.js` + `src/caption-files.js`'s `composeCaptionText`): today exactly **one** language is embedded in live caption delivery at a time — whichever enabled `translation_targets` row has `target='captions'` — and `composeCaptionText(text, captionLang, translations, showOriginal)` produces one string that the `extraTargets` fan-out loop sends *identically* to every configured `caption_targets` row (YouTube, generic, and viewer targets alike). Other translation entries (`target='file'`/`'backend-file'`) do already get their own per-language output, but only as saved files, never as live delivery to a specific destination.
+Confirmed by reading the actual fan-out code (`packages/lcyt-backend/src/routes/captions.js` + `src/caption-files.js`'s `composeCaptionText`): today exactly **one** language is embedded in live caption delivery at a time â€” whichever enabled `translation_targets` row has `target='captions'` â€” and `composeCaptionText(text, captionLang, translations, showOriginal)` produces one string that the `extraTargets` fan-out loop sends *identically* to every configured `caption_targets` row (YouTube, generic, and viewer targets alike). Other translation entries (`target='file'`/`'backend-file'`) do already get their own per-language output, but only as saved files, never as live delivery to a specific destination.
 
-- Extend `translation_targets`: add a nullable `caption_target_id TEXT REFERENCES caption_targets(id) ON DELETE SET NULL`. When set, that translation row is routed to *that specific* caption target's live delivery instead of the shared default — e.g. a Spanish `translation_targets` row with `caption_target_id` pointing at a `viewer`-type caption target whose URL is displayed on a side-stage monitor, independent of whatever the main YouTube stream is showing.
-- `target`'s existing enum (`'captions'|'file'|'backend-file'`) keeps its current meaning for rows with no `caption_target_id` set — fully backward compatible, no change to any existing row's behavior.
-- **Per-destination original+translation composition, generalized:** `show_original` is currently one global flag on `translation_vendor_config`, applied to whichever single language is embedded everywhere. Once different languages can each go to a different destination, "original above translation" needs to be a per-routed-target choice — e.g. the English-original YouTube target might want it on (bilingual captions) while a dedicated Spanish viewer monitor wants translation-only. Move `show_original` from `translation_vendor_config` (global) onto each `translation_targets` row, defaulting existing rows to the prior global value on migration.
+- Extend `translation_targets`: add a nullable `caption_target_id TEXT REFERENCES caption_targets(id) ON DELETE SET NULL`. When set, that translation row is routed to *that specific* caption target's live delivery instead of the shared default â€” e.g. a Spanish `translation_targets` row with `caption_target_id` pointing at a `viewer`-type caption target whose URL is displayed on a side-stage monitor, independent of whatever the main YouTube stream is showing.
+- `target`'s existing enum (`'captions'|'file'|'backend-file'`) keeps its current meaning for rows with no `caption_target_id` set â€” fully backward compatible, no change to any existing row's behavior.
+- **Per-destination original+translation composition, generalized:** `show_original` is currently one global flag on `translation_vendor_config`, applied to whichever single language is embedded everywhere. Once different languages can each go to a different destination, "original above translation" needs to be a per-routed-target choice â€” e.g. the English-original YouTube target might want it on (bilingual captions) while a dedicated Spanish viewer monitor wants translation-only. Move `show_original` from `translation_vendor_config` (global) onto each `translation_targets` row, defaulting existing rows to the prior global value on migration.
 - **Fan-out change in `captions.js`:** for each `caption_targets` row, resolve whether an enabled `translation_targets` row has `caption_target_id` pointing at it; if so, compose *that* row's own text (`composeCaptionText(text, thatRow.lang, translations, thatRow.showOriginal)`) instead of the shared default before sending. Targets with no dedicated translation-target keep receiving today's default composed text, unchanged.
 
 #### Server-side translation for server-STT transcripts
 
-Translation happens entirely client-side today: `lib/translate.js` (called from `AudioPanel.jsx`) computes the full `translations: { lang: text }` map in the browser and sends it *already translated* as part of the caption payload the backend receives. `SttManager`'s transcript pipeline (`_onTranscript` → `fanOutToTargets`) has no equivalent step — server-STT transcripts arrive as plain `{ text, timestamp }` with no translation map, and nothing in that path could add one today.
+Translation happens entirely client-side today: `lib/translate.js` (called from `AudioPanel.jsx`) computes the full `translations: { lang: text }` map in the browser and sends it *already translated* as part of the caption payload the backend receives. `SttManager`'s transcript pipeline (`_onTranscript` â†’ `fanOutToTargets`) has no equivalent step â€” server-STT transcripts arrive as plain `{ text, timestamp }` with no translation map, and nothing in that path could add one today.
 
-- New server-side translation call, reusing the same vendor set conceptually (MyMemory/Google/DeepL/LibreTranslate) but invoked from Node rather than the browser — `translation_vendor_config` already stores the project's chosen vendor + credentials server-side, so the config half of this exists; only the actual outbound HTTP call needs a server-side equivalent of `lib/translate.js`. Module placement (`lcyt-rtmp`, next to `SttManager`, vs. `lcyt-agent`, which already owns other server-side external-API integration) is an open question below, not a re-derivation of the client file.
+- New server-side translation call, reusing the same vendor set conceptually (MyMemory/Google/DeepL/LibreTranslate) but invoked from Node rather than the browser â€” `translation_vendor_config` already stores the project's chosen vendor + credentials server-side, so the config half of this exists; only the actual outbound HTTP call needs a server-side equivalent of `lib/translate.js`. Module placement (`lcyt-rtmp`, next to `SttManager`, vs. `lcyt-agent`, which already owns other server-side external-API integration) is an open question below, not a re-derivation of the client file.
 - `SttManager._onTranscript`: before calling `fanOutToTargets`, if any enabled `translation_targets` rows exist for the project, translate the transcript into each row's `lang` and build the same `translations: { lang: text }` shape the browser path already produces. The (possibly per-target-aware, per the section above) fan-out logic then behaves identically regardless of which STT origin produced the text.
-- This explicitly does not replace or disable browser-based STT — `plan_stt.md`'s WebKit/Cloud engines are unaffected and keep computing their own client-side translations exactly as today. This phase only brings the server-STT path to the same translation capability, so choosing server-side STT doesn't mean losing multi-language output.
+- This explicitly does not replace or disable browser-based STT â€” `plan_stt.md`'s WebKit/Cloud engines are unaffected and keep computing their own client-side translations exactly as today. This phase only brings the server-STT path to the same translation capability, so choosing server-side STT doesn't mean losing multi-language output.
 
 **UI (lcyt-web):**
-- StatusBar (or wherever the live quick-toggle control ends up) gets a compact source-language switcher reading the predefined list, calling `POST /stt/config/source-language` — separate from, and faster than, opening Setup Hub's STT card.
-- The Languages Setup Hub card (once fixed to use `/translation/config*`, see the note above) gains a destination picker per target-language row: the existing `'captions'|'file'|'backend-file'` choices, plus "a specific caption target" listing the project's configured `caption_targets` by name — and a per-row `showOriginal` toggle replacing today's single global one.
+- StatusBar (or wherever the live quick-toggle control ends up) gets a compact source-language switcher reading the predefined list, calling `POST /stt/config/source-language` â€” separate from, and faster than, opening Setup Hub's STT card.
+- The Languages Setup Hub card (once fixed to use `/translation/config*`, see the note above) gains a destination picker per target-language row: the existing `'captions'|'file'|'backend-file'` choices, plus "a specific caption target" listing the project's configured `caption_targets` by name â€” and a per-row `showOriginal` toggle replacing today's single global one.
 
 ---
 
@@ -407,76 +407,76 @@ Translation happens entirely client-side today: `lib/translate.js` (called from 
 
 1. **Google STT fMP4 encoding label**: The REST API `encoding` field does not list `MP4` as a named value. In practice, fMP4 audio (AAC in MP4 container) is submitted with `encoding: MP4A` or by omitting the encoding field and letting the API auto-detect. Needs a quick test against the live API to confirm the correct value before Phase 1 ships.
 
-2. **Simultaneous browser + server STT**: Both write into the same `_sendQueue` — safe for ordering but could interleave output. A session flag `serverSttActive` could block browser sends while server STT is running. Defer decision to Phase 1 implementation.
+2. **Simultaneous browser + server STT**: Both write into the same `_sendQueue` â€” safe for ordering but could interleave output. A session flag `serverSttActive` could block browser sends while server STT is running. Defer decision to Phase 1 implementation.
 
 3. **streamKey vs apiKey**: `stt_config.stream_key` is nullable; when null, `apiKey` is used as the MediaMTX HLS path. This matches the existing `RadioManager` convention.
 
 4. **Google gRPC optional dep**: `@google-cloud/speech` pulls in native gRPC bindings. Dynamic import with a clear "install @google-cloud/speech to use grpc mode" error. Only required for Phase 4.
 
-5. **Predefined source-language list storage** (Phase 5): separate `stt_source_languages` table vs. a JSON array column on `stt_config`. Leaning table, per the reasoning in Phase 5 above — revisit if the list turns out to need no per-entry metadata beyond a bare code.
+5. **Predefined source-language list storage** (Phase 5): separate `stt_source_languages` table vs. a JSON array column on `stt_config`. Leaning table, per the reasoning in Phase 5 above â€” revisit if the list turns out to need no per-entry metadata beyond a bare code.
 
 6. **Server-side translation module placement** (Phase 5): `lcyt-rtmp` (co-located with `SttManager`, but a media-relay plugin making external translation-vendor HTTP calls is a bit of a reach) vs. `lcyt-agent` (already the home for server-side external API integration, currently LLM/embedding-focused, not translation-vendor-focused) vs. a new small shared module. Decide before implementation starts.
 
-7. **Restart-on-source-switch cost** (Phase 5): switching the active source language mid-show restarts the STT adapter (all three providers take `language` at start time only). Confirm the gap is acceptable for live use — likely yes, given segment-based recognition already has natural pauses between chunks — or find a lower-disruption path if not.
+7. **Restart-on-source-switch cost** (Phase 5): switching the active source language mid-show restarts the STT adapter (all three providers take `language` at start time only). Confirm the gap is acceptable for live use â€” likely yes, given segment-based recognition already has natural pauses between chunks â€” or find a lower-disruption path if not.
 
-8. **`caption_target_id` cascade behavior** (Phase 5): recommend `ON DELETE SET NULL` on `translation_targets.caption_target_id` — deleting a caption target should fall a translation row back to default routing, not silently delete the translation config itself.
+8. **`caption_target_id` cascade behavior** (Phase 5): recommend `ON DELETE SET NULL` on `translation_targets.caption_target_id` â€” deleting a caption target should fall a translation row back to default routing, not silently delete the translation config itself.
 
 ---
 
 ## Todo
 
-### Phase 1 — HLS + Google STT
+### Phase 1 â€” HLS + Google STT
 
 **Backend**
-- [x] `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` — HlsSegmentFetcher class
-- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` — GoogleSttAdapter (REST, fMP4)
-- [x] `packages/plugins/lcyt-rtmp/src/stt-manager.js` — SttManager (HLS path only)
-- [x] `packages/plugins/lcyt-rtmp/src/db.js` — add `stt_config` migration + `getSttConfig`/`setSttConfig` helpers
-- [x] `packages/plugins/lcyt-rtmp/src/api.js` — export `sttManager` + `getSttConfig`/`setSttConfig` from `initRtmpControl`
-- [x] `packages/lcyt-backend/src/routes/stt.js` — `/stt` Express router (start, stop, status, config, events)
-- [x] `packages/lcyt-backend/src/server.js` — mount `/stt` router, inject `sttManager`
-- [x] `packages/plugins/lcyt-rtmp/src/routes/radio.js` — `on_publish` / `on_publish_done` auto-start hooks
+- [x] `packages/plugins/lcyt-rtmp/src/hls-segment-fetcher.js` â€” HlsSegmentFetcher class
+- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/google-stt.js` â€” GoogleSttAdapter (REST, fMP4)
+- [x] `packages/plugins/lcyt-rtmp/src/stt-manager.js` â€” SttManager (HLS path only)
+- [x] `packages/plugins/lcyt-rtmp/src/db.js` â€” add `stt_config` migration + `getSttConfig`/`setSttConfig` helpers
+- [x] `packages/plugins/lcyt-rtmp/src/api.js` â€” export `sttManager` + `getSttConfig`/`setSttConfig` from `initRtmpControl`
+- [x] `packages/api/v1/lcyt-backend/api/v1/src/api/v1/routes/api/v1/stt.js` â€” `/api/v1/stt` Express router (start, stop, status, config, events)
+- [x] `packages/api/v1/lcyt-backend/api/v1/src/api/v1/server.js` â€” mount `/api/v1/stt` router, inject `sttManager`
+- [x] `packages/plugins/lcyt-rtmp/src/routes/radio.js` â€” `on_publish` / `on_publish_done` auto-start hooks
 - [x] Add `hlsVariant: fmp4` note to `docker/mediamtx.yml` and deployment docs
 - [ ] Verify Google STT fMP4 encoding label against live API (see open question 1)
 
 **Tests**
-- [x] `packages/plugins/lcyt-rtmp/test/hls-segment-fetcher.test.js` — 8 tests
-- [x] `packages/plugins/lcyt-rtmp/test/google-stt.test.js` — 8 tests
-- [x] `packages/plugins/lcyt-rtmp/test/stt-manager.test.js` — 12 tests
-- [x] `packages/lcyt-backend/test/stt.test.js` — 15 tests (start/stop/status/config CRUD, SSE events, auth)
+- [x] `packages/plugins/lcyt-rtmp/test/hls-segment-fetcher.test.js` â€” 8 tests
+- [x] `packages/plugins/lcyt-rtmp/test/google-stt.test.js` â€” 8 tests
+- [x] `packages/plugins/lcyt-rtmp/test/stt-manager.test.js` â€” 12 tests
+- [x] `packages/lcyt-backend/test/stt.test.js` â€” 15 tests (start/stop/status/config CRUD, SSE events, auth)
 
 **UI**
-- [x] `packages/lcyt-web/src/components/StatusBar.jsx` — server-STT chip (provider / language / active state, polls every 10 s)
-- [x] `packages/lcyt-web/src/hooks/useSession.js` — `getSttStatus()` method added
-- [x] `packages/lcyt-web/src/styles/components.css` — `.status-bar__stt-chip` styles
+- [x] `packages/lcyt-web/src/components/StatusBar.jsx` â€” server-STT chip (provider / language / active state, polls every 10 s)
+- [x] `packages/lcyt-web/src/hooks/useSession.js` â€” `getSttStatus()` method added
+- [x] `packages/lcyt-web/src/styles/components.css` â€” `.status-bar__stt-chip` styles
 
 ---
 
-### Phase 2 — Additional STT providers
+### Phase 2 â€” Additional STT providers
 
 **Backend**
-- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js` — WhisperHttpAdapter (fMP4 HLS path)
-- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/openai.js` — OpenAiAdapter (fMP4 HLS path)
-- [x] `SttManager` — provider dispatch on `google`/`whisper_http`/`openai`
+- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/whisper-http.js` â€” WhisperHttpAdapter (fMP4 HLS path)
+- [x] `packages/plugins/lcyt-rtmp/src/stt-adapters/openai.js` â€” OpenAiAdapter (fMP4 HLS path)
+- [x] `SttManager` â€” provider dispatch on `google`/`whisper_http`/`openai`
 
 **Tests**
 - [x] `WhisperHttpAdapter` unit tests (part of the rtmp plugin's passing suite)
 - [x] `packages/plugins/lcyt-rtmp/test/openai-stt.test.js`
 
 **UI**
-- [x] `SttPanel.jsx`: provider dropdown, language field — config-only (verified, no separate
+- [x] `SttPanel.jsx`: provider dropdown, language field â€” config-only (verified, no separate
       auto-start toggle or Start/Stop button; STT actually starts via the
       `on_publish`/`on_publish_done` RTMP hooks per the Auto-start section
-      above, and the Setup Hub `SttSection` card just edits/saves config —
+      above, and the Setup Hub `SttSection` card just edits/saves config â€”
       a simpler realization of this item than originally written, not a gap)
-- [x] `StatusBar` chip (shows provider/mode/language; no separate settings link — the Setup Hub STT card is the config surface)
+- [x] `StatusBar` chip (shows provider/mode/language; no separate settings link â€” the Setup Hub STT card is the config surface)
 
 ---
 
-### Phase 3 — RTMP / WHEP fallback
+### Phase 3 â€” RTMP / WHEP fallback
 
 **Backend**
-- [x] `SttManager` — ffmpeg PCM pipe path for `audioSource: 'rtmp'` and `'whep'`, piping to `adapter.write()`
+- [x] `SttManager` â€” ffmpeg PCM pipe path for `audioSource: 'rtmp'` and `'whep'`, piping to `adapter.write()`
 - [x] ffmpeg version probe on `SttManager` init; warns if < 6.1 (WHEP unavailable)
 - [x] `audio_source` field on `stt_config`, exposed via `PUT /stt/config`
 
@@ -485,14 +485,14 @@ Translation happens entirely client-side today: `lib/translate.js` (called from 
 
 **UI**
 - [x] Audio source selector in `SttPanel.jsx` (HLS/RTMP/WHEP)
-- [ ] Warning badge next to WHEP if backend reports ffmpeg < 6.1 — backend already reports `ffmpegVersion`/`whepAvailable` via `getStatus()`; unconfirmed whether the frontend surfaces it as a visible badge yet
+- [ ] Warning badge next to WHEP if backend reports ffmpeg < 6.1 â€” backend already reports `ffmpegVersion`/`whepAvailable` via `getStatus()`; unconfirmed whether the frontend surfaces it as a visible badge yet
 
 ---
 
-### Phase 4 — gRPC streaming + quality controls
+### Phase 4 â€” gRPC streaming + quality controls
 
 **Backend**
-- [x] `GoogleSttAdapter` — gRPC streaming mode (`GOOGLE_STT_MODE=grpc`), proactive auto-restart at 4.5 min
+- [x] `GoogleSttAdapter` â€” gRPC streaming mode (`GOOGLE_STT_MODE=grpc`), proactive auto-restart at 4.5 min
 - [x] Confidence threshold filtering (`confidenceThreshold` plumbed through `SttManager`/adapters)
 - [x] Empty-segment skip (minimum segment byte-size check in `google-stt.js`)
 - [x] Punctuation normalisation helper (`google-stt.js`)
@@ -500,18 +500,18 @@ Translation happens entirely client-side today: `lib/translate.js` (called from 
 
 **Tests**
 - [x] `packages/plugins/lcyt-rtmp/test/google-stt.test.js` covers gRPC/quality-control paths
-- [x] `packages/lcyt-backend/test/stt.test.js` + `test/integration/stt-integration.test.js` cover SSE `/stt/events`
+- [x] `packages/api/v1/lcyt-backend/api/v1/test/api/v1/stt.test.js` + `test/api/v1/integration/api/v1/stt-integration.test.js` cover SSE `/api/v1/stt/api/v1/events`
 
 **UI**
-- [x] Live transcript panel — built into `AudioPanel.jsx`'s `engine === 'server'` mode (`serverTranscripts` state, `.server-transcript-panel`), not a separate component as originally sketched, but the same capability
+- [x] Live transcript panel â€” built into `AudioPanel.jsx`'s `engine === 'server'` mode (`serverTranscripts` state, `.server-transcript-panel`), not a separate component as originally sketched, but the same capability
 - [x] Confidence threshold slider in `SttPanel.jsx`
 - [x] StatusBar chip shows mode (e.g. `STT: google/gRPC / fi-FI`)
 
 ---
 
-### Phase 5 — Multi-language source/target routing
+### Phase 5 â€” Multi-language source/target routing
 
-**Implemented 2026-07-06 by an agent, then verified and corrected by hand** —
+**Implemented 2026-07-06 by an agent, then verified and corrected by hand** â€”
 the initial pass's own self-report claimed everything worked and cited
 passing test counts, but those counts were the *pre-existing* suites (zero
 new test files were added despite being explicitly requested), and manual
@@ -519,28 +519,28 @@ verification found three real, confirmed bugs the self-report missed
 entirely:
 1. **`_deliverTranscript`'s server-side translation and viewer-target
    delivery never ran at all.** Both reached across packages via
-   `await import('../../lcyt-backend/src/...')` — a relative path that
+   `await import('../../lcyt-backend/src/...')` â€” a relative path that
    resolves to a directory that doesn't exist from `stt-manager.js`'s
-   location — silently swallowed by `.catch(() => ({}))`, so the guard that
+   location â€” silently swallowed by `.catch(() => ({}))`, so the guard that
    gated the whole feature was always false. Fixed by adding
    `SttManager.setDeliveryHelpers({ getTranslationVendorConfig,
    getTranslationTargets, broadcastToViewers })`, called once from
-   `lcyt-backend/src/server.js` right after `initRtmpControl()` returns —
+   `lcyt-backend/src/server.js` right after `initRtmpControl()` returns â€”
    proper dependency injection (matching `lcyt-agent`'s
    `cueEngine.setEmbeddingFn()` convention) instead of a plugin reaching
    into the consuming app's private `src/` tree.
 2. **A literal, unescaped `<br>` in JSX text** in `LanguagesPage.jsx`'s new
-   per-row `showOriginal` hint broke JSX parsing outright — the whole
+   per-row `showOriginal` hint broke JSX parsing outright â€” the whole
    `/setup` page and `/translations` route 500'd in the real running app.
    No test caught it because no test imports `LanguagesPage.jsx` (`SetupHubPage.test.jsx`
    mocks `LanguagesSection.jsx` instead of rendering it). Fixed by rewording
    the hint instead of embedding a fake HTML tag as visible text.
-3. **`captionTargets.map is not a function`** — `GET /targets` returns
+3. **`captionTargets.map is not a function`** â€” `GET /targets` returns
    `{ targets: [...] }`, but the new destination-picker fetch set state to
    the whole response object instead of its `.targets` array. Fixed.
 
 All three were caught only by actually running the app in a browser and
-reading the console — the existing automated suites (backend + component)
+reading the console â€” the existing automated suites (backend + component)
 stayed green throughout because none of them exercised this code at all.
 Added real test coverage after fixing: two new `stt-manager.test.js` cases
 (one proving `setDeliveryHelpers`'s translation + viewer-broadcast path
@@ -550,22 +550,23 @@ proving the fan-out correctly gives a routed target its own composed text
 while an unrouted target keeps today's default, unchanged.
 
 **Backend**
-- [x] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` — fixed prior in commit 6c005b3
-- [x] `stt_source_languages` table + CRUD — predefined per-project source-language list
-- [x] `POST /stt/config/source-language { lang }` — fast active-language switch, validates against the predefined list, restarts STT if running (verified: uses `COALESCE`-based partial update, doesn't clobber provider/audioSource)
-- [x] `translation_targets`: nullable `caption_target_id` + per-row `show_original` (verified: FK is actually enforced by SQLite in this environment — the test needed real `caption_targets` rows, not made-up ids)
-- [x] `packages/lcyt-backend/src/routes/captions.js` fan-out: per-`caption_targets`-row resolution of a routed `translation_targets` entry before composing/sending — verified working via a real test, see below
-- [x] Server-side translation module `packages/plugins/lcyt-rtmp/src/translate-server.js`, wired into `SttManager._deliverTranscript` via `setDeliveryHelpers()` — verified working via a real test (bug #1 above)
+- [x] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` â€” fixed prior in commit 6c005b3
+- [x] `stt_source_languages` table + CRUD â€” predefined per-project source-language list
+- [x] `POST /stt/config/source-language { lang }` â€” fast active-language switch, validates against the predefined list, restarts STT if running (verified: uses `COALESCE`-based partial update, doesn't clobber provider/audioSource)
+- [x] `translation_targets`: nullable `caption_target_id` + per-row `show_original` (verified: FK is actually enforced by SQLite in this environment â€” the test needed real `caption_targets` rows, not made-up ids)
+- [x] `packages/lcyt-backend/src/routes/captions.js` fan-out: per-`caption_targets`-row resolution of a routed `translation_targets` entry before composing/sending â€” verified working via a real test, see below
+- [x] Server-side translation module `packages/plugins/lcyt-rtmp/src/translate-server.js`, wired into `SttManager._deliverTranscript` via `setDeliveryHelpers()` â€” verified working via a real test (bug #1 above)
 
 **Tests**
-- [x] `captions.js` fan-out — `packages/lcyt-backend/test/captions.test.js`'s "Phase 5: per-target translation routing" describe block: a routed target gets its own composed text, an unrouted target keeps default behavior, in the same request
-- [x] Server-side translation + viewer delivery — `packages/plugins/lcyt-rtmp/test/stt-manager.test.js`'s two new `setDeliveryHelpers` cases (mocked vendor HTTP call via `globalThis.fetch`, asserts the translated text actually reaches `broadcastToViewers`)
+- [x] `captions.js` fan-out â€” `packages/lcyt-backend/test/captions.test.js`'s "Phase 5: per-target translation routing" describe block: a routed target gets its own composed text, an unrouted target keeps default behavior, in the same request
+- [x] Server-side translation + viewer delivery â€” `packages/plugins/lcyt-rtmp/test/stt-manager.test.js`'s two new `setDeliveryHelpers` cases (mocked vendor HTTP call via `globalThis.fetch`, asserts the translated text actually reaches `broadcastToViewers`)
 - [ ] `translation-config.js`'s DB helpers for `caption_target_id`/`show_original` are exercised indirectly through the `captions.test.js` case above, but have no dedicated unit test of their own (e.g. `ON DELETE SET NULL` cascade behavior specifically)
 - [ ] `stt_source_languages` CRUD routes and the `POST /stt/config/source-language` fast-switch endpoint have no dedicated route tests yet
 
 **UI**
-- [x] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` — fixed prior in commit 6c005b3
-- [x] Source-language quick-switcher — built into the Languages Setup Hub card's "Source language" dialog (predefined-list chip buttons when a list exists, falls back to free-text `LanguagePicker` otherwise) — screenshot-verified
-- [x] Languages Setup Hub card: per-target-language destination picker (caption target list) + per-row `showOriginal` toggle — screenshot-verified after fixing bugs #2 and #3 above
+- [x] Fix `LanguagesManager`/`LanguagesPage.jsx` to use `GET/PUT /translation/config*` instead of localStorage `lib/translationConfig.js` â€” fixed prior in commit 6c005b3
+- [x] Source-language quick-switcher â€” built into the Languages Setup Hub card's "Source language" dialog (predefined-list chip buttons when a list exists, falls back to free-text `LanguagePicker` otherwise) â€” screenshot-verified
+- [x] Languages Setup Hub card: per-target-language destination picker (caption target list) + per-row `showOriginal` toggle â€” screenshot-verified after fixing bugs #2 and #3 above
 - [ ] `AudioPanel`'s browser-STT language selector reads the same predefined source-language list (deferred; browsers currently keep their own separate language picker)
-- [ ] A live-operate-surface (not Setup-Hub) quick-toggle control (e.g. in `StatusBar`) — the source-language switcher currently only lives in the Setup Hub card's dialog, not on a live operate page
+- [ ] A live-operate-surface (not Setup-Hub) quick-toggle control (e.g. in `StatusBar`) â€” the source-language switcher currently only lives in the Setup Hub card's dialog, not on a live operate page
+

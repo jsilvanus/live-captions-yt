@@ -1,6 +1,6 @@
----
+﻿---
 id: lib/python/errors
-title: "Python — Error Classes"
+title: "Python â€” Error Classes"
 ---
 
 # Error Classes (Python)
@@ -18,10 +18,10 @@ from lcyt.errors import LCYTError, ConfigError, NetworkError, ValidationError
 
 ```
 Exception
-└── LCYTError
-    ├── ConfigError
-    ├── NetworkError  (+ status_code)
-    └── ValidationError  (+ field)
+â””â”€â”€ LCYTError
+    â”œâ”€â”€ ConfigError
+    â”œâ”€â”€ NetworkError  (+ status_code)
+    â””â”€â”€ ValidationError  (+ field)
 ```
 
 ---
@@ -103,15 +103,16 @@ from lcyt.errors import LCYTError, NetworkError, ValidationError, ConfigError
 try:
     result = sender.send(text)
 except ValidationError as e:
-    # Input problem — fix the request
+    # Input problem â€” fix the request
     print(f"Bad input for field '{e.field}'")
 except NetworkError as e:
-    # HTTP/transport problem — may be transient
+    # HTTP/transport problem â€” may be transient
     print(f"Network error ({e.status_code}): {e}")
 except ConfigError as e:
-    # Config problem — check ~/.lcyt-config.json
+    # Config problem â€” check ~/.lcyt-config.json
     print("Configuration error:", e)
 except LCYTError as e:
     # Unknown lcyt error
     print("lcyt error:", e)
 ```
+

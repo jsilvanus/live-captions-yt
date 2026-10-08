@@ -139,7 +139,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   let cmdJson;
   const maxRetries = 6;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    cmdRes = await fetch(baseUrl + '/api/production/bridge/instances/' + instanceId + '/command', {
+    cmdRes = await fetch(baseUrl + '/api/v1/production/bridge/instances/' + instanceId + '/command', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ type: 'tcp_send', host: '127.0.0.1', port: echoPort, payload: 'hello-from-test' }),

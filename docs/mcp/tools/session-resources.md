@@ -1,4 +1,4 @@
----
+﻿---
 title: "Session Resources"
 stdio: true
 sse: false
@@ -34,3 +34,4 @@ Read the current state of a session as a JSON resource.
 | `sequence` | `number` | Current sequence counter |
 | `syncOffset` | `number` | Current clock sync offset in milliseconds |
 | `startedAt` | `string` | ISO timestamp when the session was created |
+

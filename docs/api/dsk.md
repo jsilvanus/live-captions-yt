@@ -1,19 +1,19 @@
----
+﻿---
 id: api/dsk
-title: "/dsk — DSK Overlay, /dsk-rtmp — DSK RTMP Ingest"
+title: "/api/v1/dsk â€” DSK Overlay, /api/v1/dsk-rtmp â€” DSK RTMP Ingest"
 methods: [GET, POST]
 auth: [none]
 ---
 
-# /dsk — DSK Overlay
+# /dsk â€” DSK Overlay
 
-Public endpoints that power the **Downstream Keyer (DSK)** overlay page (`/dsk/:apikey` in lcyt-web). The DSK page displays a green-screen-keyed graphics overlay driven by caption metadata.
+Public endpoints that power the **Downstream Keyer (DSK)** overlay page (`/api/v1/dsk/api/v1/:apikey` in lcyt-web). The DSK page displays a green-screen-keyed graphics overlay driven by caption metadata.
 
-**Authentication:** None (public — the API key is in the URL path, not used as a secret).
+**Authentication:** None (public â€” the API key is in the URL path, not used as a secret).
 
 ---
 
-## `GET /dsk/:apikey/images` — List DSK Images
+## `GET /dsk/:apikey/images` â€” List DSK Images
 
 Return all images available for this API key (uploaded via [`POST /images`](./images.md)).
 
@@ -23,7 +23,7 @@ Return all images available for this API key (uploaded via [`POST /images`](./im
 GET /dsk/my-api-key/images
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -32,7 +32,7 @@ GET /dsk/my-api-key/images
       "id": 1,
       "shorthand": "logo",
       "mimeType": "image/png",
-      "url": "/images/1"
+      "url": "/api/v1/images/api/v1/1"
     }
   ]
 }
@@ -49,7 +49,7 @@ Returns `404` if the API key does not exist or is not active.
 
 ---
 
-## `GET /dsk/:apikey/events` — DSK SSE Event Stream
+## `GET /dsk/:apikey/events` â€” DSK SSE Event Stream
 
 Open a persistent Server-Sent Events connection to receive DSK graphics events triggered by caption metadata codes (e.g. `<!-- graphics: logo1,logo2 -->`).
 
@@ -62,7 +62,7 @@ GET /dsk/my-api-key/events
 Accept: text/event-stream
 ```
 
-**Response — `200 OK`** (streaming, `Content-Type: text/event-stream`)
+**Response â€” `200 OK`** (streaming, `Content-Type: text/event-stream`)
 
 A heartbeat comment (`: heartbeat`) is sent every 25 seconds.
 
@@ -100,15 +100,15 @@ Templates contain per-layer element `id` properties used by the renderer and the
 Clients (the graphics editor) should either generate globally-unique ids when creating layers, or query existing templates before renaming an element and warn the user (or auto-suffix the id) when a conflict would arise.
 
 
-# /dsk-rtmp — DSK RTMP Ingest Callbacks
+# /dsk-rtmp â€” DSK RTMP Ingest Callbacks
 
 nginx-rtmp callbacks for the DSK application. When a broadcaster publishes an RTMP stream to `rtmp://<server>/dsk/<apiKey>`, the relay process for that key is restarted with the DSK stream composited as an overlay using ffmpeg's `overlay` filter.
 
-**Authentication:** None (nginx is the caller — restrict at the network level).
+**Authentication:** None (nginx is the caller â€” restrict at the network level).
 
 ---
 
-## `POST /dsk-rtmp` — Single-URL Style
+## `POST /dsk-rtmp` â€” Single-URL Style
 
 ```http
 POST /dsk-rtmp
@@ -142,10 +142,10 @@ name=my-api-key
 ```
 
 **Behavior:**
-- `publish` — sets the DSK RTMP source URL to `<DSK_LOCAL_RTMP>/<DSK_RTMP_APP>/<apiKey>` and restarts the relay process with the DSK stream composited on top.
-- `publish_done` — clears the DSK RTMP source and restarts the relay without the overlay.
+- `publish` â€” sets the DSK RTMP source URL to `<DSK_LOCAL_RTMP>/<DSK_RTMP_APP>/<apiKey>` and restarts the relay process with the DSK stream composited on top.
+- `publish_done` â€” clears the DSK RTMP source and restarts the relay without the overlay.
 
-DSK compositing is best-effort — if the relay process fails to restart, the backend returns `200` anyway so nginx allows the publish.
+DSK compositing is best-effort â€” if the relay process fails to restart, the backend returns `200` anyway so nginx allows the publish.
 
 ---
 
@@ -168,3 +168,4 @@ application dsk {
 |---|---|---|
 | `DSK_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL for the DSK application. Falls back to `RADIO_LOCAL_RTMP` if not set. |
 | `DSK_RTMP_APP` | `dsk` | nginx-rtmp application name for DSK ingest. Must match the nginx config. |
+

@@ -1,4 +1,4 @@
-# Database Layer
+﻿# Database Layer
 
 LCYT uses **SQLite** for both the Node.js and Python backends. SQLite is the right choice for the current single-server deployment: it requires no external service, the DB file is trivially backed up, and `better-sqlite3`'s synchronous model removes async complexity from the Express request path.
 
@@ -40,7 +40,7 @@ Primary key management table. One row per issued API key.
 | `lifetime_used` | INTEGER | 0 | Incremented by `checkAndIncrementUsage` |
 | `sequence` | INTEGER | 0 | Last YouTube caption sequence number |
 | `last_caption_at` | TEXT | NULL | Timestamp of last caption; drives 2h TTL reset |
-| `backend_file_enabled` | INTEGER | 0 | 1 = key may use `/file` endpoint |
+| `backend_file_enabled` | INTEGER | 0 | 1 = key may use `/api/v1/file` endpoint |
 | `relay_allowed` | INTEGER | 0 | 1 = admin has granted RTMP relay permission |
 | `relay_active` | INTEGER | 0 | 1 = user has toggled relay on |
 
@@ -124,7 +124,7 @@ Per-domain usage aggregated by UTC hour. All counters are accumulated via upsert
 | Column | Type | Notes |
 |--------|------|-------|
 | `date` | TEXT | `YYYY-MM-DD` |
-| `hour` | INTEGER | 0–23 UTC |
+| `hour` | INTEGER | 0â€“23 UTC |
 | `domain` | TEXT | |
 | `sessions_started` | INTEGER | 0 default |
 | `sessions_ended` | INTEGER | 0 default |
@@ -138,7 +138,7 @@ Primary key: `(date, hour, domain)`.
 
 ### `caption_files`
 
-Metadata for caption files saved server-side via the `/file` endpoint. Actual file content lives on disk (`FILES_DIR` env var).
+Metadata for caption files saved server-side via the `/api/v1/file` endpoint. Actual file content lives on disk (`FILES_DIR` env var).
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -161,7 +161,7 @@ RTMP fan-out configuration. Each API key may configure up to 4 target slots.
 |--------|------|-------|
 | `id` | INTEGER PK AUTOINCREMENT | |
 | `api_key` | TEXT | |
-| `slot` | INTEGER | 1–4 |
+| `slot` | INTEGER | 1â€“4 |
 | `target_url` | TEXT | RTMP ingest URL |
 | `target_name` | TEXT | Optional stream name appended to URL |
 | `caption_mode` | TEXT | `'http'` (default) or `'rtmp'` |
@@ -189,7 +189,7 @@ Per-relay-stream telemetry. One row opened on relay start, completed on relay en
 
 ### `rtmp_anon_daily_stats`
 
-Anonymous daily RTMP totals — no API key or URL stored. Endpoint categorised as `'youtube'` or `'custom'` by URL pattern.
+Anonymous daily RTMP totals â€” no API key or URL stored. Endpoint categorised as `'youtube'` or `'custom'` by URL pattern.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -230,7 +230,7 @@ Primary key: `(date, api_key, viewer_key)`.
 
 ### `viewer_anon_daily_stats`
 
-Global anonymous viewer stats — one row per day.
+Global anonymous viewer stats â€” one row per day.
 
 | Column | Type | Notes |
 |--------|------|-------|
@@ -266,7 +266,7 @@ There are no migration files. On startup, `initDb()` inspects existing columns v
 
 - It is always safe to run on an existing database.
 - Columns are never removed or renamed by the migration system.
-- Destructive schema changes (e.g. the `rtmp_relays` slot fan-out) are handled by renaming the old table, creating the new one, migrating data, and dropping the old table — wrapped in a transaction.
+- Destructive schema changes (e.g. the `rtmp_relays` slot fan-out) are handled by renaming the old table, creating the new one, migrating data, and dropping the old table â€” wrapped in a transaction.
 
 ### Upsert Pattern
 
@@ -321,17 +321,17 @@ YouTube's caption ingestion API requires a monotonically increasing sequence num
 
 Source: `packages/lcyt-backend/src/backup.js`
 
-`better-sqlite3`'s built-in `.backup()` method performs an online hot backup — safe to run while the database is in use.
+`better-sqlite3`'s built-in `.backup()` method performs an online hot backup â€” safe to run while the database is in use.
 
-**`runBackup(db, backupDir)`** — writes a copy to `<backupDir>/YYYY-MM-DD/lcyt-backend.db`.
+**`runBackup(db, backupDir)`** â€” writes a copy to `<backupDir>/YYYY-MM-DD/lcyt-backend.db`.
 
-**`cleanOldBackups(backupDir, backupDays)`** — removes backup directories older than `backupDays` days. Only removes directories whose names match `YYYY-MM-DD`.
+**`cleanOldBackups(backupDir, backupDays)`** â€” removes backup directories older than `backupDays` days. Only removes directories whose names match `YYYY-MM-DD`.
 
 **Configuration:**
 
 | Env var | Default | Notes |
 |---------|---------|-------|
-| `BACKUP_DIR` | — | If unset, backup is disabled |
+| `BACKUP_DIR` | â€” | If unset, backup is disabled |
 | `BACKUP_DAYS` | 0 | Retention period in days (0 = disabled, max 180) |
 
 Backup and cleanup are scheduled via `setInterval` in `src/index.js` on server startup.
@@ -342,6 +342,7 @@ Backup and cleanup are scheduled via `setInterval` in `src/index.js` on server s
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `DB_PATH` | `./lcyt-backend.db` (relative to package root) | SQLite file path — applies to both Node.js and Python backends |
-| `BACKUP_DIR` | — | Root directory for DB backups (Node.js only) |
-| `BACKUP_DAYS` | 0 (disabled) | Backup retention period: 1–180 days |
+| `DB_PATH` | `./lcyt-backend.db` (relative to package root) | SQLite file path â€” applies to both Node.js and Python backends |
+| `BACKUP_DIR` | â€” | Root directory for DB backups (Node.js only) |
+| `BACKUP_DAYS` | 0 (disabled) | Backup retention period: 1â€“180 days |
+

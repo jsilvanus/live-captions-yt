@@ -1,11 +1,11 @@
----
-title: "start — Start Caption Session"
+﻿---
+title: "start â€” Start Caption Session"
 stdio: true
 sse: true
 id: mcp/tools/start
 ---
 
-# `start` — Start Caption Session
+# `start` â€” Start Caption Session
 
 Create a new `YoutubeLiveCaptionSender` session identified by a unique `session_id`. The session is held in memory on the server.
 
@@ -32,3 +32,4 @@ Create a new `YoutubeLiveCaptionSender` session identified by a unique `session_
 | `session_id` | `string` | 16-character hex identifier for this session. Pass this to all other tools. |
 
 **Example prompt:** _"Start a caption session with stream key xxxx-xxxx-xxxx-xxxx"_
+

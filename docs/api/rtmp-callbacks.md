@@ -1,19 +1,19 @@
----
+﻿---
 id: api/rtmp-callbacks
-title: "/rtmp — nginx-rtmp Callbacks"
+title: "/api/v1/rtmp â€” nginx-rtmp Callbacks"
 methods: [POST]
 auth: [none]
 ---
 
-# /rtmp — nginx-rtmp Publish Callbacks
+# /rtmp â€” nginx-rtmp Publish Callbacks
 
 A single endpoint called by nginx-rtmp when a broadcaster starts or stops publishing to the RTMP ingest server. This is the entry point for the RTMP relay fan-out system.
 
-**Authentication:** None (nginx is the caller — restrict at the network level). Optionally validated against the `RTMP_APPLICATION` environment variable.
+**Authentication:** None (nginx is the caller â€” restrict at the network level). Optionally validated against the `RTMP_APPLICATION` environment variable.
 
 ---
 
-## `POST /rtmp` — nginx-rtmp Publish Callback
+## `POST /rtmp` â€” nginx-rtmp Publish Callback
 
 ```http
 POST /rtmp
@@ -31,7 +31,7 @@ app=stream&name=my-api-key&call=publish_done
 | Field | Type | Description |
 |---|---|---|
 | `app` | `string` | RTMP application name (e.g. `stream`). Validated against `RTMP_APPLICATION` env if set. |
-| `name` | `string` | Stream name — used as the API key to look up relay configuration. |
+| `name` | `string` | Stream name â€” used as the API key to look up relay configuration. |
 | `call` | `string` | `publish` (broadcaster connected) or `publish_done` (broadcaster disconnected). |
 
 **Behavior on `call=publish`:**
@@ -39,7 +39,7 @@ app=stream&name=my-api-key&call=publish_done
 2. Checks that `relay_allowed = true` for the API key. Returns `403` to deny the publish if not.
 3. Marks the key as publishing (so `PUT /stream/active` can start fan-out immediately if activated later).
 4. If `relay_active = true` for the key and relay slots are configured, starts a single ffmpeg process with a `tee` muxer fanning out to all configured slots.
-5. Returns `200 ok` to allow the publish (fan-out is best-effort — failures are logged but do not deny the stream).
+5. Returns `200 ok` to allow the publish (fan-out is best-effort â€” failures are logged but do not deny the stream).
 
 **Behavior on `call=publish_done`:**
 1. Marks the key as no longer publishing.
@@ -64,7 +64,7 @@ application stream {
   live on;
   record off;
 
-  # Single endpoint — distinguishes publish/publish_done via the `call` field
+  # Single endpoint â€” distinguishes publish/publish_done via the `call` field
   on_publish      http://127.0.0.1:3000/rtmp;
   on_publish_done http://127.0.0.1:3000/rtmp;
 }
@@ -76,5 +76,6 @@ application stream {
 
 | Variable | Default | Description |
 |---|---|---|
-| `RTMP_APPLICATION` | unset | If set, `/rtmp` rejects callbacks where the RTMP `app` name does not match. Prevents other nginx applications from accidentally triggering relay fan-out. |
+| `RTMP_APPLICATION` | unset | If set, `/api/v1/rtmp` rejects callbacks where the RTMP `app` name does not match. Prevents other nginx applications from accidentally triggering relay fan-out. |
 | `RTMP_RELAY_ACTIVE` | unset | Set to `1` to enable the relay subsystem. Without this, the relay manager ignores incoming RTMP events. |
+

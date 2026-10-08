@@ -1,17 +1,17 @@
----
+﻿---
 id: api/sync
-title: "/sync — Clock Sync"
+title: "/api/v1/sync â€” Clock Sync"
 methods: [POST]
 auth: [bearer]
 ---
 
-# /sync — Clock Sync
+# /sync â€” Clock Sync
 
 NTP-style clock synchronisation. The server sends a caption to YouTube and uses the response timestamp to compute a clock offset. This offset is stored in the session and applied to subsequent caption timestamps.
 
 ---
 
-## `POST /sync` — Clock Sync
+## `POST /sync` â€” Clock Sync
 
 **Authentication:** Bearer JWT
 
@@ -24,7 +24,7 @@ Authorization: Bearer <token>
 
 No body required.
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -43,3 +43,4 @@ No body required.
 | `statusCode` | `number` | HTTP status from YouTube |
 
 **Side effects:** Updates `syncOffset` in the session store.
+

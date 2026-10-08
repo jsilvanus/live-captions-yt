@@ -1,4 +1,4 @@
-# Plan: Implement TODO.md items
+﻿# Plan: Implement TODO.md items
 
 ## Context
 
@@ -11,7 +11,7 @@ Implementing all open items from `TODO.md`:
 
 ---
 
-## 1. Python `set_use_stderr` — new `logger.py`
+## 1. Python `set_use_stderr` â€” new `logger.py`
 
 **New file:** `python-packages/lcyt/lcyt/logger.py`
 
@@ -48,16 +48,16 @@ def set_silent(value: bool) -> None:
 
 ---
 
-## 2. MCP `get_status` — auto-sync + updated description
+## 2. MCP `get_status` â€” auto-sync + updated description
 
 **File:** `packages/lcyt-mcp/src/server.js`
 
 **Description update** (line 88):
 ```
-"Sync the clock then return the current sequence number, syncOffset, and roundTripTime. Runs a heartbeat automatically — no need to call sync_clock separately."
+"Sync the clock then return the current sequence number, syncOffset, and roundTripTime. Runs a heartbeat automatically â€” no need to call sync_clock separately."
 ```
 
-**Handler update** (lines 198–208) — call `sender.sync()` first, include `roundTripTime` in response:
+**Handler update** (lines 198â€“208) â€” call `sender.sync()` first, include `roundTripTime` in response:
 ```javascript
 case "get_status": {
   const sender = getSession(args.session_id);
@@ -78,7 +78,7 @@ case "get_status": {
 **Test file:** `packages/lcyt-mcp/test/server.test.js`
 - Update `FakeSender.sync()` to also set `this.syncOffset = 42` so it mirrors the real sender
 - Update the `get_status` test to assert `payload.syncOffset === 42` and `"roundTripTime" in payload`
-- Update the full lifecycle test (which calls `get_status`) — no assertion change needed since it only checks `sequence`
+- Update the full lifecycle test (which calls `get_status`) â€” no assertion change needed since it only checks `sequence`
 
 ---
 
@@ -88,7 +88,7 @@ case "get_status": {
 
 ### Schema additions
 
-`send_caption` — add optional `time` property:
+`send_caption` â€” add optional `time` property:
 ```javascript
 time: {
   type: "number",
@@ -96,7 +96,7 @@ time: {
 },
 ```
 
-`send_batch` items — add optional `time` property:
+`send_batch` items â€” add optional `time` property:
 ```javascript
 time: {
   type: "number",
@@ -146,14 +146,14 @@ case "send_batch": {
 ## 4. Move `plan_*` / `todo_*` to `docs/`
 
 Create `docs/` directory by moving these files:
-- `plan.md` → `docs/plan.md`
-- `plan_backend.md` → `docs/plan_backend.md`
-- `plan_client.md` → `docs/plan_client.md`
-- `plan_mcp.md` → `docs/plan_mcp.md`
-- `todo_backend.md` → `docs/todo_backend.md`
-- `todo_client.md` → `docs/todo_client.md`
+- `plan.md` â†’ `docs/plan.md`
+- `plan_backend.md` â†’ `docs/plan_backend.md`
+- `plan_client.md` â†’ `docs/plan_client.md`
+- `plan_mcp.md` â†’ `docs/plan_mcp.md`
+- `todo_backend.md` â†’ `docs/todo_backend.md`
+- `todo_client.md` â†’ `docs/todo_client.md`
 
-(`TODO.md` at root stays — it's the active task list used by the project.)
+(`TODO.md` at root stays â€” it's the active task list used by the project.)
 
 ---
 
@@ -161,20 +161,20 @@ Create `docs/` directory by moving these files:
 
 Add `packages/lcyt-mcp/` to the Node.js packages section:
 ```
-- `packages/lcyt-mcp/` — MCP server (published to npm as `lcyt-mcp`)
-  - `src/server.js` — MCP tool definitions and handlers
+- `packages/lcyt-mcp/` â€” MCP server (published to npm as `lcyt-mcp`)
+  - `src/server.js` â€” MCP tool definitions and handlers
 ```
 
 Add a `docs/` entry under Key Files / project structure:
 ```
-- `docs/` — planning docs (plan_*.md, todo_*.md)
+- `docs/` â€” planning docs (plan_*.md, todo_*.md)
 ```
 
 ---
 
 ## Verification
 
-1. **Python stderr test** — In a Python REPL:
+1. **Python stderr test** â€” In a Python REPL:
    ```python
    from lcyt import set_use_stderr
    from lcyt import YoutubeLiveCaptionSender
@@ -182,6 +182,7 @@ Add a `docs/` entry under Key Files / project structure:
    s = YoutubeLiveCaptionSender(stream_key="test", verbose=True)
    # All [LCYT] logs should appear on stderr
    ```
-2. **MCP tests** — `npm test` from repo root; existing + new tests all pass.
-3. **Docs move** — `ls docs/` shows all 6 files; none remain at root.
-4. **CLAUDE.md** — Quick review confirms lcyt-mcp is listed.
+2. **MCP tests** â€” `npm test` from repo root; existing + new tests all pass.
+3. **Docs move** â€” `ls docs/` shows all 6 files; none remain at root.
+4. **CLAUDE.md** â€” Quick review confirms lcyt-mcp is listed.
+

@@ -1,4 +1,4 @@
-# HTTP Caching Strategy — Backend, Plugins & nginx
+﻿# HTTP Caching Strategy â€” Backend, Plugins & nginx
 
 **Status:** implemented
 **Date:** 2026-03-29
@@ -7,7 +7,7 @@
 
 ## Motivation
 
-The backend serves a wide range of HTTP endpoints — real-time caption delivery,
+The backend serves a wide range of HTTP endpoints â€” real-time caption delivery,
 static media files, configuration JSON, HLS streams, SSE event streams, and
 public embeddable content. Today, caching is inconsistent:
 
@@ -15,10 +15,10 @@ public embeddable content. Today, caching is inconsistent:
 - A handful of routes explicitly override with `max-age` values, but the vast
   majority of GET endpoints never set any cache header.
 - The frontend (`lcyt-web`) makes every API call as a fresh `fetch()` with no
-  client-side caching layer — there is no stale-while-revalidate, no ETag
+  client-side caching layer â€” there is no stale-while-revalidate, no ETag
   conditional request logic, and no in-memory memoisation.
 - nginx configuration (`scripts/nginx-app.conf.sample`) only covers Vite
-  assets (`/assets/` → 1 year immutable) and bridge downloads.
+  assets (`/assets/` â†’ 1 year immutable) and bridge downloads.
 - The generated nginx radio config (`NginxManager`) sets `no-cache, no-store`
   on all proxied HLS streams, even immutable TS segments.
 
@@ -98,7 +98,7 @@ All responses inherit `no-store` unless a route explicitly overrides it.
 
 ### Frontend caching (lcyt-web)
 
-- `api.js` wrapper uses bare `fetch()` — no `cache` directive set (except
+- `api.js` wrapper uses bare `fetch()` â€” no `cache` directive set (except
   `/health` which explicitly uses `cache: 'no-store'`).
 - Backend features array from `/health` is cached in `localStorage`
   (`lcyt.backend.features`).
@@ -111,7 +111,7 @@ All responses inherit `no-store` unless a route explicitly overrides it.
 - `scripts/nginx-app.conf.sample`: Only `/assets/` (Vite hashed, 1 year
   immutable) and `/bridge-downloads/` (no-cache).
 - `NginxManager` generated config: `proxy_cache off; Cache-Control: no-cache, no-store`
-  on all radio HLS proxy locations — including immutable TS segments.
+  on all radio HLS proxy locations â€” including immutable TS segments.
 
 ---
 
@@ -135,7 +135,7 @@ Rationale:
   clients may poll more frequently. Using `ETag` (content hash) + `max-age=2`
   lets clients skip the response body on 304.
 
-- **Avoid Last-Modified for API JSON** — Express's built-in `Last-Modified`
+- **Avoid Last-Modified for API JSON** â€” Express's built-in `Last-Modified`
   handling is designed for static files. API JSON responses have no meaningful
   modification time; using `max-age` is cleaner.
 
@@ -145,26 +145,26 @@ Rationale:
   Bearer token). Prevents CDN/proxy caching of user-specific data.
 - **`public`**: Responses accessible without auth (viewer, HLS, DSK images,
   icons, contact, health) OR responses where the URL itself is the access
-  control (e.g., `/dsk/:apikey/images` — the apikey in the URL is the secret).
+  control (e.g., `/api/v1/dsk/api/v1/:apikey/api/v1/images` â€” the apikey in the URL is the secret).
 
 ### 3. `stale-while-revalidate`
 
 Use `stale-while-revalidate` on endpoints where a brief staleness window is
-acceptable and instant response is preferred (e.g., `/health`, `/stats`,
+acceptable and instant response is preferred (e.g., `/api/v1/health`, `/api/v1/stats`,
 configuration endpoints). The browser returns the cached value immediately and
 revalidates in the background.
 
 ### 4. nginx HLS segment caching
 
 The generated nginx radio config must differentiate playlists from segments:
-- `.m3u8` playlists → `no-cache, no-store` (live, changes every segment)
-- `.ts` segments → `public, max-age=86400` (immutable once written; segment
+- `.m3u8` playlists â†’ `no-cache, no-store` (live, changes every segment)
+- `.ts` segments â†’ `public, max-age=86400` (immutable once written; segment
   names include a sequence number)
 
 ### 5. Frontend approach
 
 Add a thin caching layer to `api.js`:
-- `api.getCached(path, maxAgeMs)` — returns cached response if within
+- `api.getCached(path, maxAgeMs)` â€” returns cached response if within
   `maxAgeMs`; otherwise fetches fresh. In-memory Map, no persistence.
 - Used for: feature flags, config endpoints, image/icon lists.
 - NOT used for: session state, real-time data, write operations.
@@ -176,7 +176,7 @@ Add a thin caching layer to `api.js`:
 Complete classification of every GET endpoint used by `lcyt-web`, with
 recommended caching:
 
-### Tier 1 — Never cache (real-time / write-heavy)
+### Tier 1 â€” Never cache (real-time / write-heavy)
 
 | Endpoint | Reason |
 |---|---|
@@ -196,7 +196,7 @@ recommended caching:
 These endpoints keep `no-store` (from global middleware) or `no-cache` (SSE).
 **No changes needed.**
 
-### Tier 2 — Short cache (frequently polled, tolerates brief staleness)
+### Tier 2 â€” Short cache (frequently polled, tolerates brief staleness)
 
 | Endpoint | Auth | Recommended | Rationale |
 |---|---|---|---|
@@ -219,7 +219,7 @@ These endpoints keep `no-store` (from global middleware) or `no-cache` (SSE).
 | `GET /stream` | Session | `private, max-age=15` | RTMP relay status; changes on start/stop. |
 | `GET /preview/:key/incoming.jpg` | No | `public, max-age=2` + `ETag` | Thumbnails update every ~5s; ETag avoids re-sending identical JPEGs. |
 
-### Tier 3 — Medium cache (config / infrequently changing)
+### Tier 3 â€” Medium cache (config / infrequently changing)
 
 | Endpoint | Auth | Recommended | Rationale |
 |---|---|---|---|
@@ -232,27 +232,27 @@ These endpoints keep `no-store` (from global middleware) or `no-cache` (SSE).
 | `GET /agent/status` | Session | `private, max-age=3600, stale-while-revalidate=3600` | Agent capabilities; static until restart. |
 | `GET /dsk/:apikey/images` | No | `public, max-age=300, stale-while-revalidate=600` | DSK image list; public endpoint, key in URL. |
 | `GET /dsk/:apikey/viewports/public` | No | `public, max-age=3600, stale-while-revalidate=3600` | Viewport definitions; rarely change. |
-| `GET /contact` | No | `public, max-age=3600` | Already correct ✓ |
-| `GET /usage` (historical) | Admin | `public, max-age=1800, stale-while-revalidate=3600` | Already correct ✓ |
+| `GET /contact` | No | `public, max-age=3600` | Already correct âœ“ |
+| `GET /usage` (historical) | Admin | `public, max-age=1800, stale-while-revalidate=3600` | Already correct âœ“ |
 
-### Tier 4 — Long cache (immutable / content-addressed)
+### Tier 4 â€” Long cache (immutable / content-addressed)
 
 | Endpoint | Auth | Recommended | Rationale |
 |---|---|---|---|
 | `GET /file/:id` | Session/token | `private, max-age=31536000, immutable` | Caption files never change after creation. |
 | `GET /icons/:id` | No | `public, max-age=86400` | Icons are replaced via delete+re-upload, not edited in place. Increase from current 3600. |
-| `GET /images/:id` | No | `public, max-age=86400` | Already correct ✓ |
+| `GET /images/:id` | No | `public, max-age=86400` | Already correct âœ“ |
 | `GET /stream-hls/:key/*.ts` | No | `public, max-age=86400` | TS segments are immutable. Increase from current 60. |
 | `GET /radio/:key/*.ts` | No | `public, max-age=86400` | TS segments are immutable. Increase from current 60. |
 | `GET /video/:key/subs/:lang/:seg.vtt` | No | `public, max-age=86400` | VTT segments are immutable. Increase from current 60. |
-| `GET /stream-hls/:key/player.js` | No | `public, max-age=3600` | Already correct ✓ |
-| `GET /radio/:key/player.js` | No | `public, max-age=3600` | Already correct ✓ |
+| `GET /stream-hls/:key/player.js` | No | `public, max-age=3600` | Already correct âœ“ |
+| `GET /radio/:key/player.js` | No | `public, max-age=3600` | Already correct âœ“ |
 
 ---
 
 ## Implementation Phases
 
-### Phase 1 — Backend Cache-Control headers (high-impact, low-risk)
+### Phase 1 â€” Backend Cache-Control headers (high-impact, low-risk)
 
 Add explicit `Cache-Control` headers to backend GET routes that currently fall
 through to the global `no-store`.
@@ -261,13 +261,13 @@ through to the global `no-store`.
 
 1. **`packages/lcyt-backend/src/server.js`**
    - `GET /health`: add `res.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60')`
-   - `GET /icons/:id`: change `max-age=3600` → `max-age=86400`
+   - `GET /icons/:id`: change `max-age=3600` â†’ `max-age=86400`
 
 2. **`packages/lcyt-backend/src/routes/stats.js`** (or wherever `GET /stats` is defined)
    - Add `res.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120')`
 
 3. **`packages/lcyt-backend/src/routes/video.js`**
-   - `GET /video/:key/subs/:lang/:seg.vtt`: change `max-age=60` → `max-age=86400`
+   - `GET /video/:key/subs/:lang/:seg.vtt`: change `max-age=60` â†’ `max-age=86400`
 
 4. **`packages/plugins/lcyt-files/src/routes/files.js`**
    - `GET /file` (list): add `private, max-age=30, stale-while-revalidate=60`
@@ -275,17 +275,17 @@ through to the global `no-store`.
    - `GET /file/storage-config`: add `private, max-age=300`
 
 5. **`packages/plugins/lcyt-rtmp/src/routes/stream-hls.js`**
-   - `.ts` segments: change `max-age=60` → `max-age=86400`
+   - `.ts` segments: change `max-age=60` â†’ `max-age=86400`
 
 6. **`packages/plugins/lcyt-rtmp/src/routes/radio.js`**
-   - `.ts` segments: change `max-age=60` → `max-age=86400`
+   - `.ts` segments: change `max-age=60` â†’ `max-age=86400`
 
 7. **`packages/plugins/lcyt-rtmp/src/routes/preview.js`**
    - Add `max-age=2` and compute ETag from JPEG content hash.
 
 8. **`packages/plugins/lcyt-dsk/src/routes/dsk.js`**
-   - `GET /dsk/:apikey/images`: change `no-store` → `public, max-age=300, stale-while-revalidate=600`
-   - `GET /dsk/:apikey/viewports/public`: change `no-store` → `public, max-age=3600, stale-while-revalidate=3600`
+   - `GET /dsk/:apikey/images`: change `no-store` â†’ `public, max-age=300, stale-while-revalidate=600`
+   - `GET /dsk/:apikey/viewports/public`: change `no-store` â†’ `public, max-age=3600, stale-while-revalidate=3600`
 
 9. **`packages/plugins/lcyt-cues/src/routes/cues.js`**
    - `GET /cues/rules`: add `private, max-age=30, stale-while-revalidate=60`
@@ -313,7 +313,7 @@ through to the global `no-store`.
 
 ---
 
-### Phase 2 — nginx configuration for backend reverse proxy
+### Phase 2 â€” nginx configuration for backend reverse proxy
 
 Update `scripts/nginx-app.conf.sample` with a complete API reverse-proxy
 configuration that leverages `proxy_cache` for public media endpoints.
@@ -321,7 +321,7 @@ configuration that leverages `proxy_cache` for public media endpoints.
 **New sections to add:**
 
 ```nginx
-# ── API reverse proxy ──────────────────────────────────────────────────
+# â”€â”€ API reverse proxy â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 #
 # All /api/* requests are proxied to the lcyt-backend.
 # Assumes backend is at http://127.0.0.1:3000.
@@ -339,8 +339,8 @@ proxy_cache_path /var/cache/nginx/lcyt
 server {
     # ... existing SSL/root/location blocks ...
 
-    # ── Immutable HLS segments ──────────────────────────────────────────
-    # TS segments are content-addressed by sequence number — never change.
+    # â”€â”€ Immutable HLS segments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    # TS segments are content-addressed by sequence number â€” never change.
     location ~ ^/(stream-hls|radio)/[^/]+/[^/]+\.ts$ {
         proxy_pass http://lcyt_backend;
         proxy_cache lcyt_media;
@@ -349,14 +349,14 @@ server {
         add_header X-Cache-Status $upstream_cache_status;
     }
 
-    # ── HLS playlists (live, no cache) ──────────────────────────────────
+    # â”€â”€ HLS playlists (live, no cache) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location ~ ^/(stream-hls|radio)/[^/]+/index\.m3u8$ {
         proxy_pass http://lcyt_backend;
         proxy_cache off;
         add_header Cache-Control "no-cache, no-store" always;
     }
 
-    # ── VTT subtitle segments ───────────────────────────────────────────
+    # â”€â”€ VTT subtitle segments â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location ~ ^/video/[^/]+/subs/[^/]+/seg\d+\.vtt$ {
         proxy_pass http://lcyt_backend;
         proxy_cache lcyt_media;
@@ -364,7 +364,7 @@ server {
         add_header X-Cache-Status $upstream_cache_status;
     }
 
-    # ── Public image/icon endpoints ─────────────────────────────────────
+    # â”€â”€ Public image/icon endpoints â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location ~ ^/(images|icons)/\d+ {
         proxy_pass http://lcyt_backend;
         proxy_cache lcyt_media;
@@ -372,7 +372,7 @@ server {
         add_header X-Cache-Status $upstream_cache_status;
     }
 
-    # ── Preview thumbnails ──────────────────────────────────────────────
+    # â”€â”€ Preview thumbnails â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location ~ ^/preview/[^/]+/incoming {
         proxy_pass http://lcyt_backend;
         proxy_cache lcyt_media;
@@ -380,7 +380,7 @@ server {
         add_header X-Cache-Status $upstream_cache_status;
     }
 
-    # ── SSE endpoints (no buffering) ────────────────────────────────────
+    # â”€â”€ SSE endpoints (no buffering) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location ~ ^/(events|viewer/|stt/events|dsk/[^/]+/events) {
         proxy_pass http://lcyt_backend;
         proxy_http_version 1.1;
@@ -390,7 +390,7 @@ server {
         proxy_read_timeout 86400s;
     }
 
-    # ── Default API proxy (no cache) ────────────────────────────────────
+    # â”€â”€ Default API proxy (no cache) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     location / {
         proxy_pass http://lcyt_backend;
         proxy_http_version 1.1;
@@ -413,25 +413,25 @@ server {
 
 ---
 
-### Phase 3 — NginxManager HLS segment caching fix
+### Phase 3 â€” NginxManager HLS segment caching fix
 
 Currently `NginxManager._buildConfig()` sets `Cache-Control: no-cache, no-store`
 on all proxied radio HLS locations. This is incorrect for immutable TS segments.
 
 **File:** `packages/plugins/lcyt-rtmp/src/nginx-manager.js` (lines 220-228)
 
-**Change:** Split the generated location into two — one for playlists, one
+**Change:** Split the generated location into two â€” one for playlists, one
 for segments:
 
 ```nginx
-# Current (incorrect — caches nothing):
+# Current (incorrect â€” caches nothing):
 location /r/<slug>/ {
     proxy_pass http://mediamtx:8080/<apiKey>/;
     ...
     add_header Cache-Control "no-cache, no-store" always;
 }
 
-# Proposed (correct — cache segments, not playlists):
+# Proposed (correct â€” cache segments, not playlists):
 location ~ ^/r/<slug>/.*\.m3u8$ {
     proxy_pass http://mediamtx:8080/<apiKey>/;
     ...
@@ -470,7 +470,7 @@ location /r/<slug>/ {
 
 ---
 
-### Phase 4 — Frontend in-memory request cache
+### Phase 4 â€” Frontend in-memory request cache
 
 Add a lightweight in-memory cache to `api.js` for GET requests that benefit
 from client-side deduplication.
@@ -482,7 +482,7 @@ from client-side deduplication.
 ```js
 // New export alongside createApi:
 export function createApi(senderRef, backendUrlRef) {
-  const cache = new Map();  // path → { data, fetchedAt }
+  const cache = new Map();  // path â†’ { data, fetchedAt }
 
   async function request(path, opts) { /* existing */ }
 
@@ -526,14 +526,14 @@ const getSessionFeatures = useCallback(() => api.getCached('/features', 300_000)
 ```
 
 Endpoints to use `getCached`:
-- `/features` → 300s
-- `/stt/config` → 300s
-- `/ai/config` → 300s
-- `/youtube/config` → 3600s
-- `/file/storage-config` → 300s
-- `/ai/status` → 3600s
-- `/agent/status` → 3600s
-- `/dsk/:apikey/viewports/public` → 3600s (external fetch, not via api.js)
+- `/features` â†’ 300s
+- `/api/v1/stt/api/v1/config` â†’ 300s
+- `/ai/config` â†’ 300s
+- `/youtube/config` â†’ 3600s
+- `/api/v1/file/api/v1/storage-config` â†’ 300s
+- `/ai/status` â†’ 3600s
+- `/agent/status` â†’ 3600s
+- `/api/v1/dsk/api/v1/:apikey/api/v1/viewports/api/v1/public` â†’ 3600s (external fetch, not via api.js)
 
 Call `api.invalidate(path)` after any PUT/POST/DELETE that changes the
 cached resource.
@@ -544,7 +544,7 @@ cached resource.
 
 ---
 
-### Phase 5 — Preview thumbnail ETag
+### Phase 5 â€” Preview thumbnail ETag
 
 Add content-hash ETag support to the preview endpoint for bandwidth savings
 on frequently-polled thumbnails.
@@ -585,7 +585,7 @@ from 304 responses on 5-second polling intervals are significant.
 
 ---
 
-### Phase 6 — Documentation and operator guide
+### Phase 6 â€” Documentation and operator guide
 
 1. Add a "Caching" section to the operator deployment runbook
    (`ops/runbooks/` or a new `docs/CACHING.md`) covering:
@@ -615,7 +615,7 @@ from 304 responses on 5-second polling intervals are significant.
 | `packages/plugins/lcyt-cues/src/routes/cues.js` | 1 | Cache-Control on GET routes |
 | `packages/plugins/lcyt-agent/src/routes/agent.js` | 1 | Cache-Control on GET routes |
 | `packages/plugins/lcyt-agent/src/routes/ai.js` | 1 | Cache-Control on GET routes |
-| Backend routes for `/features`, `/stt/config`, `/youtube/config` | 1 | Cache-Control on GET routes |
+| Backend routes for `/api/v1/features`, `/api/v1/stt/api/v1/config`, `/api/v1/youtube/api/v1/config` | 1 | Cache-Control on GET routes |
 | `scripts/nginx-app.conf.sample` | 2 | Full API reverse proxy with proxy_cache |
 | `packages/plugins/lcyt-rtmp/src/nginx-manager.js` | 3 | Split HLS proxy into playlist + segment locations |
 | `packages/lcyt-web/src/lib/api.js` | 4 | `getCached()` + `invalidate()` |
@@ -630,8 +630,9 @@ from 304 responses on 5-second polling intervals are significant.
 | Risk | Mitigation |
 |---|---|
 | Stale feature flags hide newly enabled features | `stale-while-revalidate` ensures background refresh; explicit `invalidate()` on feature change |
-| Cached file list doesn't show newly uploaded file | Short TTL (30s) + `invalidate('/file')` after upload |
+| Cached file list doesn't show newly uploaded file | Short TTL (30s) + `invalidate('/api/v1/file')` after upload |
 | CDN caches `private` responses | Backend headers correctly use `private` for authenticated endpoints; CDN configs must honour this |
 | nginx cache fills disk | `max_size=1g` limit in `proxy_cache_path`; `inactive=24h` auto-evicts cold entries |
 | ETag computation overhead on preview | JPEG is small (50-200 KB); MD5 is fast; only computed on cache miss |
 | Breaking existing clients that rely on `no-store` | All changes are additive (adding cache where there was none); clients that ignore `Cache-Control` are unaffected |
+

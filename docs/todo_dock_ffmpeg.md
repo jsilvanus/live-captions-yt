@@ -1,6 +1,6 @@
-> **Historical (2026-10-05):** `lcyt-orchestrator` and `lcyt-worker-daemon` were removed; remote execution is `FFMPEG_RUNNER=fleet` (fffleet). See `docs/DEPLOY.md`.
+﻿> **Historical (2026-10-05):** `lcyt-orchestrator` and `lcyt-worker-daemon` were removed; remote execution is `FFMPEG_RUNNER=fleet` (fffleet). See `docs/DEPLOY.md`.
 
-# TODO: FFmpeg Container Migration — Phase-by-Phase Checklist
+# TODO: FFmpeg Container Migration â€” Phase-by-Phase Checklist
 
 Date: 2026-03-20
 Based on: docs/plan_dock_ffmpeg.md (v2)
@@ -9,13 +9,13 @@ Purpose
 - Convert the high-level migration plan into small, testable tasks that can be implemented incrementally.
 
 How to use
-- Work top→down by Phase. Each line is an atomic task: owner, estimate, acceptance criteria (one line).
+- Work topâ†’down by Phase. Each line is an atomic task: owner, estimate, acceptance criteria (one line).
 
-PHASE 1 — Runner abstraction (no behavior change)
-- 1.1 Create `packages/lcyt-backend/src/ffmpeg/index.js` factory — Owner: Backend, Estimate: small. Acceptance: `createFfmpegRunner({ runner })` exports and unit tests.
-- 1.2 Implement `local-runner.js` (wraps current spawn behavior) — Owner: Backend, Estimate: small. Acceptance: start/stop/isRunning, stderr passthrough tests.
-- 1.3 Refactor `PreviewManager` to use the factory — Owner: Backend, Estimate: small. Acceptance: backend behaves identically with `FFMPEG_RUNNER=spawn` and existing tests pass.
-- 1.4 Add unit tests for `local-runner` and a PreviewManager integration smoke test — Owner: Tester, Estimate: small. Acceptance: CI runs unit tests; smoke test passes locally.
+PHASE 1 â€” Runner abstraction (no behavior change)
+- 1.1 Create `packages/lcyt-backend/src/ffmpeg/index.js` factory â€” Owner: Backend, Estimate: small. Acceptance: `createFfmpegRunner({ runner })` exports and unit tests.
+- 1.2 Implement `local-runner.js` (wraps current spawn behavior) â€” Owner: Backend, Estimate: small. Acceptance: start/stop/isRunning, stderr passthrough tests.
+- 1.3 Refactor `PreviewManager` to use the factory â€” Owner: Backend, Estimate: small. Acceptance: backend behaves identically with `FFMPEG_RUNNER=spawn` and existing tests pass.
+- 1.4 Add unit tests for `local-runner` and a PreviewManager integration smoke test â€” Owner: Tester, Estimate: small. Acceptance: CI runs unit tests; smoke test passes locally.
 
 Implemented (2026-03-20):
 - Added `docker/lcyt-ffmpeg/Dockerfile` and `docker/lcyt-ffmpeg/README.md` (minimal ffmpeg image).
@@ -31,48 +31,48 @@ Next steps (short):
  - Ensure Python test prerequisites are installed before running Python tests: `pip install -r python-packages/lcyt-backend/requirements.txt` (use a virtualenv).
  - On Windows, run Python tests inside WSL or a Python virtualenv; the test runner and some scripts assume a Unix-like shell environment.
 
-PHASE 2 — Docker runner for stateless jobs
-- 2.1 Implement `docker-runner.js` wrapping `docker run` options (image, volumes, network, cpu/memory) — Owner: Backend, Estimate: medium. Acceptance: can start/stop a container, map volumes, capture stderr.
-- 2.2 Add `docker/lcyt-ffmpeg/Dockerfile` (minimal ffmpeg image) and a short README with build/push steps — Owner: Platform, Estimate: small. Acceptance: image builds locally.
-- 2.3 Refactor `HlsManager` & `RadioManager` & `PreviewManager` to accept `runner` option and default to factory — Owner: Backend, Estimate: medium. Acceptance: jobs run as containers when `FFMPEG_RUNNER=docker`.
-- 2.4 Add `docker-compose.yml` for single-VM dev: `lcyt-backend`, socket-proxy sidecar, named volumes, network — Owner: Platform, Estimate: small. Acceptance: compose up runs services.
-- 2.5 Add guarded docker integration tests (env TEST_DOCKER=1) and CI notes — Owner: Tester/Platform, Estimate: small. Acceptance: tests run only when docker available.
+PHASE 2 â€” Docker runner for stateless jobs
+- 2.1 Implement `docker-runner.js` wrapping `docker run` options (image, volumes, network, cpu/memory) â€” Owner: Backend, Estimate: medium. Acceptance: can start/stop a container, map volumes, capture stderr.
+- 2.2 Add `docker/lcyt-ffmpeg/Dockerfile` (minimal ffmpeg image) and a short README with build/push steps â€” Owner: Platform, Estimate: small. Acceptance: image builds locally.
+- 2.3 Refactor `HlsManager` & `RadioManager` & `PreviewManager` to accept `runner` option and default to factory â€” Owner: Backend, Estimate: medium. Acceptance: jobs run as containers when `FFMPEG_RUNNER=docker`.
+- 2.4 Add `docker-compose.yml` for single-VM dev: `lcyt-backend`, socket-proxy sidecar, named volumes, network â€” Owner: Platform, Estimate: small. Acceptance: compose up runs services.
+- 2.5 Add guarded docker integration tests (env TEST_DOCKER=1) and CI notes â€” Owner: Tester/Platform, Estimate: small. Acceptance: tests run only when docker available.
 
-PHASE 3 — CEA-708 named-pipe support and relay containers
-- 3.1 Implement `pipe-utils.js` (mkfifo, remove, non-blocking write with timeout) — Owner: Backend, Estimate: small. Acceptance: FIFO lifecycle unit tests.
-- 3.2 Refactor `RtmpRelayManager` to use factory + FIFO path for CEA injection — Owner: Backend, Estimate: medium. Acceptance: relay container reads FIFO and ffmpeg receives cues.
-- 3.3 Mount `cea-pipes` volume in backend + relay containers in compose — Owner: Platform, Estimate: small. Acceptance: FIFO path visible inside containers.
-- 3.4 Add FIFO non-blocking write e2e test that simulates stalled reader (write times out < configured ms) — Owner: Tester, Estimate: medium. Acceptance: test deterministic locally.
+PHASE 3 â€” CEA-708 named-pipe support and relay containers
+- 3.1 Implement `pipe-utils.js` (mkfifo, remove, non-blocking write with timeout) â€” Owner: Backend, Estimate: small. Acceptance: FIFO lifecycle unit tests.
+- 3.2 Refactor `RtmpRelayManager` to use factory + FIFO path for CEA injection â€” Owner: Backend, Estimate: medium. Acceptance: relay container reads FIFO and ffmpeg receives cues.
+- 3.3 Mount `cea-pipes` volume in backend + relay containers in compose â€” Owner: Platform, Estimate: small. Acceptance: FIFO path visible inside containers.
+- 3.4 Add FIFO non-blocking write e2e test that simulates stalled reader (write times out < configured ms) â€” Owner: Tester, Estimate: medium. Acceptance: test deterministic locally.
 
-PHASE 4 — Worker Daemon + Orchestrator (single-VM opt-in)
-- 4.1 Create `packages/lcyt-worker-daemon/` skeleton with HTTP API (POST /jobs, /jobs/:id/caption, GET /stats) — Owner: Backend, Estimate: medium. Acceptance: daemon registers and serves health endpoint.
-- 4.2 Create `packages/lcyt-orchestrator/` skeleton: worker registry, simple scheduler, heartbeat poller — Owner: Backend/Platform, Estimate: medium. Acceptance: orchestrator reports workers and accepts job dispatch calls.
-- 4.3 Implement `worker-runner.js` in backend ffmpeg factory that calls orchestrator endpoints (start/stop/caption) — Owner: Backend, Estimate: medium. Acceptance: `FFMPEG_RUNNER=worker` dispatches to `worker-0` (local daemon).
-- 4.4 Update compose to include orchestrator + worker-daemon; document `BACKEND_INTERNAL_TOKEN` use — Owner: Platform, Estimate: small. Acceptance: local single-VM flow works.
-- 4.5 Add integration tests exercising backend→orchestrator→worker end-to-end (guarded) — Owner: Tester, Estimate: medium. Acceptance: tests pass on dev machine with compose.
+PHASE 4 â€” Worker Daemon + Orchestrator (single-VM opt-in)
+- 4.1 Create `packages/lcyt-worker-daemon/` skeleton with HTTP API (POST /jobs, /jobs/:id/caption, GET /stats) â€” Owner: Backend, Estimate: medium. Acceptance: daemon registers and serves health endpoint.
+- 4.2 Create `packages/lcyt-orchestrator/` skeleton: worker registry, simple scheduler, heartbeat poller â€” Owner: Backend/Platform, Estimate: medium. Acceptance: orchestrator reports workers and accepts job dispatch calls.
+- 4.3 Implement `worker-runner.js` in backend ffmpeg factory that calls orchestrator endpoints (start/stop/caption) â€” Owner: Backend, Estimate: medium. Acceptance: `FFMPEG_RUNNER=worker` dispatches to `worker-0` (local daemon).
+- 4.4 Update compose to include orchestrator + worker-daemon; document `BACKEND_INTERNAL_TOKEN` use â€” Owner: Platform, Estimate: small. Acceptance: local single-VM flow works.
+- 4.5 Add integration tests exercising backendâ†’orchestratorâ†’worker end-to-end (guarded) â€” Owner: Tester, Estimate: medium. Acceptance: tests pass on dev machine with compose.
 
-PHASE 5 — S3 storage for HLS/preview (multi-VM prerequisite)
-- 5.1 Implement uploader sidecar or integrated uploader in Worker Daemon that watches output dir and uploads segments to S3 (or PUTs to backend) — Owner: Backend/Platform, Estimate: medium. Acceptance: segments appear in S3 within 1s in tests.
-- 5.2 Add backend route changes: when `S3_ENDPOINT` set, serve/redirect playlists & previews to S3 URLs — Owner: Backend, Estimate: small. Acceptance: playback via S3 URLs works.
-- 5.3 Add tests for upload reliability (simulate intermittent S3 errors, retries) — Owner: Tester, Estimate: medium. Acceptance: uploader retries and logs failures.
+PHASE 5 â€” S3 storage for HLS/preview (multi-VM prerequisite)
+- 5.1 Implement uploader sidecar or integrated uploader in Worker Daemon that watches output dir and uploads segments to S3 (or PUTs to backend) â€” Owner: Backend/Platform, Estimate: medium. Acceptance: segments appear in S3 within 1s in tests.
+- 5.2 Add backend route changes: when `S3_ENDPOINT` set, serve/redirect playlists & previews to S3 URLs â€” Owner: Backend, Estimate: small. Acceptance: playback via S3 URLs works.
+- 5.3 Add tests for upload reliability (simulate intermittent S3 errors, retries) â€” Owner: Tester, Estimate: medium. Acceptance: uploader retries and logs failures.
 
-PHASE 6 — Hetzner autoscaling (burst VMs)
-- 6.1 Implement Hetzner client utilities in orchestrator: createServer, poll status, deleteServer — Owner: Platform, Estimate: medium. Acceptance: dry-run API calls succeed when token present.
-- 6.2 Implement autoscaler loop: provision burst VMs on queue depth, destroy idle VMs after cooldown — Owner: Platform, Estimate: large. Acceptance: under simulated load orchestrator creates workers and dispatches jobs.
-- 6.3 Provide cloud-init template and snapshot prep checklist in docs — Owner: Platform, Estimate: small. Acceptance: operator can create snapshot following docs.
-- 6.4 Add rate-limit/backoff & metrics (Prometheus counters) — Owner: Platform, Estimate: small. Acceptance: backoff triggers on 429 in tests.
+PHASE 6 â€” Hetzner autoscaling (burst VMs)
+- 6.1 Implement Hetzner client utilities in orchestrator: createServer, poll status, deleteServer â€” Owner: Platform, Estimate: medium. Acceptance: dry-run API calls succeed when token present.
+- 6.2 Implement autoscaler loop: provision burst VMs on queue depth, destroy idle VMs after cooldown â€” Owner: Platform, Estimate: large. Acceptance: under simulated load orchestrator creates workers and dispatches jobs.
+- 6.3 Provide cloud-init template and snapshot prep checklist in docs â€” Owner: Platform, Estimate: small. Acceptance: operator can create snapshot following docs.
+- 6.4 Add rate-limit/backoff & metrics (Prometheus counters) â€” Owner: Platform, Estimate: small. Acceptance: backoff triggers on 429 in tests.
 
-PHASE 7 — DSK renderer containerization
-- 7.1 Create `docker/lcyt-dsk-renderer` image with Node + Playwright + ffmpeg, document startup args — Owner: Platform, Estimate: medium. Acceptance: renderer starts and can produce frames.
-- 7.2 Update DSK renderer code to run in container and write frames to unix-socket/volume consumed by ffmpeg inside same container — Owner: Backend, Estimate: medium. Acceptance: RTMP output is produced by container.
-- 7.3 Add integration smoke tests for DSK rendering in compose (guarded) — Owner: Tester, Estimate: medium. Acceptance: smoke render completes locally.
+PHASE 7 â€” DSK renderer containerization
+- 7.1 Create `docker/lcyt-dsk-renderer` image with Node + Playwright + ffmpeg, document startup args â€” Owner: Platform, Estimate: medium. Acceptance: renderer starts and can produce frames.
+- 7.2 Update DSK renderer code to run in container and write frames to unix-socket/volume consumed by ffmpeg inside same container â€” Owner: Backend, Estimate: medium. Acceptance: RTMP output is produced by container.
+- 7.3 Add integration smoke tests for DSK rendering in compose (guarded) â€” Owner: Tester, Estimate: medium. Acceptance: smoke render completes locally.
 
 Cross-cutting tasks
-- X.1 Environment flags & feature gating (`FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `ORCHESTRATOR_FALLBACK`) — Owner: Backend, Estimate: small. Acceptance: toggles switch behaviour without code changes.
-- X.2 Docs & runbooks: runbook for rollbacks, Hetzner snapshot guide, ops playbook for stuck FIFOs — Owner: Documentation Steward, Estimate: small. Acceptance: runbook added to docs/.
-- X.3 CI & staging: add guarded integration jobs (TEST_DOCKER=1) and a local-acceptance job to run the smoke harness — Owner: Tester/Platform, Estimate: medium. Acceptance: CI jobs present but gated for runners with Docker.
-- X.4 Acceptance test harness: deterministic harness that can simulate RTMP publishers and verify HLS/preview/relay semantics — Owner: Tester, Estimate: large. Acceptance: provides reproducible tests for each phase.
-- X.5 Rollback helpers & diagnostics: `docker ps --filter label=lcyt` stop-all script, orchestrator graceful-fallback to `spawn` — Owner: Platform, Estimate: small. Acceptance: operator can revert to `spawn` quickly.
+- X.1 Environment flags & feature gating (`FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `ORCHESTRATOR_FALLBACK`) â€” Owner: Backend, Estimate: small. Acceptance: toggles switch behaviour without code changes.
+- X.2 Docs & runbooks: runbook for rollbacks, Hetzner snapshot guide, ops playbook for stuck FIFOs â€” Owner: Documentation Steward, Estimate: small. Acceptance: runbook added to docs/.
+- X.3 CI & staging: add guarded integration jobs (TEST_DOCKER=1) and a local-acceptance job to run the smoke harness â€” Owner: Tester/Platform, Estimate: medium. Acceptance: CI jobs present but gated for runners with Docker.
+- X.4 Acceptance test harness: deterministic harness that can simulate RTMP publishers and verify HLS/preview/relay semantics â€” Owner: Tester, Estimate: large. Acceptance: provides reproducible tests for each phase.
+- X.5 Rollback helpers & diagnostics: `docker ps --filter label=lcyt` stop-all script, orchestrator graceful-fallback to `spawn` â€” Owner: Platform, Estimate: small. Acceptance: operator can revert to `spawn` quickly.
 
 Implementation notes and priorities
 - Keep `spawn` runner default and fully tested; every phase must be deployable with `FFMPEG_RUNNER=spawn` fallback.
@@ -91,19 +91,19 @@ Validation checklist before moving to Phase 2
 
 ---
 End of file.
-# TODO: Docked FFmpeg — Revised Implementation Plan (v2)
+# TODO: Docked FFmpeg â€” Revised Implementation Plan (v2)
 
 Status: Draft (updated to include distributed Phase 6+ orchestration)
 Reference: docs/plan_dock_ffmpeg.md (v2)
 
 High-level goals
-- Phase 1–5: introduce `DockerFfmpegRunner` abstraction and optional local Docker execution.
+- Phase 1â€“5: introduce `DockerFfmpegRunner` abstraction and optional local Docker execution.
 - Phase 6+: add a Compute Orchestrator + Worker Daemon for distributed Hetzner-based compute.
 - Preserve `spawn` fallback and enable incremental rollout.
 
 Phased work (concrete tasks & files)
 
-Phase 1 — Abstraction (safe)
+Phase 1 â€” Abstraction (safe)
 - Create `packages/lcyt-backend/src/ffmpeg/index.js` (runner factory).
 - Add `local-runner`: `packages/lcyt-backend/src/ffmpeg/local-runner.js` (wraps current spawn()).
 - Refactor managers to use factory (one-by-one):
@@ -113,7 +113,7 @@ Phase 1 — Abstraction (safe)
   - `packages/lcyt-backend/src/rtmp-manager.js`.
 - Tests: `packages/lcyt-backend/test/ffmpeg/local-runner.test.js` (unit, mock spawn).
 
-Phase 2 — Docker runner (local containers)
+Phase 2 â€” Docker runner (local containers)
 - Implement `DockerFfmpegRunner`: `packages/lcyt-backend/src/ffmpeg/docker-runner.js`.
 - Errors: `packages/lcyt-backend/src/ffmpeg/errors.js`.
 - Managers: accept mounts/env and call `runner.start()`.
@@ -122,19 +122,19 @@ Phase 2 — Docker runner (local containers)
   - `packages/lcyt-backend/test/ffmpeg/docker-runner.test.js`
   - `packages/lcyt-backend/test/hls-manager.docker.test.js`
 
-Phase 3 — CEA-708 named-pipe support
+Phase 3 â€” CEA-708 named-pipe support
 - Implement `packages/lcyt-backend/src/ffmpeg/pipe-utils.js` (mkfifo management).
 - Update `RtmpRelayManager` to create FIFO and write SRT cues through runner mounts.
 - Integration test: `packages/lcyt-backend/test/ffmpeg/cea-pipes.integration.test.js`.
 
-Phase 4 — DSK renderer container
+Phase 4 â€” DSK renderer container
 - Build `lcyt-dsk-renderer` image and update `packages/plugins/lcyt-dsk/src/renderer.js`.
 
-Phase 5 — Hardening & observability
+Phase 5 â€” Hardening & observability
 - Add container labels, Prometheus metrics (`lcyt_ffmpeg_jobs_total`, etc.), and alerts.
 - Add Docker socket proxy deployment notes.
 
-Phase 6 — Compute Orchestrator + Worker Daemon (distributed)
+Phase 6 â€” Compute Orchestrator + Worker Daemon (distributed)
 - Create `packages/lcyt-worker-daemon/` (Worker Daemon service) with API:
   - `POST /jobs`, `DELETE /jobs/:id`, `POST /jobs/:id/caption`, `GET /stats`.
 - Create `packages/lcyt-orchestrator/` (Orchestrator service) with API:
@@ -142,19 +142,19 @@ Phase 6 — Compute Orchestrator + Worker Daemon (distributed)
 - Implement Hetzner lifecycle: snapshot prep, create/destroy VMs via Hetzner API.
 - Storage: design S3 uploader sidecar or worker push (see Phase 8 below).
 
-Phase 7 — Hetzner snapshot & warm-pool
+Phase 7 â€” Hetzner snapshot & warm-pool
 - Prepare snapshot with Docker + pre-pulled ffmpeg images and `lcyt-worker-daemon` systemd service.
 - Add cloud-init snippet and orchestrator VM provisioning flow.
 
-Phase 8 — Storage migration (critical for cross-VM)
+Phase 8 â€” Storage migration (critical for cross-VM)
 - Implement object-storage uploader sidecar or Worker push to backend:
   - Option A (recommended): S3 uploader sidecar per worker; ffmpeg writes locally then uploader streams to S3.
   - Option B: Worker HTTP push to backend `PUT /internal/hls/<key>` (simpler for small deployments).
 - Tests: end-to-end HLS output to S3 in a staging environment.
 
-Phase 9 — Rollout & rollback
+Phase 9 â€” Rollout & rollback
 - Default: `FFMPEG_RUNNER=spawn` (no behavior change).
-- Canary by manager: enable Docker for `PreviewManager` → `HlsManager` → `RadioManager` → `RtmpRelayManager`.
+- Canary by manager: enable Docker for `PreviewManager` â†’ `HlsManager` â†’ `RadioManager` â†’ `RtmpRelayManager`.
 - Orchestrator mode: `FFMPEG_RUNNER=worker`, set `COMPUTE_ORCHESTRATOR_URL` and `BACKEND_INTERNAL_TOKEN`.
 - Rollback: switch `FFMPEG_RUNNER=spawn` or stop worker containers; orchestrator supports draining and reassign.
 
@@ -170,19 +170,19 @@ Immediate next actions (short-term)
 
 Operational notes
 - New env vars: `FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_NETWORK`, `COMPUTE_ORCHESTRATOR_URL`, `BACKEND_INTERNAL_TOKEN`, S3 creds when Phase 8.
-- Security: use `tecnativa/docker-socket-proxy` in Phase 1–5; socket removed from backend in Phase 6+.
+- Security: use `tecnativa/docker-socket-proxy` in Phase 1â€“5; socket removed from backend in Phase 6+.
 
 Architect & Codebase Expert additions
 - Add env defaults for orchestrator/workers and limits: `WORKER_MAX_JOBS_WARM=4`, `WORKER_MAX_JOBS_BURST=8`, `BURST_QUEUE_LIMIT=20`, `MAX_CONCURRENT_BURST_CREATES=3`, `ORCHESTRATOR_BACKOFF_MS=60000`, `ORCHESTRATOR_FALLBACK=spawn`.
 - Add per-job resource defaults (suggested): `preview=0.5cpu/256MB`, `radio=1cpu/512MB`, `hls=1.5cpu/1024MB`, `relay=3cpu/6GB`, `dsk=6cpu/12GB`.
 - Move storage migration earlier: run Phase 8 (storage/S3) before wide orchestrator rollout so workers publish to object storage in multi-VM setups.
 - Add runbooks and operational docs: worker drain, relay failover, FIFO stuck recovery, Hetzner VM reprovision steps.
-- Add logging & tracing requirement: centralized logs (Fluentd/Promtail → Loki/ELK) and request-id propagation backend→orchestrator→worker.
+- Add logging & tracing requirement: centralized logs (Fluentd/Promtail â†’ Loki/ELK) and request-id propagation backendâ†’orchestratorâ†’worker.
 - Add CI/test lines: gate Docker integration tests with `TEST_DOCKER=1` and add integration tests for worker-loss reassign, Hetzner rate-limit/backoff, and S3 upload failure simulation (staging only).
 - Add runner factory TODO: implement `createFfmpegRunner({ runner, opts })` and document default `spawn` behaviour.
 - Add Docker socket proxy reminder: include `tecnativa/docker-socket-proxy` in Compose snippets and require it in deployment notes.
 
-Estimated effort: phased work across 2–6 sprints depending on team size and staging infra.
+Estimated effort: phased work across 2â€“6 sprints depending on team size and staging infra.
 
 References: docs/plan_dock_ffmpeg.md
 # TODO: Docked FFmpeg (compute container) Implementation
@@ -195,13 +195,13 @@ Goals
 - Provide per-job resource limits, improved isolation, and predictable lifecycle management.
 
 Milestones
-- Phase 1 — Abstraction (safe): introduce runner abstraction, local runner implementation.
-- Phase 2 — Docker backend: implement `DockerFfmpegRunner`, wire stateless managers.
-- Phase 3 — CEA-708: named-pipe support for relay stdin (real-time captions).
-- Phase 4 — DSK renderer: renderer image + socket/volume frame transport.
-- Phase 5 — Hardening & rollout: observability, limits, orchestration docs.
+- Phase 1 â€” Abstraction (safe): introduce runner abstraction, local runner implementation.
+- Phase 2 â€” Docker backend: implement `DockerFfmpegRunner`, wire stateless managers.
+- Phase 3 â€” CEA-708: named-pipe support for relay stdin (real-time captions).
+- Phase 4 â€” DSK renderer: renderer image + socket/volume frame transport.
+- Phase 5 â€” Hardening & rollout: observability, limits, orchestration docs.
 
-Phase 1 — Abstraction (owner: backend eng) — 2–4 days
+Phase 1 â€” Abstraction (owner: backend eng) â€” 2â€“4 days
 - Add runner abstraction: `packages/lcyt-backend/src/ffmpeg/index.js` (factory).
 - Implement `local-runner`: `packages/lcyt-backend/src/ffmpeg/local-runner.js` (wraps spawn).
 - Replace direct `spawn('ffmpeg')` calls to use factory in: 
@@ -211,7 +211,7 @@ Phase 1 — Abstraction (owner: backend eng) — 2–4 days
   - `packages/lcyt-backend/src/rtmp-manager.js`
 - Add unit tests for local-runner: `packages/lcyt-backend/test/ffmpeg/local-runner.test.js`
 
-Phase 2 — Docker runner (owner: backend eng + ops) — 3–7 days
+Phase 2 â€” Docker runner (owner: backend eng + ops) â€” 3â€“7 days
 - Add `DockerFfmpegRunner`: `packages/lcyt-backend/src/ffmpeg/docker-runner.js`.
 - Implement API: `start({ ffmpegArgs, mounts, env, pipes })`, `stop()`, `probe()` and event emitter (`stdout`, `stderr`, `exit`).
 - Add errors file: `packages/lcyt-backend/src/ffmpeg/errors.js`.
@@ -221,17 +221,17 @@ Phase 2 — Docker runner (owner: backend eng + ops) — 3–7 days
   - `packages/lcyt-backend/test/hls-manager.docker.test.js`
 - Add env flags: `FFMPEG_RUNNER`, `FFMPEG_IMAGE`, `FFMPEG_NETWORK`.
 
-Phase 3 — CEA-708 stdin pipe (owner: backend eng) — 2–5 days
+Phase 3 â€” CEA-708 stdin pipe (owner: backend eng) â€” 2â€“5 days
 - Implement named-pipe utils: `packages/lcyt-backend/src/ffmpeg/pipe-utils.js`.
 - Update `RtmpRelayManager` to create FIFO in shared volume and write SRT cues.
 - Ensure Docker runner mounts `/tmp/lcyt-cea` into containers.
 - Add integration test: `packages/lcyt-backend/test/ffmpeg/cea-pipes.integration.test.js`.
 
-Phase 4 — DSK renderer (owner: dsk team) — 3–7 days
+Phase 4 â€” DSK renderer (owner: dsk team) â€” 3â€“7 days
 - Create `lcyt-dsk-renderer` image (Playwright + Chromium + ffmpeg).
 - Update `packages/plugins/lcyt-dsk/src/renderer.js` to launch renderer container and use socket/volume transport.
 
-Phase 5 — Hardening & rollout (owner: platform eng) — ongoing
+Phase 5 â€” Hardening & rollout (owner: platform eng) â€” ongoing
 - Add labels to containers: `lcyt.job`, `lcyt.manager`, `lcyt.key`.
 - Add Prometheus metrics (backend): `lcyt_ffmpeg_jobs_total`, `..._restarts_total`, `..._start_latency_seconds`.
 - Add alert rules: job restart rate, OOM kills, high CPU/memory, HLS playlist age.
@@ -247,15 +247,16 @@ Backward compatibility
 - If Docker probe fails at startup, log warning and fallback to `spawn`.
 
 Docs to update
-- `docs/plan_dock_ffmpeg.md` (architecture) — add final decisions
-- `CLAUDE.md` — operations notes and required env vars
-- `.github/agents/orchestrator.agent.md` — example payloads (already updated)
+- `docs/plan_dock_ffmpeg.md` (architecture) â€” add final decisions
+- `CLAUDE.md` â€” operations notes and required env vars
+- `.github/agents/orchestrator.agent.md` â€” example payloads (already updated)
 
 Initial tasks (next actions)
 1. Create `packages/lcyt-backend/src/ffmpeg` folder and add `index.js` + `local-runner.js` (Phase 1).
 2. Refactor one manager (`PreviewManager`) to use runner as a smoke test.
 3. Add unit tests for local-runner and run CI.
 
-Estimated total: 2–4 sprints (team-dependent). 
+Estimated total: 2â€“4 sprints (team-dependent). 
 
 References: docs/plan_dock_ffmpeg.md
+

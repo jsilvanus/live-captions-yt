@@ -1,4 +1,4 @@
----
+﻿---
 title: Sending Captions
 order: 3
 ---
@@ -15,8 +15,8 @@ The **input bar** sits at the bottom of the app. Type your caption text here and
 
 ![Input bar](/screenshots/inputbar-light.png)
 
-- **Clear** — remove the text without sending
-- **Send** button — same as Enter
+- **Clear** â€” remove the text without sending
+- **Send** button â€” same as Enter
 
 > **Tip:** After sending, the input bar is cleared automatically so you can type the next caption right away.
 
@@ -24,9 +24,9 @@ The **input bar** sits at the bottom of the app. Type your caption text here and
 
 ## Microphone (Speech-to-Text)
 
-Click the microphone button (🎙) to start continuous speech recognition. Words are transcribed and displayed in the caption preview area in real time. The system sends each completed utterance as a caption automatically.
+Click the microphone button (ðŸŽ™) to start continuous speech recognition. Words are transcribed and displayed in the caption preview area in real time. The system sends each completed utterance as a caption automatically.
 
-See [Caption settings → Model tab](caption-settings#model) for engine and language selection.
+See [Caption settings â†’ Model tab](caption-settings#model) for engine and language selection.
 
 ### Desktop
 
@@ -43,9 +43,9 @@ The mobile bar contains (left to right):
 | Button | Action |
 |--------|--------|
 | Audio meter | Shows microphone volume in real time |
-| 🎙 / ⏹ | Toggle speech recognition on/off |
-| − | Go to previous line (script mode) |
-| ► | Send current line |
+| ðŸŽ™ / â¹ | Toggle speech recognition on/off |
+| âˆ’ | Go to previous line (script mode) |
+| â–º | Send current line |
 | + | Go to next line (script mode) |
 
 ---
@@ -65,12 +65,12 @@ Once loaded, the file appears as a **tab** above the caption view. The current l
 
 | Action | Keyboard | Mobile |
 |--------|----------|--------|
-| Send current line | `Enter` | ► button |
-| Next line | `↓` / `Page Down` | + button |
-| Previous line | `↑` / `Page Up` | − button |
-| First line | `Home` | — |
-| Last line | `End` | — |
-| Cycle file tabs | `Tab` | — |
+| Send current line | `Enter` | â–º button |
+| Next line | `â†“` / `Page Down` | + button |
+| Previous line | `â†‘` / `Page Up` | âˆ’ button |
+| First line | `Home` | â€” |
+| Last line | `End` | â€” |
+| Cycle file tabs | `Tab` | â€” |
 
 ---
 
@@ -130,15 +130,15 @@ _
 Amazing grace, how sweet the sound
 ```
 
-You can optionally add a label after the underscore. The label is shown in **red** in the caption view as a visual cue for the operator — it is never sent to YouTube.
+You can optionally add a label after the underscore. The label is shown in **red** in the caption view as a visual cue for the operator â€” it is never sent to YouTube.
 
 ```
 _ Show verse 1
-_ ♪ Chorus
+_ â™ª Chorus
 _ [pause here]
 ```
 
-A bare `_` displays a dimmed `⊘ send codes` indicator. A labeled `_ text` displays the label text in red.
+A bare `_` displays a dimmed `âŠ˜ send codes` indicator. A labeled `_ text` displays the label text in red.
 
 ---
 
@@ -146,7 +146,7 @@ A bare `_` displays a dimmed `⊘ send codes` indicator. A labeled `_ text` disp
 
 Batch mode lets you queue multiple captions and send them at regular intervals. This is useful for pre-written scripts where you want smooth, evenly timed delivery.
 
-Configure the **batch interval** in [Caption settings → Other tab](caption-settings#other).
+Configure the **batch interval** in [Caption settings â†’ Other tab](caption-settings#other).
 
 ---
 
@@ -155,3 +155,4 @@ Configure the **batch interval** in [Caption settings → Other tab](caption-set
 The **right panel** shows every caption you have sent in the current session, newest at the top. You can scroll back to review what was sent.
 
 ![Sent captions log](/screenshots/panel-right-light.png)
+

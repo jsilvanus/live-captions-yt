@@ -1,4 +1,4 @@
-# lcyt — Core Library Reference
+﻿# lcyt â€” Core Library Reference
 
 ---
 id: lib/readme
@@ -22,17 +22,17 @@ npm install lcyt
 
 | Import path | Purpose |
 |---|---|
-| `lcyt` | [`YoutubeLiveCaptionSender`](#sender) — direct YouTube caption delivery |
-| `lcyt/backend` | [`BackendCaptionSender`](#backend-sender) — relay via lcyt-backend |
-| `lcyt/config` | [Configuration utilities](#config) — load/save config, build ingestion URL |
-| `lcyt/logger` | [Logger](#logger) — pluggable structured logger |
-| `lcyt/errors` | [Error classes](#errors) — typed error hierarchy |
+| `lcyt` | [`YoutubeLiveCaptionSender`](#sender) â€” direct YouTube caption delivery |
+| `lcyt/backend` | [`BackendCaptionSender`](#backend-sender) â€” relay via lcyt-backend |
+| `lcyt/config` | [Configuration utilities](#config) â€” load/save config, build ingestion URL |
+| `lcyt/logger` | [Logger](#logger) â€” pluggable structured logger |
+| `lcyt/errors` | [Error classes](#errors) â€” typed error hierarchy |
 
 ---
 
 ## Quick Start
 
-### Node.js — Send a caption directly to YouTube
+### Node.js â€” Send a caption directly to YouTube
 
 ```js
 import { YoutubeLiveCaptionSender } from 'lcyt';
@@ -43,7 +43,7 @@ await sender.send('Hello, world!');
 await sender.end();
 ```
 
-### Node.js — Send captions via the relay backend
+### Node.js â€” Send captions via the relay backend
 
 ```js
 import { BackendCaptionSender } from 'lcyt/backend';
@@ -77,12 +77,12 @@ pip install lcyt
 
 | Module | Purpose |
 |---|---|
-| `lcyt.sender` | [`YoutubeLiveCaptionSender`](#python-sender) — direct YouTube caption delivery |
-| `lcyt.backend_sender` | [`BackendCaptionSender`](#python-backend-sender) — relay via lcyt-backend |
-| `lcyt.config` | [Configuration utilities](#python-config) — load/save config, build ingestion URL |
-| `lcyt.errors` | [Error classes](#python-errors) — typed exception hierarchy |
+| `lcyt.sender` | [`YoutubeLiveCaptionSender`](#python-sender) â€” direct YouTube caption delivery |
+| `lcyt.backend_sender` | [`BackendCaptionSender`](#python-backend-sender) â€” relay via lcyt-backend |
+| `lcyt.config` | [Configuration utilities](#python-config) â€” load/save config, build ingestion URL |
+| `lcyt.errors` | [Error classes](#python-errors) â€” typed exception hierarchy |
 
-### Python — Send a caption directly to YouTube
+### Python â€” Send a caption directly to YouTube
 
 ```python
 from lcyt.sender import YoutubeLiveCaptionSender
@@ -93,7 +93,7 @@ sender.send("Hello, world!")
 sender.end()
 ```
 
-### Python — Send captions via the relay backend
+### Python â€” Send captions via the relay backend
 
 ```python
 from lcyt.backend_sender import BackendCaptionSender
@@ -127,3 +127,4 @@ sender.end()
 - [BackendCaptionSender](#python-backend-sender)
 - [Configuration](#python-config)
 - [Errors](#python-errors)
+

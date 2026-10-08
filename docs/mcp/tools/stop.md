@@ -1,11 +1,11 @@
----
-title: "stop — Stop Caption Session"
+﻿---
+title: "stop â€” Stop Caption Session"
 stdio: true
 sse: true
 id: mcp/tools/stop
 ---
 
-# `stop` — Stop Caption Session
+# `stop` â€” Stop Caption Session
 
 End a caption session and release its resources.
 
@@ -30,3 +30,4 @@ End a caption session and release its resources.
 | Field | Type | Description |
 |---|---|---|
 | `ok` | `boolean` | `true` on success |
+

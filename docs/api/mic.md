@@ -1,17 +1,17 @@
----
+﻿---
 id: api/mic
-title: "/mic — Mic Lock"
+title: "/mic â€” Mic Lock"
 methods: [POST]
 auth: [bearer]
 ---
 
-# /mic — Mic Lock
+# /mic â€” Mic Lock
 
-Claim or release the soft mic lock for a collaborative session. The mic lock is advisory — it signals which client should be considered the active speaker, but does not block other clients from sending captions.
+Claim or release the soft mic lock for a collaborative session. The mic lock is advisory â€” it signals which client should be considered the active speaker, but does not block other clients from sending captions.
 
 ---
 
-## `POST /mic` — Mic Lock
+## `POST /mic` â€” Mic Lock
 
 **Authentication:** Bearer JWT
 
@@ -39,7 +39,7 @@ Content-Type: application/json
 - **`claim`**: Sets the session's `micHolder` to `clientId`, overwriting any existing holder. All connected SSE clients receive a `mic_state` event.
 - **`release`**: Clears `micHolder` only if the caller is the current holder. If the caller is not the holder, the request is a no-op.
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -54,3 +54,4 @@ Content-Type: application/json
 | `holder` | `string \| null` | The current mic holder after this operation |
 
 **Side effects:** A `mic_state` SSE event is broadcast to all SSE clients in the session.
+

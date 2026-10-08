@@ -1,6 +1,6 @@
----
+﻿---
 id: api/keys
-title: "/keys — API Key Management"
+title: "/api/v1/keys â€” API Key Management"
 methods: [POST, GET, PATCH, DELETE]
 auth: [adminkey, none]
 ---
@@ -15,7 +15,7 @@ If `ADMIN_KEY` is not configured in the server environment, all admin routes ret
 
 ---
 
-## `POST /keys` — Create Key
+## `POST /keys` â€” Create Key
 
 Create a new API key.
 
@@ -47,7 +47,7 @@ Content-Type: application/json
 | `daily_limit` | `number` | No | Max captions per day. Unlimited if omitted. |
 | `lifetime_limit` | `number` | No | Max captions for the key's lifetime. Unlimited if omitted. |
 
-**Response — `201 Created`**
+**Response â€” `201 Created`**
 
 ```json
 {
@@ -71,7 +71,7 @@ Content-Type: application/json
 
 ---
 
-## `GET /keys` — List Keys
+## `GET /keys` â€” List Keys
 
 List all API keys.
 
@@ -84,7 +84,7 @@ GET /keys
 X-Admin-Key: <ADMIN_KEY>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -112,7 +112,7 @@ X-Admin-Key: <ADMIN_KEY>
 
 ---
 
-## `GET /keys/:key` — Get Key
+## `GET /keys/:key` â€” Get Key
 
 Retrieve a single API key with usage statistics.
 
@@ -125,7 +125,7 @@ GET /keys/key-abc
 X-Admin-Key: <ADMIN_KEY>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -155,7 +155,7 @@ X-Admin-Key: <ADMIN_KEY>
 
 ---
 
-## `PATCH /keys/:key` — Update Key
+## `PATCH /keys/:key` â€” Update Key
 
 Update mutable fields on an existing API key.
 
@@ -184,15 +184,15 @@ Content-Type: application/json
 | `expires` | `string` | No | New expiry date (`YYYY-MM-DD`) |
 | `daily_limit` | `number \| null` | No | New daily limit. Pass `null` to remove the limit. |
 | `lifetime_limit` | `number \| null` | No | New lifetime limit. Pass `null` to remove the limit. |
-| `backend_file_enabled` | `boolean` | No | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`/file`](./files.md). |
-| `relay_allowed` | `boolean` | No | Grant permission to use the RTMP relay (`/stream` endpoints). Disabled by default. Requires `RTMP_RELAY_ACTIVE=1` on the server. |
+| `backend_file_enabled` | `boolean` | No | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`/api/v1/file`](./api/v1/files.md). |
+| `relay_allowed` | `boolean` | No | Grant permission to use the RTMP relay (`/api/v1/stream` endpoints). Disabled by default. Requires `RTMP_RELAY_ACTIVE=1` on the server. |
 | `radio_enabled` | `boolean` | No | Enable audio-only HLS radio streaming for this key (`/radio`). Disabled by default. |
-| `hls_enabled` | `boolean` | No | Enable video+audio HLS streaming for this key (`/stream-hls`). Disabled by default. |
+| `hls_enabled` | `boolean` | No | Enable video+audio HLS streaming for this key (`/api/v1/stream-hls`). Disabled by default. |
 | `graphics_enabled` | `boolean` | No | Enable DSK image uploads for this key (`POST /images`). Disabled by default. Also requires `GRAPHICS_ENABLED=1` on the server. |
 | `cea708_delay_ms` | `number` | No | Video delay in milliseconds applied in CEA-708 caption mode (default `0`). Used to align embedded captions with delayed video. |
-| `embed_cors` | `string \| null` | No | CORS `Access-Control-Allow-Origin` value for the per-key public embed endpoints (`/stream-hls`, `/radio`). Defaults to `'*'`. Pass a specific origin (e.g. `'https://yoursite.com'`) to restrict. Pass `null` to reset to `'*'`. |
+| `embed_cors` | `string \| null` | No | CORS `Access-Control-Allow-Origin` value for the per-key public embed endpoints (`/api/v1/stream-hls`, `/api/v1/radio`). Defaults to `'*'`. Pass a specific origin (e.g. `'https:/api/v1//api/v1/yoursite.com'`) to restrict. Pass `null` to reset to `'*'`. |
 
-**Response — `200 OK`** — Updated key object (same shape as `GET /keys/:key`)
+**Response â€” `200 OK`** â€” Updated key object (same shape as `GET /keys/:key`)
 
 **Error responses**
 
@@ -202,7 +202,7 @@ Content-Type: application/json
 
 ---
 
-## `DELETE /keys/:key` — Revoke or Delete Key
+## `DELETE /keys/:key` â€” Revoke or Delete Key
 
 Revoke (soft-delete) or permanently delete an API key.
 
@@ -223,7 +223,7 @@ X-Admin-Key: <ADMIN_KEY>
 
 Soft-revoke sets the key's `active` flag to `0` and records `revoked_at`. The key remains in the database for audit purposes and is purged after `REVOKED_KEY_TTL_DAYS` (default 30 days).
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 Soft-revoke:
 ```json
@@ -243,7 +243,7 @@ Hard-delete:
 
 ---
 
-## `POST /keys?freetier` — Free-Tier Key Signup
+## `POST /keys?freetier` â€” Free-Tier Key Signup
 
 Self-service key creation for end users. Only available when `FREE_APIKEY_ACTIVE=1` is set in the server environment. Does not require admin authentication.
 
@@ -268,7 +268,7 @@ Content-Type: application/json
 | `name` | `string` | Yes | Requester's name |
 | `email` | `string` | Yes | Requester's email address |
 
-**Response — `201 Created`** — Key object with default free-tier limits:
+**Response â€” `201 Created`** â€” Key object with default free-tier limits:
 - Expiry: 1 month from creation
 - Daily limit: 200 captions
 - Lifetime limit: 1000 captions
@@ -279,3 +279,4 @@ Content-Type: application/json
 |---|---|
 | `400` | Missing name or email |
 | `503` | Free-tier signup not enabled (`FREE_APIKEY_ACTIVE` not set) |
+

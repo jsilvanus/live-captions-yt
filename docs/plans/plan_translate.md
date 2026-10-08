@@ -1,10 +1,10 @@
-# Plan: Server-Side Translation Plugin (`lcyt-translate`)
+﻿# Plan: Server-Side Translation Plugin (`lcyt-translate`)
 
-**Status:** Partially superseded (2026-07-20) — see note below. The specific architecture in this
+**Status:** Partially superseded (2026-07-20) â€” see note below. The specific architecture in this
 document (a standalone `lcyt-translate` plugin, a new `stt_translate_config` table, `GET/PUT
 /translate/config`, operator-level env-var vendor keys) was **not built**.
 **Date:** 2026-03-26
-**Context:** Extracted from `plan_backend_split.md` — plugin splitting section.
+**Context:** Extracted from `plan_backend_split.md` â€” plugin splitting section.
 **Related:** `plan/server-stt` (Phase 5), `plan/translations`
 
 ---
@@ -12,39 +12,39 @@ document (a standalone `lcyt-translate` plugin, a new `stt_translate_config` tab
 ## Status Note (2026-07-20)
 
 Gap #1 below (server-side STT bypassing translation) **has been closed**, but by a different,
-simpler mechanism than the one proposed in this document — see `plan_server_stt.md` Phase 5
+simpler mechanism than the one proposed in this document â€” see `plan_server_stt.md` Phase 5
 ("Server-side translation for server-STT transcripts"), implemented and verified:
 
 - The translation call lives in `packages/plugins/lcyt-rtmp/src/translate-server.js`
-  (`translateText`/`isSameLanguage`) — colocated with `SttManager` in `lcyt-rtmp`, not a new
+  (`translateText`/`isSameLanguage`) â€” colocated with `SttManager` in `lcyt-rtmp`, not a new
   `lcyt-translate` plugin package.
 - It reuses the **already-existing** `translation_vendor_config`/`translation_targets` tables
   (`packages/lcyt-backend/src/db/translation-config.js`, built for the self-service/client config
-  UI per `plan_selfservice_config_backend.md` §1) — no new `stt_translate_config` table, and
+  UI per `plan_selfservice_config_backend.md` Â§1) â€” no new `stt_translate_config` table, and
   per-user vendor API keys are already stored there, not gated behind operator-level env vars as
   this doc's Phase 1 recommended.
 - Wiring is `SttManager.setDeliveryHelpers({ getTranslationVendorConfig, getTranslationTargets,
-  … })`, called once from `server.js`, not a `translateManager` constructor option.
-- There is no separate `/translate/config` HTTP API — config is read/written through the existing
+  â€¦ })`, called once from `server.js`, not a `translateManager` constructor option.
+- There is no separate `/translate/config` HTTP API â€” config is read/written through the existing
   `GET/PUT /translation/config*` routes (`packages/lcyt-backend/src/routes/translation.js`).
 
 Gap #2 below (API/generic/CLI clients that `POST /captions` directly with no `translations` map)
-is **still open** — `packages/lcyt-backend/src/routes/captions.js` has no server-side translation
+is **still open** â€” `packages/lcyt-backend/src/routes/captions.js` has no server-side translation
 step; it only composes/fans-out whatever `translations` the client already supplied. If that gap is
 ever closed, the STT precedent above (reuse `translation_vendor_config`/`translation_targets` +
-`translate-server.js`-style module, not a new plugin) is the template to follow — this document's
+`translate-server.js`-style module, not a new plugin) is the template to follow â€” this document's
 plugin-package/new-table/new-route design should be considered superseded rather than revived
 as-is.
 
 ## Background and Motivation
 
-Translation currently runs entirely in the browser (`packages/lcyt-web/src/lib/translate.js`). The client calls MyMemory, Google Cloud, DeepL, or LibreTranslate directly, then sends the resulting `{ text, translations: { 'fi-FI': '...' }, captionLang, showOriginal }` payload to `POST /captions`. The backend is a pass-through — it receives translated text and distributes it to targets.
+Translation currently runs entirely in the browser (`packages/lcyt-web/src/lib/translate.js`). The client calls MyMemory, Google Cloud, DeepL, or LibreTranslate directly, then sends the resulting `{ text, translations: { 'fi-FI': '...' }, captionLang, showOriginal }` payload to `POST /captions`. The backend is a pass-through â€” it receives translated text and distributes it to targets.
 
 This works well for the browser workflow but has two gaps:
 
-1. **Server-side STT (`SttManager`)** — transcripts arrive inside `session._sendQueue` on the server without ever touching the browser. The STT path bypasses the translation pipeline entirely: `SttManager.#injectCaption` calls `session._sendQueue.then(...)` directly with the raw transcript, so no translation occurs even when the user has translation targets configured.
+1. **Server-side STT (`SttManager`)** â€” transcripts arrive inside `session._sendQueue` on the server without ever touching the browser. The STT path bypasses the translation pipeline entirely: `SttManager.#injectCaption` calls `session._sendQueue.then(...)` directly with the raw transcript, so no translation occurs even when the user has translation targets configured.
 
-2. **API / generic clients** — tools that POST to `/captions` directly (CLI, MCP, relay) cannot use browser translation. They must either translate themselves or send raw text.
+2. **API /api/v1/ generic clients** â€” tools that POST to `/api/v1/captions` directly (CLI, MCP, relay) cannot use browser translation. They must either translate themselves or send raw text.
 
 An `lcyt-translate` plugin would close these gaps by giving the server an optional translation step that sits in the caption send path.
 
@@ -56,11 +56,11 @@ An `lcyt-translate` plugin would close these gaps by giving the server an option
 
 ```
 lcyt-web
-  └─ AudioPanel / InputBar
-       └─ translateAll(text, sourceLang, enabledTranslations)
-            ├─ translateMyMemory / translateGoogle / translateDeepL / translateLibre
-            └─ returns { translationsMap, captionLang, localFileEntries }
-  └─ POST /captions  { text, translations: { 'fi-FI': '...' }, captionLang, showOriginal }
+  â””â”€ AudioPanel / InputBar
+       â””â”€ translateAll(text, sourceLang, enabledTranslations)
+            â”œâ”€ translateMyMemory / translateGoogle / translateDeepL / translateLibre
+            â””â”€ returns { translationsMap, captionLang, localFileEntries }
+  â””â”€ POST /captions  { text, translations: { 'fi-FI': '...' }, captionLang, showOriginal }
 ```
 
 Config stored in `localStorage` (vendor, API key, LibreTranslate URL). Each translation target has a `lang` and a `target` field: `'captions'` (show in YouTube), `'backend-file'` (save on server), or `'file'` (save in browser via File System Access API).
@@ -84,21 +84,21 @@ Mirrors the STT adapter pattern in `lcyt-rtmp`:
 
 ```
 packages/plugins/lcyt-translate/
-├── package.json
-├── src/
-│   ├── api.js                    ← initTranslateControl(db) + createTranslateRouters(db, auth)
-│   ├── translate-manager.js      ← TranslateManager: per-key config, translate(apiKey, text, sourceLang)
-│   ├── adapters/
-│   │   ├── mymemory.js
-│   │   ├── google.js
-│   │   ├── deepl.js
-│   │   └── libretranslate.js
-│   └── db.js                     ← stt_translate_config table migrations + CRUD
-└── test/
-    ├── translate-manager.test.js
-    └── adapters/
-        ├── mymemory.test.js
-        └── google.test.js
+â”œâ”€â”€ package.json
+â”œâ”€â”€ src/
+â”‚   â”œâ”€â”€ api.js                    â† initTranslateControl(db) + createTranslateRouters(db, auth)
+â”‚   â”œâ”€â”€ translate-manager.js      â† TranslateManager: per-key config, translate(apiKey, text, sourceLang)
+â”‚   â”œâ”€â”€ adapters/
+â”‚   â”‚   â”œâ”€â”€ mymemory.js
+â”‚   â”‚   â”œâ”€â”€ google.js
+â”‚   â”‚   â”œâ”€â”€ deepl.js
+â”‚   â”‚   â””â”€â”€ libretranslate.js
+â”‚   â””â”€â”€ db.js                     â† stt_translate_config table migrations + CRUD
+â””â”€â”€ test/
+    â”œâ”€â”€ translate-manager.test.js
+    â””â”€â”€ adapters/
+        â”œâ”€â”€ mymemory.test.js
+        â””â”€â”€ google.test.js
 ```
 
 ### Per-key translation config (DB)
@@ -114,7 +114,7 @@ CREATE TABLE IF NOT EXISTS stt_translate_config (
   -- JSON array: [{ lang, target }]
   -- target: 'captions' | 'backend-file'
   targets_json    TEXT,
-  -- vendor API key (stored encrypted or as plaintext — see §Security)
+  -- vendor API key (stored encrypted or as plaintext â€” see Â§Security)
   vendor_api_key  TEXT,
   -- for LibreTranslate
   libre_url       TEXT,
@@ -126,8 +126,8 @@ CREATE TABLE IF NOT EXISTS stt_translate_config (
 Config is managed via two HTTP endpoints (mirrors `GET/PUT /stt/config`):
 
 ```
-GET  /translate/config   — get per-key config (Bearer token)
-PUT  /translate/config   — update per-key config (Bearer token)
+GET  /translate/config   â€” get per-key config (Bearer token)
+PUT  /translate/config   â€” update per-key config (Bearer token)
 ```
 
 ### `TranslateManager`
@@ -289,9 +289,9 @@ The `vendor_api_key` field is **never returned** in GET responses.
 **Vendor API keys stored server-side:** The `vendor_api_key` column stores translation vendor credentials for each user. This is the most sensitive aspect of this design.
 
 Options in order of preference:
-1. **Encrypt at rest** — use `aes-256-gcm` with a key derived from `JWT_SECRET` (or a separate `TRANSLATE_KEY_SECRET`). Encrypt on write, decrypt on read. Adds complexity but protects against DB dump.
-2. **Store plaintext, trust DB access controls** — simplest; acceptable if the DB file is protected by filesystem permissions and not exposed.
-3. **Per-vendor server-level API keys only** — skip per-user keys entirely; the operator sets `GOOGLE_TRANSLATE_KEY` / `DEEPL_KEY` env vars and all users share them. Removes the per-user key problem but means the operator pays for all translation.
+1. **Encrypt at rest** â€” use `aes-256-gcm` with a key derived from `JWT_SECRET` (or a separate `TRANSLATE_KEY_SECRET`). Encrypt on write, decrypt on read. Adds complexity but protects against DB dump.
+2. **Store plaintext, trust DB access controls** â€” simplest; acceptable if the DB file is protected by filesystem permissions and not exposed.
+3. **Per-vendor server-level API keys only** â€” skip per-user keys entirely; the operator sets `GOOGLE_TRANSLATE_KEY` / `DEEPL_KEY` env vars and all users share them. Removes the per-user key problem but means the operator pays for all translation.
 
 For the initial implementation, option 3 (operator-level env vars only) is the lowest risk and easiest to reason about. Per-user keys can be added later.
 
@@ -313,12 +313,12 @@ Per-key config in DB stores only `enabled`, `source_lang`, and `targets` (no ven
 ## Latency Impact
 
 Translation adds latency to the send queue. For a single caption sent to one target:
-- **MyMemory:** ~200–500 ms (free tier, rate-limited at ~1000 req/day/IP)
-- **Google Cloud:** ~100–200 ms
-- **DeepL:** ~100–300 ms
-- **LibreTranslate (self-hosted):** ~50–200 ms (hardware dependent)
+- **MyMemory:** ~200â€“500 ms (free tier, rate-limited at ~1000 req/day/IP)
+- **Google Cloud:** ~100â€“200 ms
+- **DeepL:** ~100â€“300 ms
+- **LibreTranslate (self-hosted):** ~50â€“200 ms (hardware dependent)
 
-For live captioning this is marginal — the YouTube ingestion API itself typically takes 200–600 ms. However, if a user configures 3–4 translation targets, `Promise.allSettled` runs them concurrently so the total overhead is max(individual latencies), not sum.
+For live captioning this is marginal â€” the YouTube ingestion API itself typically takes 200â€“600 ms. However, if a user configures 3â€“4 translation targets, `Promise.allSettled` runs them concurrently so the total overhead is max(individual latencies), not sum.
 
 Mitigation: add a configurable `TRANSLATE_TIMEOUT_MS` (default 2000ms) that aborts slow translation calls and falls back to the original text.
 
@@ -327,8 +327,8 @@ Mitigation: add a configurable `TRANSLATE_TIMEOUT_MS` (default 2000ms) that abor
 ## Relationship to Client-Side Translation
 
 Server-side and client-side translation are **not mutually exclusive**. The guard `if (!caption.translations)` in `createCaptionsRouter` means:
-- If the browser sends translations → server uses them (existing behaviour, unchanged).
-- If the browser sends no translations (e.g. CLI, MCP, STT path) → server translates if configured.
+- If the browser sends translations â†’ server uses them (existing behaviour, unchanged).
+- If the browser sends no translations (e.g. CLI, MCP, STT path) â†’ server translates if configured.
 
 This is the correct behaviour: browser translation remains the primary path for the web UI; server-side translation fills in the gaps.
 
@@ -336,16 +336,16 @@ This is the correct behaviour: browser translation remains the primary path for 
 
 ## Implementation Steps
 
-1. **Create `packages/plugins/lcyt-translate/`** — package.json, src/ skeleton.
-2. **Implement `db.js`** — `stt_translate_config` table migration, `getTranslateConfig`, `setTranslateConfig`.
-3. **Implement adapters** — mymemory, google, deepl, libretranslate (port from lcyt-web/src/lib/translate.js).
-4. **Implement `TranslateManager`** — constructor, `translate(apiKey, text, sourceLang?)`, `getConfig(apiKey)`.
-5. **Implement `api.js`** — `initTranslateControl(db)`, `createTranslateRouters(db, auth)` (GET/PUT /translate/config).
-6. **Wire into `createCaptionsRouter`** — inject translateManager, add translation step before composeCaptionText.
-7. **Wire into `SttManager`** — accept translateManager constructor option, call in `#injectCaption`.
-8. **Wire in `server.js`** — initialise, pass to rtmp and captions.
-9. **Tests** — per-adapter unit tests (mock fetch), TranslateManager integration test with in-memory DB.
-10. **lcyt-web UX (future)** — add "server-side" toggle in the CC → Translations tab so users know translation is handled by the backend for STT sessions.
+1. **Create `packages/plugins/lcyt-translate/`** â€” package.json, src/ skeleton.
+2. **Implement `db.js`** â€” `stt_translate_config` table migration, `getTranslateConfig`, `setTranslateConfig`.
+3. **Implement adapters** â€” mymemory, google, deepl, libretranslate (port from lcyt-web/src/lib/translate.js).
+4. **Implement `TranslateManager`** â€” constructor, `translate(apiKey, text, sourceLang?)`, `getConfig(apiKey)`.
+5. **Implement `api.js`** â€” `initTranslateControl(db)`, `createTranslateRouters(db, auth)` (GET/PUT /translate/config).
+6. **Wire into `createCaptionsRouter`** â€” inject translateManager, add translation step before composeCaptionText.
+7. **Wire into `SttManager`** â€” accept translateManager constructor option, call in `#injectCaption`.
+8. **Wire in `server.js`** â€” initialise, pass to rtmp and captions.
+9. **Tests** â€” per-adapter unit tests (mock fetch), TranslateManager integration test with in-memory DB.
+10. **lcyt-web UX (future)** â€” add "server-side" toggle in the CC â†’ Translations tab so users know translation is handled by the backend for STT sessions.
 
 ---
 
@@ -362,10 +362,11 @@ This is the correct behaviour: browser translation remains the primary path for 
 | DB schema | New `stt_translate_config` table |
 | Breaking changes | None |
 
-This plan is **partially superseded** (see Status Note above, 2026-07-20) — the STT gap this
+This plan is **partially superseded** (see Status Note above, 2026-07-20) â€” the STT gap this
 document set out to close is real and has since been closed, but via `plan_server_stt.md` Phase 5's
 lighter-weight design (reusing existing tables, colocated in `lcyt-rtmp`), not the standalone
 `lcyt-translate` plugin proposed here. The remaining gap (API/generic/CLI clients bypassing
 translation on direct `POST /captions`) is unaddressed by any implemented mechanism; this document
 remains useful as a design reference for that gap, but should not be scheduled as originally
 written.
+

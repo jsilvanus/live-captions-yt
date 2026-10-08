@@ -1,4 +1,4 @@
----
+﻿---
 id: plan/cea
 title: "CEA-708 SEI NAL Caption Embedding in RTMP Relay"
 status: implemented
@@ -11,7 +11,7 @@ summary: "CEA-708 caption embedding implemented in RtmpRelayManager via ffmpeg t
 
 This document describes how to embed CEA-708 closed captions as **H.264 SEI NAL units** into
 the RTMP video stream that `RtmpRelayManager` forwards via ffmpeg. This is the alternative to
-sending captions to YouTube over HTTP POST (`/captions`).
+sending captions to YouTube over HTTP POST (`/api/v1/captions`).
 
 CEA-708 is the US ATSC standard for digital closed captions. YouTube, Twitch, and most
 professional broadcast chains support CEA-708 data embedded in the H.264 SEI NAL units of the
@@ -23,7 +23,7 @@ video stream.
 
 1. **Video SEI (Supplemental Enhancement Information) packets** carry CEA-708
    `user_data_registered_itu_t_35` payloads within the H.264/H.265 bitstream.
-2. The caption payload is **PTS-anchored** — each packet is tied to a specific video frame's
+2. The caption payload is **PTS-anchored** â€” each packet is tied to a specific video frame's
    Presentation Timestamp, ensuring the text appears at exactly the right moment.
 3. FLV/RTMP containers transmit H.264 video with SEI NAL units intact, so captions embedded
    in the stream are forwarded transparently by nginx-rtmp to the relay target.
@@ -33,23 +33,23 @@ video stream.
 ## Architecture: One ffmpeg Process Per API Key (tee muxer)
 
 Instead of spawning one ffmpeg process **per relay slot**, a single ffmpeg process is spawned
-**per API key**. All relay targets (slots 1–4) are expressed as a single ffmpeg **tee muxer**
+**per API key**. All relay targets (slots 1â€“4) are expressed as a single ffmpeg **tee muxer**
 output. This reduces system overhead, simplifies caption injection, and ensures a consistent
 video/audio timeline across all relay destinations.
 
 ```
 nginx-rtmp publisher (per API key)
-         │ RTMP source
-         ▼
+         â”‚ RTMP source
+         â–¼
      ffmpeg (one process per API key)
-       ├── stdin pipe ← SubRip (SRT/subrip) captions (CEA-708 mode only)
-       ├── re-encodes H.264 with CEA-608/708 SEI NALs embedded
-       └── tee muxer → slot 1 (rtmp://target1/live/key)
-                     → slot 2 (rtmp://target2/live/key2)
-                     → slot N …
+       â”œâ”€â”€ stdin pipe â† SubRip (SRT/subrip) captions (CEA-708 mode only)
+       â”œâ”€â”€ re-encodes H.264 with CEA-608/708 SEI NALs embedded
+       â””â”€â”€ tee muxer â†’ slot 1 (rtmp://target1/live/key)
+                     â†’ slot 2 (rtmp://target2/live/key2)
+                     â†’ slot N â€¦
 ```
 
-### ffmpeg command — CEA-708 mode (re-encode)
+### ffmpeg command â€” CEA-708 mode (re-encode)
 
 ```bash
 ffmpeg \
@@ -66,9 +66,9 @@ ffmpeg \
 The `eia608` subtitle codec encodes plain text (from the SRT input) as CEA-608 closed caption
 byte pairs and instructs `libx264` to embed them in the H.264 stream as `cc_data` SEI NAL
 units (SEI type 4, `user_data_registered_itu_t_35`). No separate subtitle track is created in
-the FLV container — the CC data lives inside the video NAL units.
+the FLV container â€” the CC data lives inside the video NAL units.
 
-### ffmpeg command — HTTP caption mode (stream copy, no re-encode)
+### ffmpeg command â€” HTTP caption mode (stream copy, no re-encode)
 
 ```bash
 ffmpeg \
@@ -88,7 +88,7 @@ delivery remains via HTTP POST to YouTube directly.
 ## Timing: Start-of-Utterance Offset
 
 Speech recognition finalises text **after** the utterance ends. Without correction, captions
-appear seconds after speech started — too late to feel natural.
+appear seconds after speech started â€” too late to feel natural.
 
 ### Client-side: `speechStart` timestamp
 
@@ -105,7 +105,7 @@ The web client (or CLI) sends an optional `speechStart` field with each caption:
 ```
 
 `speechStart` is the wall-clock time when the VAD (Voice Activity Detection) triggered for this
-utterance — i.e. when speech actually began.
+utterance â€” i.e. when speech actually began.
 
 ### Backend: mapping to video PTS
 
@@ -145,7 +145,7 @@ Hello world
 ## Why Batch Sending Must Be Disabled in CEA-708 Mode
 
 - Batch delay causes the first caption in a batch to have a PTS **older than the video frame
-  available at flush time** — captions appear late.
+  available at flush time** â€” captions appear late.
 - Each caption segment must arrive individually so it can be injected at the correct PTS.
 
 **Implementation requirement:** when `captionMode === 'cea708'`, the frontend forces
@@ -159,11 +159,11 @@ Hello world
 
 | Old API | New API |
 |---------|---------|
-| `start(apiKey, slot, targetUrl, opts)` — one proc per slot | `start(apiKey, relays)` — one proc for all slots via tee |
-| `startAll(apiKey, relays)` | `startAll(apiKey, relays)` → delegates to `start()` |
-| `stop(apiKey, slot)` — kills slot process | `stop(apiKey)` — kills the single API-key process |
-| `stopKey(apiKey)` | `stopKey(apiKey)` → delegates to `stop()` |
-| _(none)_ | `writeCaption(apiKey, srtChunk)` — writes SRT cue to ffmpeg stdin |
+| `start(apiKey, slot, targetUrl, opts)` â€” one proc per slot | `start(apiKey, relays)` â€” one proc for all slots via tee |
+| `startAll(apiKey, relays)` | `startAll(apiKey, relays)` â†’ delegates to `start()` |
+| `stop(apiKey, slot)` â€” kills slot process | `stop(apiKey)` â€” kills the single API-key process |
+| `stopKey(apiKey)` | `stopKey(apiKey)` â†’ delegates to `stop()` |
+| _(none)_ | `writeCaption(apiKey, srtChunk)` â€” writes SRT cue to ffmpeg stdin |
 | `isSlotRunning(apiKey, slot)` | same (checks `_meta` slot list) |
 | `runningSlots(apiKey)` | same (reads `_meta` slot list) |
 
@@ -179,10 +179,10 @@ Key behavioural differences:
 In CEA-708 mode (relay running with at least one `cea708` slot), the route:
 
 1. Looks up the session's API key.
-2. Resolves `speechStart` → SRT cue start time (relative to ffmpeg start).
+2. Resolves `speechStart` â†’ SRT cue start time (relative to ffmpeg start).
 3. Calls `relayManager.writeCaption(apiKey, srtChunk)`.
 4. Continues to send the caption via HTTP POST to YouTube (or not, depending on
-   `sender` configuration — a future flag can disable HTTP when CEA mode is active).
+   `sender` configuration â€” a future flag can disable HTTP when CEA mode is active).
 
 ### 3. `DELETE /stream/:slot` route
 
@@ -190,12 +190,12 @@ With the tee muxer, removing one slot requires restarting ffmpeg with the remain
 
 ```
 DELETE /stream/:slot
-  1. deleteRelaySlot(db, apiKey, slot)   — remove from DB
+  1. deleteRelaySlot(db, apiKey, slot)   â€” remove from DB
   2. remaining = getRelays(db, apiKey)
   3. if (remaining.length > 0 && relayManager.isRunning(apiKey))
-       → relayManager.start(apiKey, remaining)   // restart with updated targets
+       â†’ relayManager.start(apiKey, remaining)   // restart with updated targets
      else
-       → relayManager.stop(apiKey)               // no targets left
+       â†’ relayManager.stop(apiKey)               // no targets left
 ```
 
 ---
@@ -254,6 +254,7 @@ DELETE /stream/:slot
 - [x] `DELETE /stream/:slot` restarts relay with remaining targets
 - [ ] Frontend: pass `speechStart` in caption payloads
 - [ ] Frontend: force batch-interval = 0 in CEA-708 mode; show notice
-- [ ] Test CEA-708 output on YouTube Live — confirm `cc_data` SEI NAL appears in stream
+- [ ] Test CEA-708 output on YouTube Live â€” confirm `cc_data` SEI NAL appears in stream
 - [ ] Tune `CEA708_OFFSET_MS` per utterance length distribution in production
-- [ ] Wire `captions_sent` counter in `rtmp_stream_stats` from the `/captions` route
+- [ ] Wire `captions_sent` counter in `rtmp_stream_stats` from the `/api/v1/captions` route
+

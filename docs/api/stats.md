@@ -1,17 +1,17 @@
----
+﻿---
 id: api/stats
-title: "/stats — Usage Statistics"
+title: "/api/v1/stats â€” Usage Statistics"
 methods: [GET, DELETE]
 auth: [bearer]
 ---
 
-# /stats — Usage Statistics
+# /stats â€” Usage Statistics
 
 Per-key usage statistics and GDPR data erasure.
 
 ---
 
-## `GET /stats` — User Statistics
+## `GET /stats` â€” User Statistics
 
 Return usage statistics and session history for the authenticated API key.
 
@@ -24,7 +24,7 @@ GET /stats
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -89,7 +89,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `DELETE /stats` — GDPR Data Erasure
+## `DELETE /stats` â€” GDPR Data Erasure
 
 Permanently anonymise the authenticated API key and delete all associated personal data. This implements the GDPR "right to erasure".
 
@@ -102,7 +102,7 @@ DELETE /stats
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -119,4 +119,5 @@ Authorization: Bearer <token>
 - The active JWT is invalidated
 
 > **Note:** After calling this endpoint, the API key can no longer be used. Contact your server admin if you need a new key.
+
 

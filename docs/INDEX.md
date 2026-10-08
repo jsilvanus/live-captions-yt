@@ -1,51 +1,51 @@
-# LCYT Documentation Index
+﻿# LCYT Documentation Index
 
 Welcome to the LCYT documentation. This is your navigation hub for all guides, API references, and architectural documentation.
 
-## 📚 Start Here
+## ðŸ“š Start Here
 
 **New to LCYT?** Start with these quick-start guides:
 
-- [**README.md**](../README.md) — Project overview, packages table, quick start
-- [**CLAUDE.md**](../CLAUDE.md) — Complete codebase reference (1500+ lines, detailed)
-- [**Getting Started Guide**](./guide-web/getting-started.md) — Step-by-step setup
+- [**README.md**](../README.md) â€” Project overview, packages table, quick start
+- [**CLAUDE.md**](../CLAUDE.md) â€” Complete codebase reference (1500+ lines, detailed)
+- [**Getting Started Guide**](./guide-web/getting-started.md) â€” Step-by-step setup
 
-## 🚀 User Guides
+## ðŸš€ User Guides
 
 ### CLI Usage
-- [Full-screen mode](./guide-cli/full-screen.md) — Rich TUI with blessed
-- [Interactive mode](./guide-cli/interactive.md) — Line-by-line caption entry
-- [Single caption](./guide-cli/single-caption.md) — Quick one-off sending
+- [Full-screen mode](./guide-cli/full-screen.md) â€” Rich TUI with blessed
+- [Interactive mode](./guide-cli/interactive.md) â€” Line-by-line caption entry
+- [Single caption](./guide-cli/single-caption.md) â€” Quick one-off sending
 
 ### Web UI
-- [Overview](./guide-web/overview.md) — Web app layout and navigation
-- [Sending captions](./guide-web/sending-captions.md) — How to send captions
-- [Caption settings](./guide-web/caption-settings.md) — Formatting options
-- [General settings](./guide-web/general-settings.md) — App configuration
-- [Translation](./guide-web/translation.md) — Multi-language captions
-- [Video player](./guide-web/video-player.md) — HLS viewer
-- [Embed widgets](./guide-web/embed.md) — Embeddable iframe widgets
-- [Minimal backend](./guide-web/minimal-backend.md) — Lightweight setup
-- [Status & actions](./guide-web/status-actions.md) — Quick status bar
-- [Keyboard shortcuts](./guide-web/keyboard-shortcuts.md) — Key bindings
-- [Flow diagram](./guide-web/flow.md) — Architecture visualization
+- [Overview](./guide-web/overview.md) â€” Web app layout and navigation
+- [Sending captions](./guide-web/sending-captions.md) â€” How to send captions
+- [Caption settings](./guide-web/caption-settings.md) â€” Formatting options
+- [General settings](./guide-web/general-settings.md) â€” App configuration
+- [Translation](./guide-web/translation.md) â€” Multi-language captions
+- [Video player](./guide-web/video-player.md) â€” HLS viewer
+- [Embed widgets](./guide-web/embed.md) â€” Embeddable iframe widgets
+- [Minimal backend](./guide-web/minimal-backend.md) â€” Lightweight setup
+- [Status & actions](./guide-web/status-actions.md) â€” Quick status bar
+- [Keyboard shortcuts](./guide-web/keyboard-shortcuts.md) â€” Key bindings
+- [Flow diagram](./guide-web/flow.md) â€” Architecture visualization
 
-## 🔧 Installation & Deployment
+## ðŸ”§ Installation & Deployment
 
-- [**DEPLOY.md**](./DEPLOY.md) — Production deployment checklist
-- [**FIREWALL.md**](./FIREWALL.md) — Network and firewall setup
-- [**DB.md**](./DB.md) — Database schema and migrations
-- [**PORTS.md**](../PORTS.md) — Port assignment reference
-- [**TODO.md**](../TODO.md) — Outstanding work items
-- [**env-vars.md**](./env-vars.md) — Complete environment variable reference
-- [**Distributed compute (fffleet)**](./DEPLOY.md#distributed-mode-fffleet) — `FFMPEG_RUNNER=fleet`, FFFLEET_URL
+- [**DEPLOY.md**](./DEPLOY.md) â€” Production deployment checklist
+- [**FIREWALL.md**](./FIREWALL.md) â€” Network and firewall setup
+- [**DB.md**](./DB.md) â€” Database schema and migrations
+- [**PORTS.md**](../PORTS.md) â€” Port assignment reference
+- [**TODO.md**](../TODO.md) â€” Outstanding work items
+- [**env-vars.md**](./env-vars.md) â€” Complete environment variable reference
+- [**Distributed compute (fffleet)**](./DEPLOY.md#distributed-mode-fffleet) â€” `FFMPEG_RUNNER=fleet`, FFFLEET_URL
 
 ### Platform-Specific
-- [ffmpeg Docker usage](./ffmpeg-docker-usage.md) — FFmpeg container guide
+- [ffmpeg Docker usage](./ffmpeg-docker-usage.md) â€” FFmpeg container guide
 
-## 📖 API Reference
+## ðŸ“– API Reference
 
-**API documentation by endpoint** — Full reference in [docs/api/](./api/):
+**API documentation by endpoint** â€” Full reference in [docs/api/](./api/):
 
 | Category | Docs |
 |----------|------|
@@ -62,44 +62,44 @@ Welcome to the LCYT documentation. This is your navigation hub for all guides, A
 
 **Quick reference:** [API README](./api/README.md)
 
-## 📚 Library Documentation
+## ðŸ“š Library Documentation
 
 ### Node.js/JavaScript
 
 Core library docs in [docs/lib/](./lib/):
-- [sender.md](./lib/sender.md) — YoutubeLiveCaptionSender class
-- [backend-sender.md](./lib/backend-sender.md) — BackendCaptionSender relay client
-- [config.md](./lib/config.md) — Configuration management
-- [errors.md](./lib/errors.md) — Error types
-- [logger.md](./lib/logger.md) — Logging utilities
-- [README](./lib/README.md) — Full library index
+- [sender.md](./lib/sender.md) â€” YoutubeLiveCaptionSender class
+- [backend-sender.md](./lib/backend-sender.md) â€” BackendCaptionSender relay client
+- [config.md](./lib/config.md) â€” Configuration management
+- [errors.md](./lib/errors.md) â€” Error types
+- [logger.md](./lib/logger.md) â€” Logging utilities
+- [README](./lib/README.md) â€” Full library index
 
 **Packages:**
-- [`lcyt` npm package](../packages/lcyt/README.md) — Core library
-- [`lcyt-cli` npm package](../packages/lcyt-cli/README.md) — CLI tool
+- [`lcyt` npm package](../packages/lcyt/README.md) â€” Core library
+- [`lcyt-cli` npm package](../packages/lcyt-cli/README.md) â€” CLI tool
 
 ### Python
 
 Python library docs in [docs/lib/python/](./lib/python/):
-- [sender.md](./lib/python/sender.md) — YoutubeLiveCaptionSender class
-- [backend-sender.md](./lib/python/backend-sender.md) — Relay client
-- [config.md](./lib/python/config.md) — Configuration
-- [errors.md](./lib/python/errors.md) — Error types
-- [README](./lib/python/README.md) — Full library index
+- [sender.md](./lib/python/sender.md) â€” YoutubeLiveCaptionSender class
+- [backend-sender.md](./lib/python/backend-sender.md) â€” Relay client
+- [config.md](./lib/python/config.md) â€” Configuration
+- [errors.md](./lib/python/errors.md) â€” Error types
+- [README](./lib/python/README.md) â€” Full library index
 
 **Packages:**
-- [lcyt PyPI package](../python-packages/lcyt/README.md) — Core library
-- [lcyt-backend package](../python-packages/lcyt-backend/README.md) — Flask backend
+- [lcyt PyPI package](../python-packages/lcyt/README.md) â€” Core library
+- [lcyt-backend package](../python-packages/lcyt-backend/README.md) â€” Flask backend
 
-## 🤖 AI & MCP Integration
+## ðŸ¤– AI & MCP Integration
 
 MCP (Model Context Protocol) documentation in [docs/mcp/](./mcp/):
 
-- [MCP overview](./mcp/README.md) — What is MCP?
-- [Stdio transport](./mcp/stdio.md) — Local process invocation
-- [Streamable HTTP transport](./mcp/http.md) — Remote HTTP clients
-- [All tools reference](./mcp/tools.md) — Complete tool listing
-- [Individual tool docs](./mcp/tools/) — Per-tool details
+- [MCP overview](./mcp/README.md) â€” What is MCP?
+- [Stdio transport](./mcp/stdio.md) â€” Local process invocation
+- [Streamable HTTP transport](./mcp/http.md) â€” Remote HTTP clients
+- [All tools reference](./mcp/tools.md) â€” Complete tool listing
+- [Individual tool docs](./mcp/tools/) â€” Per-tool details
   - [start.md](./mcp/tools/start.md)
   - [send-caption.md](./mcp/tools/send-caption.md)
   - [send-batch.md](./mcp/tools/send-batch.md)
@@ -109,55 +109,55 @@ MCP (Model Context Protocol) documentation in [docs/mcp/](./mcp/):
   - [privacy-deletion.md](./mcp/tools/privacy-deletion.md)
 
 **Packages:**
-- [lcyt-mcp-stdio](../packages/lcyt-mcp-stdio/README.md) — Stdio server
-- [lcyt-mcp-http](../packages/lcyt-mcp-http/README.md) — Streamable HTTP server
-- [lcyt-mcp (Python)](../python-packages/lcyt-mcp/README.md) — Python server
+- [lcyt-mcp-stdio](../packages/lcyt-mcp-stdio/README.md) â€” Stdio server
+- [lcyt-mcp-http](../packages/lcyt-mcp-http/README.md) â€” Streamable HTTP server
+- [lcyt-mcp (Python)](../python-packages/lcyt-mcp/README.md) â€” Python server
 
-## 🏗️ Architecture & Planning
+## ðŸ—ï¸ Architecture & Planning
 
 ### Implementation Plans
 
-All plans in [docs/plans/](./plans/) — See [PLANS.md](./PLANS.md) for full index:
+All plans in [docs/plans/](./plans/) â€” See [PLANS.md](./PLANS.md) for full index:
 
 **Core Features:**
-- [plan_admin.md](./plans/plan_admin.md) — Admin panel (users, projects)
-- [plan_backend.md](./plans/plan_backend.md) — Backend architecture
-- [plan_captions.md](./plans/plan_captions.md) — Caption system
-- [plan_cea.md](./plans/plan_cea.md) — CEA-608/708 encoding
-- [plan_client.md](./plans/plan_client.md) — Web UI architecture
-- [plan_ui.md](./plans/plan_ui.md) — UI layout and design
+- [plan_admin.md](./plans/plan_admin.md) â€” Admin panel (users, projects)
+- [plan_backend.md](./plans/plan_backend.md) â€” Backend architecture
+- [plan_captions.md](./plans/plan_captions.md) â€” Caption system
+- [plan_cea.md](./plans/plan_cea.md) â€” CEA-608/708 encoding
+- [plan_client.md](./plans/plan_client.md) â€” Web UI architecture
+- [plan_ui.md](./plans/plan_ui.md) â€” UI layout and design
 
 **Advanced Features:**
-- [plan_agent.md](./plans/plan_agent.md) — AI agent plugin
-- [plan_cues.md](./plans/plan_cues.md) — Cue engine plugin
-- [plan_dsk.md](./plans/plan_dsk.md) — DSK graphics overlays
-- [plan_files3.md](./plans/plan_files3.md) — S3 file storage
-- [plan_hls_sidecar.md](./plans/plan_hls_sidecar.md) — HLS subtitle sidecars
-- [plan_mcp.md](./plans/plan_mcp.md) — MCP integration
-- [plan_music.md](./plans/plan_music.md) — Music detection plugin
-- [plan_prod.md](./plans/plan_prod.md) — Production control
-- [plan_rtmp.md](./plans/plan_rtmp.md) — RTMP relay
-- [plan_server_stt.md](./plans/plan_server_stt.md) — Server-side STT
-- [plan_setup_wizard.md](./plans/plan_setup_wizard.md) — Onboarding
-- [plan_sync.md](./plans/plan_sync.md) — NTP clock sync
-- [plan_translate.md](./plans/plan_translate.md) — Translation system
-- [plan_translations.md](./plans/plan_translations.md) — i18n implementation
-- [plan_userprojects.md](./plans/plan_userprojects.md) — User accounts & projects
+- [plan_agent.md](./plans/plan_agent.md) â€” AI agent plugin
+- [plan_cues.md](./plans/plan_cues.md) â€” Cue engine plugin
+- [plan_dsk.md](./plans/plan_dsk.md) â€” DSK graphics overlays
+- [plan_files3.md](./plans/plan_files3.md) â€” S3 file storage
+- [plan_hls_sidecar.md](./plans/plan_hls_sidecar.md) â€” HLS subtitle sidecars
+- [plan_mcp.md](./plans/plan_mcp.md) â€” MCP integration
+- [plan_music.md](./plans/plan_music.md) â€” Music detection plugin
+- [plan_prod.md](./plans/plan_prod.md) â€” Production control
+- [plan_rtmp.md](./plans/plan_rtmp.md) â€” RTMP relay
+- [plan_server_stt.md](./plans/plan_server_stt.md) â€” Server-side STT
+- [plan_setup_wizard.md](./plans/plan_setup_wizard.md) â€” Onboarding
+- [plan_sync.md](./plans/plan_sync.md) â€” NTP clock sync
+- [plan_translate.md](./plans/plan_translate.md) â€” Translation system
+- [plan_translations.md](./plans/plan_translations.md) â€” i18n implementation
+- [plan_userprojects.md](./plans/plan_userprojects.md) â€” User accounts & projects
 
 **Infrastructure:**
-- [plan_backend_split.md](./plans/plan_backend_split.md) — Microservices split
-- [plan_cache.md](./plans/plan_cache.md) — Caching strategy
-- [plan_cloudfleet.md](./plans/plan_cloudfleet.md) — Kubernetes deployment
-- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) — Docker ffmpeg runner → distributed Hetzner compute (implemented, then superseded by the external fffleet project; the orchestrator and worker daemon were retired 2026-10-05)
-- [plan_mediamtx.md](./plans/plan_mediamtx.md) — MediaMTX integration
-- [plan_metacode_refactor.md](./plans/plan_metacode_refactor.md) — Metacode system refactor
+- [plan_backend_split.md](./plans/plan_backend_split.md) â€” Microservices split
+- [plan_cache.md](./plans/plan_cache.md) â€” Caching strategy
+- [plan_cloudfleet.md](./plans/plan_cloudfleet.md) â€” Kubernetes deployment
+- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) â€” Docker ffmpeg runner â†’ distributed Hetzner compute (implemented, then superseded by the external fffleet project; the orchestrator and worker daemon were retired 2026-10-05)
+- [plan_mediamtx.md](./plans/plan_mediamtx.md) â€” MediaMTX integration
+- [plan_metacode_refactor.md](./plans/plan_metacode_refactor.md) â€” Metacode system refactor
 
 ### System Documentation
 
-- [**METACODE.md**](./METACODE.md) — Caption metadata system (graphics, cues, sound)
-- [**GUIDE.md**](./GUIDE.md) — General user guide reference
+- [**METACODE.md**](./METACODE.md) â€” Caption metadata system (graphics, cues, sound)
+- [**GUIDE.md**](./GUIDE.md) â€” General user guide reference
 
-## 📦 Package & Plugin Documentation
+## ðŸ“¦ Package & Plugin Documentation
 
 ### Main Packages
 
@@ -201,65 +201,65 @@ All plans in [docs/plans/](./plans/) — See [PLANS.md](./PLANS.md) for full ind
 | **lcyt-dsk-renderer Docker** | [docker/lcyt-dsk-renderer/README.md](../docker/lcyt-dsk-renderer/README.md) |
 | **Kubernetes CloudFleet** | [k8s/cloudfleet/README.md](../k8s/cloudfleet/README.md) |
 
-## 📝 File Organization
+## ðŸ“ File Organization
 
 ```
 docs/
-├── INDEX.md                    ← YOU ARE HERE
-├── PLANS.md                    ← Plan index with status
-├── GUIDE.md                    ← User guide index
-├── DB.md                       ← Database schema
-├── DEPLOY.md                   ← Deployment guide
-├── FIREWALL.md                 ← Network setup
-├── METACODE.md                 ← Metacode system
-├── env-vars.md                 ← Environment variables
-├── ffmpeg-docker-usage.md      ← Docker ffmpeg
-│
-├── api/                        ← API endpoint docs
-│   ├── README.md
-│   ├── sessions.md, captions.md, events.md
-│   ├── files.md, usage.md, stats.md
-│   ├── stream.md, stream-hls.md, radio.md
-│   ├── viewer.md, video.md, preview.md
-│   ├── dsk.md, images.md, icons.md
-│   └── [20+ more endpoint docs]
-│
-├── lib/                        ← JavaScript/Node.js library docs
-│   ├── README.md
-│   ├── sender.md, backend-sender.md, config.md
-│   ├── errors.md, logger.md
-│   └── python/                 ← Python library docs
-│       ├── README.md
-│       └── [similar structure]
-│
-├── guide-cli/                  ← CLI usage guides
-│   ├── full-screen.md
-│   ├── interactive.md
-│   └── single-caption.md
-│
-├── guide-web/                  ← Web UI guides
-│   ├── getting-started.md
-│   ├── overview.md
-│   ├── sending-captions.md
-│   ├── settings/
-│   ├── features/ (translate, video, embed, etc.)
-│   └── [13+ guide files]
-│
-├── mcp/                        ← MCP integration docs
-│   ├── README.md
-│   ├── stdio.md, http.md
-│   ├── tools.md
-│   └── tools/                  ← Individual tool docs
-│
-├── plans/                      ← Implementation plans
-│   ├── [31+ plan_*.md files]
-│   ├── PR_phase6-7_hetzner.md
-│   └── TODO_plan.md
-│
-└── todo_*.md                   ← Legacy TODO files
+â”œâ”€â”€ INDEX.md                    â† YOU ARE HERE
+â”œâ”€â”€ PLANS.md                    â† Plan index with status
+â”œâ”€â”€ GUIDE.md                    â† User guide index
+â”œâ”€â”€ DB.md                       â† Database schema
+â”œâ”€â”€ DEPLOY.md                   â† Deployment guide
+â”œâ”€â”€ FIREWALL.md                 â† Network setup
+â”œâ”€â”€ METACODE.md                 â† Metacode system
+â”œâ”€â”€ env-vars.md                 â† Environment variables
+â”œâ”€â”€ ffmpeg-docker-usage.md      â† Docker ffmpeg
+â”‚
+â”œâ”€â”€ api/                        â† API endpoint docs
+â”‚   â”œâ”€â”€ README.md
+â”‚   â”œâ”€â”€ sessions.md, captions.md, events.md
+â”‚   â”œâ”€â”€ files.md, usage.md, stats.md
+â”‚   â”œâ”€â”€ stream.md, stream-hls.md, radio.md
+â”‚   â”œâ”€â”€ viewer.md, video.md, preview.md
+â”‚   â”œâ”€â”€ dsk.md, images.md, icons.md
+â”‚   â””â”€â”€ [20+ more endpoint docs]
+â”‚
+â”œâ”€â”€ lib/                        â† JavaScript/Node.js library docs
+â”‚   â”œâ”€â”€ README.md
+â”‚   â”œâ”€â”€ sender.md, backend-sender.md, config.md
+â”‚   â”œâ”€â”€ errors.md, logger.md
+â”‚   â””â”€â”€ python/                 â† Python library docs
+â”‚       â”œâ”€â”€ README.md
+â”‚       â””â”€â”€ [similar structure]
+â”‚
+â”œâ”€â”€ guide-cli/                  â† CLI usage guides
+â”‚   â”œâ”€â”€ full-screen.md
+â”‚   â”œâ”€â”€ interactive.md
+â”‚   â””â”€â”€ single-caption.md
+â”‚
+â”œâ”€â”€ guide-web/                  â† Web UI guides
+â”‚   â”œâ”€â”€ getting-started.md
+â”‚   â”œâ”€â”€ overview.md
+â”‚   â”œâ”€â”€ sending-captions.md
+â”‚   â”œâ”€â”€ settings/
+â”‚   â”œâ”€â”€ features/ (translate, video, embed, etc.)
+â”‚   â””â”€â”€ [13+ guide files]
+â”‚
+â”œâ”€â”€ mcp/                        â† MCP integration docs
+â”‚   â”œâ”€â”€ README.md
+â”‚   â”œâ”€â”€ stdio.md, http.md
+â”‚   â”œâ”€â”€ tools.md
+â”‚   â””â”€â”€ tools/                  â† Individual tool docs
+â”‚
+â”œâ”€â”€ plans/                      â† Implementation plans
+â”‚   â”œâ”€â”€ [31+ plan_*.md files]
+â”‚   â”œâ”€â”€ PR_phase6-7_hetzner.md
+â”‚   â””â”€â”€ TODO_plan.md
+â”‚
+â””â”€â”€ todo_*.md                   â† Legacy TODO files
 ```
 
-## 🔍 Quick Navigation
+## ðŸ” Quick Navigation
 
 ### By Role
 
@@ -291,7 +291,7 @@ docs/
 - **Translation:** [System](./plans/plan_translations.md), [Guide](./guide-web/translation.md)
 - **AI:** [Agent](./plans/plan_agent.md), [MCP](./mcp/)
 
-## 🆘 Getting Help
+## ðŸ†˜ Getting Help
 
 1. **Read the relevant guide** for your use case (from "By Role" above)
 2. **Check implementation plans** in [docs/plans/](./plans/) for deep dives
@@ -299,21 +299,22 @@ docs/
 4. **Review API docs** for endpoint specifics
 5. **Check package READMEs** for library/component usage
 
-## 📊 Documentation Status
+## ðŸ“Š Documentation Status
 
 | Category | Files | Status | Last Updated |
 |----------|-------|--------|--------------|
-| Root docs | 16 | ✅ Complete | 2026-06-26 |
-| API docs | 22 | ✅ Complete | 2026-06-26 |
-| User guides | 16 | ✅ Complete | 2026-06-26 |
-| Library docs | 8 | ✅ Complete | 2026-06-26 |
-| MCP docs | 16 | ✅ Complete | 2026-06-26 |
-| Plans | 31 | ✅ Complete | 2026-06-26 |
-| Package READMEs | 20 | ✅ Complete | 2026-06-26 |
-| Plugin READMEs | 7 | ✅ Complete | 2026-06-26 |
+| Root docs | 16 | âœ… Complete | 2026-06-26 |
+| API docs | 22 | âœ… Complete | 2026-06-26 |
+| User guides | 16 | âœ… Complete | 2026-06-26 |
+| Library docs | 8 | âœ… Complete | 2026-06-26 |
+| MCP docs | 16 | âœ… Complete | 2026-06-26 |
+| Plans | 31 | âœ… Complete | 2026-06-26 |
+| Package READMEs | 20 | âœ… Complete | 2026-06-26 |
+| Plugin READMEs | 7 | âœ… Complete | 2026-06-26 |
 
 ---
 
 **Last updated:** 2026-06-26  
 **Total documentation files:** 170+  
 **Navigation:** Use this index to find what you need, then drill down to specific docs.
+

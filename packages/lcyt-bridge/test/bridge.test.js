@@ -1,16 +1,16 @@
-/**
- * Tests for Bridge — SSE client + command dispatcher + status reporter.
+﻿/**
+ * Tests for Bridge â€” SSE client + command dispatcher + status reporter.
  *
  * Covers:
  *   - Constructor / status() initial state
  *   - destroy() is safe to call before start()
  *   - destroy() prevents reconnect timers from firing
- *   - _handleCommand() — tcp_send dispatched to TcpPool and status POSTed
- *   - _handleCommand() — unknown command type emits error
- *   - _handleCommand() — non-JSON data emits error
- *   - _handleCommand() — tcp_send failure reports { ok: false } to backend
- *   - _postStatus() — network failure emits 'error' event (does not throw)
- *   - startHeartbeat() — calls _postStatus on interval; cleared on destroy
+ *   - _handleCommand() â€” tcp_send dispatched to TcpPool and status POSTed
+ *   - _handleCommand() â€” unknown command type emits error
+ *   - _handleCommand() â€” non-JSON data emits error
+ *   - _handleCommand() â€” tcp_send failure reports { ok: false } to backend
+ *   - _postStatus() â€” network failure emits 'error' event (does not throw)
+ *   - startHeartbeat() â€” calls _postStatus on interval; cleared on destroy
  *   - reconnectAll() closes existing SSE and reconnects TCP pool
  *   - TCP pool events forwarded as bridge tcp:* events
  *
@@ -30,7 +30,7 @@ import { Bridge } from '../src/bridge.js';
  * model_call until its SecurityPolicy has loaded at least once (see
  * security-policy.test.js for that guard's own behavior). These dispatch
  * tests care about TcpPool/fetch/etc. wiring, not the security layer, so
- * prime an empty (default-allow) policy up front — same as a bridge that
+ * prime an empty (default-allow) policy up front â€” same as a bridge that
  * successfully fetched a bridge with no configured rules.
  */
 function makeBridge(opts = {}) {
@@ -143,7 +143,7 @@ function injectFakeEventSource(bridge) {
     };
   };
 
-  return () => fakeEs; // getter — call after _connect() resolves
+  return () => fakeEs; // getter â€” call after _connect() resolves
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +165,7 @@ function makeMockTcpPool({ sendError = null } = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// _postStatus mock — capture calls without real HTTP
+// _postStatus mock â€” capture calls without real HTTP
 // ---------------------------------------------------------------------------
 
 function mockFetch(bridge) {
@@ -178,7 +178,7 @@ function mockFetch(bridge) {
 
 // ---------------------------------------------------------------------------
 // bridge.start() now fires a real _fetchSecurityPolicy() fetch immediately
-// (not gated on the SSE 'connected' event — see "security policy fetch
+// (not gated on the SSE 'connected' event â€” see "security policy fetch
 // wiring" below). Every test in this file gets a benign default mock for
 // global.fetch so a test that merely calls start()/simulateOpen() without
 // caring about the security-policy fetch doesn't hit the real network;
@@ -200,7 +200,7 @@ afterEach(() => {
 // Constructor / status()
 // ---------------------------------------------------------------------------
 
-describe('Bridge — constructor and status()', () => {
+describe('Bridge â€” constructor and status()', () => {
   it('initialises with sse: false and no TCP entries', () => {
     const bridge = makeBridge();
     const s = bridge.status();
@@ -220,7 +220,7 @@ describe('Bridge — constructor and status()', () => {
 // destroy()
 // ---------------------------------------------------------------------------
 
-describe('Bridge — destroy()', () => {
+describe('Bridge â€” destroy()', () => {
   it('is safe to call before start()', () => {
     const bridge = makeBridge();
     assert.doesNotThrow(() => bridge.destroy());
@@ -256,7 +256,7 @@ describe('Bridge — destroy()', () => {
 // SSE connection lifecycle
 // ---------------------------------------------------------------------------
 
-describe('Bridge — SSE connection', () => {
+describe('Bridge â€” SSE connection', () => {
   it('emits "connected" when the SSE stream opens', async () => {
     const bridge = makeBridge();
     const getEs = injectFakeEventSource(bridge);
@@ -306,10 +306,10 @@ describe('Bridge — SSE connection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// _handleCommand() — tcp_send
+// _handleCommand() â€” tcp_send
 // ---------------------------------------------------------------------------
 
-describe('Bridge — _handleCommand() tcp_send', () => {
+describe('Bridge â€” _handleCommand() tcp_send', () => {
   it('calls TcpPool.send() with correct host/port/payload', async () => {
     const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
@@ -414,10 +414,10 @@ describe('Bridge — _handleCommand() tcp_send', () => {
 });
 
 // ---------------------------------------------------------------------------
-// _handleCommand() — model_call (plan/ai_model_registry)
+// _handleCommand() â€” model_call (plan/ai_model_registry)
 // ---------------------------------------------------------------------------
 
-describe('Bridge — _handleCommand() model_call', () => {
+describe('Bridge â€” _handleCommand() model_call', () => {
   const origFetch = global.fetch;
   afterEach(() => { global.fetch = origFetch; });
 
@@ -565,7 +565,7 @@ describe('Bridge — _handleCommand() model_call', () => {
     const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
-    // Endpoint 3xx's — mirrors undici's real redirect: 'error' rejection.
+    // Endpoint 3xx's â€” mirrors undici's real redirect: 'error' rejection.
     global.fetch = async (url, init) => {
       if (init.redirect === 'error') throw new TypeError('fetch failed');
       return { ok: true, status: 302 };
@@ -581,7 +581,7 @@ describe('Bridge — _handleCommand() model_call', () => {
     }));
 
     const status = statusCalls.find(c => c.requestId === 'mc-6');
-    assert.ok(status, 'should have posted a status — not an unhandled rejection/crash');
+    assert.ok(status, 'should have posted a status â€” not an unhandled rejection/crash');
     assert.equal(status.ok, false);
     assert.match(status.error, /fetch failed/);
     const evt = await errEvent;
@@ -591,10 +591,10 @@ describe('Bridge — _handleCommand() model_call', () => {
 });
 
 // ---------------------------------------------------------------------------
-// _handleCommand() — bad input
+// _handleCommand() â€” bad input
 // ---------------------------------------------------------------------------
 
-describe('Bridge — _handleCommand() invalid input', () => {
+describe('Bridge â€” _handleCommand() invalid input', () => {
   it('emits "error" for non-JSON data', async () => {
     const bridge = makeBridge();
     bridge._tcpPool = makeMockTcpPool();
@@ -621,10 +621,10 @@ describe('Bridge — _handleCommand() invalid input', () => {
 });
 
 // ---------------------------------------------------------------------------
-// _postStatus() — network failure
+// _postStatus() â€” network failure
 // ---------------------------------------------------------------------------
 
-describe('Bridge — _postStatus() network failure', () => {
+describe('Bridge â€” _postStatus() network failure', () => {
   it('emits "error" when fetch throws (does not propagate exception)', async () => {
     const bridge = makeBridge();
 
@@ -647,7 +647,7 @@ describe('Bridge — _postStatus() network failure', () => {
 // startHeartbeat()
 // ---------------------------------------------------------------------------
 
-describe('Bridge — startHeartbeat()', () => {
+describe('Bridge â€” startHeartbeat()', () => {
   it('calls _postStatus at each interval', async () => {
     const bridge = makeBridge();
     const calls = mockFetch(bridge);
@@ -656,7 +656,7 @@ describe('Bridge — startHeartbeat()', () => {
     await new Promise(r => setTimeout(r, 75));
     clearInterval(timer);
 
-    assert.ok(calls.length >= 2, `expected ≥ 2 heartbeats, got ${calls.length}`);
+    assert.ok(calls.length >= 2, `expected â‰¥ 2 heartbeats, got ${calls.length}`);
     assert.ok(calls.every(c => c.type === 'heartbeat'));
     bridge.destroy();
   });
@@ -680,7 +680,7 @@ describe('Bridge — startHeartbeat()', () => {
 // TCP pool event forwarding
 // ---------------------------------------------------------------------------
 
-describe('Bridge — TCP pool event forwarding', () => {
+describe('Bridge â€” TCP pool event forwarding', () => {
   it('forwards TcpPool "connected" as "tcp:connected"', async () => {
     const bridge = makeBridge();
 
@@ -721,7 +721,7 @@ describe('Bridge — TCP pool event forwarding', () => {
 // reconnectAll()
 // ---------------------------------------------------------------------------
 
-describe('Bridge — reconnectAll()', () => {
+describe('Bridge â€” reconnectAll()', () => {
   it('closes the existing SSE connection and calls tcpPool.reconnectAll()', async () => {
     const bridge = makeBridge();
     let tcpReconnectCalled = false;
@@ -744,10 +744,10 @@ describe('Bridge — reconnectAll()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// _handleCommand() — http_request
+// _handleCommand() â€” http_request
 // ---------------------------------------------------------------------------
 
-describe('Bridge — _handleCommand() http_request', () => {
+describe('Bridge â€” _handleCommand() http_request', () => {
   it('makes a GET request and posts { ok: true, status } on success', async () => {
     const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
@@ -837,7 +837,7 @@ describe('Bridge — _handleCommand() http_request', () => {
     bridge.destroy();
   });
 
-  it('_httpRequest passes redirect: "error" to fetch() — never transparently follows a redirect', async () => {
+  it('_httpRequest passes redirect: "error" to fetch() â€” never transparently follows a redirect', async () => {
     const bridge = makeBridge();
     bridge.destroy(); // not starting SSE
 
@@ -860,7 +860,7 @@ describe('Bridge — _handleCommand() http_request', () => {
     const bridge = makeBridge();
     const statusCalls = mockFetch(bridge);
 
-    // Mirrors undici's real behavior for redirect: 'error' — fetch() itself
+    // Mirrors undici's real behavior for redirect: 'error' â€” fetch() itself
     // rejects the moment a 3xx response comes back, instead of resolving
     // with a redirect Response the caller could otherwise follow.
     global.fetch = async (url, init) => {
@@ -879,7 +879,7 @@ describe('Bridge — _handleCommand() http_request', () => {
     }));
 
     const call = statusCalls.find(c => c.requestId === 'req-http-redirect');
-    assert.ok(call, 'should have posted a status — not an unhandled rejection/crash');
+    assert.ok(call, 'should have posted a status â€” not an unhandled rejection/crash');
     assert.equal(call.ok, false);
     assert.match(call.error, /fetch failed/);
     const evt = await errEvent;
@@ -920,12 +920,12 @@ describe('Bridge — _handleCommand() http_request', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Local security enforcement (defense in depth) — see security-policy.test.js
+// Local security enforcement (defense in depth) â€” see security-policy.test.js
 // for SecurityPolicy's own unit tests; these confirm Bridge._handleCommand()
 // consults it and never touches the network on a block.
 // ---------------------------------------------------------------------------
 
-describe('Bridge — local security enforcement', () => {
+describe('Bridge â€” local security enforcement', () => {
   it('blocks a tcp_send matching a local deny IP rule without calling TcpPool', async () => {
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
     bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] });
@@ -976,7 +976,7 @@ describe('Bridge — local security enforcement', () => {
 
   it('fails closed on a fresh bridge whose security policy has never loaded', async () => {
     // Deliberately no makeBridge() priming and no _connect()/'connected' event
-    // — this is the state a just-started bridge is in before its first
+    // â€” this is the state a just-started bridge is in before its first
     // successful GET .../security-rules/for-agent fetch resolves.
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
     bridge._tcpPool = makeMockTcpPool();
@@ -1033,7 +1033,7 @@ describe('Bridge — local security enforcement', () => {
 
   it('an unrecognised (non-secured) command type is unaffected by the security policy', async () => {
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
-    // No policy loaded at all — an unknown type should still just report
+    // No policy loaded at all â€” an unknown type should still just report
     // "Unknown command type", not a security block.
     const errEvent = new Promise(r => bridge.once('error', r));
     await bridge._handleCommand(JSON.stringify({ type: 'not_a_real_type', requestId: 'x' }));
@@ -1044,13 +1044,13 @@ describe('Bridge — local security enforcement', () => {
 });
 
 // ---------------------------------------------------------------------------
-// LocalSecurityFloor wiring — the deployer-controlled security.local.yaml
+// LocalSecurityFloor wiring â€” the deployer-controlled security.local.yaml
 // floor (see local-security-floor.test.js for the class's own unit tests).
 // These confirm Bridge actually consults it and that its block message is
 // distinguishable from the backend-synced SecurityPolicy's.
 // ---------------------------------------------------------------------------
 
-describe('Bridge — local security floor (security.local.yaml) wiring', () => {
+describe('Bridge â€” local security floor (security.local.yaml) wiring', () => {
   let dir;
 
   beforeEach(() => {
@@ -1277,7 +1277,7 @@ rules:
     bridge._tcpPool = makeMockTcpPool();
     const statusCalls = mockFetch(bridge);
 
-    // 9.9.9.9 isn't denied by anything yet — passes.
+    // 9.9.9.9 isn't denied by anything yet â€” passes.
     await bridge._handleCommand(JSON.stringify({
       type: 'tcp_send', requestId: 'req-before-reload', host: '9.9.9.9', port: 80, payload: 'x',
     }));
@@ -1293,18 +1293,18 @@ rules:
     assert.equal(summary.ipRuleCount, 1);
     assert.equal(bridge.localSecurityFloorSummary().ipRuleCount, 1);
 
-    // Same target, same bridge instance, no restart — now blocked.
+    // Same target, same bridge instance, no restart â€” now blocked.
     await bridge._handleCommand(JSON.stringify({
       type: 'tcp_send', requestId: 'req-after-reload', host: '9.9.9.9', port: 80, payload: 'x',
     }));
-    assert.equal(bridge._tcpPool._sent.length, 1, 'still 1 — the newly-hot-reloaded rule blocked this attempt');
+    assert.equal(bridge._tcpPool._sent.length, 1, 'still 1 â€” the newly-hot-reloaded rule blocked this attempt');
     const call = statusCalls.find(c => c.requestId === 'req-after-reload');
     assert.equal(call.ok, false);
     assert.match(call.error, /Blocked by local security floor/);
     bridge.destroy();
   });
 
-  it('destroy() stops the floor watcher — a later edit is not picked up', async () => {
+  it('destroy() stops the floor watcher â€” a later edit is not picked up', async () => {
     writeYaml('rules: []');
     const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok', localPolicyDir: dir });
     assert.equal(bridge.localSecurityFloorWatching(), true);
@@ -1324,10 +1324,10 @@ rules:
 });
 
 // ---------------------------------------------------------------------------
-// _fetchSecurityPolicy() — connected/rules_updated SSE wiring
+// _fetchSecurityPolicy() â€” connected/rules_updated SSE wiring
 // ---------------------------------------------------------------------------
 
-describe('Bridge — security policy fetch wiring', () => {
+describe('Bridge â€” security policy fetch wiring', () => {
   const origFetch = global.fetch;
   afterEach(() => { global.fetch = origFetch; });
 
@@ -1347,7 +1347,7 @@ describe('Bridge — security policy fetch wiring', () => {
     assert.equal(fetchCalls.length, 1);
     assert.equal(
       fetchCalls[0],
-      'http://backend.test/production/bridge/security-rules/for-agent?token=tok-abc',
+      'http://backend.test/api/v1/production/bridge/security-rules/for-agent?token=tok-abc',
     );
     assert.equal(bridge._securityPolicy.isLoaded(), true);
     assert.equal(bridge._securityPolicy.checkIp('10.0.0.1', 80).allowed, false);
@@ -1442,3 +1442,4 @@ describe('Bridge — security policy fetch wiring', () => {
     bridge.destroy();
   });
 });
+

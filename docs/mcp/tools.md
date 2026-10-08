@@ -1,4 +1,4 @@
----
+﻿---
 id: mcp/tools
 title: "MCP Tools Reference"
 ---
@@ -11,14 +11,14 @@ title: "MCP Tools Reference"
 
 | Tool | stdio | SSE | Reference |
 |---|:---:|:---:|---|
-| `start` | ✅ | ✅ | [start.md](#tools-start) |
-| `send_caption` | ✅ | ✅ | [send-caption.md](#tools-send-caption) |
-| `send_batch` | ✅ | ✅ | [send-batch.md](#tools-send-batch) |
-| `sync_clock` | ✅ | ✅ | [sync-clock.md](#tools-sync-clock) |
-| `get_status` | ✅ | ✅ | [get-status.md](#tools-get-status) |
-| `stop` | ✅ | ✅ | [stop.md](#tools-stop) |
-| `privacy` | ❌ | ✅ | [privacy.md](#tools-privacy) |
-| `privacy_deletion` | ❌ | ✅ | [privacy-deletion.md](#tools-privacy-deletion) |
+| `start` | âœ… | âœ… | [start.md](#tools-start) |
+| `send_caption` | âœ… | âœ… | [send-caption.md](#tools-send-caption) |
+| `send_batch` | âœ… | âœ… | [send-batch.md](#tools-send-batch) |
+| `sync_clock` | âœ… | âœ… | [sync-clock.md](#tools-sync-clock) |
+| `get_status` | âœ… | âœ… | [get-status.md](#tools-get-status) |
+| `stop` | âœ… | âœ… | [stop.md](#tools-stop) |
+| `privacy` | âŒ | âœ… | [privacy.md](#tools-privacy) |
+| `privacy_deletion` | âŒ | âœ… | [privacy-deletion.md](#tools-privacy-deletion) |
 
 See also: [Session Resources (stdio only)](#tools-session-resources)
 
@@ -27,11 +27,12 @@ See also: [Session Resources (stdio only)](#tools-session-resources)
 ## Typical AI Workflow
 
 ```
-1. start(stream_key)           → session_id
-2. sync_clock(session_id)      → syncOffset (optional but recommended)
+1. start(stream_key)           â†’ session_id
+2. sync_clock(session_id)      â†’ syncOffset (optional but recommended)
 3. send_caption(session_id, text)           (repeat as needed)
    or send_batch(session_id, captions)
-4. get_status(session_id)      → current sequence / offset
-5. stop(session_id)            → session closed
+4. get_status(session_id)      â†’ current sequence / offset
+5. stop(session_id)            â†’ session closed
 ```
+
 

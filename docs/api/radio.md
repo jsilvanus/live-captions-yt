@@ -1,11 +1,11 @@
----
+﻿---
 id: api/radio
-title: "/radio — Audio-Only HLS Streaming"
+title: "/radio â€” Audio-Only HLS Streaming"
 methods: [GET, POST]
 auth: [none]
 ---
 
-# /radio — Audio-Only HLS Streaming
+# /radio â€” Audio-Only HLS Streaming
 
 Endpoints for serving an audio-only HLS stream derived from the incoming RTMP signal. Suitable for embedding a live audio feed (radio) in any web page.
 
@@ -21,7 +21,7 @@ All HLS file serving endpoints are **rate-limited to 120 requests per minute per
 
 ---
 
-### `GET /radio/:key/index.m3u8` — HLS Playlist
+### `GET /radio/:key/index.m3u8` â€” HLS Playlist
 
 Return the live audio-only HLS playlist.
 
@@ -31,7 +31,7 @@ Return the live audio-only HLS playlist.
 GET /radio/my-api-key/index.m3u8
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: application/vnd.apple.mpegurl
@@ -42,7 +42,7 @@ Returns `404` if the stream is not currently live.
 
 ---
 
-### `GET /radio/:key/:segment` — HLS Segment
+### `GET /radio/:key/:segment` â€” HLS Segment
 
 Fetch a specific audio segment. Only filenames matching `seg00000.ts` through `seg99999.ts` are accepted.
 
@@ -52,7 +52,7 @@ Fetch a specific audio segment. Only filenames matching `seg00000.ts` through `s
 GET /radio/my-api-key/seg00001.ts
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: video/mp2t
@@ -61,7 +61,7 @@ Cache-Control: public, max-age=60
 
 ---
 
-### `GET /radio/:key/player.js` — Embeddable Audio Player
+### `GET /radio/:key/player.js` â€” Embeddable Audio Player
 
 Returns a self-contained vanilla-JavaScript HLS audio player snippet. Include it as a `<script>` tag to embed the live audio in any web page.
 
@@ -71,7 +71,7 @@ Returns a self-contained vanilla-JavaScript HLS audio player snippet. Include it
 GET /radio/my-api-key/player.js
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: text/javascript; charset=utf-8
@@ -84,7 +84,7 @@ Cache-Control: public, max-age=3600
 <!-- Optional: pre-create a container -->
 <div id="radio-my-api-key"></div>
 
-<!-- Load the player — self-contained, no dependencies required -->
+<!-- Load the player â€” self-contained, no dependencies required -->
 <script src="https://api.example.com/radio/my-api-key/player.js"></script>
 ```
 
@@ -104,7 +104,7 @@ The snippet creates an `<audio>` element inside the container. On browsers witho
 
 These endpoints are called by nginx-rtmp, not by browsers. Access should be restricted at the network level.
 
-### `POST /radio` — Single-URL Style
+### `POST /radio` â€” Single-URL Style
 
 ```http
 POST /radio
@@ -132,8 +132,8 @@ name=my-api-key
 ```
 
 **Behavior:**
-- `publish` — starts an ffmpeg process that extracts audio from the RTMP stream and writes audio-only HLS files under `$RADIO_HLS_ROOT/<key>/`. Returns `403` if `radio_enabled` is not set.
-- `publish_done` — stops the ffmpeg radio process for the key.
+- `publish` â€” starts an ffmpeg process that extracts audio from the RTMP stream and writes audio-only HLS files under `$RADIO_HLS_ROOT/<key>/`. Returns `403` if `radio_enabled` is not set.
+- `publish_done` â€” stops the ffmpeg radio process for the key.
 
 ---
 
@@ -157,3 +157,4 @@ application radio {
 | `RADIO_HLS_ROOT` | `/data/radio` | Directory where audio HLS playlists and segments are written. Each key gets its own subdirectory. |
 | `RADIO_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL. Used by the radio manager to pull the stream. |
 | `BACKEND_URL` | _(derived from request)_ | Used to build absolute stream URLs in `player.js`. |
+

@@ -1,4 +1,4 @@
----
+﻿---
 id: plan/captions
 title: "Caption Sending Pipeline"
 status: implemented
@@ -24,23 +24,23 @@ Before any captions can be sent a **session** must be established.
 
 ```js
 const sender = new BackendCaptionSender({ backendUrl, apiKey });
-await sender.start({ targets });   // POST /live → session JWT
-await sender.sync();               // NTP clock sync (see §4)
+await sender.start({ targets });   // POST /live â†’ session JWT
+await sender.sync();               // NTP clock sync (see Â§4)
 ```
 
 `start()` sends:
 ```json
-{ "apiKey": "…", "domain": "https://app.lcyt.fi", "targets": [ … ] }
+{ "apiKey": "â€¦", "domain": "https://app.lcyt.fi", "targets": [ â€¦ ] }
 ```
 
 Receives:
 ```json
-{ "token": "<JWT>", "sessionId": "…", "sequence": 0, "syncOffset": 0, "startedAt": 1234567890 }
+{ "token": "<JWT>", "sessionId": "â€¦", "sequence": 0, "syncOffset": 0, "startedAt": 1234567890 }
 ```
 
 The returned `token` is a HS256 JWT with payload `{ sessionId, apiKey }`, signed by the server's `JWT_SECRET`.
 
-`targets` here is an explicit override — when omitted entirely (not an empty array), the server loads the project's saved, enabled `caption_targets` rows instead (`plan_selfservice_config_backend.md` §1), so a thin client can start a session with just `{ apiKey, domain }`. This document's examples all pass `targets` explicitly for clarity.
+`targets` here is an explicit override â€” when omitted entirely (not an empty array), the server loads the project's saved, enabled `caption_targets` rows instead (`plan_selfservice_config_backend.md` Â§1), so a thin client can start a session with just `{ apiKey, domain }`. This document's examples all pass `targets` explicitly for clarity.
 
 ### 1.2 Server-Side Session Storage (`store.js`)
 
@@ -61,8 +61,8 @@ Each session object:
   lastActivity,     // updated on every caption
   sequence,         // current monotonic sequence number
   syncOffset,       // ms offset applied to relative timestamps
-  emitter,          // EventEmitter — routes SSE events to connected clients
-  _sendQueue,       // Promise chain — serialises concurrent sends
+  emitter,          // EventEmitter â€” routes SSE events to connected clients
+  _sendQueue,       // Promise chain â€” serialises concurrent sends
 }
 ```
 
@@ -83,7 +83,7 @@ Server responds with:
 Content-Type: text/event-stream
 
 event: connected
-data: {"sessionId":"…","micHolder":null}
+data: {"sessionId":"â€¦","micHolder":null}
 ```
 
 A 25-second `heartbeat` comment keeps the connection alive through proxies. On session expiry the server emits `session_closed` and closes the stream.
@@ -105,15 +105,15 @@ session.send(text, timestamp, { translations, captionLang, showOriginal, codes }
 
 `packages/lcyt-web/src/components/AudioPanel.jsx`
 
-Two engines are supported (configurable in Settings → CC → Microphone):
-- **WebKit** — browser `SpeechRecognition` API (free, on-device or browser-cloud)
-- **Google Cloud STT** — streaming gRPC-based STT via WebSocket proxy
+Two engines are supported (configurable in Settings â†’ CC â†’ Microphone):
+- **WebKit** â€” browser `SpeechRecognition` API (free, on-device or browser-cloud)
+- **Google Cloud STT** â€” streaming gRPC-based STT via WebSocket proxy
 
 **Interim results** are shown live in the UI but not sent.
 
-**Final results** trigger the translation pipeline (§5) then `session.send()`.
+**Final results** trigger the translation pipeline (Â§5) then `session.send()`.
 
-A configurable **batch interval** (0–20 s) can queue multiple final transcripts locally and flush them together as a `sendBatch()` call, trading latency for request count.
+A configurable **batch interval** (0â€“20 s) can queue multiple final transcripts locally and flush them together as a `sendBatch()` call, trading latency for request count.
 
 ### 2.3 File Playback
 
@@ -126,10 +126,10 @@ Caption files (YouTube format or plain text) are loaded and played back line-by-
 `packages/lcyt-cli/src/interactive-ui.js` and `packages/lcyt-cli/bin/lcyt`
 
 Modes:
-- **Full-screen blessed UI** — interactive text input with preview pane
-- **Interactive line-by-line** (`-i`) — stdin-based
-- **Single caption** — `lcyt "text"`
-- **Batch from file** — `/load <file>` in the full-screen UI
+- **Full-screen blessed UI** â€” interactive text input with preview pane
+- **Interactive line-by-line** (`-i`) â€” stdin-based
+- **Single caption** â€” `lcyt "text"`
+- **Batch from file** â€” `/load <file>` in the full-screen UI
 
 The CLI uses `YoutubeLiveCaptionSender` directly (not via the relay backend).
 
@@ -145,7 +145,7 @@ AI assistants call the `send_caption` or `send_batch` MCP tools. These create a 
 
 Before delivery the backend composes the final text that YouTube receives.
 
-`packages/lcyt-backend/src/caption-files.js` — `composeCaptionText(text, captionLang, translations, showOriginal)`
+`packages/lcyt-backend/src/caption-files.js` â€” `composeCaptionText(text, captionLang, translations, showOriginal)`
 
 | Condition | Composed text |
 |-----------|--------------|
@@ -153,7 +153,7 @@ Before delivery the backend composes the final text that YouTube receives.
 | Translation, `showOriginal = true` | `` text + '<br>' + translations[captionLang] `` |
 | Translation, `showOriginal = false` | `translations[captionLang]` |
 
-The `<br>` separator is the literal 4-character string `"<br>"` (not a newline character) inserted into the YouTube caption payload text — confirmed in `composeCaptionText()` (`packages/lcyt-backend/src/caption-files.js`). YouTube's closed-caption renderer treats it as a line break. The viewer SSE payload uses the same literal `"<br>"` string as a separator so clients can split it correctly.
+The `<br>` separator is the literal 4-character string `"<br>"` (not a newline character) inserted into the YouTube caption payload text â€” confirmed in `composeCaptionText()` (`packages/lcyt-backend/src/caption-files.js`). YouTube's closed-caption renderer treats it as a line break. The viewer SSE payload uses the same literal `"<br>"` string as a separator so clients can split it correctly.
 
 ---
 
@@ -163,8 +163,8 @@ The `<br>` separator is the literal 4-character string `"<br>"` (not a newline c
 
 YouTube's caption ingestion API uses monotonically increasing sequence numbers per stream key. The backend maintains:
 
-- **In-memory** (`session.sequence`) — incremented on every successful send.
-- **Persisted** (`api_keys.last_sequence` in SQLite) — written on session close and periodically; allows a new session to resume from the correct number.
+- **In-memory** (`session.sequence`) â€” incremented on every successful send.
+- **Persisted** (`api_keys.last_sequence` in SQLite) â€” written on session close and periodically; allows a new session to resume from the correct number.
 
 The `_sendQueue` Promise chain (per session) serialises concurrent POSTs so no two sends share a sequence number.
 
@@ -175,17 +175,17 @@ Sequence rules:
 
 ### 4.2 NTP-Style Clock Sync
 
-`packages/lcyt/src/sender.js` — `sync()` method
+`packages/lcyt/src/sender.js` â€” `sync()` method
 
-YouTube rejects captions with timestamps more than 60 seconds outside the server's clock window. The `sync()` method corrects for client–server clock drift:
+YouTube rejects captions with timestamps more than 60 seconds outside the server's clock window. The `sync()` method corrects for clientâ€“server clock drift:
 
 ```
-T1 = Date.now()         ← before heartbeat POST
-     POST heartbeat      → YouTube responds with serverTimestamp
-T2 = Date.now()         ← after heartbeat POST
+T1 = Date.now()         â† before heartbeat POST
+     POST heartbeat      â†’ YouTube responds with serverTimestamp
+T2 = Date.now()         â† after heartbeat POST
 
 localMidpoint = (T1 + T2) / 2
-syncOffset    = serverTime − localMidpoint   (ms; positive = server ahead)
+syncOffset    = serverTime âˆ’ localMidpoint   (ms; positive = server ahead)
 ```
 
 After sync, `_now()` returns `Date.now() + syncOffset` everywhere a timestamp is auto-generated.
@@ -240,16 +240,16 @@ HTTP 202 is returned immediately. The actual YouTube result arrives asynchronous
 
 ### Processing steps (per batch)
 
-1. **Auth** — validate session JWT Bearer.
-2. **Enqueue on `_sendQueue`** — wait for any in-flight send to complete.
-3. **Timestamp resolution** — apply `time`→absolute conversion if needed.
-4. **DSK metacode extraction** — strip `<!-- graphics:… -->` comments from text; trigger DSK SSE events (§8).
-5. **Caption composition** — `composeCaptionText()` produces the string sent to YouTube.
-6. **Backend file writing** (if enabled per API key) — append original + all translations to open file handles.
-7. **CEA-708 injection** (if RTMP relay running in CEA mode) — write caption text to ffmpeg SRT pipe.
-8. **Primary sender** (if `session.sender` is non-null) — `sender.send(composedText, timestamp)`.
-9. **Target fan-out** — send to all `session.extraTargets` (see §6).
-10. **SSE result emission** — emit `caption_result` or `caption_error` on `session.emitter`.
+1. **Auth** â€” validate session JWT Bearer.
+2. **Enqueue on `_sendQueue`** â€” wait for any in-flight send to complete.
+3. **Timestamp resolution** â€” apply `time`â†’absolute conversion if needed.
+4. **DSK metacode extraction** â€” strip `<!-- graphics:â€¦ -->` comments from text; trigger DSK SSE events (Â§8).
+5. **Caption composition** â€” `composeCaptionText()` produces the string sent to YouTube.
+6. **Backend file writing** (if enabled per API key) â€” append original + all translations to open file handles.
+7. **CEA-708 injection** (if RTMP relay running in CEA mode) â€” write caption text to ffmpeg SRT pipe.
+8. **Primary sender** (if `session.sender` is non-null) â€” `sender.send(composedText, timestamp)`.
+9. **Target fan-out** â€” send to all `session.extraTargets` (see Â§6).
+10. **SSE result emission** â€” emit `caption_result` or `caption_error` on `session.emitter`.
 
 ---
 
@@ -259,7 +259,7 @@ HTTP 202 is returned immediately. The actual YouTube result arrives asynchronous
 
 ### 6.1 YouTube target (`type: 'youtube'`)
 
-Config: `{ type: 'youtube', streamKey: '…', enabled: true }`
+Config: `{ type: 'youtube', streamKey: 'â€¦', enabled: true }`
 
 One `YoutubeLiveCaptionSender` per target. Sends the composed text (with translation if configured) directly to:
 
@@ -296,7 +296,7 @@ Also feeds the HLS subtitle sidecar (`HlsSubsManager`) so subtitle tracks appear
 
 ### 6.3 Generic target (`type: 'generic'`)
 
-Config: `{ type: 'generic', url: 'https://…', headers: { … }, enabled: true }`
+Config: `{ type: 'generic', url: 'https://â€¦', headers: { â€¦ }, enabled: true }`
 
 HTTP POST (JSON) to a user-configured endpoint:
 
@@ -390,7 +390,7 @@ The current holder is broadcast via `mic_state` SSE to all clients on the same s
 
 ```http
 POST /captions
-{ "captions": [ { "text": "…" }, { "text": "…" }, { "text": "…" } ] }
+{ "captions": [ { "text": "â€¦" }, { "text": "â€¦" }, { "text": "â€¦" } ] }
 ```
 
 All captions in the array are sent sequentially to YouTube within a single queued job. One `requestId` covers all of them. The SSE result carries `count: N`.
@@ -405,7 +405,7 @@ sender.construct('Line 2');
 const result = await sender.sendBatch();  // flushes queue
 ```
 
-`construct()` also accepts the same `translations`/`captionLang`/`showOriginal`/`codes`/`fileFormats` options as `send()` and stamps omitted timestamps at queue time rather than at flush time — see `plan_batch_options.md` for the client-side fix that made per-caption options and cue-time timestamps survive batch-interval queuing.
+`construct()` also accepts the same `translations`/`captionLang`/`showOriginal`/`codes`/`fileFormats` options as `send()` and stamps omitted timestamps at queue time rather than at flush time â€” see `plan_batch_options.md` for the client-side fix that made per-caption options and cue-time timestamps survive batch-interval queuing.
 
 ### Audio batch interval
 
@@ -415,7 +415,7 @@ const result = await sender.sendBatch();  // flushes queue
 
 ## 11. Direct Sender (No Relay)
 
-`packages/lcyt/src/sender.js` — `YoutubeLiveCaptionSender`
+`packages/lcyt/src/sender.js` â€” `YoutubeLiveCaptionSender`
 
 When used directly (CLI, MCP, Python library), captions are posted straight to YouTube with no relay layer:
 
@@ -439,7 +439,7 @@ Feature-complete Python equivalent. Key difference: numeric timestamps `>= 1000`
 
 ```python
 from lcyt import YoutubeLiveCaptionSender
-sender = YoutubeLiveCaptionSender(stream_key='…', region='us1')
+sender = YoutubeLiveCaptionSender(stream_key='â€¦', region='us1')
 sender.start()
 sender.sync()
 sender.send('Caption text')
@@ -454,10 +454,10 @@ sender.send('Caption text')
 | `packages/lcyt/src/sender.js` | Core direct sender; `sync()`, `send()`, `sendBatch()`, `heartbeat()` |
 | `packages/lcyt/src/backend-sender.js` | Relay sender; wraps the backend API |
 | `packages/lcyt-backend/src/store.js` | In-memory session store; `_sendQueue`, `emitter`, `extraTargets` |
-| `packages/lcyt-backend/src/routes/live.js` | `POST /live` — session creation and target registration |
-| `packages/lcyt-backend/src/routes/captions.js` | `POST /captions` — processing, composition, fan-out |
-| `packages/lcyt-backend/src/routes/events.js` | `GET /events` — SSE result stream |
-| `packages/lcyt-backend/src/routes/viewer.js` | `GET /viewer/:key` — public viewer SSE broadcast |
+| `packages/lcyt-backend/src/routes/live.js` | `POST /live` â€” session creation and target registration |
+| `packages/lcyt-backend/src/routes/captions.js` | `POST /captions` â€” processing, composition, fan-out |
+| `packages/lcyt-backend/src/routes/events.js` | `GET /events` â€” SSE result stream |
+| `packages/lcyt-backend/src/routes/viewer.js` | `GET /viewer/:key` â€” public viewer SSE broadcast |
 | `packages/lcyt-backend/src/caption-files.js` | `composeCaptionText()`, `formatVttTime()`, `buildVttCue()` |
 | `packages/lcyt-backend/src/hls-subs-manager.js` | WebVTT segment writer for HLS subtitle sidecar |
 | `packages/lcyt-web/src/hooks/useSession.js` | React hook; session lifecycle, SSE listener |
@@ -471,3 +471,4 @@ sender.send('Caption text')
 | `packages/lcyt-mcp-http/src/server.js` | MCP Streamable HTTP server |
 | `python-packages/lcyt/lcyt/sender.py` | Python sender |
 | `python-packages/lcyt/lcyt/backend_sender.py` | Python relay sender |
+

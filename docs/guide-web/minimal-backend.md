@@ -1,11 +1,11 @@
----
+﻿---
 title: Python Minimal Backend
 order: 9
 ---
 
 # Python Minimal Backend
 
-The **Python Flask backend** (`python-packages/lcyt-backend`) is a lightweight, self-hostable alternative to the full Node.js backend. It is designed for simple deployments — shared hosting (cPanel / Phusion Passenger), Raspberry Pi, or any environment where Node.js is unavailable or undesirable.
+The **Python Flask backend** (`python-packages/lcyt-backend`) is a lightweight, self-hostable alternative to the full Node.js backend. It is designed for simple deployments â€” shared hosting (cPanel / Phusion Passenger), Raspberry Pi, or any environment where Node.js is unavailable or undesirable.
 
 ---
 
@@ -13,22 +13,22 @@ The **Python Flask backend** (`python-packages/lcyt-backend`) is a lightweight, 
 
 | Feature | Python backend | Node.js backend |
 |---------|---------------|----------------|
-| Caption relay to YouTube | ✅ | ✅ |
-| NTP clock sync | ✅ | ✅ |
-| API key management | ✅ | ✅ |
-| Per-key usage stats | ✅ | ✅ |
-| JWT session tokens | ✅ (stdlib-only HS256) | ✅ |
-| CORS support | ✅ | ✅ |
-| User account registration / login | ❌ | ✅ |
-| RTMP relay | ❌ | ✅ |
-| HLS streaming | ❌ | ✅ |
-| DSK graphics overlay | ❌ | ✅ |
-| Server-side STT | ❌ | ✅ |
-| Caption file storage | ❌ | ✅ |
-| Production control (cameras / mixers) | ❌ | ✅ |
-| Admin panel | ❌ | ✅ |
+| Caption relay to YouTube | âœ… | âœ… |
+| NTP clock sync | âœ… | âœ… |
+| API key management | âœ… | âœ… |
+| Per-key usage stats | âœ… | âœ… |
+| JWT session tokens | âœ… (stdlib-only HS256) | âœ… |
+| CORS support | âœ… | âœ… |
+| User account registration / login | âŒ | âœ… |
+| RTMP relay | âŒ | âœ… |
+| HLS streaming | âŒ | âœ… |
+| DSK graphics overlay | âŒ | âœ… |
+| Server-side STT | âŒ | âœ… |
+| Caption file storage | âŒ | âœ… |
+| Production control (cameras / mixers) | âŒ | âœ… |
+| Admin panel | âŒ | âœ… |
 
-The web app detects which backend you are connecting to via `GET /health` feature discovery and automatically **hides UI elements** that are not supported — so the interface stays clean even on a minimal backend.
+The web app detects which backend you are connecting to via `GET /health` feature discovery and automatically **hides UI elements** that are not supported â€” so the interface stays clean even on a minimal backend.
 
 ---
 
@@ -36,11 +36,11 @@ The web app detects which backend you are connecting to via `GET /health` featur
 
 The Python backend ships a `passenger_wsgi.py` entry point for Phusion Passenger, which is available on most cPanel hosts.
 
-### 1 — Upload files
+### 1 â€” Upload files
 
 Upload the contents of `python-packages/lcyt-backend/` to a directory under your cPanel home (e.g. `~/lcyt-backend/`).
 
-### 2 — Install dependencies
+### 2 â€” Install dependencies
 
 Open the **cPanel Terminal** (or SSH):
 
@@ -51,7 +51,7 @@ pip install -r requirements.txt
 pip install -e ../lcyt -e .
 ```
 
-### 3 — Configure environment
+### 3 â€” Configure environment
 
 Copy `.env.example` to `.env` and edit:
 
@@ -64,9 +64,9 @@ PORT=3000
 
 > **Tip:** Generate a secure secret with `python3 -c "import secrets; print(secrets.token_hex(32))"`.
 
-### 4 — Set up Passenger
+### 4 â€” Set up Passenger
 
-In cPanel → **Setup Python App**, point the application root to `~/lcyt-backend/` and set the startup file to `passenger_wsgi.py`.
+In cPanel â†’ **Setup Python App**, point the application root to `~/lcyt-backend/` and set the startup file to `passenger_wsgi.py`.
 
 Passenger will automatically restart the app when the file changes. To trigger a manual restart:
 
@@ -74,7 +74,7 @@ Passenger will automatically restart the app when the file changes. To trigger a
 touch ~/lcyt-backend/passenger_wsgi.py
 ```
 
-### 5 — Create an API key
+### 5 â€” Create an API key
 
 Use the admin CLI or make a direct `POST /keys` request with your `ADMIN_KEY`:
 
@@ -85,7 +85,7 @@ curl -X POST https://your-domain.com/keys \
   -d '{"label": "My Key"}'
 ```
 
-The response contains the `key` value — save this as your LCYT API key.
+The response contains the `key` value â€” save this as your LCYT API key.
 
 ---
 
@@ -95,7 +95,7 @@ The response contains the `key` value — save this as your LCYT API key.
 cd python-packages/lcyt-backend
 pip install -e ../lcyt -e .
 python run.py
-# → Listening on http://localhost:3000
+# â†’ Listening on http://localhost:3000
 ```
 
 ---
@@ -106,7 +106,7 @@ When you open the web app and go to `/login`:
 
 1. In the **Backend** dropdown, choose **Minimal** (or enter your custom URL).
 2. The app probes `GET /health` on your backend.
-3. Because the `login` feature is **not** in the response, the login form changes to **API key only** — no email/password needed.
+3. Because the `login` feature is **not** in the response, the login form changes to **API key only** â€” no email/password needed.
 4. Enter your API key and click **Continue**.
 
 > **No user account is needed** on a minimal backend. The API key is the only credential.
@@ -122,14 +122,14 @@ The minimal backend exposes the same core REST API as the Node.js backend:
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/health` | Uptime, session count, features list |
-| `POST` | `/live` | Register session → session JWT |
-| `GET` | `/live` | Session status |
-| `DELETE` | `/live` | Tear down session |
-| `POST` | `/captions` | Queue caption(s) |
+| `POST` | `/api/v1/live` | Register session â†’ session JWT |
+| `GET` | `/api/v1/live` | Session status |
+| `DELETE` | `/api/v1/live` | Tear down session |
+| `POST` | `/api/v1/captions` | Queue caption(s) |
 | `GET` | `/events` | SSE caption delivery results |
-| `POST` | `/sync` | NTP clock sync |
-| `GET` | `/stats` | Per-key usage stats |
-| `GET/POST/PATCH/DELETE` | `/keys` | API key CRUD (admin) |
+| `POST` | `/api/v1/sync` | NTP clock sync |
+| `GET` | `/api/v1/stats` | Per-key usage stats |
+| `GET/api/v1/POST/api/v1/PATCH/api/v1/DELETE` | `/api/v1/keys` | API key CRUD (admin) |
 
 The `GET /health` response shape:
 
@@ -161,11 +161,11 @@ The absence of `login`, `rtmp`, `graphics`, `production`, and `admin` in the fea
 
 ## Key differences from the Node.js backend
 
-- **No user accounts** — all auth is API-key based.
-- **Stdlib-only JWT** — no `jsonwebtoken` or `PyJWT`; uses Python's `hmac` + `hashlib`.
-- **No plugins** — RTMP, DSK, STT, files, production control are not available.
-- **Synchronous SQLite** — uses Python's `sqlite3` stdlib; no async DB layer.
-- **cPanel-compatible** — `passenger_wsgi.py` provides a WSGI entry point for shared hosting.
+- **No user accounts** â€” all auth is API-key based.
+- **Stdlib-only JWT** â€” no `jsonwebtoken` or `PyJWT`; uses Python's `hmac` + `hashlib`.
+- **No plugins** â€” RTMP, DSK, STT, files, production control are not available.
+- **Synchronous SQLite** â€” uses Python's `sqlite3` stdlib; no async DB layer.
+- **cPanel-compatible** â€” `passenger_wsgi.py` provides a WSGI entry point for shared hosting.
 
 ---
 
@@ -178,4 +178,5 @@ If you outgrow the minimal backend, migrate by:
 3. Copying your API keys (they use the same format).
 4. Pointing the web app at the new backend URL and re-authenticating.
 
-All captions sent through the minimal backend are delivered the same way — there is no data to migrate.
+All captions sent through the minimal backend are delivered the same way â€” there is no data to migrate.
+

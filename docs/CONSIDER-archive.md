@@ -1,69 +1,69 @@
-# Consider — archive
+﻿# Consider â€” archive
 
 Resolved entries moved out of `CONSIDER.md` on 2026-10-05, kept verbatim for history.
 
 ---
 
-## ~~DSK live-graphics-operate routes left ungated by the Setup-tier pass — the `/graphics` page's own access tier was never decided~~ — RESOLVED 2026-09-10
+## ~~DSK live-graphics-operate routes left ungated by the Setup-tier pass â€” the `/graphics` page's own access tier was never decided~~ â€” RESOLVED 2026-09-10
 
-**Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` — `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`. Also `packages/lcyt-web/src/components/DskControlPage.jsx`, `packages/plugins/lcyt-dsk/test/dsk-templates-routes.test.js` (new).
+**Where:** `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js` â€” `POST /:apikey/templates/:id/activate`, `POST /:apikey/template` (one-off render), `POST /:apikey/broadcast`, `POST /:apikey/graphics`, `POST /:apikey/renderer/start`, `POST /:apikey/renderer/stop`. Also `packages/lcyt-web/src/components/DskControlPage.jsx`, `packages/plugins/lcyt-dsk/test/dsk-templates-routes.test.js` (new).
 
-**Original finding:** `plan_project_roles.md`'s route-mapping list names `lcyt-dsk`'s `dskTemplatesRouter`/`dskViewportsRouter` as Setup Hub's "viewports" card (**template CRUD**, **viewport CRUD**) — and those are now gated at `'setup'` tier. But the same router also exposes live graphics-operate actions on the same file: activating a template live, pushing broadcast data, starting/stopping the RTMP renderer, rendering a one-off template. These read as Production-tier (or a genuinely separate `/graphics` page tier) rather than Setup config, but `plan_project_roles.md`'s decided page model only names Setup/Assets/Production — the Graphics page (`/graphics/editor`, `/graphics/control`, `/graphics/viewports` in `lcyt-web`'s routing table) was never assigned a tier at all.
+**Original finding:** `plan_project_roles.md`'s route-mapping list names `lcyt-dsk`'s `dskTemplatesRouter`/`dskViewportsRouter` as Setup Hub's "viewports" card (**template CRUD**, **viewport CRUD**) â€” and those are now gated at `'setup'` tier. But the same router also exposes live graphics-operate actions on the same file: activating a template live, pushing broadcast data, starting/stopping the RTMP renderer, rendering a one-off template. These read as Production-tier (or a genuinely separate `/graphics` page tier) rather than Setup config, but `plan_project_roles.md`'s decided page model only names Setup/Assets/Production â€” the Graphics page (`/graphics/editor`, `/graphics/control`, `/graphics/viewports` in `lcyt-web`'s routing table) was never assigned a tier at all.
 
-**Resolved:** assigned these six routes to the `'production'` tier — the same three-tier model (`route-access.js`'s `'setup'|'assets'|'production'`) already used for `lcyt-production`'s CRUD-vs-live-control split on cameras/mixers/encoders/bridge, not a new tier. A new local `requireProduction()` gate in `dsk-templates.js` (alongside the existing `requireSetup()`) applies it. The key wrinkle a naive copy of `requireSetup()` would have broken: `DskControlPage.jsx` (`/graphics/control` sidebar mode) is these routes' only real caller today, and it authenticates with a plain caption-session JWT (`session.getSessionToken()`) that carries no `req.user.userId` at all — there is no login-based `project_members` role to resolve for it, including in minimal-mode deployments with no user accounts. `requireSetup()`'s fail-**closed**-without-a-userId behavior would have 403'd every request from that page. `requireProduction()` instead fails **open** in that specific case (already-established precedent — mirrors `lcyt-production`'s `route-access.js` failing open when `req.session?.apiKey` is entirely absent) and only fails closed once a real per-user project-access JWT is present — which is exactly `DskControlPage.jsx`'s *standalone* mode (`/dsk-control/:key`, which reuses an already-logged-in tab's persisted `projectAccessToken`): a viewer/editor-role team member opening that page in a second tab can no longer trigger activate/broadcast/renderer-control, only operator+. Net effect: closes the real gap (a login-based non-operator team member misusing production controls) with zero regression to the session-token-based control-panel flow that predates per-user roles. New route-level test file `dsk-templates-routes.test.js` covers both branches (session-only auth fails open; real-user auth is checked against `'production'` and can be rejected/accepted).
+**Resolved:** assigned these six routes to the `'production'` tier â€” the same three-tier model (`route-access.js`'s `'setup'|'assets'|'production'`) already used for `lcyt-production`'s CRUD-vs-live-control split on cameras/api/v1/mixers/api/v1/encoders/api/v1/bridge, not a new tier. A new local `requireProduction()` gate in `dsk-templates.js` (alongside the existing `requireSetup()`) applies it. The key wrinkle a naive copy of `requireSetup()` would have broken: `DskControlPage.jsx` (`/api/v1/graphics/api/v1/control` sidebar mode) is these routes' only real caller today, and it authenticates with a plain caption-session JWT (`session.getSessionToken()`) that carries no `req.user.userId` at all â€” there is no login-based `project_members` role to resolve for it, including in minimal-mode deployments with no user accounts. `requireSetup()`'s fail-**closed**-without-a-userId behavior would have 403'd every request from that page. `requireProduction()` instead fails **open** in that specific case (already-established precedent â€” mirrors `lcyt-production`'s `route-access.js` failing open when `req.session?.apiKey` is entirely absent) and only fails closed once a real per-user project-access JWT is present â€” which is exactly `DskControlPage.jsx`'s *standalone* mode (`/api/v1/dsk-control/api/v1/:key`, which reuses an already-logged-in tab's persisted `projectAccessToken`): a viewer/api/v1/editor-role team member opening that page in a second tab can no longer trigger activate/api/v1/broadcast/api/v1/renderer-control, only operator+. Net effect: closes the real gap (a login-based non-operator team member misusing production controls) with zero regression to the session-token-based control-panel flow that predates per-user roles. New route-level test file `dsk-templates-routes.test.js` covers both branches (session-only auth fails open; real-user auth is checked against `'production'` and can be rejected/api/v1/accepted).
 
 (Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
-## ~~DSK still authenticates via X-API-Key~~ — RESOLVED 2026-09-10
+## ~~DSK still authenticates via X-API-Key~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-dsk/src/middleware/editor-auth.js` (deleted), `packages/lcyt-web/src/components/DskEditorPage.jsx`/`DskViewportsPage.jsx`/`setup-hub/ViewportsSection.jsx`/`DskControlPage.jsx`/`hooks/useDskMetacodeSources.js`, `packages/plugins/lcyt-dsk/src/routes/dsk-templates.js`/`dsk-viewports.js`'s `requireSetup()`, `docs/plans/plan_authentication_refactor.md`.
 
-**Original finding:** `plan_authentication_refactor.md` explicitly listed the DSK Editor's `X-API-Key` credential as "being replaced by project membership-based auth in the refactor" — that never actually happened; `requireSetup()` carried a stopgap exemption for `authKind === 'apikey'` requests.
+**Original finding:** `plan_authentication_refactor.md` explicitly listed the DSK Editor's `X-API-Key` credential as "being replaced by project membership-based auth in the refactor" â€” that never actually happened; `requireSetup()` carried a stopgap exemption for `authKind === 'apikey'` requests.
 
-**Resolved:** `editor-auth.js`'s `X-API-Key` branch is deleted outright — `editorAuthOrBearer` is JWT-only now, and `requireSetup()`'s `authKind === 'apikey'` exemption is gone, so every DSK Setup-tier write goes through the same real per-user role check as any other Setup-tier route, no bypass. Frontend: `DskEditorPage.jsx`, `DskViewportsPage.jsx`, and `setup-hub/ViewportsSection.jsx` (all Setup-tier DSK writes) now send `Authorization: Bearer <projectAccessToken>` — the same `session.projectAccessToken` field `ProductionCamerasPage.jsx`/`ProductionMixersPage.jsx`/etc. already used, set by `activateProject()` when a project is entered from `/projects`. `DskControlPage.jsx`'s sidebar mode (`/graphics/control`) uses the plain session token instead (`session.getSessionToken()`), since its routes (activate/broadcast/renderer start-stop) aren't Setup-tier gated — see the sibling "DSK live-graphics-operate routes" entry above.
+**Resolved:** `editor-auth.js`'s `X-API-Key` branch is deleted outright â€” `editorAuthOrBearer` is JWT-only now, and `requireSetup()`'s `authKind === 'apikey'` exemption is gone, so every DSK Setup-tier write goes through the same real per-user role check as any other Setup-tier route, no bypass. Frontend: `DskEditorPage.jsx`, `DskViewportsPage.jsx`, and `setup-hub/ViewportsSection.jsx` (all Setup-tier DSK writes) now send `Authorization: Bearer <projectAccessToken>` â€” the same `session.projectAccessToken` field `ProductionCamerasPage.jsx`/`ProductionMixersPage.jsx`/etc. already used, set by `activateProject()` when a project is entered from `/projects`. `DskControlPage.jsx`'s sidebar mode (`/graphics/control`) uses the plain session token instead (`session.getSessionToken()`), since its routes (activate/broadcast/renderer start-stop) aren't Setup-tier gated â€” see the sibling "DSK live-graphics-operate routes" entry above.
 
-**A real regression this surfaced, also fixed:** `DskControlPage.jsx` is *also* reachable as a fully standalone page at `/dsk-control/:key`, rendered with no `<AppProviders>`/`SessionContext` at all (`main.jsx`'s `getStandalonePage()`) — it relied entirely on the now-retired `X-API-Key` and had no other way to authenticate. Rather than inventing a new no-login credential mechanism, it now falls back to the same localStorage-persisted project session every other logged-in page reads (`lib/projectSession.js`'s `readPersistedSessionConfig()`), used only when that persisted session's `apiKey` matches this page's own `:key` (never a leftover token for a different project); shows a "log in to this project in another tab first" message otherwise. This matches the page's real intended usage — the same already-logged-in operator opening it in a second tab/screen — rather than a genuinely credential-less kiosk flow. The DSK *output* page (`/dsk/:slugOrKey`, the actual green-screen overlay) was never affected by any of this — always public, still is.
+**A real regression this surfaced, also fixed:** `DskControlPage.jsx` is *also* reachable as a fully standalone page at `/api/v1/dsk-control/api/v1/:key`, rendered with no `<AppProviders>`/api/v1/`SessionContext` at all (`main.jsx`'s `getStandalonePage()`) â€” it relied entirely on the now-retired `X-API-Key` and had no other way to authenticate. Rather than inventing a new no-login credential mechanism, it now falls back to the same localStorage-persisted project session every other logged-in page reads (`lib/api/v1/projectSession.js`'s `readPersistedSessionConfig()`), used only when that persisted session's `apiKey` matches this page's own `:key` (never a leftover token for a different project); shows a "log in to this project in another tab first" message otherwise. This matches the page's real intended usage â€” the same already-logged-in operator opening it in a second tab/api/v1/screen â€” rather than a genuinely credential-less kiosk flow. The DSK *output* page (`/api/v1/dsk/api/v1/:slugOrKey`, the actual green-screen overlay) was never affected by any of this â€” always public, still is.
 
 (Found during: Phase 2 Stream B, `plan_project_roles.md`, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
-## `lcyt-production`'s `encoders.js` and `bridge.js` had no session/user/device auth wired in at all before this pass — now fixed, but the two routers previously had a real, wide-open gap
+## `lcyt-production`'s `encoders.js` and `bridge.js` had no session/user/device auth wired in at all before this pass â€” now fixed, but the two routers previously had a real, wide-open gap
 
 **Where:** `packages/plugins/lcyt-production/src/routes/encoders.js`, `packages/plugins/lcyt-production/src/routes/bridge.js`, `packages/plugins/lcyt-production/src/api.js` (`createProductionRouter`).
 
-**Finding (not skipped — fixed as part of this pass, logged for the record since it's a bigger change than "add a tier check"):** `cameras.js`/`mixers.js` already had `opts.auth` wiring (from earlier plans — `plan_ingest_feeds.md`'s cross-tenant review finding, `plan_vertical_crop.md` §4), but `createEncodersRouter`/`createBridgeRouter` had no `opts` parameter at all — encoder CRUD/start/stop/test and bridge instance CRUD/command-dispatch were fully unauthenticated beyond the bridge-agent's own separate per-instance token on its two SSE/callback routes. This pass threaded `opts.auth`/`opts.deps` through both routers (optional, so existing route-level tests that construct them directly keep working unauthenticated unless they opt in) and `server.js` now always supplies both in production, closing a real pre-existing hole as a side effect of adding the Setup/Production tier split.
+**Finding (not skipped â€” fixed as part of this pass, logged for the record since it's a bigger change than "add a tier check"):** `cameras.js`/`mixers.js` already had `opts.auth` wiring (from earlier plans â€” `plan_ingest_feeds.md`'s cross-tenant review finding, `plan_vertical_crop.md` Â§4), but `createEncodersRouter`/`createBridgeRouter` had no `opts` parameter at all â€” encoder CRUD/start/stop/test and bridge instance CRUD/command-dispatch were fully unauthenticated beyond the bridge-agent's own separate per-instance token on its two SSE/callback routes. This pass threaded `opts.auth`/`opts.deps` through both routers (optional, so existing route-level tests that construct them directly keep working unauthenticated unless they opt in) and `server.js` now always supplies both in production, closing a real pre-existing hole as a side effect of adding the Setup/Production tier split.
 
 (Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26.)
 
 ---
 
-## ~~`bridge.js`'s `GET /instances/:id/env` re-downloads a bridge instance's plaintext auth token to any project member, not just admins~~ — RESOLVED 2026-09-10
+## ~~`bridge.js`'s `GET /instances/:id/env` re-downloads a bridge instance's plaintext auth token to any project member, not just admins~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/routes/bridge.js`, `GET /instances/:id/env`, `packages/plugins/lcyt-production/test/bridge-routes.test.js`.
 
-**Original finding:** This route regenerates and returns the bridge agent's `.env` file, which contains its plaintext per-instance auth token (the credential `bridgeManager.authenticate()` checks on the agent's own SSE/callback channel). It's a GET, and every other GET in this router is left open to any project member who passes the broader `scopedAuth('production')` gate (same blanket policy as every other Setup-tier route, `plan_project_roles.md`, decided 2026-07-26: "GET stays open to any project member") — but unlike template/config reads, this one discloses a live credential, not configuration. A non-admin project member (editor/operator/viewer with org-baseline access) could re-download it.
+**Original finding:** This route regenerates and returns the bridge agent's `.env` file, which contains its plaintext per-instance auth token (the credential `bridgeManager.authenticate()` checks on the agent's own SSE/callback channel). It's a GET, and every other GET in this router is left open to any project member who passes the broader `scopedAuth('production')` gate (same blanket policy as every other Setup-tier route, `plan_project_roles.md`, decided 2026-07-26: "GET stays open to any project member") â€” but unlike template/config reads, this one discloses a live credential, not configuration. A non-admin project member (editor/operator/viewer with org-baseline access) could re-download it.
 
-**Resolved:** took the dedicated look the finding asked for and made the narrow exception: `requireSetup` (already a local const in this file, built from `requireTier()`) is now applied directly to this one route, despite it being a GET — `requireTier()` has no built-in method exemption of its own (unlike `lcyt-backend`'s `requireProjectRole()`); the "GETs stay open" behavior everywhere else in this router is simply that no route ever attaches the gate to a GET, not an automatic bypass baked into `requireTier()` — so attaching it here enforces admin/owner on this one read exactly as intended, with no ripple effect on any other route. New tests confirm a non-admin project member now 403s and a real admin/owner still succeeds.
+**Resolved:** took the dedicated look the finding asked for and made the narrow exception: `requireSetup` (already a local const in this file, built from `requireTier()`) is now applied directly to this one route, despite it being a GET â€” `requireTier()` has no built-in method exemption of its own (unlike `lcyt-backend`'s `requireProjectRole()`); the "GETs stay open" behavior everywhere else in this router is simply that no route ever attaches the gate to a GET, not an automatic bypass baked into `requireTier()` â€” so attaching it here enforces admin/owner on this one read exactly as intended, with no ripple effect on any other route. New tests confirm a non-admin project member now 403s and a real admin/owner still succeeds.
 
 (Found during: Phase 2 Stream E, `plan_project_roles.md`, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
-## ~~`lcyt-rtmp`'s ingestion/radio/stream config routes, `routes/icons.js`, and `lcyt-files`' `/file/storage-config` can't be gated at 'setup' tier~~ — RESOLVED 2026-09-10
+## ~~`lcyt-rtmp`'s ingestion/api/v1/radio/api/v1/stream config routes, `routes/api/v1/icons.js`, and `lcyt-files`' `/api/v1/file/api/v1/storage-config` can't be gated at 'setup' tier~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-rtmp/src/routes/{ingestion,stream,radio,crop}.js`, `packages/plugins/lcyt-rtmp/src/api.js` (`createRtmpRouters`), `packages/lcyt-backend/src/routes/icons.js`, `packages/plugins/lcyt-files/src/routes/files.js` (the `/storage-config` trio), `packages/lcyt-backend/src/server.js`, `packages/lcyt-backend/src/routes/content.js`, `packages/lcyt-backend/src/middleware/project-access.js`.
 
-**Original finding:** all of these were mounted with the plain `createAuthMiddleware(jwtSecret)` (`middleware/auth.js`) — the ephemeral session-JWT-only auth used by `/live`/`/captions`/`/mic` — not `scopedAuth()`/`createProjectAccessMiddleware`. The plain middleware never populates a real `userId`, and `requireProjectRole()` needs one to resolve a role at all, so dropping it in as-is would 403 every request unconditionally rather than gate it correctly. `icons.js`/`lcyt-files` additionally read `req.session.sessionId` + `store.get(sessionId)` directly, tying them to a **live** `/live` session existing.
+**Original finding:** all of these were mounted with the plain `createAuthMiddleware(jwtSecret)` (`middleware/api/v1/auth.js`) â€” the ephemeral session-JWT-only auth used by `/api/v1/live`/api/v1/`/api/v1/captions`/api/v1/`/api/v1/mic` â€” not `scopedAuth()`/api/v1/`createProjectAccessMiddleware`. The plain middleware never populates a real `userId`, and `requireProjectRole()` needs one to resolve a role at all, so dropping it in as-is would 403 every request unconditionally rather than gate it correctly. `icons.js`/api/v1/`lcyt-files` additionally read `req.session.sessionId` + `store.get(sessionId)` directly, tying them to a **live** `/api/v1/live` session existing.
 
 **Resolved.** The investigation that unblocked this (recorded here as the recipe for the next router that hits the same wall):
 
-1. **The "whole router group shares one auth instance" fear was overstated.** `createRtmpRouters(db, auth, managers, opts)` only threads `auth` into the four config-shaped sub-routers (`ingestion.js`, `stream.js`, `radio.js`'s `/config` pair, `crop.js`) — the public/callback ones (`rtmp.js`, `feed-rtmp.js`, `stream-hls.js`, `preview.js`) never accept an `auth` parameter at their factory signature at all. Swapping what `auth` value flows into `createRtmpRouters()` cannot touch them, full stop — no "narrow vs. broad" tradeoff to make.
-2. **`createProjectAccessMiddleware` already back-fills `req.session.apiKey = authInfo.projectId`** for exactly this kind of legacy call site (`attachProjectContext()`) — this is *why* `targets.js`/`translation.js`/`stt.js` migrated cleanly before this pass: every handler in the four rtmp config routers already read `req.session.apiKey` directly, zero handler-body changes needed, just swap the injected middleware + add `requireProjectRole(db, 'setup')` (which self-exempts GET/HEAD/OPTIONS, so reads stay open to any project member with no per-route sprinkling needed).
-3. **`icons.js`/`lcyt-files`'s "requires a live session" dependency was incidental, not load-bearing** — every handler that did `store.get(sessionId)` only ever read `.apiKey` off the result; the "session not found" 404 gate was an artificial requirement (uploading an icon or configuring S3 storage has no real reason to need an active broadcast running). Dropped the `store.get()` indirection entirely in favor of `req.session.apiKey`, same fix as #2.
-4. **One real gotcha, found and fixed along the way:** `stream.js`'s domain-allowlist check (`requireRtmpDomain`, gated on `ALLOWED_RTMP_DOMAINS`) reads `req.session.domain` — a field only a legacy plain `/live`-session JWT ever carries, and one `createProjectAccessMiddleware`'s back-fill did **not** propagate (it only ever set `.apiKey`/`.projectId`). Swapping the auth middleware without fixing this would have 403'd *every* request through this check the moment a deployment sets a non-wildcard `ALLOWED_RTMP_DOMAINS`/`ALLOWED_DOMAINS` (the default), including plain reads — a real regression, not a narrowing. Fixed by threading `domain` through `attachProjectContext`'s session-kind branch (`req.session.domain = authInfo.domain` when present) so a genuine session JWT keeps working exactly as before, and by changing `requireRtmpDomain` to treat "no domain on this token" (any project-scoped JWT) as "not this legacy throttle's concern" rather than always-deny. **Lesson for next time: before swapping a route's auth middleware, grep the route's own handlers for every `req.session.*` field it reads, not just `.apiKey` — `createProjectAccessMiddleware`'s back-compat shim only forwards fields it's been explicitly taught to forward.**
+1. **The "whole router group shares one auth instance" fear was overstated.** `createRtmpRouters(db, auth, managers, opts)` only threads `auth` into the four config-shaped sub-routers (`ingestion.js`, `stream.js`, `radio.js`'s `/config` pair, `crop.js`) â€” the public/callback ones (`rtmp.js`, `feed-rtmp.js`, `stream-hls.js`, `preview.js`) never accept an `auth` parameter at their factory signature at all. Swapping what `auth` value flows into `createRtmpRouters()` cannot touch them, full stop â€” no "narrow vs. broad" tradeoff to make.
+2. **`createProjectAccessMiddleware` already back-fills `req.session.apiKey = authInfo.projectId`** for exactly this kind of legacy call site (`attachProjectContext()`) â€” this is *why* `targets.js`/`translation.js`/`stt.js` migrated cleanly before this pass: every handler in the four rtmp config routers already read `req.session.apiKey` directly, zero handler-body changes needed, just swap the injected middleware + add `requireProjectRole(db, 'setup')` (which self-exempts GET/HEAD/OPTIONS, so reads stay open to any project member with no per-route sprinkling needed).
+3. **`icons.js`/`lcyt-files`'s "requires a live session" dependency was incidental, not load-bearing** â€” every handler that did `store.get(sessionId)` only ever read `.apiKey` off the result; the "session not found" 404 gate was an artificial requirement (uploading an icon or configuring S3 storage has no real reason to need an active broadcast running). Dropped the `store.get()` indirection entirely in favor of `req.session.apiKey`, same fix as #2.
+4. **One real gotcha, found and fixed along the way:** `stream.js`'s domain-allowlist check (`requireRtmpDomain`, gated on `ALLOWED_RTMP_DOMAINS`) reads `req.session.domain` â€” a field only a legacy plain `/api/v1/live`-session JWT ever carries, and one `createProjectAccessMiddleware`'s back-fill did **not** propagate (it only ever set `.apiKey`/api/v1/`.projectId`). Swapping the auth middleware without fixing this would have 403'd *every* request through this check the moment a deployment sets a non-wildcard `ALLOWED_RTMP_DOMAINS`/api/v1/`ALLOWED_DOMAINS` (the default), including plain reads â€” a real regression, not a narrowing. Fixed by threading `domain` through `attachProjectContext`'s session-kind branch (`req.session.domain = authInfo.domain` when present) so a genuine session JWT keeps working exactly as before, and by changing `requireRtmpDomain` to treat "no domain on this token" (any project-scoped JWT) as "not this legacy throttle's concern" rather than always-deny. **Lesson for next time: before swapping a route's auth middleware, grep the route's own handlers for every `req.session.*` field it reads, not just `.apiKey` â€” `createProjectAccessMiddleware`'s back-compat shim only forwards fields it's been explicitly taught to forward.**
 
 Net effect: `ingestion.js`/`stream.js`/`radio.js`'s `/config` pair/`crop.js` now require explicit project admin/owner for writes (GET stays open); `icons.js`'s POST/DELETE and `lcyt-files`' `/storage-config` PUT/DELETE do the same. Full test suites green: lcyt-backend (1172), lcyt-rtmp (249), lcyt-files (91).
 
@@ -71,33 +71,33 @@ Net effect: `ingestion.js`/`stream.js`/`radio.js`'s `/config` pair/`crop.js` now
 
 ---
 
-## ~~Server settings (plan_env_to_ui_settings.md) Phase 5 — plugin call-site migration is partial~~ (RESOLVED)
+## ~~Server settings (plan_env_to_ui_settings.md) Phase 5 â€” plugin call-site migration is partial~~ (RESOLVED)
 
 **Where:** `packages/plugins/lcyt-rtmp`, `packages/plugins/lcyt-dsk`, `packages/plugins/lcyt-production`'s `MediaMtxClient`, `packages/plugins/lcyt-agent`'s embedding functions, plus `lcyt-files`/`lcyt-music` from the first Phase 5 pass.
 
 **Resolved 2026-07-21:** all four originally-deferred plugins are now wired to a duck-typed `settings` param, following the same pattern established for `lcyt-files`/`lcyt-music`:
-- **`lcyt-rtmp`** — `RtmpRelayManager`, `CropManager`, `SttManager`, `RadioManager`, `HlsManager`, `PreviewManager`, `NginxManager`, `HlsSubsManager` all accept `settings`. Most of this turned out to be `initRtmpControl()` finally passing settings-resolved values into constructor overrides those classes already supported (`mediamtxHlsBase`, `webrtcBase`, `segmentDuration`, etc.) — not new class surface. Where a value truly was module-load-time (RTMP host/app defaults, CEA-708 timing, crop's ZMQ port base) or read fresh per call with no constructor path (`SttManager`'s STT provider/language/audioSource, `GoogleSttAdapter`'s apiKey/mode), the read site itself now consults `this._settings` first. CEA-708 offset/duration/max-backtrack went from restart-only to genuinely hot (read per caption).
-- **`lcyt-dsk`** — `images.js` (`GRAPHICS_ENABLED` gate + upload size/quota limits, now hot, read per-request), `dsk-rtmp.js`/`dsk-templates.js` (RTMP host/app + renderer local-server URL, resolved once at router construction, including the `DSK_LOCAL_RTMP → RADIO_LOCAL_RTMP` and `DSK_LOCAL_SERVER → DSK_PAGE_BASE_URL` cross-setting fallback chains, preserved via a small resolver checking `settings.source()`). `renderer.js`'s own module-load-time `DSK_LOCAL_SERVER` (the Playwright singleton) is deliberately still untouched — genuinely construction-time-only, correctly `apply: 'restart'`, and restructuring a long-lived renderer process wasn't worth it for this pass.
-- **`lcyt-production`'s `MediaMtxClient`** — the "half-fix risk" reasoning in this entry's original text was wrong: both `MediaMtxClient` copies (`lcyt-production`, `lcyt-rtmp`) already accept explicit `{ baseUrl, webrtcBaseUrl, user, password }` constructor opts, falling back to `process.env` only when a given opt is omitted. Wiring it was just passing settings-resolved values at each `new MediaMtxClient()` call site (`initProductionControl`, `initRtmpControl`) — no widening needed at all.
-- **`lcyt-agent`** — `AgentEngine` now takes `settings` in its constructor opts (`initAgent(db, opts)` already forwarded `opts` wholesale, so no signature change there), used by `isServerEmbeddingAvailable()`/`computeEmbeddings()` for the server-default provider path only — per-project `ai_config` overrides still always win. Wiring this surfaced a real, separate bug (see next entry) in how `server.js` called `computeEmbeddings`.
+- **`lcyt-rtmp`** â€” `RtmpRelayManager`, `CropManager`, `SttManager`, `RadioManager`, `HlsManager`, `PreviewManager`, `NginxManager`, `HlsSubsManager` all accept `settings`. Most of this turned out to be `initRtmpControl()` finally passing settings-resolved values into constructor overrides those classes already supported (`mediamtxHlsBase`, `webrtcBase`, `segmentDuration`, etc.) â€” not new class surface. Where a value truly was module-load-time (RTMP host/app defaults, CEA-708 timing, crop's ZMQ port base) or read fresh per call with no constructor path (`SttManager`'s STT provider/language/audioSource, `GoogleSttAdapter`'s apiKey/mode), the read site itself now consults `this._settings` first. CEA-708 offset/duration/max-backtrack went from restart-only to genuinely hot (read per caption).
+- **`lcyt-dsk`** â€” `images.js` (`GRAPHICS_ENABLED` gate + upload size/quota limits, now hot, read per-request), `dsk-rtmp.js`/`dsk-templates.js` (RTMP host/app + renderer local-server URL, resolved once at router construction, including the `DSK_LOCAL_RTMP â†’ RADIO_LOCAL_RTMP` and `DSK_LOCAL_SERVER â†’ DSK_PAGE_BASE_URL` cross-setting fallback chains, preserved via a small resolver checking `settings.source()`). `renderer.js`'s own module-load-time `DSK_LOCAL_SERVER` (the Playwright singleton) is deliberately still untouched â€” genuinely construction-time-only, correctly `apply: 'restart'`, and restructuring a long-lived renderer process wasn't worth it for this pass.
+- **`lcyt-production`'s `MediaMtxClient`** â€” the "half-fix risk" reasoning in this entry's original text was wrong: both `MediaMtxClient` copies (`lcyt-production`, `lcyt-rtmp`) already accept explicit `{ baseUrl, webrtcBaseUrl, user, password }` constructor opts, falling back to `process.env` only when a given opt is omitted. Wiring it was just passing settings-resolved values at each `new MediaMtxClient()` call site (`initProductionControl`, `initRtmpControl`) â€” no widening needed at all.
+- **`lcyt-agent`** â€” `AgentEngine` now takes `settings` in its constructor opts (`initAgent(db, opts)` already forwarded `opts` wholesale, so no signature change there), used by `isServerEmbeddingAvailable()`/`computeEmbeddings()` for the server-default provider path only â€” per-project `ai_config` overrides still always win. Wiring this surfaced a real, separate bug (see next entry) in how `server.js` called `computeEmbeddings`.
 
-**Resolved 2026-07-21 (second pass):** `VISION_PREVIEW_BASE_URL` (`lcyt-agent`'s `VisionFrameFetcher`) and `CAMERA_PREVIEW_BASE_URL` (`lcyt-production`'s `camera-thumbnail.js`) are now wired — `VisionRoleManager` takes `settings` in its constructor and resolves `ai.vision_preview_base_url` once per `start()` call, threaded into the fetcher's constructor opts; `createProductionRouter()` resolves `production.camera_preview_base_url` once at construction, threaded into `captureCameraThumbnail()`'s opts. `CAMERA_THUMBNAILS_DIR` was never actually part of this gap — it's deliberately Tier A/env-only (`registry.js`'s `bootstrap.camera_thumbnails_dir`), left untouched.
+**Resolved 2026-07-21 (second pass):** `VISION_PREVIEW_BASE_URL` (`lcyt-agent`'s `VisionFrameFetcher`) and `CAMERA_PREVIEW_BASE_URL` (`lcyt-production`'s `camera-thumbnail.js`) are now wired â€” `VisionRoleManager` takes `settings` in its constructor and resolves `ai.vision_preview_base_url` once per `start()` call, threaded into the fetcher's constructor opts; `createProductionRouter()` resolves `production.camera_preview_base_url` once at construction, threaded into `captureCameraThumbnail()`'s opts. `CAMERA_THUMBNAILS_DIR` was never actually part of this gap â€” it's deliberately Tier A/env-only (`registry.js`'s `bootstrap.camera_thumbnails_dir`), left untouched.
 
 Full test sweep after this pass: all 18 Node.js workspaces pass (`npm test` at repo root), including 1106 lcyt-backend, 247 lcyt-rtmp, 106 lcyt-dsk, 181 lcyt-agent, 110 lcyt-cues, 158 lcyt-production tests.
 
 ---
 
-## Bug found while resolving the above: `computeEmbeddings` credential collision in cue semantic matching — RESOLVED
+## Bug found while resolving the above: `computeEmbeddings` credential collision in cue semantic matching â€” RESOLVED
 
 **Where:** `packages/lcyt-backend/src/server.js` (was `_cueEngine.setEmbeddingFn(computeEmbeddings)`), `packages/plugins/lcyt-cues/src/cue-engine.js` (`_embedFn(texts, { apiKey, rule })`), `packages/plugins/lcyt-agent/src/embeddings.js` (`computeEmbeddings(texts, opts)`).
 
-**Finding:** `CueEngine` calls its injected `_embedFn` with `{ apiKey, rule }`, where `apiKey` is the *project's* api_key (used elsewhere in the same evaluator for tracker-state/ai-config lookups). `server.js` wired this directly to the bare `computeEmbeddings` function from `embeddings.js`, whose `opts.apiKey` means something completely different: the *embedding provider's credential*, sent as `Authorization: Bearer ${apiKey}`. Every `cue[semantic]:phrase` match was therefore sending the project's api_key as the embeddings API bearer token instead of `EMBEDDING_API_KEY` — silently breaking semantic cue matching whenever a real embedding key was configured (auth failure) rather than using it.
+**Finding:** `CueEngine` calls its injected `_embedFn` with `{ apiKey, rule }`, where `apiKey` is the *project's* api_key (used elsewhere in the same evaluator for tracker-state/ai-config lookups). `server.js` wired this directly to the bare `computeEmbeddings` function from `embeddings.js`, whose `opts.apiKey` means something completely different: the *embedding provider's credential*, sent as `Authorization: Bearer ${apiKey}`. Every `cue[semantic]:phrase` match was therefore sending the project's api_key as the embeddings API bearer token instead of `EMBEDDING_API_KEY` â€” silently breaking semantic cue matching whenever a real embedding key was configured (auth failure) rather than using it.
 
-**Fixed:** rewired through `AgentEngine.computeEmbeddings(texts, apiKey)`, which already correctly keeps the two meanings apart (resolves per-project `ai_config` first, only falls back to the server-level default for the `'server'` provider) — matching what `lcyt-agent/src/api.js`'s own doc comment recommended all along. Found and fixed as a side effect of adding `SettingsService` support to the same method, not a separate pass.
+**Fixed:** rewired through `AgentEngine.computeEmbeddings(texts, apiKey)`, which already correctly keeps the two meanings apart (resolves per-project `ai_config` first, only falls back to the server-level default for the `'server'` provider) â€” matching what `lcyt-agent/src/api.js`'s own doc comment recommended all along. Found and fixed as a side effect of adding `SettingsService` support to the same method, not a separate pass.
 
 ---
 
-## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic — RESOLVED (2026-07-12)
+## `VariablesBus` duplicates `DskBus`'s SSE subscriber/broadcast logic â€” RESOLVED (2026-07-12)
 
 **Resolved by** `plan_pubsub_event_bus.md`: the shared `EventBus`
 (`packages/lcyt/src/event-bus.js`, exported as `lcyt/event-bus`) now owns the
@@ -118,7 +118,7 @@ admits it "mirrors" `dsk-bus.js`.
 **Why skipped:** `DskBus` also carries DSK-specific graphics-state fields and
 is load-bearing for the DSK feature elsewhere in the app. Extracting a shared
 `SseSubscriberBus` base class is the right fix, but doing it safely means
-touching `dsk-bus.js` and re-verifying DSK's SSE behavior — outside the
+touching `dsk-bus.js` and re-verifying DSK's SSE behavior â€” outside the
 tested surface of the connectors-plugin diff that surfaced this. Do it as its
 own change with DSK regression coverage in scope, not as a side effect of an
 unrelated feature branch.
@@ -152,7 +152,7 @@ and `invokeModelCall()`, consumed by `routes/roles-chat.js`, `routes/production-
 
 **Original finding:** `resolveRoleProviderSettings()` returned `null` for any provider with
 `bridge_instance_id` set, which every route turned into a `503 AI provider not configured or
-unsupported` — so the `model_call` bridge command built in Phase 2 of
+unsupported` â€” so the `model_call` bridge command built in Phase 2 of
 `plan_ai_model_registry.md` had no real caller: discovery (`GET /api/tags`) worked over a
 bridge, inference did not.
 
@@ -162,7 +162,7 @@ bridge, inference did not.
 headers, payload })` instead of a direct `fetch()`. `resolveRoleProviderSettings()` returns
 `{ transport: 'bridge', bridgeManager, bridgeInstanceId }` settings for a bridge-relayed
 provider (still `null` only when no `bridgeManager` was injected, or for `kind: 'deer'`, which
-remains genuinely unscoped — Phase 4). `agent-engine.js`'s `_callChatCompletion` and every
+remains genuinely unscoped â€” Phase 4). `agent-engine.js`'s `_callChatCompletion` and every
 `agentic_chat` route now call through `invokeModelCall`, and `server.js` constructs every one
 of those routers with the composition root's `productionBridgeManager`, so bridge relay works
 end-to-end for the turn loop.
@@ -170,11 +170,11 @@ end-to-end for the turn loop.
 **Update (2026-07-18):** the OpenAI-compatible vision adapter (used for `vendor: 'ollama'`,
 the only vendor a bridge-relayed provider actually uses in practice) already routed through
 `invokeModelCall` and thus already supported bridge transport, but `google-vision.js` and
-`anthropic-vision.js` still did a raw `fetch()` unconditionally — a bridge-relayed provider
+`anthropic-vision.js` still did a raw `fetch()` unconditionally â€” a bridge-relayed provider
 assigned to Tracker/Describer with a `google`/`anthropic` vendor would have silently ignored
 `transport: 'bridge'` and either failed (backend can't reach a LAN-only endpoint) or, worse,
 hit a same-named endpoint the backend *can* reach that wasn't the intended target. Closed by
-routing both adapters through `invokeModelCall` too, same as OpenAI's adapter — Google keeps
+routing both adapters through `invokeModelCall` too, same as OpenAI's adapter â€” Google keeps
 its `?key=` query-param auth via `invokeModelCall`'s `endpointPath` option (not a bearer
 header), Anthropic keeps its `x-api-key`/`anthropic-version` headers via the `headers` option.
 Test coverage added in `test/vision-adapters.test.js` for all three vendors' bridge path.
@@ -184,14 +184,14 @@ roles, 2026-07-07. Resolved 2026-07-13/2026-07-18.)
 
 ---
 
-## ~~Direct-spawn ffmpeg sites not migrated onto the runner factory~~ — RESOLVED 2026-10-05
+## ~~Direct-spawn ffmpeg sites not migrated onto the runner factory~~ â€” RESOLVED 2026-10-05
 
 **Where:** `packages/plugins/lcyt-rtmp/src/{hls-manager,stt-manager}.js`,
 `packages/plugins/lcyt-music/src/{music-manager,pcm-extractor}.js`,
 `packages/plugins/lcyt-dsk/src/renderer.js`
 
-**Finding:** plan_metering_audit §4.1 called for migrating these direct
-`spawn('ffmpeg', …)` sites onto `createFfmpegRunner()`. They instead use the
+**Finding:** plan_metering_audit Â§4.1 called for migrating these direct
+`spawn('ffmpeg', â€¦)` sites onto `createFfmpegRunner()`. They instead use the
 plan's pre-approved fallback (manual start/close timing into the same
 accounting sink) because the runner handle's API differs from a raw
 `ChildProcess` (`stop()` instead of `.kill()`, object-arg `'close'`, no
@@ -205,7 +205,7 @@ runners.
 
 ---
 
-## ~~`/production/cameras` WHIP + kiosk pages remain unauthenticated even after the cross-tenant `sourceCameraId` auth fix~~ — RESOLVED 2026-09-10
+## ~~`/api/v1/production/api/v1/cameras` WHIP + kiosk pages remain unauthenticated even after the cross-tenant `sourceCameraId` auth fix~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/routes/cameras.js`
 (`isUnauthenticatedCameraRoute()`), `packages/plugins/lcyt-production/src/routes/mixers.js`
@@ -215,19 +215,19 @@ runners.
 
 **Original finding:** Fixing the cross-tenant `sourceCameraId` finding (a project
 could reference any other project's camera via a relay slot) required real
-auth on the camera CRUD routes — `owner_api_key` + `canAccessCamera()` +
+auth on the camera CRUD routes â€” `owner_api_key` + `canAccessCamera()` +
 `opts.auth` wired to `scopedAuth('production')` in `server.js`. But
 `CameraStreamPage.jsx` and `LcytMixerPage.jsx` are capability-URL kiosk pages
 (a dedicated device opens a bare URL and pushes its webcam / drives the
-mixer — no login flow at all) that sent no Authorization header of any kind.
+mixer â€” no login flow at all) that sent no Authorization header of any kind.
 Blanket-applying auth would have broken them, so `isUnauthenticatedCameraRoute()`
 carved out `/whip`, `/whip-url`, and the thumbnail-serving routes
 unconditionally, leaving them exactly as open as before that pass. A real
-device-role JWT mechanism already existed (`DeviceLoginPage.jsx` → `POST
-/auth/device-login` → `routes/device-roles.js`'s `deviceLoginHandler`,
+device-role JWT mechanism already existed (`DeviceLoginPage.jsx` â†’ `POST
+/auth/device-login` â†’ `routes/device-roles.js`'s `deviceLoginHandler`,
 issuing a `{kind:'device', type:'device', apiKey, projectId, deviceRole,
 roleId, permissions}` token fully compatible with
-`createProjectAccessMiddleware`) but neither kiosk page read or sent it —
+`createProjectAccessMiddleware`) but neither kiosk page read or sent it â€”
 it just sat in `sessionStorage['lcyt-device']`, unused.
 
 **Resolved:** wired the existing device-role JWT into both kiosk pages via a
@@ -239,12 +239,12 @@ override) and sends `Authorization: Bearer <token>` on every WHIP/sources/
 switch request when a device session is present. On the backend,
 `isUnauthenticatedCameraRoute()`/`isUnauthenticatedMixerRoute()` were changed
 from an *unconditional* carve-out for `/whip`/`/whip-url`/`/sources` to a
-*conditional* one — exactly mirroring the pre-existing pattern
+*conditional* one â€” exactly mirroring the pre-existing pattern
 `isUnauthenticatedMixerRoute()`'s `/switch` route already used
 (`hasAuthCredentials(req)`-gated): a request with no credentials at all
 stays exactly as open as before (no regression for any deployment with no
-device roles configured), while a credentialed request — a device-role JWT
-or a full project-access JWT alike — now goes through `auth()` normally and
+device roles configured), while a credentialed request â€” a device-role JWT
+or a full project-access JWT alike â€” now goes through `auth()` normally and
 is subject to `canAccessCamera()`/`canAccessMixer()` ownership checks, which
 were added to the WHIP/sources handlers themselves (previously only the CRUD
 routes and, for mixers, `/switch` enforced ownership at all). Route-level
@@ -253,20 +253,20 @@ credentialed cross-tenant request now 404s while the credential-less kiosk
 path is unaffected.
 
 **Also found and fixed in the same area:** `DeviceLoginPage.jsx`'s 'mixer'
-role redirected straight to `/production/lcyt-mixer/${connectedRole.apiKey}`
-— passing the *project's apiKey* as `LcytMixerPage.jsx`'s `:key` route param,
-which it actually treats as a raw `mixerId` — the identical apiKey-vs-id
+role redirected straight to `/api/v1/production/api/v1/lcyt-mixer/api/v1/${connectedRole.apiKey}`
+â€” passing the *project's apiKey* as `LcytMixerPage.jsx`'s `:key` route param,
+which it actually treats as a raw `mixerId` â€” the identical apiKey-vs-id
 mismatch already found and fixed for the 'camera' role's redirect on
 2026-09-10 (see the historical note below), just not caught for 'mixer' at
 the same time. Same root cause (no per-device camera/mixer binding exists
-anywhere in the data model — `deviceLoginHandler`'s response carries no such
+anywhere in the data model â€” `deviceLoginHandler`'s response carries no such
 id, `project_device_roles`'s generic `config` blob is never populated with
 one), so the fix is the same: the 'mixer' case is removed and every role
 type now falls through to the same project-preloaded captioning UI.
 
 *(Historical note, preserved from the original entry: `DeviceLoginPage.jsx`
-used to redirect 'camera' role logins to `/production/camera/${apiKey}` with
-the identical apiKey-vs-cameraId mismatch — found and fixed 2026-09-10,
+used to redirect 'camera' role logins to `/api/v1/production/api/v1/camera/api/v1/${apiKey}` with
+the identical apiKey-vs-cameraId mismatch â€” found and fixed 2026-09-10,
 before the WHIP/kiosk auth wiring above was tackled.)*
 
 (Found during: `/code-review` cross-tenant `sourceCameraId` fix,
@@ -274,7 +274,7 @@ plan_ingest_feeds.md, 2026-07-19. Resolved 2026-09-10.)
 
 ---
 
-## ~~`prod_mixers` has no `owner_api_key`/ownership scoping, unlike `prod_cameras`~~ — RESOLVED 2026-09-10
+## ~~`prod_mixers` has no `owner_api_key`/ownership scoping, unlike `prod_cameras`~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/db.js`,
 `packages/plugins/lcyt-production/src/routes/mixers.js`
@@ -283,10 +283,10 @@ plan_ingest_feeds.md, 2026-07-19. Resolved 2026-09-10.)
 `prod_cameras` and real auth + `canAccessCamera()` gating to
 `routes/cameras.js`. `prod_mixers` had the identical shape problem in
 principle (no project/tenant column at all, `routes/mixers.js` had no
-`opts.auth`) — nothing in `plan_ingest_feeds.md`'s named-feed/egress work
+`opts.auth`) â€” nothing in `plan_ingest_feeds.md`'s named-feed/egress work
 exercised the gap, so it wasn't fixed as part of that pass.
 
-**Resolved:** mirrored the camera fix exactly — additive nullable
+**Resolved:** mirrored the camera fix exactly â€” additive nullable
 `owner_api_key` column (legacy/pre-existing rows stay in the open/unowned
 bucket), a `canAccessMixer()`-equivalent ownership check, `opts.auth` wired
 into `createMixersRouter`, and the credential-less kiosk `switch` carve-out
@@ -310,7 +310,7 @@ plan_ingest_feeds.md, 2026-07-19. Resolved 2026-09-10.)
 **Finding:** While auditing `plan_ai_model_registry.md`'s frontmatter, found
 that this component + route + table look like they could be Phase 3's
 still-missing role-config model-picker UI, but they're entirely separate
-plumbing: `getAiModelConfig()` has zero call sites outside its own module —
+plumbing: `getAiModelConfig()` has zero call sites outside its own module â€”
 nothing in the `agentic_chat` turn loop, vision adapters, or
 `project_ai_role_configs` reads from it. It never got wired to the
 `ai_providers`/`ai_provider_models`/`provider_id` registry the plan actually
@@ -318,17 +318,17 @@ built.
 
 **Resolution (ROADMAP.md Tier 0, 2026-07-20):** Took the "delete it" branch
 of the finding's own decision (repurposing into the real Phase 3 UI is
-Tier 1 scope — `plan_ai_model_registry.md` — and building it now would have
+Tier 1 scope â€” `plan_ai_model_registry.md` â€” and building it now would have
 been throwaway effort against a card that didn't exist yet). Deleted
 `AiModelsSection.jsx`, `packages/plugins/lcyt-agent/src/ai-models.js`,
 `packages/plugins/lcyt-agent/src/routes/ai-models.js`, the `/ai/models`
 mount in `lcyt-backend/src/server.js`, and the `ai_model_configs` migration
-call — existing deployments keep any already-created (now-orphaned) table,
+call â€” existing deployments keep any already-created (now-orphaned) table,
 harmless since nothing reads it. Removed its two mount points
 (`SetupHubPage.jsx`'s `ai-models` card, `AdminAiModelsPage.jsx`) and the
 now-dead `listAiModels`/`createAiModel`/`updateAiModel`/`deleteAiModel`
-helpers from `lib/aiAdminApi.js`. `AdminAiModelsPage.jsx` (`/admin/ai-models`
-— hidden from the Admin tab bar, still reachable by direct URL, see
+helpers from `lib/api/v1/aiAdminApi.js`. `AdminAiModelsPage.jsx` (`/api/v1/admin/api/v1/ai-models`
+â€” hidden from the Admin tab bar, still reachable by direct URL, see
 `HIDDEN.md`) keeps its route and now hosts only `McpAccessSection`, which
 was already independently mounted on the Setup Hub. Updated the stale
 "Phase 3 not done" callout in `plan_ai_model_registry.md` and the two other
@@ -346,7 +346,7 @@ plan docs that referenced this card by name.
 
 **Finding:** While auditing `plan_recording_vod.md`'s frontmatter, found that
 `isS3Enabled()` being true makes a `videos` row get `storage_type='s3'`, but
-MediaMTX always writes recorded HLS/fMP4 segments to local disk — no
+MediaMTX always writes recorded HLS/fMP4 segments to local disk â€” no
 watcher/uploader moves them to S3 afterward (the plan called for reusing
 worker-daemon's `createS3UploadFn` or the `lcyt-files` S3 adapter, but
 neither is invoked from the recording path). An S3-configured deployment
@@ -355,14 +355,14 @@ would 404 on VOD playback for any broadcast recorded this way, since
 nothing ever populated.
 
 **Resolution (ROADMAP.md Tier 0, 2026-07-20):** Added `uploadDirectoryToS3()`
-to `packages/lcyt-backend/src/storage/s3.js` — a small authenticated
+to `packages/lcyt-backend/src/storage/s3.js` â€” a small authenticated
 PutObject-based uploader (`@aws-sdk/client-s3`, added as an optional
 dependency mirroring `lcyt-files`' pattern) that walks a local recording
 directory and uploads every file under the same `${storageKey}/<relative
 path>` layout the existing (unsigned-fetch) playback read path already
 expects, so no change was needed on the read side. `db/videos.js` gained
 `syncVideoRecordingToStorage(db, apiKey, videoId)`, which uploads and
-records the real `size_bytes`, or — on upload failure — downgrades the row
+records the real `size_bytes`, or â€” on upload failure â€” downgrades the row
 to `storage_type='local'` so playback still works against the local files
 MediaMTX already wrote, instead of the previous silent 404. Wired into both
 recording-finish paths in `routes/live.js` (`stopSessionRecording()` and the
@@ -381,7 +381,7 @@ mock S3 server (`test/helpers/mock-s3-server.js`, PUT-only).
 
 ---
 
-## ~~AI-tool-driven mixer switches / camera preset recalls don't trigger vertical-crop follow~~ — RESOLVED 2026-10-04
+## ~~AI-tool-driven mixer switches / camera preset recalls don't trigger vertical-crop follow~~ â€” RESOLVED 2026-10-04
 
 **Resolved:** `lcyt-production`'s new `commands.js` (`ProductionCommands`) is now the single path for camera preset recall and mixer switching; the HTTP routes and `lcyt-tools`' `camera.preset`/`mixer.switch` all call it, and it fires the production-follow notifications (and applies the owner check the tools used to skip). See `docs/plans/plan_backend_actions.md`. Original finding kept below.
 
@@ -393,25 +393,25 @@ mock S3 server (`test/helpers/mock-s3-server.js`, PUT-only).
 **Finding:** `plan_vertical_crop.md` Phase 4's production-follow notifications
 (`registry.notifyProgramChanged()`/`notifyCameraPresetRecalled()`) are fired from
 the **HTTP route handlers** in `lcyt-production`, not from
-`DeviceRegistry.switchSource()`/`callPreset()` themselves — this is deliberate:
+`DeviceRegistry.switchSource()`/`callPreset()` themselves â€” this is deliberate:
 a bridge-relayed switch (the common case for real roland/amx/atem/monarch_hdx
 hardware) returns early from the route without ever calling `switchSource()`, so
 the route is the only place that sees both the direct and bridge-relayed
 transports succeed. But `lcyt-tools`' `mixer.switch`/`camera.preset` tool
 handlers (used by the Production Assistant AI role and any MCP client) call
 `registry.switchSource()`/`callPreset()` **directly**, bypassing the HTTP route
-entirely — so an AI-tool-driven or MCP-driven mixer switch or PTZ preset recall
+entirely â€” so an AI-tool-driven or MCP-driven mixer switch or PTZ preset recall
 never fires the production-follow notification, and the vertical crop will not
 follow it, even though the operator-UI-driven equivalent does.
 
 **Why skipped:** out of scope for this task, which was scoped to
 `lcyt-production`/`lcyt-rtmp` and asked to hook into "wherever mixer-switch and
-PTZ-preset-recall events already fire in `lcyt-production`" — that's the routes,
+PTZ-preset-recall events already fire in `lcyt-production`" â€” that's the routes,
 which is what got wired. Closing this gap would mean adding the same
 `registry.notifyProgramChanged()`/`notifyCameraPresetRecalled()` calls to
 `tools/mixers.js`'s `mixer.switch` and `tools/cameras.js`'s `camera.preset`
 handlers (both already receive `ctx.apiKey`, they just don't use it today since
-cameras/mixers are project-wide tables) — a small, mechanical follow-up, not a
+cameras/mixers are project-wide tables) â€” a small, mechanical follow-up, not a
 design question, whenever AI-tool-driven crop-follow parity is wanted.
 
 (Found during: `plan_vertical_crop.md` Phase 4 implementation, 2026-07-20.)
@@ -422,7 +422,7 @@ design question, whenever AI-tool-driven crop-follow parity is wanted.
 
 A full 8-angle `/code-review` pass on the Tier 0 + Tier 1 batch (mcp docs,
 vertical-crop Phase 4/5, AI model registry UI, org-baseline resolver)
-surfaced several real bugs — fixed directly (see the fix commit's message
+surfaced several real bugs â€” fixed directly (see the fix commit's message
 for the full list: `auth.js` client-supplied `projectRole` privilege cap,
 `mixers.js`'s `/switch` route dropped from the auth carve-out breaking
 `LcytMixerPage.jsx`'s kiosk cut button, `cameras.js`'s preset-recall
@@ -431,18 +431,18 @@ via camera preset silently never matched a row bound through the real UI,
 `getEffectiveProjectAccessLevel()`'s redundant DB round-trips on the
 owner/admin fast path, `CropManager._followState`'s unbounded per-apiKey
 growth, `videos.bytes` metering not counting S3-uploaded recordings, and
-sequential (not bounded-concurrent) S3 segment uploads) — plus several real
+sequential (not bounded-concurrent) S3 segment uploads) â€” plus several real
 but lower-priority findings logged here instead of rushed into the same
 pass:
 
 - **Duplicated ownership-gate pattern.** The `row.user_id !== user.userId
   ? getEffectiveProjectAccessLevel(...) : <owner shortcut>` gate is
-  copy-pasted (minor variations) across `routes/project-features.js` (×2),
+  copy-pasted (minor variations) across `routes/project-features.js` (Ã—2),
   `routes/project-slug.js`, `routes/project-observability.js`, and
   `routes/device-roles.js`'s local `requireOwnerOrAdmin`. A shared
   `requireProjectAccess(db, req, res, { minLevel })` helper would make the
   next access-model change a one-place edit instead of five. Not extracted
-  now — touching all five auth-critical files for a pure refactor right
+  now â€” touching all five auth-critical files for a pure refactor right
   before a CI-gate-then-merge added more regression risk than the cleanup
   was worth in that window.
 - **Duplicated `useApi()` hook.** `packages/lcyt-web/src/components/setup-hub/AiRoleModelsSection.jsx`
@@ -456,7 +456,7 @@ pass:
   wiring as `packages/plugins/lcyt-files/src/adapters/s3.js`'s
   `createS3Adapter()`. The two adapters deliberately use different key
   schemes (already documented above in this file), but that doesn't require
-  duplicating client construction — a shared helper could serve both.
+  duplicating client construction â€” a shared helper could serve both.
 - **Duplicated mock S3 test server.** `packages/lcyt-backend/test/helpers/mock-s3-server.js`
   is a trimmed copy of `packages/plugins/lcyt-files/test/helpers/mock-s3-server.js`
   rather than an import/reuse of it.
@@ -465,7 +465,7 @@ pass:
   (41 `console.*` calls, zero `logger` usage) and all of
   `packages/plugins/lcyt-production` (`bridge-manager.js`, `crud.js`,
   `registry.js`) use `console.warn`/`console.error`/`console.info`
-  exclusively — a pre-existing, file-and-package-wide gap this session's new
+  exclusively â€” a pre-existing, file-and-package-wide gap this session's new
   code matched rather than deviated from. Fixing just the newly-added lines
   would be inconsistent with their own surrounding code; a real fix needs a
   dedicated migration pass per package (and, for `lcyt-production`, adding
@@ -474,7 +474,7 @@ pass:
   `isUnauthenticatedCameraRoute()` and `routes/mixers.js`'s
   `isUnauthenticatedMixerRoute()` use `/\/whip(-url)?(\/|$)/`, which matches
   any path segment literally named `whip`/`whip-url`, not just the
-  `/:id/whip` route — currently unexploitable since ids are
+  `/:id/whip` route â€” currently unexploitable since ids are
   server-generated `randomUUID()`s, but the guard itself provides no defense
   if that ever changes (e.g. custom/slug ids). Pre-existing pattern in
   `cameras.js`, copied (not introduced) by `mixers.js`'s new carve-out.
@@ -483,16 +483,16 @@ pass:
   so a `crop_source_map` row that specifies *both* `cameraId` and `mixerId`
   gets excluded on a preset-recall event even when its camera/preset match.
   Narrow: `lcyt-web`'s crop editor (`useCropEditor.js`) never sets `mixerId`
-  on a camera-preset binding created through the UI — only reachable via a
+  on a camera-preset binding created through the UI â€” only reachable via a
   direct `POST /crop/source-map` call that deliberately combines both
   fields.
 - **Org member listing stays explicit-only.** The Altitude angle flagged
   that `routes/project-members.js` (`GET /keys/:key/members` etc.) was
-  deliberately left off the `getEffectiveProjectAccessLevel()` sweep — an
+  deliberately left off the `getEffectiveProjectAccessLevel()` sweep â€” an
   org-baseline `member` can now read captions/DSK/cues/etc. on a project but
   still gets 403 listing that project's explicit members. This is the
   intended design (membership management is an ownership-tier concern, see
-  `plan_team_org_backend.md`'s "One place this must NOT apply"), not a bug —
+  `plan_team_org_backend.md`'s "One place this must NOT apply"), not a bug â€”
   noted here only because a future reader re-auditing the sweep list
   shouldn't assume it's an oversight.
 
@@ -500,59 +500,59 @@ pass:
 
 ---
 
-## ~~Org-baseline access reaches every scopedAuth router, not just the 6 tested~~ — interim fix + follow-up plan, RESOLVED
+## ~~Org-baseline access reaches every scopedAuth router, not just the 6 tested~~ â€” interim fix + follow-up plan, RESOLVED
 
 **Where:** `packages/lcyt-backend/src/middleware/project-access.js`, `packages/lcyt-backend/src/routes/mcp-tokens.js`, `packages/plugins/lcyt-agent/src/routes/ai-providers-project.js`, `docs/plans/plan_project_roles.md` (new)
 
-**Finding:** `getEffectiveProjectAccessLevel()`'s sweep (this same PR) was scoped/tested against 6 specific routes, but because it lives in the single shared `middleware/project-access.js` gate, it actually reaches **every** `scopedAuth('<resource>')`-mounted router — dsk, cue, token, ai, agent, role, connector, action, variable, operator, production. Two of those, `POST /mcp-tokens` (mint a personal, exportable MCP access token) and `POST/PUT/DELETE /ai/providers` (add a credentialed AI provider), do no further role check beyond "the middleware let me through" — so an org member with only baseline access (even the org `viewer` tier) could mint a durable, exportable credential for a project they were never explicitly invited to, right from the Setup Hub UI's own "Generate token" button.
+**Finding:** `getEffectiveProjectAccessLevel()`'s sweep (this same PR) was scoped/tested against 6 specific routes, but because it lives in the single shared `middleware/project-access.js` gate, it actually reaches **every** `scopedAuth('<resource>')`-mounted router â€” dsk, cue, token, ai, agent, role, connector, action, variable, operator, production. Two of those, `POST /mcp-tokens` (mint a personal, exportable MCP access token) and `POST/PUT/DELETE /ai/providers` (add a credentialed AI provider), do no further role check beyond "the middleware let me through" â€” so an org member with only baseline access (even the org `viewer` tier) could mint a durable, exportable credential for a project they were never explicitly invited to, right from the Setup Hub UI's own "Generate token" button.
 
-**Resolution:** discussed with the project owner, who specified a fuller target model (per-project visibility private/team, a configurable org-baseline ceiling of viewer/editor — never admin — a unified owner/admin/editor/viewer role vocabulary, and page-scoped write gates: Setup=explicit-admin-only, Assets=editor+, Production=still-undecided). Building that full model was explicitly scoped OUT of this PR (still evolving — the Production/operator question is open) in favor of a narrow, well-tested interim fix: `POST /mcp-tokens`/`PATCH`/`DELETE` and `POST/PUT/DELETE /ai/providers` now require **explicit** `project_members` owner/admin (`getMemberAccessLevel`, not the org-baseline-inclusive resolver) regardless of the broader gate. `GET` on both stays on the broad gate.
+**Resolution:** discussed with the project owner, who specified a fuller target model (per-project visibility private/team, a configurable org-baseline ceiling of viewer/editor â€” never admin â€” a unified owner/admin/editor/viewer role vocabulary, and page-scoped write gates: Setup=explicit-admin-only, Assets=editor+, Production=still-undecided). Building that full model was explicitly scoped OUT of this PR (still evolving â€” the Production/operator question is open) in favor of a narrow, well-tested interim fix: `POST /mcp-tokens`/`PATCH`/`DELETE` and `POST/PUT/DELETE /ai/providers` now require **explicit** `project_members` owner/admin (`getMemberAccessLevel`, not the org-baseline-inclusive resolver) regardless of the broader gate. `GET` on both stays on the broad gate.
 
-**Left open at the time, tracked in `docs/plans/plan_project_roles.md` — now closed:** `lcyt-dsk`'s template/viewport routers, `lcyt-connectors`, `targets`/`translation`/`stt config` were all gated in the 2026-07-26 phase plan (commit `c083332`, "Phase 2 Streams A+C: Setup-tier gates on targets/translation/stt/connectors/roles" — `/connectors` specifically got `scopedAuth('connector')` + `requireProjectRole(db, 'setup')` in `server.js`, same shape as everything else here); `lcyt-production`'s camera/mixer/encoder/bridge CRUD got the (by-then-decided) `operator` tier the same pass. `lcyt-rtmp`'s egress/ingestion/radio config and `icons`/`storage` were the two pieces that phase plan explicitly deferred on a separate auth-model blocker (ephemeral-session-only middleware, no resolvable `userId`) — both migrated onto `scopedAuth()`/`requireProjectRole('setup')` 2026-09-10, see this file's own resolved entry for that migration's recipe. Every route this entry named is now gated; nothing outstanding from this specific finding.
+**Left open at the time, tracked in `docs/plans/plan_project_roles.md` â€” now closed:** `lcyt-dsk`'s template/viewport routers, `lcyt-connectors`, `targets`/`translation`/`stt config` were all gated in the 2026-07-26 phase plan (commit `c083332`, "Phase 2 Streams A+C: Setup-tier gates on targets/translation/stt/connectors/roles" â€” `/connectors` specifically got `scopedAuth('connector')` + `requireProjectRole(db, 'setup')` in `server.js`, same shape as everything else here); `lcyt-production`'s camera/mixer/encoder/bridge CRUD got the (by-then-decided) `operator` tier the same pass. `lcyt-rtmp`'s egress/ingestion/radio config and `icons`/`storage` were the two pieces that phase plan explicitly deferred on a separate auth-model blocker (ephemeral-session-only middleware, no resolvable `userId`) â€” both migrated onto `scopedAuth()`/`requireProjectRole('setup')` 2026-09-10, see this file's own resolved entry for that migration's recipe. Every route this entry named is now gated; nothing outstanding from this specific finding.
 
-(Found during: `/code-review` pass on PR #289, 2026-07-20 — design conversation follow-up. Fully resolved as of 2026-09-10.)
+(Found during: `/code-review` pass on PR #289, 2026-07-20 â€” design conversation follow-up. Fully resolved as of 2026-09-10.)
 
 ---
 
-## ~~Bridge security: atem_switch commands never carry a port, so a port-qualified IP rule can never match them~~ — RESOLVED 2026-09-10
+## ~~Bridge security: atem_switch commands never carry a port, so a port-qualified IP rule can never match them~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/bridge-manager.js`'s `_resolveIpTargets()`, `packages/lcyt-bridge/src/bridge.js`'s duplicate, `packages/plugins/lcyt-production/src/adapters/mixer/atem.js`
 
-**Original finding:** `_resolveIpTargets()` always resolved `port: null` for `atem_switch` commands, since the command object never carried one. `matchesHostPattern()`'s port-suffix check meant a rule written with a `:port` suffix (e.g. `"192.168.1.100:9910"`) could never match — a host-only pattern still worked and was the safe workaround.
+**Original finding:** `_resolveIpTargets()` always resolved `port: null` for `atem_switch` commands, since the command object never carried one. `matchesHostPattern()`'s port-suffix check meant a rule written with a `:port` suffix (e.g. `"192.168.1.100:9910"`) could never match â€” a host-only pattern still worked and was the safe workaround.
 
-**Resolved:** threaded a real `port` field through the whole path instead of taking either of the two previously-rejected shortcuts. `getSwitchCommand()` (`adapters/mixer/atem.js`) now includes `port: connectionConfig.port ?? ATEM_DEFAULT_PORT` (`atem-connection`'s own `DEFAULT_PORT`, 9910 — the same value this adapter's `connect()` and `AtemPool` have always dialed, so existing rows with no configured port see zero behavior change); a mixer's `connectionConfig` can now optionally set its own `port`. `_resolveIpTargets()` in both `bridge-manager.js` and `lcyt-bridge/src/bridge.js` use the command's real port instead of hardcoding `null`. A port-qualified rule now correctly matches/blocks an `atem_switch` command; host-only rules keep working exactly as before.
+**Resolved:** threaded a real `port` field through the whole path instead of taking either of the two previously-rejected shortcuts. `getSwitchCommand()` (`adapters/mixer/atem.js`) now includes `port: connectionConfig.port ?? ATEM_DEFAULT_PORT` (`atem-connection`'s own `DEFAULT_PORT`, 9910 â€” the same value this adapter's `connect()` and `AtemPool` have always dialed, so existing rows with no configured port see zero behavior change); a mixer's `connectionConfig` can now optionally set its own `port`. `_resolveIpTargets()` in both `bridge-manager.js` and `lcyt-bridge/src/bridge.js` use the command's real port instead of hardcoding `null`. A port-qualified rule now correctly matches/blocks an `atem_switch` command; host-only rules keep working exactly as before.
 
 (Found during: code-review pass on the bridge security layer, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
-## ~~Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time~~ — RESOLVED 2026-09-10
+## ~~Bridge security: the "stay unauthenticated despite opts.auth" carve-out pattern is now hand-rolled a third time~~ â€” RESOLVED 2026-09-10
 
 **Where:** `packages/plugins/lcyt-production/src/auth-bypass.js` (new), `packages/plugins/lcyt-production/src/routes/bridge.js`'s `isUnauthenticatedBridgeRoute()`, `packages/plugins/lcyt-production/src/routes/mixers.js`'s `isUnauthenticatedMixerRoute()`, `packages/plugins/lcyt-production/src/routes/cameras.js`'s `isUnauthenticatedCameraRoute()` + its own copy of `hasAuthCredentials(req)`.
 
-**Original finding:** Three routers each independently implemented "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function, wired up with hand-copied `if (auth) { router.use((req,res,next) => matcher(req) ? next() : auth(req,res,next)) }` boilerplate. `routes/bridge.js`'s own comment acknowledged the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper. The three copies weren't even structurally aligned — `mixers.js`'s matcher took `req` and was conditional via `hasAuthCredentials(req)`; `cameras.js`'s and `bridge.js`'s took a bare `path` and were unconditional — so there was no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`." A predicted trigger for finally extracting a shared helper ("if a fourth router ever needs this carve-out") arrived the same day from an unrelated angle: wiring the device-role JWT into `CameraStreamPage.jsx`/`LcytMixerPage.jsx` (the WHIP/kiosk auth follow-up, see the resolved entry above) required `cameras.js`'s carve-out to become conditional exactly like `mixers.js`'s, which meant either extracting `hasAuthCredentials()` or copying it a second time.
+**Original finding:** Three routers each independently implemented "let this path through even when `opts.auth` is configured, because it authenticates a different way" as a local regex/path-matching function, wired up with hand-copied `if (auth) { router.use((req,res,next) => matcher(req) ? next() : auth(req,res,next)) }` boilerplate. `routes/bridge.js`'s own comment acknowledged the reinvention ("mirrors routes/cameras.js's isUnauthenticatedCameraRoute()") rather than factoring it into a shared helper. The three copies weren't even structurally aligned â€” `mixers.js`'s matcher took `req` and was conditional via `hasAuthCredentials(req)`; `cameras.js`'s and `bridge.js`'s took a bare `path` and were unconditional â€” so there was no single place to audit "which routes in this plugin are intentionally public despite `opts.auth`." A predicted trigger for finally extracting a shared helper ("if a fourth router ever needs this carve-out") arrived the same day from an unrelated angle: wiring the device-role JWT into `CameraStreamPage.jsx`/`LcytMixerPage.jsx` (the WHIP/kiosk auth follow-up, see the resolved entry above) required `cameras.js`'s carve-out to become conditional exactly like `mixers.js`'s, which meant either extracting `hasAuthCredentials()` or copying it a second time.
 
-**Resolved:** two independent fixes landed the same day and were merged together. (1) Added `auth-bypass.js` exporting `createAuthWithBypass(auth, matcher)` — returns `null` when `auth` is falsy (preserving each router's `if (authMiddleware) router.use(...)` opt-in pattern), otherwise wraps `auth` so any request `matcher(req)` matches skips it; all three routers now call it instead of hand-rolling the wrapper. (2) `cameras.js`'s matcher was brought in line with `mixers.js`'s shape — `isUnauthenticatedCameraRoute(req)` now takes `req` and its `/whip`/`/whip-url` carve-out is conditional via its own `hasAuthCredentials(req)` copy (thumbnail routes stay unconditionally open — browsers never attach `Authorization` to `<img src>`). Net effect: the router-level wiring boilerplate is unified across all three routers (one shared factory, not three copies); the *matcher* functions themselves are deliberately still separate per router (genuinely different rules: `bridge.js`'s three carve-out routes are always bridge-agent-token-authed with no credentialed/uncredentialed distinction to make, so it stays unconditional and keyed on `path`; `cameras.js`/`mixers.js` are now both conditional and keyed on `req`, but `hasAuthCredentials()` itself is still a small copy in each — a fifth+ router needing it is the next natural trigger to share that one helper too, same recommendation as the sibling "URL→host:port" duplication entry above). `packages/plugins/lcyt-production` test suite: 287/287 (2 new cross-tenant/device-token tests added for `cameras.js`'s newly-conditional carve-out).
+**Resolved:** two independent fixes landed the same day and were merged together. (1) Added `auth-bypass.js` exporting `createAuthWithBypass(auth, matcher)` â€” returns `null` when `auth` is falsy (preserving each router's `if (authMiddleware) router.use(...)` opt-in pattern), otherwise wraps `auth` so any request `matcher(req)` matches skips it; all three routers now call it instead of hand-rolling the wrapper. (2) `cameras.js`'s matcher was brought in line with `mixers.js`'s shape â€” `isUnauthenticatedCameraRoute(req)` now takes `req` and its `/whip`/`/whip-url` carve-out is conditional via its own `hasAuthCredentials(req)` copy (thumbnail routes stay unconditionally open â€” browsers never attach `Authorization` to `<img src>`). Net effect: the router-level wiring boilerplate is unified across all three routers (one shared factory, not three copies); the *matcher* functions themselves are deliberately still separate per router (genuinely different rules: `bridge.js`'s three carve-out routes are always bridge-agent-token-authed with no credentialed/uncredentialed distinction to make, so it stays unconditional and keyed on `path`; `cameras.js`/`mixers.js` are now both conditional and keyed on `req`, but `hasAuthCredentials()` itself is still a small copy in each â€” a fifth+ router needing it is the next natural trigger to share that one helper too, same recommendation as the sibling "URLâ†’host:port" duplication entry above). `packages/plugins/lcyt-production` test suite: 287/287 (2 new cross-tenant/device-token tests added for `cameras.js`'s newly-conditional carve-out).
 
 (Found during: code-review pass on the bridge security layer, 2026-07-26. Resolved 2026-09-10.)
 
 ---
 
-## ~~`GET /keys` only lists projects a user directly owns~~ — FIXED 2026-07-31
+## ~~`GET /keys` only lists projects a user directly owns~~ â€” FIXED 2026-07-31
 
 **Where:** `packages/lcyt-backend/src/routes/keys.js`'s `_userListKeys` (the handler behind `GET /keys`), `packages/lcyt-backend/src/db/project-members.js`.
 
-**Original finding (2026-07-31, Phase 3 pass):** `_userListKeys` called `getKeysByUserId(db, user.userId)`, which only returned projects the calling user directly owned, and unconditionally set `myAccessLevel: 'owner'` on every returned row — it never consulted `getEffectiveProjectAccessLevel()`. An invited project member (editor/operator/viewer/admin) or an org owner/admin relying on the org-admin override (`plan_project_roles.md`, decided 2026-07-26) had no way to see that project via `GET /keys` at all, so `ProjectSettingsPage.jsx`/`ProjectsPage.jsx` — both built exclusively from this endpoint — were only reachable by a project's direct owner. This also meant the Phase 3 owner/admin-gated UI (Team-visibility toggle/ceiling picker, per-member role-change select) had no way to be exercised end-to-end by a real non-owner.
+**Original finding (2026-07-31, Phase 3 pass):** `_userListKeys` called `getKeysByUserId(db, user.userId)`, which only returned projects the calling user directly owned, and unconditionally set `myAccessLevel: 'owner'` on every returned row â€” it never consulted `getEffectiveProjectAccessLevel()`. An invited project member (editor/operator/viewer/admin) or an org owner/admin relying on the org-admin override (`plan_project_roles.md`, decided 2026-07-26) had no way to see that project via `GET /keys` at all, so `ProjectSettingsPage.jsx`/`ProjectsPage.jsx` â€” both built exclusively from this endpoint â€” were only reachable by a project's direct owner. This also meant the Phase 3 owner/admin-gated UI (Team-visibility toggle/ceiling picker, per-member role-change select) had no way to be exercised end-to-end by a real non-owner.
 
-**Fix:** added `getAccessibleProjectsForUser(db, userId)` (`db/project-members.js`) — unions directly-owned projects, explicit `project_members` rows, and team-visible (`restricted = 0`) projects belonging to an org the user is a member of, computing each project's real effective level via `getEffectiveProjectAccessLevel()` (owned rows keep the cheap `'owner'` fast path, since nothing can ever outrank it). `_userListKeys` now calls this instead of `getKeysByUserId` + a hardcoded level. Covered by `packages/lcyt-backend/test/keys-accessible-listing.test.js` (explicit member, org-admin override, org-baseline ceiling, restricted-project exclusion, stranger sees nothing, no-org project unaffected).
+**Fix:** added `getAccessibleProjectsForUser(db, userId)` (`db/project-members.js`) â€” unions directly-owned projects, explicit `project_members` rows, and team-visible (`restricted = 0`) projects belonging to an org the user is a member of, computing each project's real effective level via `getEffectiveProjectAccessLevel()` (owned rows keep the cheap `'owner'` fast path, since nothing can ever outrank it). `_userListKeys` now calls this instead of `getKeysByUserId` + a hardcoded level. Covered by `packages/lcyt-backend/test/keys-accessible-listing.test.js` (explicit member, org-admin override, org-baseline ceiling, restricted-project exclusion, stranger sees nothing, no-org project unaffected).
 
 **Follow-on UI fix:** `ProjectSettingsPage.jsx`'s Danger Zone tab (delete/rename project) was previously always rendered regardless of access level, harmlessly, since only owners could ever reach the page before this fix. `DELETE`/`PATCH /keys/:key` are enforced backend-side as strict `api_keys.user_id === userId` ownership (not even project `'admin'` qualifies), so now that non-owners can reach the page, the tab is hidden unless `myAccessLevel === 'owner'` (with a fallback off the tab if the previously-selected tab is no longer visible). Covered by new cases in `ProjectSettingsPage.test.jsx`.
 
-(Originally found during: `plan_project_roles.md` Phase 3 — `ProjectSettingsPage.jsx` Team visibility + role-assignment UI, 2026-07-31. Fixed same day per explicit follow-up request.)
+(Originally found during: `plan_project_roles.md` Phase 3 â€” `ProjectSettingsPage.jsx` Team visibility + role-assignment UI, 2026-07-31. Fixed same day per explicit follow-up request.)
 
 ---
 
-## RESOLVED — YouTube broadcast privacy is now configurable (auto-start/stop still hardcoded)
+## RESOLVED â€” YouTube broadcast privacy is now configurable (auto-start/stop still hardcoded)
 
 **Where:** `packages/plugins/lcyt-platforms/src/adapters/youtube.js`'s `createScheduled()`/`updateSchedule()`, `broadcasts.privacy_status`
 
@@ -560,11 +560,11 @@ pass:
 
 **Resolved 2026-07-30** (repo owner asked for it, keeping unlisted as the default): `broadcasts.privacy_status` is a real column (additive migration, `NOT NULL DEFAULT 'unlisted'`), validated against `PRIVACY_STATUSES` on both create and update, accepted by the broadcasts routes, threaded into `createScheduled`/`updateSchedule`, and exposed as a Visibility select in the broadcast Platforms panel. `updateSchedule` only sends the `status` part when a visibility was actually supplied, so an ordinary edit cannot silently reset what the operator set on YouTube.
 
-**Still open:** `enableAutoStart`/`enableAutoStop` remain hardcoded to `false`. That matches the explicit Go Live / End Stream buttons this feature ships, so it is not currently a gap — revisit only if someone wants YouTube to start the broadcast automatically when the encoder connects.
+**Still open:** `enableAutoStart`/`enableAutoStop` remain hardcoded to `false`. That matches the explicit Go Live / End Stream buttons this feature ships, so it is not currently a gap â€” revisit only if someone wants YouTube to start the broadcast automatically when the encoder connects.
 
 ---
 
-## RESOLVED — cue-triggered actions: per-device cooldown, loop guard, missing atoms
+## RESOLVED â€” cue-triggered actions: per-device cooldown, loop guard, missing atoms
 
 **Where:** `packages/plugins/lcyt-actions/src/{executor,cue-dispatcher}.js`, `packages/lcyt-backend/src/server.js`
 
@@ -576,7 +576,7 @@ pass:
 
 ---
 
-## ~~Action steps store device labels, not ids (renames break saved atoms)~~ — RESOLVED 2026-10-05
+## ~~Action steps store device labels, not ids (renames break saved atoms)~~ â€” RESOLVED 2026-10-05
 
 **Where:** `packages/lcyt-web/src/components/ActionStepBuilder.jsx`, `packages/lcyt-web/src/lib/action-atoms.js`
 
@@ -588,13 +588,13 @@ pass:
 
 ---
 
-## ~~`crop_preset` has no working named-action or cue-triggered path~~ — RESOLVED 2026-10-04 (PR #310)
+## ~~`crop_preset` has no working named-action or cue-triggered path~~ â€” RESOLVED 2026-10-04 (PR #310)
 
 **Where:** `packages/plugins/lcyt-actions` (named actions), `packages/plugins/lcyt-cues`
 (cue engine), `packages/lcyt-web/src/lib/metacode-actions.js` (named-action execution)
 
 **Finding:** `docs/plans/plan_vertical_crop.md` Phase 4 asked for a `crop_preset`
-"named-action/cue/tool" — recall a crop preset "the same way other production
+"named-action/cue/tool" â€” recall a crop preset "the same way other production
 actions are today," by analogy with `camera.preset`/`mixer.switch`. Investigating
 before implementing (per this session's instructions) found that analogy doesn't
 hold:
@@ -603,23 +603,23 @@ hold:
   states it plainly: "Parsing, `@`-ref expansion..., and send-time execution all
   live in the web client." `lcyt-web/src/lib/metacode-actions.js`'s `applyAtoms()`
   only knows `api:`/`!api:`/`api!:` (connector triggers), `audio:start`/`stop`, and
-  generic persistent variable/graphics/section assignment atoms — there is no
+  generic persistent variable/graphics/section assignment atoms â€” there is no
   camera/mixer/production-control atom at all, for *any* device, today. Adding
   `crop_preset:` as the first one would mean inventing that category, and doing it
-  requires an `lcyt-web` change — explicitly out of scope for the session that did
+  requires an `lcyt-web` change â€” explicitly out of scope for the session that did
   this work ("no `lcyt-web` conflict").
 - **Cue-fired actions are descriptive-only.** `cue_rules.action` (and
   `cue_events.action`) is arbitrary JSON, but `cue-processor.js` only ever does one
   thing with it: attach it to the `cue_fired` SSE event for the *frontend* to
   interpret (today: jump the rundown pointer). No cue firing, for any action type,
   executes a backend side effect. Making `crop_preset` the first one would mean
-  building a new backend cue-action-dispatcher — a bigger, more architecturally-loaded
+  building a new backend cue-action-dispatcher â€” a bigger, more architecturally-loaded
   change than "follow the existing pattern," since there is no existing pattern of
   a cue driving hardware to follow.
 
 **What *was* built instead:** the one piece of "recall a crop preset the same way
 other production actions are today" that has a real, precedented, backend-only
-mechanism — a `crop.list_presets`/`crop.activate_preset` AI-tool pair
+mechanism â€” a `crop.list_presets`/`crop.activate_preset` AI-tool pair
 (`packages/lcyt-tools/src/tools/crop.js`), registered exactly like
 `camera.preset`/`mixer.switch` and added to the Production Assistant role's
 `available_tools` (`packages/plugins/lcyt-agent/src/ai-roles.js`).
@@ -639,15 +639,15 @@ doesn't support the concept at all.
 
 ---
 
-## ~~Perception job dispatch/auth-header logic duplicated across three packages~~ — RESOLVED 2026-10-05
+## ~~Perception job dispatch/auth-header logic duplicated across three packages~~ â€” RESOLVED 2026-10-05
 
 **Where:** `packages/lcyt-backend/src/ffmpeg/worker-runner.js` (pre-existing), `packages/plugins/lcyt-production/src/perception-manager.js`, `packages/lcyt-worker-daemon/src/perception-job.js` (both new, `plan_video_perception.md` Phase 2)
 
-**Finding:** All three files independently implement the same shape — "JSON headers + an optional internal-auth token header + POST/DELETE to whichever of `ORCHESTRATOR_URL`/`WORKER_DAEMON_URL` is configured, preferring the orchestrator" — with three different error-handling conventions (`worker-runner.js` throws, `perception-manager.js` throws, `perception-job.js` logs-and-swallows). `perception-manager.js` already factors its own internal `_headers()`/`_post()`/`_delete()` helpers cleanly; the duplication is *across* files, not within any one of them. A future change to how the internal-auth token is passed (signed header, rotated secret, etc.) needs to be found and updated in three places by hand instead of one.
+**Finding:** All three files independently implement the same shape â€” "JSON headers + an optional internal-auth token header + POST/DELETE to whichever of `ORCHESTRATOR_URL`/`WORKER_DAEMON_URL` is configured, preferring the orchestrator" â€” with three different error-handling conventions (`worker-runner.js` throws, `perception-manager.js` throws, `perception-job.js` logs-and-swallows). `perception-manager.js` already factors its own internal `_headers()`/`_post()`/`_delete()` helpers cleanly; the duplication is *across* files, not within any one of them. A future change to how the internal-auth token is passed (signed header, rotated secret, etc.) needs to be found and updated in three places by hand instead of one.
 
-**Why skipped:** the three files live in three different npm workspace packages (`lcyt-backend`, `lcyt-production`, `lcyt-worker-daemon`). A real fix means either extracting the shared logic into the common `lcyt` core library (touching a dependency all three packages share) or accepting the duplication as a cost of the package boundary. `worker-runner.js` in particular is pre-existing, stable, tested ffmpeg-job-dispatch code with no relationship to this PR's actual diff — refactoring it here to shave duplication off a brand-new, unrelated feature (perception jobs) is a real regression-risk-to-payoff mismatch for a cosmetic finding, not a correctness bug. Worth doing as its own focused pass if/when a fourth dispatch consumer shows up (the repo's own stated threshold for promoting a duplicated pattern, per `ROADMAP.md` §0's precedent for `DeviceRegistry`'s callback-to-EventBus promotion question) or when the auth-token scheme actually needs to change and the duplication becomes a real maintenance cost rather than a theoretical one.
+**Why skipped:** the three files live in three different npm workspace packages (`lcyt-backend`, `lcyt-production`, `lcyt-worker-daemon`). A real fix means either extracting the shared logic into the common `lcyt` core library (touching a dependency all three packages share) or accepting the duplication as a cost of the package boundary. `worker-runner.js` in particular is pre-existing, stable, tested ffmpeg-job-dispatch code with no relationship to this PR's actual diff â€” refactoring it here to shave duplication off a brand-new, unrelated feature (perception jobs) is a real regression-risk-to-payoff mismatch for a cosmetic finding, not a correctness bug. Worth doing as its own focused pass if/when a fourth dispatch consumer shows up (the repo's own stated threshold for promoting a duplicated pattern, per `ROADMAP.md` Â§0's precedent for `DeviceRegistry`'s callback-to-EventBus promotion question) or when the auth-token scheme actually needs to change and the duplication becomes a real maintenance cost rather than a theoretical one.
 
-(Found during: `/code-review` pass on `plan_video_perception.md` Phases 2-3, 2026-07-21 — reuse angle.)
+(Found during: `/code-review` pass on `plan_video_perception.md` Phases 2-3, 2026-07-21 â€” reuse angle.)
 
 **Resolved 2026-10-05:** two of the three copies (the worker runner and the worker daemon) were deleted when `lcyt-orchestrator` and `lcyt-worker-daemon` were retired; perception dispatch is now only the fffleet path in `perception-manager.js`.
 
@@ -655,11 +655,11 @@ doesn't support the concept at all.
 
 **Where:** `packages/lcyt-web/src/components/AssetsPage.jsx`, `packages/lcyt-tools/src/tools/assets.js`, `docs/plans/plan_ai_roles_framework.md`
 
-**Finding:** `plan_ai_roles_framework.md` describes Asset Control Assistant as "the same dialog-driving pattern as Setup Assistant... scoped to the Assets page's tools" — but its actual tools (`asset.update`/`asset.delete`, `packages/lcyt-tools/src/tools/assets.js`) operate on `lcyt-dsk`'s image-layer asset library (`listImages`/`updateImageSettings`/`deleteImage`), which is rendered as the Media Library inside `DskEditorPage.jsx`, not as any card on `AssetsPage.jsx` — `AssetsPage.jsx`'s 8 cards are graphics templates, cue rules, actions, icons, caption files, broadcasts, thumbnails, and videos, none of which correspond to `asset.*`'s target rows. So mounting `RoleAssistantPanel` (this pass's new `useGuidedAction`-driven chat panel) on `AssetsPage.jsx`, per the plan's stated scope, means its `pendingActions` never resolve to a real dialog — they render as plain "no interactive dialog is wired up for this yet" chat text (see `RoleAssistantPanel.jsx`'s fallback path) rather than opening/pre-filling a form.
+**Finding:** `plan_ai_roles_framework.md` describes Asset Control Assistant as "the same dialog-driving pattern as Setup Assistant... scoped to the Assets page's tools" â€” but its actual tools (`asset.update`/`asset.delete`, `packages/lcyt-tools/src/tools/assets.js`) operate on `lcyt-dsk`'s image-layer asset library (`listImages`/`updateImageSettings`/`deleteImage`), which is rendered as the Media Library inside `DskEditorPage.jsx`, not as any card on `AssetsPage.jsx` â€” `AssetsPage.jsx`'s 8 cards are graphics templates, cue rules, actions, icons, caption files, broadcasts, thumbnails, and videos, none of which correspond to `asset.*`'s target rows. So mounting `RoleAssistantPanel` (this pass's new `useGuidedAction`-driven chat panel) on `AssetsPage.jsx`, per the plan's stated scope, means its `pendingActions` never resolve to a real dialog â€” they render as plain "no interactive dialog is wired up for this yet" chat text (see `RoleAssistantPanel.jsx`'s fallback path) rather than opening/pre-filling a form.
 
-**Skipped because:** fixing it for real means either (a) registering guided-action targets for `asset.update`/`asset.delete` inside `DskEditorPage.jsx`'s Media Library instead, which puts the chat panel on the wrong page relative to where its tools' dialogs actually live, or (b) building an image-asset management section on `AssetsPage.jsx` itself that doesn't exist today — both are a real, separate scope decision (which page should own DSK image assets), not something to resolve as a side effect of wiring up the chat panel this pass was scoped to add. The chat panel and its useful non-dialog capabilities (`asset.list` reads, proposing changes with a plain-text description) still work; only the "walk the human through the real form" behavior is unavailable for this one role.
+**Skipped because:** fixing it for real means either (a) registering guided-action targets for `asset.update`/`asset.delete` inside `DskEditorPage.jsx`'s Media Library instead, which puts the chat panel on the wrong page relative to where its tools' dialogs actually live, or (b) building an image-asset management section on `AssetsPage.jsx` itself that doesn't exist today â€” both are a real, separate scope decision (which page should own DSK image assets), not something to resolve as a side effect of wiring up the chat panel this pass was scoped to add. The chat panel and its useful non-dialog capabilities (`asset.list` reads, proposing changes with a plain-text description) still work; only the "walk the human through the real form" behavior is unavailable for this one role.
 
-(Found during: Lane 4 — Setup Assistant / Asset Control Assistant frontend, plan_ai_roles_framework.md's remaining Tier 1 item, 2026-07-21.)
+(Found during: Lane 4 â€” Setup Assistant / Asset Control Assistant frontend, plan_ai_roles_framework.md's remaining Tier 1 item, 2026-07-21.)
 
 ---
 
@@ -667,7 +667,7 @@ doesn't support the concept at all.
 
 ---
 
-## ~~`HLS_ROOT` / `bootstrap.hls_root` is now unused~~ — RESOLVED 2026-10-05
+## ~~`HLS_ROOT` / `bootstrap.hls_root` is now unused~~ â€” RESOLVED 2026-10-05
 
 **Where:** `packages/lcyt-backend/src/settings/registry.js` (`bootstrap.hls_root`), and the `HLS_ROOT` rows in `packages/lcyt-backend/CLAUDE.md`, `packages/plugins/lcyt-rtmp/README.md`, `docs/DEPLOY.md`, `docs/api/README.md`, `docs/env-vars.md`, `docs/plans/plan_rtmp.md`.
 
@@ -677,10 +677,10 @@ doesn't support the concept at all.
 
 > WRONG, closed 2026-10-06: better-sqlite3 enables `PRAGMA foreign_keys` by default (checked: it returns 1), so the cascades work; the manual deletes in `lcyt-rtmp/src/db/crop.js` are harmless redundancy
 
-## New `ON DELETE CASCADE` on `caption_targets`/`translation_vendor_config`/`translation_targets` is inert — `PRAGMA foreign_keys` is never enabled
+## New `ON DELETE CASCADE` on `caption_targets`/`translation_vendor_config`/`translation_targets` is inert â€” `PRAGMA foreign_keys` is never enabled
 
 **Where:** `packages/lcyt-backend/src/db/schema.js` (the three new tables from
-`plan_selfservice_config_backend.md` §1) vs. `packages/lcyt-backend/src/db/keys.js`'s
+`plan_selfservice_config_backend.md` Â§1) vs. `packages/lcyt-backend/src/db/keys.js`'s
 `deleteKey()` and `routes/keys.js`'s `DELETE /keys/:key?permanent=true` handler.
 
 **Finding:** All three new tables declare `api_key TEXT ... REFERENCES api_keys(key)
@@ -688,20 +688,20 @@ ON DELETE CASCADE`, matching the same declaration already used by
 `project_features`/`project_members`/`project_member_permissions`/`project_device_roles`.
 But nowhere in the codebase is `PRAGMA foreign_keys = ON` ever issued on the
 `better-sqlite3` connection (checked via grep), and SQLite disables FK
-enforcement by default — so every `ON DELETE CASCADE` in this schema,
+enforcement by default â€” so every `ON DELETE CASCADE` in this schema,
 including the three new ones, is currently a no-op. `deleteKey()` is a bare
 `DELETE FROM api_keys WHERE key = ?`; the permanent-delete route
 (`routes/keys.js`) only manually cleans up DSK images before calling it.
 Permanently deleting a project key today already leaves orphaned rows behind
-in every one of those "cascading" child tables — this change adds three more
+in every one of those "cascading" child tables â€” this change adds three more
 tables to that existing gap rather than introducing a new one.
 
-**Why skipped:** Pre-existing, repo-wide gap (not specific to this diff) —
+**Why skipped:** Pre-existing, repo-wide gap (not specific to this diff) â€”
 fixing it means either (a) turning on `PRAGMA foreign_keys = ON`, which risks
 surfacing latent FK-violation errors from years of already-orphaned rows in
 production-shaped databases the moment it's enabled, or (b) adding manual
 `DELETE FROM <table> WHERE api_key = ?` cleanup for every child table (there
-are now 7+) inside `deleteKey()`/the permanent-delete route — a real fix, but
+are now 7+) inside `deleteKey()`/the permanent-delete route â€” a real fix, but
 one that touches shared deletion code far outside this plan's scope and
 deserves its own audit + test pass across all affected tables, not three
 lines added incidentally by a config-CRUD feature.
@@ -711,7 +711,7 @@ lines added incidentally by a config-CRUD feature.
 **Update (2026-07-11): the premise is stale.** The installed `better-sqlite3`
 enables `PRAGMA foreign_keys` **by default** (verified: `new Database(':memory:')`
 reports `foreign_keys = 1`; no explicit pragma exists in the codebase, but none
-is needed). So the `ON DELETE CASCADE` declarations are live, not inert — FK
+is needed). So the `ON DELETE CASCADE` declarations are live, not inert â€” FK
 constraint errors are real (a test writing `DELETE FROM organizations` before
 `DELETE FROM api_keys` fails with `SQLITE_CONSTRAINT_FOREIGNKEY`). The residual
 concern inverts: rather than orphaned rows, deployments upgraded from an era of
@@ -724,38 +724,38 @@ then this entry can close.
 
 - **`api_keys(key)` children (core schema):** `caption_targets`,
   `translation_vendor_config`, `translation_targets`, `project_features`,
-  `project_members` (→ `project_member_permissions` cascades transitively via
-  `member_id`), `project_device_roles` — **every one is `ON DELETE CASCADE`**.
+  `project_members` (â†’ `project_member_permissions` cascades transitively via
+  `member_id`), `project_device_roles` â€” **every one is `ON DELETE CASCADE`**.
   So the original finding's premise was doubly stale: not only is FK
   enforcement live, but there is no NO-ACTION `api_keys(key)` child table in
-  the core schema left for `deleteKey()` to break on. Confirmed empirically —
+  the core schema left for `deleteKey()` to break on. Confirmed empirically â€”
   `deleteKey()` on a key with rows in all six tables did not throw.
-- **`users(id)` / `organizations(id)` references — this is where the real
+- **`users(id)` / `organizations(id)` references â€” this is where the real
   breakage was:**
-  - `organizations.owner_user_id` — **NOT NULL, no `ON DELETE` action.**
+  - `organizations.owner_user_id` â€” **NOT NULL, no `ON DELETE` action.**
     Deleting a user who owns an org threw `SQLITE_CONSTRAINT_FOREIGNKEY`.
     Reproduced both in the self-service `DELETE /auth/me` flow (a user who is
-    the *sole* member of their own org — the route's existing pre-check only
+    the *sole* member of their own org â€” the route's existing pre-check only
     blocked the "owns an org **with other members**" case, so a solo-owned
     org fell through to `deleteUserAccount()` and threw) and via direct
     `db/orgs.js` calls.
-  - `api_keys.org_id` — no `ON DELETE` action. Deleting an org with member
+  - `api_keys.org_id` â€” no `ON DELETE` action. Deleting an org with member
     projects threw the same error; `DELETE /orgs/:id` had no existing test
     covering this at all.
   - `org_members.invited_by`, `project_members.invited_by`,
     `project_features.granted_by`, `user_features.granted_by`,
-    `site_feature_policies.updated_by`, `org_feature_overrides.set_by` — all
+    `site_feature_policies.updated_by`, `org_feature_overrides.set_by` â€” all
     nullable, no `ON DELETE` action. Lower-severity (audit-trail
     attribution, not ownership) but still a real, enforced constraint that
     could block a user delete if that user had ever invited/granted/set
     anything referenced by one of these columns.
-  - `api_keys.user_id` — nullable, no `ON DELETE` action, but already handled
+  - `api_keys.user_id` â€” nullable, no `ON DELETE` action, but already handled
     correctly pre-existing (`UPDATE api_keys SET user_id = NULL` in the admin
     route, and `deleteOwnedProjectsForUser()` deleting the key outright in
     the self-service path).
 
   **Fix:** `packages/lcyt-backend/src/db/orgs.js` gained
-  `reassignOrDeleteOwnedOrgs(db, userId)` — for each org the user owns,
+  `reassignOrDeleteOwnedOrgs(db, userId)` â€” for each org the user owns,
   promotes another member (admin-ranked first, then earliest-joined) to
   owner, or if the user is the org's sole member, detaches its projects
   (`api_keys.org_id = NULL`, same semantic as the sibling fix below) and
@@ -777,12 +777,12 @@ then this entry can close.
   (`caption_usage`, `session_stats`, `caption_errors`, `auth_events`,
   `sessions`, `caption_files`, `icons`, `viewer_key_daily_stats`,
   `mcp_tokens`, plus `rtmp_stream_stats`/`rtmp_relays` when present) so a
-  permanent key delete doesn't silently orphan rows there — this part isn't
+  permanent key delete doesn't silently orphan rows there â€” this part isn't
   FK-required (no constraint is declared on those columns) but closes the
   data-hygiene half of the original finding.
 
   **Chosen semantics (documented for anyone revisiting):** a user's owned
-  *projects* survive a user delete (unlink, don't delete — matches the
+  *projects* survive a user delete (unlink, don't delete â€” matches the
   pre-existing admin-route behavior this audit found already in place); a
   user's owned *organizations* are transferred to another member when
   possible, torn down only when the user was the org's sole member; an org's
@@ -795,33 +795,33 @@ then this entry can close.
   existing `activeProjects` force-unlink behavior's "force means force"
   posture, but a site admin silently losing visibility into who now owns a
   team is a real product question or worth a confirmation UI. Not resolved
-  here — flagging for whoever next touches `DELETE /admin/users/:id`.
+  here â€” flagging for whoever next touches `DELETE /admin/users/:id`.
 
-  **Residual, per-plugin (not fixed here — plugin files are out of scope for
+  **Residual, per-plugin (not fixed here â€” plugin files are out of scope for
   this pass):** every plugin table that keys off `api_key` (`lcyt-agent`:
   `ai_config`, `ai_model_configs`, `project_ai_role_configs`, `agent_events`,
   `agent_context`, `ai_providers.owner_api_key`, `ai_provider_grants`;
   `lcyt-connectors`: `api_connectors`, `variables`; `lcyt-cues`: `cue_rules`,
   `cue_events`; `lcyt-dsk`: `dsk_templates`, `dsk_viewports` (its "images"
-  actually live in `lcyt-backend`'s own `caption_files` table — already
+  actually live in `lcyt-backend`'s own `caption_files` table â€” already
   covered by `deleteKey()`'s cleanup above); `lcyt-files`:
   `key_storage_config`; `lcyt-music`: `music_events`, `music_config`;
   `lcyt-rtmp`: `rtmp_relays` (already cleaned up defensively via the
   `try/catch` in `deleteKey()`/`cleanRevokedKeys()`, but only when the table
   exists), `rtmp_stream_stats` (same), `stt_config`, `stt_source_languages`,
   `radio_config`) declares its `api_key` column with **no FK constraint at
-  all** — same undeclared-reference shape as `lcyt-backend`'s own
+  all** â€” same undeclared-reference shape as `lcyt-backend`'s own
   `caption_usage`/`mcp_tokens`/etc. before this pass. None of them will
   throw `SQLITE_CONSTRAINT_FOREIGNKEY` on a key delete (no constraint is
   declared to violate), but none of them get cleaned up by `deleteKey()`
   either, since `lcyt-backend` doesn't reach into plugin internals (see the
-  Plugin Architecture convention in the root `CLAUDE.md`) — a permanent key
+  Plugin Architecture convention in the root `CLAUDE.md`) â€” a permanent key
   delete today orphans rows in all of these. Each plugin's own delete/cleanup
   path (if any) should audit this on its own
   schedule.
 
 (Audited 2026-07-11: 888/888 `packages/lcyt-backend` tests pass, including
-new failing-first-then-fixed coverage for all four paths above —
+new failing-first-then-fixed coverage for all four paths above â€”
 `test/keys.test.js` (`deleteKey()` cascade + orphan cleanup),
 `test/orgs.test.js` (`DELETE /orgs/:id` with member projects),
 `test/admin.test.js` (`DELETE /admin/users/:id` owned-org block/transfer/
@@ -844,7 +844,7 @@ composes via `composeCaptionText(text, captionLang, translations,
 showOriginal)` and does per-target routed composition via
 `translationsByTargetId`, so a "captions"-target translation changes what
 YouTube/viewers see there but not in server-STT mode. Viewers still receive
-the raw `translations` map, so viewer pages can render translations — the gap
+the raw `translations` map, so viewer pages can render translations â€” the gap
 is the composed text (and per-target routing / `show_original` handling).
 
 **Why skipped:** Reproducing `captions.js`'s Phase 5 per-target composition
@@ -852,21 +852,21 @@ is the composed text (and per-target routing / `show_original` handling).
 inside `_deliverTranscript` is a real chunk of duplicated logic; the right fix
 is probably extracting the composition/fan-out block from `routes/captions.js`
 into a shared helper (like `caption-file-writer.js` did for archiving) and
-using it from both paths — its own pass, not a side effect of the archiving
+using it from both paths â€” its own pass, not a side effect of the archiving
 fix that surfaced it.
 
 (Found during: caption/translation pipeline audit after `plan_batch_options`,
-2026-07-10 — the same audit fixed the sibling gap where `_deliverTranscript`
+2026-07-10 â€” the same audit fixed the sibling gap where `_deliverTranscript`
 translated for `backend-file` targets and then dropped the result; archiving
 is now wired via `createSessionCaptionFileWriter` + `setDeliveryHelpers`.)
 
 **Update (2026-07-10): RESOLVED.** The extraction pass ran the same day:
 `src/caption-fanout.js` (`createCaptionFanout({ db })`) now owns the
-extra-target delivery block, `routes/captions.js` calls it (move-not-change —
+extra-target delivery block, `routes/captions.js` calls it (move-not-change â€”
 route tests unchanged as the regression proof), and `SttManager` receives it
 plus `composeCaptionText` via `setDeliveryHelpers`. Server-STT now composes
 YouTube/viewer/primary-sender text (per-row `show_original`, vendor-config
-fallback), honours per-target routing, and registers viewer key owners — a
+fallback), honours per-target routing, and registers viewer key owners â€” a
 stats-attribution miss the extraction also surfaced and fixed. The old
 `broadcastToViewers` injection was removed.
 
@@ -874,13 +874,13 @@ stats-attribution miss the extraction also surfaced and fixed. The old
 
 > RESOLVED 2026-10-06: `createProjectAccessMiddleware` rejects every token kind (session, user/project, device, external) with 401 when `api_keys.active = 0` (`isProjectKeyRevoked`, `middleware/project-access.js`); test in `test/project-access.test.js`
 
-## `getEffectiveProjectAccessLevel()` never checks `api_keys.active` — a revoked project key doesn't invalidate live JWTs of any kind
+## `getEffectiveProjectAccessLevel()` never checks `api_keys.active` â€” a revoked project key doesn't invalidate live JWTs of any kind
 
 **Where:** `packages/lcyt-backend/src/db/project-members.js` (`getMemberAccessLevel()`, `getEffectiveProjectAccessLevel()`), `packages/lcyt-backend/src/middleware/project-access.js`
 
-**Finding:** `validateApiKey()` (`db/keys.js`) checks `api_keys.active`/`revoked_at` and is the gate for the raw-API-key flow, but the JWT-based `createProjectAccessMiddleware()` gate never calls it — `getEffectiveProjectAccessLevel()`/`getMemberAccessLevel()` only ever look at `project_members`/`api_keys.user_id`, never `active`. So revoking a project's key (`DELETE /keys/:key` → `active = 0`) doesn't invalidate any already-issued session/user/project/device JWT for that project; each keeps working until its own TTL expires (2h for session/project tokens, 1h for device, 30d for the user-level token — though a user token alone can't reach a project route without a resolvable projectId). This affects every token kind, not just the 3 the "10 Altitude Issues" entry above flagged (session/external/device) — user/project tokens are equally unchecked.
+**Finding:** `validateApiKey()` (`db/keys.js`) checks `api_keys.active`/`revoked_at` and is the gate for the raw-API-key flow, but the JWT-based `createProjectAccessMiddleware()` gate never calls it â€” `getEffectiveProjectAccessLevel()`/`getMemberAccessLevel()` only ever look at `project_members`/`api_keys.user_id`, never `active`. So revoking a project's key (`DELETE /keys/:key` â†’ `active = 0`) doesn't invalidate any already-issued session/user/project/device JWT for that project; each keeps working until its own TTL expires (2h for session/project tokens, 1h for device, 30d for the user-level token â€” though a user token alone can't reach a project route without a resolvable projectId). This affects every token kind, not just the 3 the "10 Altitude Issues" entry above flagged (session/external/device) â€” user/project tokens are equally unchecked.
 
-**Why skipped:** broader and differently-risky than a mechanical dedup — adding this check could unexpectedly lock out a live session on a project that looks revoked-but-still-cached somewhere, and needs its own reasoning about where in the request path it belongs (every branch? only at issuance via `POST /auth/project-token`? both?) and what error shape callers should expect. Surfaced during the 2026-09-10 auth-middleware repo-study pass; not folded into that pass's scope.
+**Why skipped:** broader and differently-risky than a mechanical dedup â€” adding this check could unexpectedly lock out a live session on a project that looks revoked-but-still-cached somewhere, and needs its own reasoning about where in the request path it belongs (every branch? only at issuance via `POST /auth/project-token`? both?) and what error shape callers should expect. Surfaced during the 2026-09-10 auth-middleware repo-study pass; not folded into that pass's scope.
 
 (Found during: repo-study pass on the "Auth Middleware: 10 Altitude Issues" entry, 2026-09-10.)
 
@@ -889,14 +889,15 @@ stats-attribution miss the extraction also surfaced and fixed. The old
 
 > RESOLVED 2026-10-06: `.github/workflows/integration-tests.yml` now discovers packages by glob (`packages/*`, `packages/plugins/*` with a `test` script), which also adds `lcyt-compute` and `lcyt-tools`, which CI had never run
 
-## RESOLVED — the CI plugin lists have been brought back in line
+## RESOLVED â€” the CI plugin lists have been brought back in line
 
-**Where:** `.github/workflows/integration-tests.yml` — the `detect-changes` job's two `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
+**Where:** `.github/workflows/integration-tests.yml` â€” the `detect-changes` job's two `plugins=` lists, the per-plugin `grep` chain, and `build-unit-matrix`'s full `PACKAGES` array
 
 **Original finding:** CI enumerated plugins by hand in four places and had fallen behind `packages/plugins/`. `lcyt-platforms` was missing entirely, and `lcyt-connectors` and `lcyt-actions` had never been unit-tested by CI at all.
 
-**Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass — `lcyt-connectors` 126 tests, `lcyt-actions` 4.
+**Resolved 2026-07-30** (repo owner asked for it in the same PR): all three are now present in all four spots. Both previously-unrun suites pass â€” `lcyt-connectors` 126 tests, `lcyt-actions` 4.
 
 **Still worth doing:** the lists are still hand-maintained, so the next new plugin can silently opt out of CI exactly the way these did. Replacing them with a glob over `packages/plugins/*` would close that off for good, but it is a change to the CI mechanism rather than its contents and deserves its own PR.
 
 ---
+

@@ -1,11 +1,11 @@
----
+﻿---
 title: Embedding lcyt-web in Another Site
 order: 8
 ---
 
 # Embedding lcyt-web in Another Site
 
-lcyt-web ships **eight** standalone **embed widgets** that you can drop into any page as `<iframe>` elements. Each widget renders only a specific part of the UI, configured entirely through URL parameters — no React knowledge required on the host site.
+lcyt-web ships **eight** standalone **embed widgets** that you can drop into any page as `<iframe>` elements. Each widget renders only a specific part of the UI, configured entirely through URL parameters â€” no React knowledge required on the host site.
 
 ---
 
@@ -16,13 +16,13 @@ lcyt-web ships **eight** standalone **embed widgets** that you can drop into any
 | **Audio capture** | `/embed/audio` | Microphone / speech recognition panel |
 | **Input bar + log** | `/embed/input` | Text input field and sent-captions log (owns the session) |
 | **Sent log only** | `/embed/sentlog` | Read-only delivery log (subscribes to a sibling widget's session) |
-| **Simple file drop** | `/embed/file-drop` | Drop one file → send lines one by one (owns the session) |
+| **Simple file drop** | `/embed/file-drop` | Drop one file â†’ send lines one by one (owns the session) |
 | **Full file UI** | `/embed/files` | Complete file manager: tabs, drop zone, caption view, input bar, sent log |
 | **Settings** | `/embed/settings` | Connection credentials, theme, and CC targets (General + CC tabs) |
 | **RTMP relay** | `/embed/rtmp` | RTMP relay slot management widget |
 | **Viewer** | `/embed/viewer` | Read-only live caption viewer for audience members |
 
-> **Looking for the video player?** The embeddable multilingual video player is served directly from the backend, not from lcyt-web. Use `<iframe src="https://api.example.com/video/<key>">` — see [Multilingual Video Player](./video-player.md).
+> **Looking for the video player?** The embeddable multilingual video player is served directly from the backend, not from lcyt-web. Use `<iframe src="https://api.example.com/video/<key>">` â€” see [Multilingual Video Player](./video-player.md).
 
 ---
 
@@ -47,7 +47,7 @@ All embed pages share these common URL parameters:
 
 | Param | Description | Default |
 |-------|-------------|---------|
-| `server` | Backend relay URL | _(empty — prompts user to connect)_ |
+| `server` | Backend relay URL | _(empty â€” prompts user to connect)_ |
 | `apikey` | LCYT API key | _(empty)_ |
 | `theme` | `dark` or `light` | `dark` |
 
@@ -59,7 +59,7 @@ When both `server` and `apikey` are present the widget connects automatically on
 
 ## Widget Details
 
-### `/embed/audio` — Audio Capture Widget
+### `/embed/audio` â€” Audio Capture Widget
 
 Renders the full `AudioPanel` (microphone button, interim text, VAD, translation pipeline). Owns the backend session when `server` + `apikey` are supplied.
 
@@ -75,7 +75,7 @@ Renders the full `AudioPanel` (microphone button, interim text, VAD, translation
 
 ---
 
-### `/embed/input` — Input Bar + Sent Log Widget
+### `/embed/input` â€” Input Bar + Sent Log Widget
 
 Renders a text caption input field at the bottom and a scrollable sent-captions log above it. Owns its own backend session.
 
@@ -88,7 +88,7 @@ Renders a text caption input field at the bottom and a scrollable sent-captions 
 
 ---
 
-### `/embed/sentlog` — Sent Log Widget (read-only)
+### `/embed/sentlog` â€” Sent Log Widget (read-only)
 
 Renders only the sent-captions log. Does **not** own a session. Instead, it receives the session JWT token and caption texts from a sibling `/embed/audio` or `/embed/input` widget on the same host page via the browser's [`BroadcastChannel`](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel) API, then opens its own independent `EventSource` connection to `/events` on the backend to receive real-time delivery confirmations.
 
@@ -103,14 +103,14 @@ Renders only the sent-captions log. Does **not** own a session. Instead, it rece
 
 ---
 
-### `/embed/file-drop` — Simple File Drop Widget
+### `/embed/file-drop` â€” Simple File Drop Widget
 
 The minimal caption-from-file widget. **Phase 1** shows a large drag-and-drop zone (click to browse is also supported). Drop one `.txt` file and **Phase 2** immediately shows the player:
 
 - The **current line** is displayed prominently in the centre of the widget.
-- **◀ Prev**, **Send**, **▶ Next** buttons control navigation and delivery.
-- Keyboard shortcuts work without clicking buttons: `↑` / `↓` to move, `Enter` to send and advance.
-- A **✕ reset** link in the header returns to Phase 1 to load a different file.
+- **â—€ Prev**, **Send**, **â–¶ Next** buttons control navigation and delivery.
+- Keyboard shortcuts work without clicking buttons: `â†‘` / `â†“` to move, `Enter` to send and advance.
+- A **âœ• reset** link in the header returns to Phase 1 to load a different file.
 - The connection status dot in the header shows whether the backend relay is connected.
 
 Send delivers the current line to YouTube and automatically advances the pointer to the next line.
@@ -124,15 +124,15 @@ Send delivers the current line to YouTube and automatically advances the pointer
 
 ---
 
-### `/embed/files` — Full File Management Widget
+### `/embed/files` â€” Full File Management Widget
 
 Renders the complete file-based captioning workflow from the main app, without the status bar, settings modals, or audio panel:
 
-- **FileTabs** row at the top — switch between open files, add new files, toggle drop zone.
-- **DropZone** — collapsible drag-and-drop file loader (auto-hides once a file is loaded).
-- **CaptionView** — scrollable line list with the active pointer highlighted; supports raw text editing.
-- **InputBar** — text input with batch mode, translation, and all keyboard shortcuts.
-- **Sent log panel** — togglable delivery log (✓✓ button in the toolbar); starts visible by default.
+- **FileTabs** row at the top â€” switch between open files, add new files, toggle drop zone.
+- **DropZone** â€” collapsible drag-and-drop file loader (auto-hides once a file is loaded).
+- **CaptionView** â€” scrollable line list with the active pointer highlighted; supports raw text editing.
+- **InputBar** â€” text input with batch mode, translation, and all keyboard shortcuts.
+- **Sent log panel** â€” togglable delivery log (âœ“âœ“ button in the toolbar); starts visible by default.
 
 Line double-click in CaptionView sends that line immediately via the InputBar, exactly as in the main app.
 
@@ -147,7 +147,7 @@ To start with the sent log panel hidden, add `&sentlog=0` to the URL.
 
 ---
 
-### `/embed/settings` — Settings Widget
+### `/embed/settings` â€” Settings Widget
 
 Renders the Settings panel as a standalone widget. Provides the **General** tab (backend URL, API key, stream key, theme) and the **CC** tab (caption targets, STT language, translation settings). The widget connects automatically if credentials are present in the URL.
 
@@ -162,7 +162,7 @@ Useful for building custom operator dashboards where settings management and cap
 
 ---
 
-### `/embed/rtmp` — RTMP Relay Widget
+### `/embed/rtmp` â€” RTMP Relay Widget
 
 Renders the RTMP relay slot management UI as a standalone widget. Shows the relay active toggle, configured slots, RTMP ingest address, and per-slot advanced options (scale, FPS, bitrate, caption mode).
 
@@ -177,9 +177,9 @@ Requires an active backend connection and `relay_allowed` on the API key.
 
 ---
 
-### `/embed/viewer` — Caption Viewer Widget
+### `/embed/viewer` â€” Caption Viewer Widget
 
-Renders a read-only live caption display for audience members. Connects directly to the backend's public `GET /viewer/:key` SSE endpoint — no API key or JWT required.
+Renders a read-only live caption display for audience members. Connects directly to the backend's public `GET /viewer/:key` SSE endpoint â€” no API key or JWT required.
 
 ```html
 <iframe
@@ -196,7 +196,7 @@ Renders a read-only live caption display for audience members. Connects directly
 | `server` | Backend URL | _(required)_ |
 | `theme` | `dark` or `light` | `dark` |
 
-This widget does **not** need `apikey` or a session — it is intended for the audience, not the operator. The `server` and `key` parameters are required; the widget shows a "waiting for stream" state until captions arrive.
+This widget does **not** need `apikey` or a session â€” it is intended for the audience, not the operator. The `server` and `key` parameters are required; the widget shows a "waiting for stream" state until captions arrive.
 
 The full-screen version (non-embed) is available at `/view/:key?server=<backendUrl>`.
 
@@ -204,15 +204,15 @@ The full-screen version (non-embed) is available at `/view/:key?server=<backendU
 
 ## Cross-Widget Communication
 
-When widgets are spread across different parts of the same host page they coordinate using the browser's `BroadcastChannel` API (channel name: `'lcyt-embed'`). All iframes must be served from the **same origin** (the same lcyt-web deployment URL) for `BroadcastChannel` to work — this is a browser security requirement.
+When widgets are spread across different parts of the same host page they coordinate using the browser's `BroadcastChannel` API (channel name: `'lcyt-embed'`). All iframes must be served from the **same origin** (the same lcyt-web deployment URL) for `BroadcastChannel` to work â€” this is a browser security requirement.
 
 ### Message types
 
 | Type | Direction | Payload |
 |------|-----------|---------|
-| `lcyt:session` | audio/input → sentlog | `{ token, backendUrl }` — sent on connect and in response to `lcyt:request_session` |
-| `lcyt:caption` | audio/input → sentlog | `{ requestId, text, timestamp }` — sent for each caption dispatched to the backend |
-| `lcyt:request_session` | sentlog → audio/input | _(no payload)_ — sent on mount so a late-joining sentlog gets the token |
+| `lcyt:session` | audio/input â†’ sentlog | `{ token, backendUrl }` â€” sent on connect and in response to `lcyt:request_session` |
+| `lcyt:caption` | audio/input â†’ sentlog | `{ requestId, text, timestamp }` â€” sent for each caption dispatched to the backend |
+| `lcyt:request_session` | sentlog â†’ audio/input | _(no payload)_ â€” sent on mount so a late-joining sentlog gets the token |
 
 The sentlog widget also opens its own `EventSource` to `GET /events?token=...` on the backend to receive `caption_result` and `caption_error` events independently, without going through the session-owning widget.
 
@@ -249,7 +249,7 @@ A common integration pattern is to place each widget in a different region of th
 </div>
 ```
 
-> Only one widget should own the session at a time. If both `/embed/audio` and `/embed/input` are on the page with the same credentials they will each start a separate session — captions from one will not appear in the other's log unless you use `/embed/sentlog` (which listens to all sibling broadcasts). For a split audio + log layout, use `/embed/audio` as the session owner and `/embed/sentlog` for the delivery log.
+> Only one widget should own the session at a time. If both `/embed/audio` and `/embed/input` are on the page with the same credentials they will each start a separate session â€” captions from one will not appear in the other's log unless you use `/embed/sentlog` (which listens to all sibling broadcasts). For a split audio + log layout, use `/embed/audio` as the session owner and `/embed/sentlog` for the delivery log.
 
 ---
 
@@ -261,7 +261,7 @@ The backend must accept requests from the origin of the host page (not the lcyt-
 ALLOWED_DOMAINS=lcyt.fi,www.lcyt.fi,yoursite.com,www.yoursite.com
 ```
 
-The embed widgets themselves are served from the lcyt-web origin and communicate with the backend using the API key — the CORS domain is the domain registered when the API key was created, which must match the `domain` field sent in `POST /live`.
+The embed widgets themselves are served from the lcyt-web origin and communicate with the backend using the API key â€” the CORS domain is the domain registered when the API key was created, which must match the `domain` field sent in `POST /live`.
 
 ---
 
@@ -282,3 +282,4 @@ ch.onmessage = (ev) => {
 ```
 
 > Note: `BroadcastChannel` only works between same-origin contexts. The host page script must be served from the **same origin as the embed iframes** (i.e., the lcyt-web deployment URL), or you must use the iframes' own `postMessage` API relayed through the parent page.
+

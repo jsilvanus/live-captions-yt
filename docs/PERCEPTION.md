@@ -1,4 +1,4 @@
-# Camera perception (operator guide)
+﻿# Camera perception (operator guide)
 
 LCYT can watch the camera feeds with a small, fast person detector and use what it sees for cues, the AI roles and the
 vertical crop. This page is the short operator view; the design is in `docs/plans/plan_perception_completion.md`.
@@ -43,3 +43,4 @@ notice, because worship attendance can reveal religious belief, which GDPR treat
 
 Native `onnxruntime-node` and the worker Docker image have not been built or run against a real service; a remote worker reaching the stream
 URL, the tracker and framing thresholds, and the visual matching thresholds are untuned. Treat the first services as a trial.
+

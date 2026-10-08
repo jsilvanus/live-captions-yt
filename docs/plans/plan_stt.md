@@ -1,26 +1,26 @@
----
+﻿---
 id: plan/stt
 title: "Speech-to-Text (STT) Integration"
 status: implemented
-summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and Google Cloud STT engines, client-side VAD, translation pipeline, MCP speech sessions, and embed widget. AudioPanel also has a third `server` engine mode that displays server-side STT transcripts (capture/recognition happens on the backend) — see plan_server_stt.md, the actual STT source."
+summary: "Browser-based speech capture in lcyt-web: WebKit (Web Speech API) and Google Cloud STT engines, client-side VAD, translation pipeline, MCP speech sessions, and embed widget. AudioPanel also has a third `server` engine mode that displays server-side STT transcripts (capture/recognition happens on the backend) â€” see plan_server_stt.md, the actual STT source."
 related: [plan_server_stt.md]
 ---
 
 # Speech-to-Text (STT) Integration
 
-**Scope:** `packages/lcyt-web` — `AudioPanel`, `SpeechCapturePage`, `EmbedAudioPage`; `packages/lcyt-mcp-http` — speech session routes.
+**Scope:** `packages/lcyt-web` â€” `AudioPanel`, `SpeechCapturePage`, `EmbedAudioPage`; `packages/lcyt-mcp-http` â€” speech session routes.
 
 ---
 
 ## Overview
 
-For the **webkit** and **cloud** engines described below, all STT happens in the browser — the backend receives final transcript text and is never involved in audio capture or recognition. `AudioPanel` also supports a third engine, `server` (`engine === 'server'`), which is a thin client for server-side STT (`plan_server_stt.md`'s `SttManager`): the browser does no capture at all in this mode, it just polls `GET /stt/status` and subscribes to `GET /stt/events` (SSE) to render a live transcript panel (`serverTranscripts` state, `.server-transcript-panel`). The user picks one of the three engines in the CC → STT settings tab.
+For the **webkit** and **cloud** engines described below, all STT happens in the browser â€” the backend receives final transcript text and is never involved in audio capture or recognition. `AudioPanel` also supports a third engine, `server` (`engine === 'server'`), which is a thin client for server-side STT (`plan_server_stt.md`'s `SttManager`): the browser does no capture at all in this mode, it just polls `GET /stt/status` and subscribes to `GET /stt/events` (SSE) to render a live transcript panel (`serverTranscripts` state, `.server-transcript-panel`). The user picks one of the three engines in the CC â†’ STT settings tab.
 
 | Engine | How it works | Credentials needed |
 |---|---|---|
 | **webkit** (default) | Native browser `SpeechRecognition` API (Chrome, Edge, Safari), via the `useWebSpeech` hook | None |
-| **cloud** | `MediaRecorder` → 5-second WEBM\_OPUS chunks → Google Cloud Speech-to-Text REST API | Google OAuth 2.0 token |
-| **server** | No browser capture — displays transcripts produced by the backend's `SttManager` (`plan_server_stt.md`) via SSE | None (server-side credentials only) |
+| **cloud** | `MediaRecorder` â†’ 5-second WEBM\_OPUS chunks â†’ Google Cloud Speech-to-Text REST API | Google OAuth 2.0 token |
+| **server** | No browser capture â€” displays transcripts produced by the backend's `SttManager` (`plan_server_stt.md`) via SSE | None (server-side credentials only) |
 
 Engine choice and all STT settings persist in `localStorage`.
 
@@ -30,7 +30,7 @@ Engine choice and all STT settings persist in `localStorage`.
 
 | File | Purpose |
 |---|---|
-| `src/components/AudioPanel.jsx` | Main STT component — mic capture, recognition, metering, translation, sending; also renders the `server`-engine live transcript panel fed by `GET /stt/events` |
+| `src/components/AudioPanel.jsx` | Main STT component â€” mic capture, recognition, metering, translation, sending; also renders the `server`-engine live transcript panel fed by `GET /stt/events` |
 | `src/hooks/useWebSpeech.js` | WebKit `SpeechRecognition` state machine (start/stop/error-recovery), used by `AudioPanel` |
 | `src/hooks/useSourceLanguages.js` | Reads the shared, server-persisted `stt_source_languages` list (`plan_server_stt.md` Phase 5); `AudioPanel`'s language selector falls back to `sttConfig.js`'s `COMMON_LANGUAGES` when disconnected/empty |
 | `src/lib/sttConfig.js` | STT preference helpers (engine, language, cloud config, VAD flag) |
@@ -53,12 +53,12 @@ Engine choice and all STT settings persist in `localStorage`.
 ```
 SpeechRecognition (continuous, interimResults: true except on mobile)
   onresult
-    ├─ interim text → setInterimText()   [UI display only]
-    └─ final text   → pushFinalTranscript(text, utteranceStartRef)
+    â”œâ”€ interim text â†’ setInterimText()   [UI display only]
+    â””â”€ final text   â†’ pushFinalTranscript(text, utteranceStartRef)
   onend
-    └─ restart after 100 ms              [survives silence pauses]
+    â””â”€ restart after 100 ms              [survives silence pauses]
   onerror
-    └─ 'no-speech' silently ignored
+    â””â”€ 'no-speech' silently ignored
 ```
 
 `lastFinalRef` deduplicates rapid back-to-back `onresult` finals (mobile WebKit issue).
@@ -67,28 +67,28 @@ SpeechRecognition (continuous, interimResults: true except on mobile)
 
 ```
 getUserMedia({ audio: true })
-  └─ MediaRecorder (5 s chunks, WEBM_OPUS)
-       └─ blobToBase64()
-            └─ POST speech.googleapis.com/v1/speech:recognize
+  â””â”€ MediaRecorder (5 s chunks, WEBM_OPUS)
+       â””â”€ blobToBase64()
+            â””â”€ POST speech.googleapis.com/v1/speech:recognize
                   config: { encoding: WEBM_OPUS, sampleRateHertz: 48000,
                              languageCode, model, enableAutomaticPunctuation,
                              profanityFilter }
-                  └─ results[0].alternatives[0].transcript
-                       └─ pushFinalTranscript()
+                  â””â”€ results[0].alternatives[0].transcript
+                       â””â”€ pushFinalTranscript()
 ```
 
 Chunks are scheduled recursively (`scheduleNextChunk`). The OAuth token is fetched once and cached in `oauthRef` until expiry.
 
 ### Utterance lifecycle
 
-1. First interim or final text arrives → `utteranceStartRef` captures an ISO timestamp (`YYYY-MM-DDTHH:MM:SS.mmm`, no trailing Z).
+1. First interim or final text arrives â†’ `utteranceStartRef` captures an ISO timestamp (`YYYY-MM-DDTHH:MM:SS.mmm`, no trailing Z).
 2. Optional auto-end timer shows a countdown overlay; expiry calls `recognition.stop()`.
 3. "End utterance" button forces finalization immediately with a brief flash visual.
 4. `pushFinalTranscript(text, ts)` trims the text, runs translations (if enabled), then calls `sendTranscript`.
 
 ### Audio metering
 
-Web Audio API pipeline: `MediaStream → AudioContext → AnalyserNode → getFloatTimeDomainData()`. RMS energy is drawn onto a canvas element at animation-frame rate.
+Web Audio API pipeline: `MediaStream â†’ AudioContext â†’ AnalyserNode â†’ getFloatTimeDomainData()`. RMS energy is drawn onto a canvas element at animation-frame rate.
 
 ### Client-side VAD (optional)
 
@@ -149,7 +149,7 @@ After a final transcript is produced, `translateAll()` runs all enabled translat
 |---|---|
 | `captions` | Translated text injected alongside original caption text sent to YouTube |
 | `file` | Appended to a local file via the File System Access API (VTT or YouTube format) |
-| `backend-file` | Forwarded to the backend for server-side `/file` storage |
+| `backend-file` | Forwarded to the backend for server-side `/api/v1/file` storage |
 
 The `captionLang` (the single `captions`-type target language) and `showOriginal` flag are passed through to `session.send()`.
 
@@ -159,10 +159,10 @@ The `captionLang` (the single `captions`-type target language) and `showOriginal
 
 ```
 pushFinalTranscript(text, utteranceStart)
-  └─ translateAll()
-       └─ sendTranscript(text, timestamp, translationsMap, captionLang)
-            ├─ batchInterval > 0 → session.construct(text, timestamp, opts)
-            └─ batchInterval = 0 → session.send(text, timestamp, opts)
+  â””â”€ translateAll()
+       â””â”€ sendTranscript(text, timestamp, translationsMap, captionLang)
+            â”œâ”€ batchInterval > 0 â†’ session.construct(text, timestamp, opts)
+            â””â”€ batchInterval = 0 â†’ session.send(text, timestamp, opts)
 ```
 
 `timestamp` is `utteranceStart` adjusted by:
@@ -193,20 +193,20 @@ A self-contained page (no SessionContext, no relay backend) used by the `lcyt-mc
 
 ### Flow
 
-1. AI tool call `start_speech_session` → server allocates `sessionId` and returns a browser URL.
+1. AI tool call `start_speech_session` â†’ server allocates `sessionId` and returns a browser URL.
 2. User opens URL in browser, clicks **Start**.
 3. Web Speech API (WebKit only) streams interim text, commits finals.
-4. Each final → `POST {server}/stt/{sessionId}/chunk  { text, isFinal: true, timestamp }`.
+4. Each final â†’ `POST {server}/stt/{sessionId}/chunk  { text, isFinal: true, timestamp }`.
 5. Server forwards chunk to YouTube via the connected MCP session's sender.
-6. User clicks **Stop** or silence timeout fires → `POST {server}/stt/{sessionId}/done`.
+6. User clicks **Stop** or silence timeout fires â†’ `POST {server}/stt/{sessionId}/done`.
 7. AI tool call `get_speech_transcript` unblocks and returns full transcript.
 
 ### Server-side routes (`lcyt-mcp-http/src/speech.js`)
 
 | Route | Handler |
 |---|---|
-| `POST /stt/:sessionId/chunk` | `handleChunk()` — resets silence timer, sends caption |
-| `POST /stt/:sessionId/done` | `handleSttDone()` — finalizes session, resolves waiters |
+| `POST /stt/:sessionId/chunk` | `handleChunk()` â€” resets silence timer, sends caption |
+| `POST /stt/:sessionId/done` | `handleSttDone()` â€” finalizes session, resolves waiters |
 
 ---
 
@@ -236,3 +236,4 @@ const { listening, interimText, utteranceActive,
 ```
 
 `AudioPanel` writes into this context; `ControlsPanel`, `InputBar`, and `MobileAudioBar` read from it.
+

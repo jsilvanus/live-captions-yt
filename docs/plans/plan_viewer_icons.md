@@ -1,4 +1,4 @@
-# Plan — Viewer Icon Toggle + Icons Setup-Hub Card
+﻿# Plan â€” Viewer Icon Toggle + Icons Setup-Hub Card
 
 **Status:** implemented
 **Scope:** `lcyt-backend` (caption_targets schema/db/routes), `lcyt-web` (TargetRow, Setup Hub, i18n)
@@ -6,22 +6,22 @@
 ## Motivation
 
 Icons brand the public viewer page (`/view/:key`). Today an operator picks
-*which* icon in **CC → Targets → Viewer** (`TargetRow.jsx`): a dropdown with a
+*which* icon in **CC â†’ Targets â†’ Viewer** (`TargetRow.jsx`): a dropdown with a
 "None" option, whose `iconId` is baked into the generated viewer URL as
 `?icon=<id>` and rendered by `ViewerPage.jsx`.
 
 Two problems:
 
 1. **No explicit enable/disable.** "None" implicitly means off, but toggling
-   branding off loses the chosen icon — you must re-pick it to turn it back on.
+   branding off loses the chosen icon â€” you must re-pick it to turn it back on.
    The operator wants a clear "show icon" toggle *plus* the which-icon picker.
 
 2. **`iconId` doesn't persist server-side.** The config is edited in two places
    that share `TargetRow` but persist differently:
-   - **CCModal / TargetsPanel** → `targetConfig.js` (localStorage, whole-array
-     `JSON.stringify`) — `iconId` survives (no field whitelist).
-   - **CaptionTargetsManager + Setup-hub "Caption targets" card** → server
-     `/targets` (`caption_targets` table) — **`iconId` is silently dropped**;
+   - **CCModal / TargetsPanel** â†’ `targetConfig.js` (localStorage, whole-array
+     `JSON.stringify`) â€” `iconId` survives (no field whitelist).
+   - **CaptionTargetsManager + Setup-hub "Caption targets" card** â†’ server
+     `/targets` (`caption_targets` table) â€” **`iconId` is silently dropped**;
      the table has no icon column and `createTarget`/`updateTarget` ignore it.
 
    So the icon selection only sticks in the localStorage editor and evaporates
@@ -33,10 +33,10 @@ tab; there is no Setup-Hub card for it. We want an **Icons** hub card.
 ## Decisions (settled with the user)
 
 - **Operator config only.** No viewer-page end-user control, no public
-  icon-list endpoint. The toggle lives in the operator's Targets → Viewer editor.
+  icon-list endpoint. The toggle lives in the operator's Targets â†’ Viewer editor.
 - Add the Setup-Hub **Icons** card as part of this work.
 
-## A. Backend — persist icon config on `caption_targets`
+## A. Backend â€” persist icon config on `caption_targets`
 
 1. `src/db/schema.js`: additive migration adding to `caption_targets`:
    - `icon_id INTEGER` (nullable)
@@ -47,10 +47,10 @@ tab; there is no Setup-Hub card for it. We want an **Icons** hub card.
    - `createTarget` / `updateTarget` accept and write both (meaningful only for
      `type='viewer'`, mirroring how `viewerKey` is gated).
 3. `src/routes/targets.js`: pass the two fields through the request body.
-4. Test: round-trip `iconId` / `iconEnabled` through create → get → update in
+4. Test: round-trip `iconId` / `iconEnabled` through create â†’ get â†’ update in
    `test/targets.test.js`.
 
-## B. Frontend — operator toggle in `TargetRow` (viewer section)
+## B. Frontend â€” operator toggle in `TargetRow` (viewer section)
 
 1. Add a **"Show icon on viewer page"** toggle bound to `entry.iconEnabled`,
    above the existing which-icon dropdown.
@@ -62,12 +62,12 @@ tab; there is no Setup-Hub card for it. We want an **Icons** hub card.
 5. Both editors then round-trip the fields (localStorage already generic;
    server covered by A).
 
-## C. Setup Hub — new "Icons" card
+## C. Setup Hub â€” new "Icons" card
 
-1. `setup-hub/icons.jsx`: add an `IconsIcon` (stroke, 16×16, matching the set).
+1. `setup-hub/icons.jsx`: add an `IconsIcon` (stroke, 16Ã—16, matching the set).
 2. New `setup-hub/IconsSection.jsx`, modeled on `StorageSection`: a `SetupCard`
-   + `Dialog` that lists icons (`session.listIcons()` → `GET /icons`), uploads
-   (`POST /icons`, PNG/SVG ≤ 200 KB), and deletes (`DELETE /icons/:id`) —
+   + `Dialog` that lists icons (`session.listIcons()` â†’ `GET /icons`), uploads
+   (`POST /icons`, PNG/SVG â‰¤ 200 KB), and deletes (`DELETE /icons/:id`) â€”
    reusing the logic already in `SettingsModal`'s icons tab. Summary row shows
    the icon count.
 3. `SetupHubPage.jsx`: import + render `{isVisible('icons') && <IconsSection />}`
@@ -84,5 +84,6 @@ tab; there is no Setup-Hub card for it. We want an **Icons** hub card.
 ## Test / verification
 
 - Backend: `caption-targets` icon-field round-trip; `/targets` route passthrough.
-- Frontend: `TargetRow` toggle behavior — viewer URL includes `&icon=` only when
+- Frontend: `TargetRow` toggle behavior â€” viewer URL includes `&icon=` only when
   enabled *and* an icon is selected; toggling off preserves `iconId`.
+

@@ -1,11 +1,11 @@
----
+﻿---
 id: api/images
-title: "/images — DSK Image Management"
+title: "/api/v1/images â€” DSK Image Management"
 methods: [POST, GET, DELETE]
 auth: [bearer, none]
 ---
 
-# /images — DSK Image Management
+# /images â€” DSK Image Management
 
 Upload, list, serve, and delete images used for the **Downstream Keyer (DSK)** overlay system. Images are referenced in caption metadata with their shorthand label and displayed in the DSK overlay page.
 
@@ -16,7 +16,7 @@ Images are stored on the server filesystem under `$GRAPHICS_DIR/<apiKey>/`.
 
 ---
 
-## `POST /images` — Upload an Image
+## `POST /images` â€” Upload an Image
 
 Upload a PNG, WebP, or SVG image. Uses `multipart/form-data` encoding.
 
@@ -35,9 +35,9 @@ Form fields:
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `file` | file | Yes | Image file. Accepted MIME types: `image/png`, `image/webp`, `image/svg+xml`. Maximum file size: 5 MB (configurable via `GRAPHICS_MAX_FILE_BYTES`). |
-| `shorthand` | string | Yes | A short label (1–32 characters: letters, digits, hyphens, underscores; must start with a letter or digit) used to reference this image in caption metadata. Must be unique per API key. |
+| `shorthand` | string | Yes | A short label (1â€“32 characters: letters, digits, hyphens, underscores; must start with a letter or digit) used to reference this image in caption metadata. Must be unique per API key. |
 
-**Response — `201 Created`**
+**Response â€” `201 Created`**
 
 ```json
 {
@@ -65,7 +65,7 @@ Form fields:
 
 ---
 
-## `GET /images` — List Images
+## `GET /images` â€” List Images
 
 Return all images for the authenticated API key.
 
@@ -78,7 +78,7 @@ GET /images
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -97,7 +97,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `GET /images/:id` — Serve an Image (Public)
+## `GET /images/:id` â€” Serve an Image (Public)
 
 Serve the raw image bytes for the given image ID. This endpoint is **public** (no authentication) so the DSK page can load images without a JWT.
 
@@ -109,7 +109,7 @@ Serve the raw image bytes for the given image ID. This endpoint is **public** (n
 GET /images/1
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```
 Content-Type: image/png   (or image/webp, image/svg+xml)
@@ -126,7 +126,7 @@ Access-Control-Allow-Origin: *
 
 ---
 
-## `DELETE /images/:id` — Delete an Image
+## `DELETE /images/:id` â€” Delete an Image
 
 Delete an image record and its file from disk.
 
@@ -139,7 +139,7 @@ DELETE /images/1
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 { "ok": true }
@@ -182,3 +182,4 @@ To clear all overlays:
 | `GRAPHICS_DIR` | `/data/images` | Base directory for image storage. Each API key gets its own subdirectory. |
 | `GRAPHICS_MAX_FILE_BYTES` | `5242880` (5 MB) | Maximum size per uploaded image. |
 | `GRAPHICS_MAX_STORAGE_BYTES` | `52428800` (50 MB) | Maximum total image storage per API key. |
+

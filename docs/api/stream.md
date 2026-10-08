@@ -1,11 +1,11 @@
----
+﻿---
 id: api/stream
-title: "/stream — RTMP Relay Configuration"
+title: "/api/v1/stream â€” RTMP Relay Configuration"
 methods: [POST, GET, PUT, DELETE]
 auth: [bearer]
 ---
 
-# /stream — RTMP Relay Configuration
+# /stream â€” RTMP Relay Configuration
 
 Authenticated endpoints for managing per-key RTMP relay slots. The relay re-streams one incoming RTMP signal to up to **4 target destinations** simultaneously using a single ffmpeg process and the `tee` muxer.
 
@@ -17,7 +17,7 @@ Additionally, the `domain` registered when starting the session must be in the `
 
 ---
 
-## `POST /stream` — Create or Replace Relay Slot
+## `POST /stream` â€” Create or Replace Relay Slot
 
 Add a new relay destination or overwrite an existing slot.
 
@@ -46,20 +46,20 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `slot` | `number` | No | Slot number (1–4). Defaults to `1` if omitted. |
+| `slot` | `number` | No | Slot number (1â€“4). Defaults to `1` if omitted. |
 | `targetUrl` | `string` | Yes | RTMP or RTMPS destination URL (must start with `rtmp`). For YouTube: `rtmp://a.rtmp.youtube.com/live2`. |
 | `targetName` | `string` | No | Stream name / key appended to `targetUrl`. For YouTube this is the stream key. |
 | `captionMode` | `string` | No | `'http'` (default) or `'cea708'`. Controls how captions are embedded. |
 | `scale` | `string` | No | Output resolution as `WIDTHxHEIGHT` or `WIDTH:HEIGHT` (e.g. `"1280x720"`). Null/omitted = use original. |
-| `fps` | `number` | No | Output frame rate (integer 1–120). Null/omitted = use original. |
+| `fps` | `number` | No | Output frame rate (integer 1â€“120). Null/omitted = use original. |
 | `videoBitrate` | `string` | No | Video bitrate (e.g. `"3000k"`, `"6M"`). Null/omitted = use original. |
 | `audioBitrate` | `string` | No | Audio bitrate (e.g. `"128k"`, `"192k"`). Null/omitted = use original. |
 
-> **Caption modes:** `http` sends captions via the YouTube HTTP POST ingestion API (the default). `cea708` embeds captions directly in the video stream via the CEA-708/608 standard — requires ffmpeg with libx264, eia608, and subrip support.
+> **Caption modes:** `http` sends captions via the YouTube HTTP POST ingestion API (the default). `cea708` embeds captions directly in the video stream via the CEA-708/608 standard â€” requires ffmpeg with libx264, eia608, and subrip support.
 >
 > **Transcoding:** Setting `scale`, `fps`, `videoBitrate`, or `audioBitrate` enables per-slot transcoding. CEA-708 mode takes priority over per-slot transcoding (they cannot be combined on the same key).
 
-**Response — `201 Created`**
+**Response â€” `201 Created`**
 
 ```json
 {
@@ -87,7 +87,7 @@ Content-Type: application/json
 
 ---
 
-## `GET /stream` — Get All Slots
+## `GET /stream` â€” Get All Slots
 
 Return all configured relay slots, their running state, and the relay's active toggle.
 
@@ -100,7 +100,7 @@ GET /stream
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -129,7 +129,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `GET /stream/history` — Relay Usage History
+## `GET /stream/history` â€” Relay Usage History
 
 Return completed RTMP stream records for this API key.
 
@@ -142,7 +142,7 @@ GET /stream/history
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -164,7 +164,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `PUT /stream/active` — Toggle Relay On/Off
+## `PUT /stream/active` â€” Toggle Relay On/Off
 
 Enable or disable the relay fan-out for this API key. When enabled and nginx is actively publishing a stream, the relay starts immediately.
 
@@ -187,10 +187,10 @@ Content-Type: application/json
 | `active` | `boolean` | Yes | `true` to start fan-out, `false` to stop all ffmpeg processes |
 
 **Behavior:**
-- `active: true` — sets `relay_active = 1` in the database; if nginx is currently publishing for this key, immediately starts ffmpeg fan-out to all configured slots.
-- `active: false` — sets `relay_active = 0`; stops all running ffmpeg processes. The incoming nginx stream stays alive (the publisher is not dropped).
+- `active: true` â€” sets `relay_active = 1` in the database; if nginx is currently publishing for this key, immediately starts ffmpeg fan-out to all configured slots.
+- `active: false` â€” sets `relay_active = 0`; stops all running ffmpeg processes. The incoming nginx stream stays alive (the publisher is not dropped).
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 { "ok": true, "active": true }
@@ -198,7 +198,7 @@ Content-Type: application/json
 
 ---
 
-## `PUT /stream/:slot` — Update a Slot
+## `PUT /stream/:slot` â€” Update a Slot
 
 Update the configuration for a specific, already-created slot. Uses the same field set as `POST /stream`. The slot must already exist; use `POST /stream` to create it first.
 
@@ -220,7 +220,7 @@ Content-Type: application/json
 }
 ```
 
-**Response — `200 OK`** — Updated relay object (same shape as `POST /stream` response).
+**Response â€” `200 OK`** â€” Updated relay object (same shape as `POST /stream` response).
 
 **Error responses**
 
@@ -231,7 +231,7 @@ Content-Type: application/json
 
 ---
 
-## `DELETE /stream/:slot` — Remove a Slot
+## `DELETE /stream/:slot` â€” Remove a Slot
 
 Remove a relay slot. If the relay is running, it is restarted with the remaining slots. If this was the last slot, ffmpeg stops entirely.
 
@@ -244,7 +244,7 @@ DELETE /stream/1
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 { "ok": true, "slot": 1, "deleted": true }
@@ -252,7 +252,7 @@ Authorization: Bearer <token>
 
 ---
 
-## `DELETE /stream` — Stop and Remove All Slots
+## `DELETE /stream` â€” Stop and Remove All Slots
 
 Stop all relay processes, drop the nginx publisher (disconnecting the incoming RTMP stream), and delete all configured slots for this key.
 
@@ -265,7 +265,7 @@ DELETE /stream
 Authorization: Bearer <token>
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 { "ok": true, "deleted": 2 }
@@ -281,18 +281,18 @@ Authorization: Bearer <token>
 
 ```
 Broadcaster (OBS, etc.)
-        │
-        ▼  RTMP
+        â”‚
+        â–¼  RTMP
   nginx-rtmp server
-        │  on_publish → POST /rtmp (starts fan-out if active)
-        │
-        ▼  local RTMP
+        â”‚  on_publish â†’ POST /rtmp (starts fan-out if active)
+        â”‚
+        â–¼  local RTMP
   RtmpRelayManager (one ffmpeg per API key)
-        │
-        ├──► Slot 1 → rtmp://a.rtmp.youtube.com/live2/<key1>
-        ├──► Slot 2 → rtmp://a.rtmp.youtube.com/live2/<key2>
-        ├──► Slot 3 → rtmps://live.restream.io/live/<key>
-        └──► Slot 4 → rtmp://custom.endpoint.example.com/live
+        â”‚
+        â”œâ”€â”€â–º Slot 1 â†’ rtmp://a.rtmp.youtube.com/live2/<key1>
+        â”œâ”€â”€â–º Slot 2 â†’ rtmp://a.rtmp.youtube.com/live2/<key2>
+        â”œâ”€â”€â–º Slot 3 â†’ rtmps://live.restream.io/live/<key>
+        â””â”€â”€â–º Slot 4 â†’ rtmp://custom.endpoint.example.com/live
 ```
 
 Captions written via `POST /captions` are forwarded to the ffmpeg process stdin (CEA-708 mode) or sent directly to YouTube's HTTP ingestion API (`http` mode).
@@ -304,7 +304,8 @@ Captions written via `POST /captions` are forwarded to the ffmpeg process stdin 
 | Variable | Default | Description |
 |---|---|---|
 | `RTMP_RELAY_ACTIVE` | unset | Set to `1` to enable the RTMP relay subsystem. Without this, the relay manager is a no-op. |
-| `ALLOWED_RTMP_DOMAINS` | (falls back to `ALLOWED_DOMAINS`) | Comma-separated domains that may use the `/stream` relay endpoints. Set to `*` to allow all. |
-| `RTMP_APPLICATION` | unset | If set, the `/rtmp` nginx callback rejects requests where the RTMP `app` name does not match. |
+| `ALLOWED_RTMP_DOMAINS` | (falls back to `ALLOWED_DOMAINS`) | Comma-separated domains that may use the `/api/v1/stream` relay endpoints. Set to `*` to allow all. |
+| `RTMP_APPLICATION` | unset | If set, the `/api/v1/rtmp` nginx callback rejects requests where the RTMP `app` name does not match. |
 | `RTMP_HOST` | `rtmp.lcyt.fi` | Hostname of the nginx-rtmp RTMP ingest. Reported in `GET /health` when relay is active. |
 | `RTMP_APP` | `stream` | RTMP application name. Reported in `GET /health` when relay is active. |
+

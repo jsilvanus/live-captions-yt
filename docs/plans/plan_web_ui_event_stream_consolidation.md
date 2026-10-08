@@ -1,14 +1,14 @@
-# Plan: Consolidate the Operator Web UI onto a Single `/events/stream` Connection
+﻿# Plan: Consolidate the Operator Web UI onto a Single `/events/stream` Connection
 
-**Status:** Implemented — Phase A (core consolidation) shipped; Phase B (folding the caption session `/events` stream) remains optional
+**Status:** Implemented â€” Phase A (core consolidation) shipped; Phase B (folding the caption session `/events` stream) remains optional
 **Date:** 2026-07-12
 **Context:** The authenticated operator web UI currently opens **several** SSE
-connections — one per domain (`useVariables` → `/variables/events`, roles panels →
-`/roles/:roleCode/events`, the caption session → `/events`, …). After the pub/sub
+connections â€” one per domain (`useVariables` â†’ `/variables/events`, roles panels â†’
+`/roles/:roleCode/events`, the caption session â†’ `/events`, â€¦). After the pub/sub
 work (`plan_pubsub_event_bus.md`) those bespoke endpoints are all thin wrappers over
 one `EventBus`, so the UI can collapse to a **single `EventSource`** on
 `GET /events/stream`, demultiplexed by topic. Result: one client-side listener, one
-server-held SSE connection, one auth/reconnect path — instead of N. (Supersedes the
+server-held SSE connection, one auth/reconnect path â€” instead of N. (Supersedes the
 earlier `plan_usevariables_events_stream.md`, which scoped only the variables hook;
 the real payoff is UI-wide consolidation, with `useVariables` as the pilot.)
 
@@ -21,31 +21,31 @@ One shared `EventSource` in the operator UI, subscribed to
 that fans envelopes out to the existing per-feature consumers by `envelope.topic`.
 Retire the bespoke **authenticated** SSE endpoints once nothing consumes them.
 
-**Out of scope (stays as-is):** the **public** SSE surfaces — `/dsk/:apikey/events`
-(OBS overlays), `/viewer/:key`, `/music/:key/live`. They're unauthenticated and
+**Out of scope (stays as-is):** the **public** SSE surfaces â€” `/api/v1/dsk/api/v1/:apikey/api/v1/events`
+(OBS overlays), `/api/v1/viewer/api/v1/:key`, `/api/v1/music/api/v1/:key/api/v1/live`. They're unauthenticated and
 served to browser sources on arbitrary machines, so they can't move onto the authed
 unified stream.
 
 ## What it takes
 
-### 1. Backend — flat delivery mode
+### 1. Backend â€” flat delivery mode
 `GET /events/stream?flat=1` emits every matching event under a **constant** SSE event
 name (`message`) with the full canonical envelope in `data`, so `EventSource`
 (`es.onmessage`) can consume dynamically-named topics like `variable.<name>.changed`
-(named events can't be pre-registered). Tiny change — `subscribeSse` already supports
+(named events can't be pre-registered). Tiny change â€” `subscribeSse` already supports
 `rename`; flat = `rename: () => 'message'`, envelope kept. (Default per-topic named
 events stay for OBS-style consumers.) One `events-stream.test.js` case.
 
-### 2. Frontend — one `useEventStream` hook
+### 2. Frontend â€” one `useEventStream` hook
 New `packages/lcyt-web/src/hooks/useEventStream.js`: opens the single `EventSource`
 (user/session JWT via `?token=`), parses each envelope, and dispatches to registered
 per-topic handlers (`on(topicPattern, handler)` using the same `topicMatches`
 semantics). Owns the reconnect/backoff + heartbeat handling once, for everyone.
 
 ### 3. Migrate consumers onto it
-- **`useVariables`** — drop its own `EventSource`; register `variable.*` on the shared
+- **`useVariables`** â€” drop its own `EventSource`; register `variable.*` on the shared
   hook, keep the `GET /variables` snapshot fetch. (The pilot.)
-- **Roles panels** — drop `/roles/:roleCode/events`; register `role.<roleCode>.*`,
+- **Roles panels** â€” drop `/roles/:roleCode/events`; register `role.<roleCode>.*`,
   filtering by the role they care about.
 - Each migrated consumer stops owning a socket and becomes a topic subscriber.
 
@@ -58,7 +58,7 @@ single-operator UI; required if a project ever runs multiple concurrent sessions
 
 ### 5. Retire the bespoke authed endpoints (after soak)
 Once no UI code opens them, remove `/variables/events` and `/roles/:roleCode/events`
-(and their `VariablesBus`/`RolesBus` `addSubscriber`/`removeSubscriber` wrappers —
+(and their `VariablesBus`/`RolesBus` `addSubscriber`/`removeSubscriber` wrappers â€”
 leave the publish paths). Do this as its own small PR after the migration has run in
 production for a bit, so a rollback doesn't touch the bus.
 
@@ -68,13 +68,13 @@ production for a bit, so a rollback doesn't touch the bus.
   `useVariables` and the roles panels. Retire `/variables/events` + `/roles/:roleCode/events`.
 - **Phase B (optional, later):** fold the caption **session** stream (`caption.*` /
   `session.*`, with the `sessionId` filter) onto the shared hook and retire `/events`
-  for the UI — needs care because `/events` has other consumers (embed pages); audit
-  first. Fold `/stt/events` only after `stt.*` topics are actually published on the bus
+  for the UI â€” needs care because `/events` has other consumers (embed pages); audit
+  first. Fold `/api/v1/stt/api/v1/events` only after `stt.*` topics are actually published on the bus
   (currently deferred).
 
 ## Auth
 
-The browser's existing JWT (user/project/session) works on `/events/stream` — the
+The browser's existing JWT (user/project/session) works on `/events/stream` â€” the
 `events:read` `requiredScope` gate only applies to external `lcytmcp_` tokens, so JWT
 members get full access. No token minting, same `?token=` pattern the bespoke SSE
 routes use today.
@@ -98,6 +98,7 @@ routes use today.
 | New surface | `?flat=1` delivery mode + a shared `useEventStream` hook |
 | Snapshots | unchanged (`GET /variables`, etc.) |
 | Session events | client-side `sessionId` filter (project-scoped stream) |
-| Public overlay/viewer/music SSE | unchanged — can't move to the authed stream |
+| Public overlay/viewer/music SSE | unchanged â€” can't move to the authed stream |
 | Bespoke authed SSE (`/variables/events`, `/roles/:roleCode/events`) | retired after soak (separate PR) |
-| Breaking changes | none — flat mode is additive; snapshots/auth unchanged |
+| Breaking changes | none â€” flat mode is additive; snapshots/auth unchanged |
+

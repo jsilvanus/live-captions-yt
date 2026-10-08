@@ -1,10 +1,10 @@
-# LCYT Design System
+﻿# LCYT Design System
 
 ## Overview
 
 LCYT uses a shared design token system to maintain visual consistency across multiple products:
-- **lcyt-site** — Astro-based marketing/documentation site
-- **lcyt-web** — React-based web application
+- **lcyt-site** â€” Astro-based marketing/documentation site
+- **lcyt-web** â€” React-based web application
 
 Both projects import the same CSS variables from the `packages/shared-styles/` package, ensuring that:
 - Color palettes match
@@ -16,14 +16,14 @@ Both projects import the same CSS variables from the `packages/shared-styles/` p
 
 ```
 packages/
-├── shared-styles/               # Shared design tokens (CSS variables)
-│   ├── tokens.css              # Single source of truth for design
-│   ├── package.json            # Published as npm package
-│   └── README.md               # Token reference
-├── lcyt-site/                  # Astro site
-│   └── src/styles/global.css   # @import 'shared-styles/tokens.css'
-└── lcyt-web/                   # React app
-    └── src/styles/             # Reset CSS imports shared tokens
+â”œâ”€â”€ shared-styles/               # Shared design tokens (CSS variables)
+â”‚   â”œâ”€â”€ tokens.css              # Single source of truth for design
+â”‚   â”œâ”€â”€ package.json            # Published as npm package
+â”‚   â””â”€â”€ README.md               # Token reference
+â”œâ”€â”€ lcyt-site/                  # Astro site
+â”‚   â””â”€â”€ src/styles/global.css   # @import 'shared-styles/tokens.css'
+â””â”€â”€ lcyt-web/                   # React app
+    â””â”€â”€ src/styles/             # Reset CSS imports shared tokens
 ```
 
 ## Design Tokens
@@ -31,19 +31,19 @@ packages/
 All design decisions are encoded as CSS custom properties:
 
 ### Color System
-- **Primary**: `#4daae6` — main UI color
-- **Accent**: `#cb0000` — secondary highlight
+- **Primary**: `#4daae6` â€” main UI color
+- **Accent**: `#cb0000` â€” secondary highlight
 - **Semantic**: Success, error, warning colors
 - **Neutral**: Text, backgrounds, borders (light + dark variants)
 
 ### Typography
 - System font stack (no external fonts)
-- Size scale: xs (0.72rem) → 4xl (3rem)
+- Size scale: xs (0.72rem) â†’ 4xl (3rem)
 - Line height variants: tight (1.3), normal (1.6), relaxed (1.8)
 
 ### Spacing
 Consistent scale used for margins, padding, gaps:
-- xs (0.25rem) → 4xl (4rem)
+- xs (0.25rem) â†’ 4xl (4rem)
 - All layouts use this scale for rhythm
 
 ### Components
@@ -146,7 +146,7 @@ Dark mode is handled automatically via CSS media queries. When users enable dark
 }
 ```
 
-No component code changes are needed — CSS variables automatically update.
+No component code changes are needed â€” CSS variables automatically update.
 
 ## Guide Page Components (lcyt-site)
 
@@ -257,7 +257,7 @@ All styling uses design tokens for consistency. Key elements:
 <!-- Card grid -->
 <div class="cards-grid">
   <a class="card" href="...">
-    <span class="card__emoji">📦</span>
+    <span class="card__emoji">ðŸ“¦</span>
     <div class="card__body">
       <h2>Title</h2>
       <p>Description</p>
@@ -323,11 +323,11 @@ Changes to variable names or values should be:
 
 The design system is optimized for performance:
 
-- **CSS variables only** — no runtime JavaScript
-- **No external fonts** — system font stack
-- **No CDN dependencies** — everything is local
-- **Minimal CSS** — only what's needed
-- **Dark mode via media queries** — native browser support
+- **CSS variables only** â€” no runtime JavaScript
+- **No external fonts** â€” system font stack
+- **No CDN dependencies** â€” everything is local
+- **Minimal CSS** â€” only what's needed
+- **Dark mode via media queries** â€” native browser support
 
 Typical bundle impact: < 2KB minified CSS
 
@@ -342,3 +342,4 @@ Typical bundle impact: < 2KB minified CSS
 - CSS Variables: [MDN Custom Properties](https://developer.mozilla.org/en-US/docs/Web/CSS/--*)
 - Dark Mode: [MDN prefers-color-scheme](https://developer.mozilla.org/en-US/docs/Web/CSS/@media/prefers-color-scheme)
 - Design Tokens: [Design Systems 101](https://www.nngroup.com/articles/design-systems-101/)
+

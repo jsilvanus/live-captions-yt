@@ -1,17 +1,17 @@
----
+﻿---
 id: api/usage
-title: "/usage — Domain Usage"
+title: "/usage â€” Domain Usage"
 methods: [GET]
 auth: [adminkey, none]
 ---
 
-# /usage — Domain Usage
+# /usage â€” Domain Usage
 
 Return aggregated caption statistics broken down by domain and time period.
 
 ---
 
-## `GET /usage` — Domain Usage Statistics
+## `GET /usage` â€” Domain Usage Statistics
 
 **Authentication:**
 - If `USAGE_PUBLIC` environment variable is set: no authentication required (CORS limited to `ALLOWED_DOMAINS`)
@@ -33,7 +33,7 @@ X-Admin-Key: <ADMIN_KEY>
 | `granularity` | `string` | `'day'` | Aggregation level: `'hour'` or `'day'` |
 | `domain` | `string` | all domains | Filter to a specific domain |
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -57,7 +57,7 @@ X-Admin-Key: <ADMIN_KEY>
 }
 ```
 
-When `granularity=hour`, each record also includes an `hour` field (integer 0–23).
+When `granularity=hour`, each record also includes an `hour` field (integer 0â€“23).
 
 | Field | Type | Description |
 |---|---|---|
@@ -91,3 +91,4 @@ The response also includes a top-level `viewerStats` array with anonymous daily 
 |---|---|---|
 | `viewerStats[].date` | `string` | Date in `YYYY-MM-DD` format |
 | `viewerStats[].opens` | `number` | Total anonymous viewer SSE opens on that date |
+

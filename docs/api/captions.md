@@ -1,17 +1,17 @@
----
+﻿---
 id: api/captions
-title: "/captions — Send Captions"
+title: "/api/v1/captions â€” Send Captions"
 methods: [POST]
 auth: [bearer]
 ---
 
-# /captions — Send Captions
+# /captions â€” Send Captions
 
 Queue one or more captions for delivery to YouTube. Returns `202 Accepted` immediately; the actual YouTube delivery result arrives on the SSE event stream (`GET /events`).
 
 ---
 
-## `POST /captions` — Send Captions
+## `POST /captions` â€” Send Captions
 
 Queue one or more captions for delivery to YouTube. Returns `202 Accepted` immediately; the actual YouTube delivery result arrives on the SSE event stream (`GET /events`).
 
@@ -49,7 +49,7 @@ Example with translations (send Finnish translation to YouTube, show original En
       "timestamp": "2024-01-01T12:00:01.000",
       "translations": {
         "fi-FI": "Tervetuloa streamiin!",
-        "es-ES": "¡Bienvenido al stream!"
+        "es-ES": "Â¡Bienvenido al stream!"
       },
       "captionLang": "fi-FI",
       "showOriginal": true
@@ -66,7 +66,7 @@ In the example above the backend will send `"Welcome to the stream!<br>Tervetulo
 | `captions[].text` | `string` | Yes | Caption text (original language) |
 | `captions[].timestamp` | `string \| number` | No | ISO string (`YYYY-MM-DDTHH:MM:SS.mmm`) or Unix milliseconds. Defaults to current server time. |
 | `captions[].time` | `number` | No | Milliseconds since session `startedAt`. Resolved by the server as `startedAt + time + syncOffset`. Cannot be combined with `timestamp`. |
-| `captions[].translations` | `object` | No | Map of BCP-47 language code → translated text, e.g. `{ "fi-FI": "Hei maailma!", "es-ES": "¡Hola, mundo!" }`. Used for backend file saving and caption composition. |
+| `captions[].translations` | `object` | No | Map of BCP-47 language code â†’ translated text, e.g. `{ "fi-FI": "Hei maailma!", "es-ES": "Â¡Hola, mundo!" }`. Used for backend file saving and caption composition. |
 | `captions[].captionLang` | `string` | No | BCP-47 code of the translation to use as the YouTube caption text. The backend looks up this code in `translations`. |
 | `captions[].showOriginal` | `boolean` | No | When `true` and `captionLang` is set, the caption sent to YouTube is `"original<br>translated"` instead of just the translation. |
 
@@ -76,14 +76,14 @@ The backend composes the final text sent to YouTube as follows:
 
 | `captionLang` set | `translations[captionLang]` exists | `showOriginal` | Result sent to YouTube |
 |---|---|---|---|
-| No | — | — | `text` (original) |
-| Yes | No | — | `text` (original, fallback) |
+| No | â€” | â€” | `text` (original) |
+| Yes | No | â€” | `text` (original, fallback) |
 | Yes | Yes | `false` | `translations[captionLang]` |
 | Yes | Yes | `true` | `text + "<br>" + translations[captionLang]` |
 
 If `backend_file_enabled` is set on the API key, the original text and all translations are also written to per-session files under `$FILES_DIR/<apiKey>/`. See [File Saving](#file-saving) and [`GET /file`](./file.md).
 
-**Response — `202 Accepted`**
+**Response â€” `202 Accepted`**
 
 ```json
 {
@@ -135,7 +135,7 @@ When a session includes a `generic` target (configured via `POST /live` or `PATC
       "timestamp": "2024-01-01T12:00:01.000",
       "translations": {
         "fi-FI": "Tervetuloa streamiin!",
-        "es-ES": "¡Bienvenido al stream!"
+        "es-ES": "Â¡Bienvenido al stream!"
       },
       "captionLang": "fi-FI",
       "showOriginal": true
@@ -155,4 +155,5 @@ When a session includes a `generic` target (configured via `POST /live` or `PATC
 | `captions[].translations` | `object \| undefined` | Full translations map, if provided by the client |
 | `captions[].captionLang` | `string \| undefined` | BCP-47 code of the active translation language, if set |
 | `captions[].showOriginal` | `boolean \| undefined` | Whether the original was combined with the translation, if set |
+
 

@@ -1,4 +1,4 @@
----
+﻿---
 id: api/readme
 title: "lcyt-backend API Reference"
 ---
@@ -16,21 +16,21 @@ title: "lcyt-backend API Reference"
 - [Authentication](#authentication)
 - [Environment Variables](#environment-variables)
 - [Endpoints](#endpoints)
-  - [Sessions — `/live`, `/sync`](#sessions)
-  - [Captions — `/captions`, `/events`](#captions)
-  - [Files — `/file`](#files)
-  - [API Keys — `/keys`](#keys)
-  - [Statistics — `/stats`, `/usage`](#stats)
-  - [Health — `/health`, `/contact`](#health)
-  - [RTMP Relay — `/stream`, `/rtmp`](#rtmp-relay)
-  - [Viewer — `/viewer`](#viewer)
-  - [Video Player — `/video`](#video-player)
-  - [HLS Streaming — `/stream-hls`, `/radio`](#hls-streaming)
-  - [Preview — `/preview`](#preview)
-  - [DSK Overlay — `/dsk`, `/dsk-rtmp`](#dsk-overlay)
-  - [Images — `/images`](#images)
-  - [Icons — `/icons`](#icons)
-  - [YouTube OAuth — `/youtube`](#youtube-oauth)
+  - [Sessions â€” `/api/v1/live`, `/api/v1/sync`](#sessions)
+  - [Captions â€” `/api/v1/captions`, `/api/v1/events`](#captions)
+  - [Files â€” `/api/v1/file`](#files)
+  - [API Keys â€” `/api/v1/keys`](#keys)
+  - [Statistics â€” `/api/v1/stats`, `/api/v1/usage`](#stats)
+  - [Health â€” `/health`, `/contact`](#health)
+  - [RTMP Relay â€” `/api/v1/stream`, `/api/v1/rtmp`](#rtmp-relay)
+  - [Viewer â€” `/viewer`](#viewer)
+  - [Video Player â€” `/video`](#video-player)
+  - [HLS Streaming â€” `/api/v1/stream-hls`, `/api/v1/radio`](#hls-streaming)
+  - [Preview â€” `/preview`](#preview)
+  - [DSK Overlay â€” `/api/v1/dsk`, `/api/v1/dsk-rtmp`](#dsk-overlay)
+  - [Images â€” `/api/v1/images`](#images)
+  - [Icons â€” `/api/v1/icons`](#icons)
+  - [YouTube OAuth â€” `/youtube`](#youtube-oauth)
 
 ---
 
@@ -50,7 +50,7 @@ Content-Type: application/json
 { "apiKey": "...", "domain": "https://your-app.example.com", "targets": [...] }
 ```
 
-`streamKey` is **optional** — it exists for backward compatibility with single-target deployments. In the recommended target-array mode, omit `streamKey` and pass all YouTube stream keys inside the `targets` array instead.
+`streamKey` is **optional** â€” it exists for backward compatibility with single-target deployments. In the recommended target-array mode, omit `streamKey` and pass all YouTube stream keys inside the `targets` array instead.
 
 Response:
 ```json
@@ -69,7 +69,7 @@ GET /events?token=<JWT>
 
 ### Admin API Key (server-level)
 
-Admin routes (`/keys`, `GET /usage` without `USAGE_PUBLIC`) require:
+Admin routes (`/api/v1/keys`, `GET /api/v1/usage` without `USAGE_PUBLIC`) require:
 ```http
 X-Admin-Key: <ADMIN_KEY>
 ```
@@ -99,11 +99,11 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `CONTACT_EMAIL` | none | Email returned by `GET /contact` |
 | `CONTACT_PHONE` | none | Phone number returned by `GET /contact` |
 | `CONTACT_WEBSITE` | none | Website URL returned by `GET /contact` |
-| `RTMP_RELAY_ACTIVE` | unset | Set to `1` to enable the RTMP relay subsystem (`/rtmp`, `/stream`). |
-| `RTMP_APPLICATION` | unset | If set, the `/rtmp` callback rejects requests where the RTMP `app` name does not match. |
+| `RTMP_RELAY_ACTIVE` | unset | Set to `1` to enable the RTMP relay subsystem (`/api/v1/rtmp`, `/api/v1/stream`). |
+| `RTMP_APPLICATION` | unset | If set, the `/api/v1/rtmp` callback rejects requests where the RTMP `app` name does not match. |
 | `RTMP_HOST` | `rtmp.lcyt.fi` | Hostname of the nginx-rtmp ingest server. Reported in `GET /health` when relay is active. |
 | `RTMP_APP` | `stream` | RTMP application name for the main relay. Reported in `GET /health`. |
-| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Comma-separated domains allowed to use `/stream` relay endpoints. Set to `*` to allow all. |
+| `ALLOWED_RTMP_DOMAINS` | _(falls back to `ALLOWED_DOMAINS`)_ | Comma-separated domains allowed to use `/api/v1/stream` relay endpoints. Set to `*` to allow all. |
 | `BACKEND_URL` | _(derived from request)_ | Absolute URL of this backend. Used to build embed URLs in player snippets. |
 | `GRAPHICS_ENABLED` | unset | Set to `1` to enable `POST /images` (DSK image upload). |
 | `GRAPHICS_DIR` | `/data/images` | Base directory for DSK image storage. |
@@ -118,7 +118,7 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 | `PREVIEW_ROOT` | `/data/preview` | Directory where JPEG stream thumbnails are stored. |
 | `DSK_LOCAL_RTMP` | `rtmp://127.0.0.1:1935` | Local nginx-rtmp base URL for the DSK ingest application. |
 | `DSK_RTMP_APP` | `dsk` | nginx-rtmp application name for DSK RTMP ingest. |
-| `YOUTUBE_CLIENT_ID` | none | Google OAuth 2.0 client ID — enables `GET /youtube/config`. |
+| `YOUTUBE_CLIENT_ID` | none | Google OAuth 2.0 client ID â€” enables `GET /youtube/config`. |
 | `TRUST_PROXY` | `1` | Express `trust proxy` setting. Set to `0` to disable, or a number for hop count. |
 
 ---
@@ -127,14 +127,14 @@ The `ADMIN_KEY` value is set via the server environment variable. If `ADMIN_KEY`
 
 CORS is handled dynamically:
 
-- **`POST /live`**, **`GET /health`**, **`GET /contact`** — open to all origins
-- **`POST /keys?freetier`** — open to all origins (if `FREE_APIKEY_ACTIVE=1`)
-- **`GET /viewer/:key`** — open to all origins (`*`)
-- **`GET /video/:key/…`** — open to all origins (`*`)
-- **`GET /stream-hls/:key/*`**, **`GET /radio/:key/*`** — open to origins matching the per-key `embedCors` setting (defaults to `*`)
-- **`GET /preview/:key/*`**, **`GET /images/:id`**, **`GET /icons/:id`**, **`GET /dsk/:key/*`** — open to all origins (`*`)
-- **Authenticated routes** — only the `domain` registered in the session is allowed
-- **Admin routes** — no CORS headers (intended for server-side use only)
+- **`POST /live`**, **`GET /health`**, **`GET /contact`** â€” open to all origins
+- **`POST /keys?freetier`** â€” open to all origins (if `FREE_APIKEY_ACTIVE=1`)
+- **`GET /viewer/:key`** â€” open to all origins (`*`)
+- **`GET /video/:key/â€¦`** â€” open to all origins (`*`)
+- **`GET /stream-hls/:key/*`**, **`GET /radio/:key/*`** â€” open to origins matching the per-key `embedCors` setting (defaults to `*`)
+- **`GET /preview/:key/*`**, **`GET /images/:id`**, **`GET /icons/:id`**, **`GET /dsk/:key/*`** â€” open to all origins (`*`)
+- **Authenticated routes** â€” only the `domain` registered in the session is allowed
+- **Admin routes** â€” no CORS headers (intended for server-side use only)
 
 ---
 
@@ -201,7 +201,7 @@ The viewer system broadcasts live captions to audience members via a public SSE 
 
 | Endpoint | Purpose |
 |---|---|
-| [`GET /viewer/:key`](./viewer.md) | Public SSE stream — subscribe to live captions for a viewer key |
+| [`GET /viewer/:key`](./viewer.md) | Public SSE stream â€” subscribe to live captions for a viewer key |
 
 ---
 
@@ -211,7 +211,7 @@ An embeddable HLS.js player that combines the live video stream with multilingua
 
 | Endpoint | Purpose |
 |---|---|
-| [`GET /video/:key`](./video.md) | HLS.js player page — iframe-embeddable, supports `?theme=dark\|light` |
+| [`GET /video/:key`](./video.md) | HLS.js player page â€” iframe-embeddable, supports `?theme=dark\|light` |
 | [`GET /video/:key/master.m3u8`](./video.md) | HLS master manifest (video + all active subtitle tracks) |
 | [`GET /video/:key/subs/:lang/playlist.m3u8`](./video.md) | HLS subtitle playlist for a specific language |
 | [`GET /video/:key/subs/:lang/:seg.vtt`](./video.md) | WebVTT subtitle segment file |
@@ -278,3 +278,4 @@ The Downstream Keyer (DSK) system overlays graphics on the relayed video stream 
 | Endpoint | Purpose |
 |---|---|
 | [`GET /youtube/config`](./youtube.md) | Return the server's YouTube OAuth client ID for client-side GIS sign-in |
+

@@ -1,12 +1,12 @@
----
+﻿---
 id: plan/recording_vod
-title: "Recording & VOD Pipeline — Stored Videos from Broadcasts"
+title: "Recording & VOD Pipeline â€” Stored Videos from Broadcasts"
 status: implemented (phase 1, local-storage path only; S3 upload of recorded segments and the worker-daemon recorder = not built)
-summary: "Backs the Assets page's 'Stored videos' card with a real recording pipeline. A broadcast can opt in to recording (`record_enabled`); when it goes live, its MediaMTX stream path is patched to record (MediaMtxClient.patchPath) to HLS VOD (fMP4), and a videos table indexes the result keyed to the broadcast. Playback is HLS in-browser via `GET /videos/:id/playlist.m3u8`. MediaMTX native recording is the phase-1 recorder (chosen as the first step); the worker-daemon ffmpeg recorder (which already does ffmpeg + S3 upload) is a phase-2 alternative behind a swappable recorder interface — not started. **Verified against current code (2026-07-20):** only the local-disk fallback path actually works end-to-end — MediaMTX always writes segments locally, and `startVideoRecording`/`finishVideoRecording` (`packages/lcyt-backend/src/db/videos.js`) mark `storage_type='s3'` whenever `isS3Enabled()`, but no watcher/uploader (the plan called for reusing worker-daemon's `createUploader`/`createS3UploadFn` or the lcyt-files S3 adapter) ever moves the recorded segments to S3 — that half of the architecture was never wired up, so an S3-configured deployment would 404 on playback. `docker/mediamtx.yml` also never gained the recording-defaults section this plan called for (recording is configured dynamically per-path via `patchPath` instead, so this is cosmetic, not functional)."
+summary: "Backs the Assets page's 'Stored videos' card with a real recording pipeline. A broadcast can opt in to recording (`record_enabled`); when it goes live, its MediaMTX stream path is patched to record (MediaMtxClient.patchPath) to HLS VOD (fMP4), and a videos table indexes the result keyed to the broadcast. Playback is HLS in-browser via `GET /videos/:id/playlist.m3u8`. MediaMTX native recording is the phase-1 recorder (chosen as the first step); the worker-daemon ffmpeg recorder (which already does ffmpeg + S3 upload) is a phase-2 alternative behind a swappable recorder interface â€” not started. **Verified against current code (2026-07-20):** only the local-disk fallback path actually works end-to-end â€” MediaMTX always writes segments locally, and `startVideoRecording`/`finishVideoRecording` (`packages/lcyt-backend/src/db/videos.js`) mark `storage_type='s3'` whenever `isS3Enabled()`, but no watcher/uploader (the plan called for reusing worker-daemon's `createUploader`/`createS3UploadFn` or the lcyt-files S3 adapter) ever moves the recorded segments to S3 â€” that half of the architecture was never wired up, so an S3-configured deployment would 404 on playback. `docker/mediamtx.yml` also never gained the recording-defaults section this plan called for (recording is configured dynamically per-path via `patchPath` instead, so this is cosmetic, not functional)."
 related: plan/assets_page, plan/broadcasts, plan/asset_backends, plan/mediamtx, plan/hls_sidecar, plan/cloudfleet
 ---
 
-# Recording & VOD Pipeline — Stored Videos from Broadcasts
+# Recording & VOD Pipeline â€” Stored Videos from Broadcasts
 
 Backs the third placeholder card from `plan_assets_page.md` (Stored videos) with
 a real recording/VOD pipeline. This is the largest missing backend piece for the
@@ -38,12 +38,12 @@ the default and S3 as an optional transport.
 
 ## Decisions (locked)
 
-- **Recorder → MediaMTX native recording first**; worker-daemon ffmpeg recorder
+- **Recorder â†’ MediaMTX native recording first**; worker-daemon ffmpeg recorder
   is a **later stage**. Both sit behind one swappable recorder interface.
-- **Trigger → opt-in per broadcast.** Recording happens only for broadcasts that
-  enabled it — no storing every ad-hoc/test cast.
-- **Output → HLS VOD** (segmented fMP4 + playlist), streamable in-browser.
-- **Storage → S3 when configured, local-disk fallback otherwise.** Recordings
+- **Trigger â†’ opt-in per broadcast.** Recording happens only for broadcasts that
+  enabled it â€” no storing every ad-hoc/test cast.
+- **Output â†’ HLS VOD** (segmented fMP4 + playlist), streamable in-browser.
+- **Storage â†’ S3 when configured, local-disk fallback otherwise.** Recordings
   are **not** hard-tied to S3: MediaMTX always writes segments to a local record
   dir first; if S3 is configured they upload there, and if it isn't they stay on
   local disk and the backend serves them. This matches the existing file-storage
@@ -53,14 +53,14 @@ the default and S3 as an optional transport.
 ## Architecture
 
 ```
-broadcast (record_enabled) ──live──▶ MediaMTX path patched: record=yes
-        │                                     │
-        │                         fMP4 segments written
-        │                                     ▼
-        │                          uploaded to S3 (HLS VOD prefix)
-        ▼                                     ▼
-   on session end ─────────────▶ videos row (status=ready, broadcast_id, playlist, duration, size)
-                                              ▼
+broadcast (record_enabled) â”€â”€liveâ”€â”€â–¶ MediaMTX path patched: record=yes
+        â”‚                                     â”‚
+        â”‚                         fMP4 segments written
+        â”‚                                     â–¼
+        â”‚                          uploaded to S3 (HLS VOD prefix)
+        â–¼                                     â–¼
+   on session end â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â–¶ videos row (status=ready, broadcast_id, playlist, duration, size)
+                                              â–¼
                               Assets "Stored videos" card + Broadcast detail
 ```
 
@@ -77,11 +77,11 @@ config patch, not new transport code:
   (off globally; enabled per-path at runtime).
 - Segments are written to the local record path. **Destination depends on
   storage config:**
-  - **S3 configured** → watch the record dir and **upload** segments + a
+  - **S3 configured** â†’ watch the record dir and **upload** segments + a
     generated VOD playlist to an S3 HLS-VOD prefix (reuse the worker-daemon's
     `createUploader` / `createS3UploadFn`, or the `lcyt-files` S3 adapter).
     `videos.storage_type='s3'`, `storage_prefix`/`playlist_key` point at S3.
-  - **No S3 (fallback)** → leave the VOD on local disk under a recordings dir
+  - **No S3 (fallback)** â†’ leave the VOD on local disk under a recordings dir
     (e.g. `RECORDINGS_DIR`, defaulting like `FILES_DIR`); the backend serves the
     playlist + segments directly. `videos.storage_type='local'`, `storage_prefix`
     is the local path.
@@ -91,7 +91,7 @@ config patch, not new transport code:
   segments are uploaded (S3) or flushed (local), write the `videos` row
   (`status='ready'`, duration, size).
 
-### Recorder (phase 2: worker-daemon ffmpeg) — later
+### Recorder (phase 2: worker-daemon ffmpeg) â€” later
 
 The worker-daemon already runs ffmpeg jobs and uploads to S3
 (`packages/lcyt-worker-daemon/src/index.js`, `s3-uploader.js`). A phase-2
@@ -99,8 +99,8 @@ recorder records the relay input to HLS VOD via an ffmpeg job and uploads the
 same way. Both recorders implement one interface:
 
 ```
-recorder.start(broadcast, streamPath) → recordingHandle
-recorder.stop(recordingHandle)        → { s3Prefix, playlistKey, durationMs, sizeBytes }
+recorder.start(broadcast, streamPath) â†’ recordingHandle
+recorder.stop(recordingHandle)        â†’ { s3Prefix, playlistKey, durationMs, sizeBytes }
 ```
 
 so the backend calls the interface, not MediaMTX/ffmpeg directly, and the choice
@@ -154,10 +154,10 @@ recordings valid, though with broadcast auto-create every recording has one.
 
 ## Frontend
 
-- **Assets page** — the **Stored videos** card lists `videos` rows (title,
-  duration, status), row → an HLS player; ties into the broadcast that produced
+- **Assets page** â€” the **Stored videos** card lists `videos` rows (title,
+  duration, status), row â†’ an HLS player; ties into the broadcast that produced
   it.
-- **Broadcast detail** (`plan_broadcasts.md`) — shows the broadcast's recording
+- **Broadcast detail** (`plan_broadcasts.md`) â€” shows the broadcast's recording
   inline, and a **Record this broadcast** toggle writing `record_enabled`.
 
 ## Implementation milestones
@@ -166,23 +166,23 @@ recordings valid, though with broadcast auto-create every recording has one.
    index + `record_enabled` opt-in + playback + Assets card.
 2. **Phase 2 (later):** worker-daemon ffmpeg recorder behind the same interface.
 3. **Deferred:** in-browser trimming/clipping, automatic transcodes/renditions,
-   thumbnails-from-video (thumbnails come from the graphics editor — see
+   thumbnails-from-video (thumbnails come from the graphics editor â€” see
    `plan_asset_backends.md`).
 
 ## Repository touchpoints
 
-- `packages/plugins/lcyt-rtmp/src/mediamtx-client.js` — patch path config for
+- `packages/plugins/lcyt-rtmp/src/mediamtx-client.js` â€” patch path config for
   native recording.
-- `packages/lcyt-backend/src/routes/live.js` — start/stop recording when a
+- `packages/lcyt-backend/src/routes/live.js` â€” start/stop recording when a
   broadcast transitions live/completes.
-- `packages/lcyt-backend/src/routes/videos.js` and `src/db/videos.js` — new
+- `packages/lcyt-backend/src/routes/videos.js` and `src/db/videos.js` â€” new
   recording metadata and playlist endpoints.
-- `packages/lcyt-backend/src/db/schema.js` — `videos` table migration and
+- `packages/lcyt-backend/src/db/schema.js` â€” `videos` table migration and
   `broadcasts.record_enabled` column.
-- `docker/mediamtx.yml` — recording defaults and output path configuration.
-- `packages/lcyt-web/src/components/AssetsPage.jsx` and broadcast detail UI —
+- `docker/mediamtx.yml` â€” recording defaults and output path configuration.
+- `packages/lcyt-web/src/components/AssetsPage.jsx` and broadcast detail UI â€”
   render the stored-video card and recording toggle.
-- `packages/lcyt-worker-daemon/` — phase-2 ffmpeg-based recorder implementation.
+- `packages/lcyt-worker-daemon/` â€” phase-2 ffmpeg-based recorder implementation.
 
 ## Open questions
 
@@ -208,30 +208,30 @@ recordings valid, though with broadcast auto-create every recording has one.
 
 ## Cross-plan alignment
 
-- **`plan_assets_page.md`** — flips the Stored videos placeholder to a real card.
-- **`plan_broadcasts.md`** — adds `record_enabled`; `videos.broadcast_id` ties a
+- **`plan_assets_page.md`** â€” flips the Stored videos placeholder to a real card.
+- **`plan_broadcasts.md`** â€” adds `record_enabled`; `videos.broadcast_id` ties a
   recording to its broadcast (shown on the broadcast detail). Deleting a
   broadcast does not delete its videos (they carry their own lifecycle); confirm
   in the open questions.
-- **`plan_mediamtx.md` / `plan_hls_sidecar.md`** — reuses the MediaMTX broker and
+- **`plan_mediamtx.md` / `plan_hls_sidecar.md`** â€” reuses the MediaMTX broker and
   the HLS + S3 segment machinery those plans established.
-- **`plan_cloudfleet.md` / worker-daemon** — the phase-2 recorder path.
+- **`plan_cloudfleet.md` / worker-daemon** â€” the phase-2 recorder path.
 
 ## Resolved (smaller) decisions
 
-1. **Playback URL → backend playlist, storage-aware segments.** The VOD `.m3u8`
+1. **Playback URL â†’ backend playlist, storage-aware segments.** The VOD `.m3u8`
    playlist is always served via the backend (`GET /videos/:id/playlist.m3u8`,
    uniform auth). The segment URLs it references depend on `storage_type`:
-   **S3** → **direct signed S3/CDN links** (low backend load, private-bucket
-   safe); **local (fallback)** → backend-served segment files
+   **S3** â†’ **direct signed S3/CDN links** (low backend load, private-bucket
+   safe); **local (fallback)** â†’ backend-served segment files
    (`GET /videos/:id/seg/:name`, same auth). Either way recordings stay
-   access-controlled — no public objects required.
-2. **Retention → keep until manually deleted.** No auto-expiry/TTL and no
-   periodic sweep — recordings live until a user deletes them, which removes the
+   access-controlled â€” no public objects required.
+2. **Retention â†’ keep until manually deleted.** No auto-expiry/TTL and no
+   periodic sweep â€” recordings live until a user deletes them, which removes the
    S3 objects. Consistent with the Broadcasts "no auto-purge" decision.
-3. **Broadcast delete vs. its videos → keep the video, null the link.** When a
+3. **Broadcast delete vs. its videos â†’ keep the video, null the link.** When a
    broadcast is permanently deleted (after its cooling-off window), its
-   `videos.broadcast_id` is set `NULL` (the recording survives, unassigned) —
+   `videos.broadcast_id` is set `NULL` (the recording survives, unassigned) â€”
    the same "produced content survives" rule as caption files. The recording is
    only removed by an explicit `DELETE /videos/:id`.
 
@@ -240,3 +240,4 @@ recordings valid, though with broadcast auto-create every recording has one.
 - Live DVR / rewind during broadcast (this is post-broadcast VOD).
 - Editing/clipping, multi-rendition transcoding, external ingest of arbitrary
   video files (the earlier "thin external-reference" option was not chosen).
+

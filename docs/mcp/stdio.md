@@ -1,4 +1,4 @@
----
+﻿---
 id: mcp/stdio
 ---
 
@@ -85,14 +85,14 @@ The stdio server exposes MCP resources that clients can read directly:
 
 ```
 MCP Client (Claude Desktop)
-        │ stdin/stdout
-        ▼
+        â”‚ stdin/stdout
+        â–¼
 lcyt-mcp-stdio (subprocess)
-        │
-        ▼
+        â”‚
+        â–¼
 YoutubeLiveCaptionSender
-        │
-        ▼
+        â”‚
+        â–¼
 YouTube Live Ingestion API
 ```
 
@@ -120,7 +120,7 @@ No other environment variables are required. Stream keys and session parameters 
 - Check Claude Desktop logs for subprocess startup errors
 
 **Garbled output / JSON parse errors**
-- Make sure `LCYT_LOG_STDERR=1` is set — log output on stdout breaks the MCP stream
+- Make sure `LCYT_LOG_STDERR=1` is set â€” log output on stdout breaks the MCP stream
 
 **Session not found errors**
 - Sessions are in-memory and are lost if the server process restarts
@@ -135,3 +135,4 @@ No other environment variables are required. Stream keys and session parameters 
 - **Optional DB usage**: the stdio server can be started with `DB_PATH` to enable usage logging. If you configure a SQLite `DB_PATH` backed by a Docker volume, ensure the runtime user can write the file (see README for `chown` example).
 
 - **Session persistence**: stdio-mode sessions are process-local. If you need sessions to survive restarts or to be shared between remote clients, use the SSE server instead.
+

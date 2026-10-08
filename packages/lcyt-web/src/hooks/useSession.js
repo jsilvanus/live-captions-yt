@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+﻿import { useState, useRef, useEffect, useCallback } from 'react';
 import { BackendCaptionSender } from 'lcyt/backend';
 import { getEnabledTargets } from '../lib/targetConfig';
 import { createApi } from '../lib/api';
@@ -68,14 +68,14 @@ export function useSession({
   const reconnectAttemptsRef = useRef(0);
   const reconnectConfigRef   = useRef(null); // stores last successful connect config
 
-  // Authenticated fetch helper — always reads current token + URL from refs
+  // Authenticated fetch helper â€” always reads current token + URL from refs
   const api = createApi(senderRef, backendUrlRef);
 
   // Keep all callbacks in a ref so SSE handlers always see the latest version
   const cbs = useRef({});
   cbs.current = { onConnected, onDisconnected, onCaptionSent, onCaptionResult, onCaptionError, onSyncUpdated, onError, onBatchSent };
 
-  // Plugin SSE event listener registry — Map<string, Set<Function>>
+  // Plugin SSE event listener registry â€” Map<string, Set<Function>>
   const sseListenersRef = useRef(new Map());
 
   const subscribeSseEvent = useCallback(function subscribeSseEvent(name, handler) {
@@ -106,7 +106,7 @@ export function useSession({
     return () => clearInterval(id);
   }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Persistence ────────────────────────────────────────
+  // â”€â”€â”€ Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const getPersistedConfig = useCallback(function getPersistedConfig() {
     return readPersistedSessionConfig();
@@ -129,7 +129,7 @@ export function useSession({
     try { localStorage.removeItem(AUTO_CONNECT_KEY); } catch {}
   }, []);
 
-  // ─── Auto-reconnect helpers ──────────────────────────────
+  // â”€â”€â”€ Auto-reconnect helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const _cancelReconnect = useCallback(function _cancelReconnect() {
     if (reconnectTimerRef.current) {
@@ -160,10 +160,10 @@ export function useSession({
     cbs.current.onDisconnected?.();
   }, []);
 
-  // Ref to the latest connect function — avoids stale closure in reconnect timer
+  // Ref to the latest connect function â€” avoids stale closure in reconnect timer
   const connectRef = useRef(null);
 
-  // Ref to the latest _scheduleReconnect — used for recursive retry in timer callback
+  // Ref to the latest _scheduleReconnect â€” used for recursive retry in timer callback
   const scheduleReconnectRef = useRef(null);
 
   const _scheduleReconnect = useCallback(function _scheduleReconnect(cfg) {
@@ -172,7 +172,7 @@ export function useSession({
       clearTimeout(reconnectTimerRef.current);
       reconnectTimerRef.current = null;
     }
-    // Exponential backoff: 2s → 4s → 8s → 16s → 30s max
+    // Exponential backoff: 2s â†’ 4s â†’ 8s â†’ 16s â†’ 30s max
     const delay = Math.min(30_000, 2_000 * Math.pow(2, reconnectAttemptsRef.current));
     reconnectConfigRef.current = cfg;
     setReconnecting(true);
@@ -194,7 +194,7 @@ export function useSession({
   // Keep the refs up to date on every render
   scheduleReconnectRef.current = _scheduleReconnect;
 
-  // ─── Unified event stream ───────────────────────────────
+  // â”€â”€â”€ Unified event stream â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   useEffect(() => {
     if (!connected) return undefined;
@@ -241,7 +241,7 @@ export function useSession({
     });
   }, [connected, eventStream, _disconnectInternal]);
 
-  // ─── Health check ────────────────────────────────────────
+  // â”€â”€â”€ Health check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const checkHealth = useCallback(async function checkHealth(url) {
     const target = url ?? backendUrlRef.current;
@@ -277,7 +277,7 @@ export function useSession({
     }
   }, []);
 
-  // ─── Connect / Disconnect ───────────────────────────────
+  // â”€â”€â”€ Connect / Disconnect â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const connect = useCallback(async function connect({ backendUrl: url, apiKey: key, projectId: projectKey, projectAccessToken: accessToken, streamKey: sk } = {}) {
     // Disconnect any existing session (internally, without canceling reconnect state)
@@ -368,7 +368,7 @@ export function useSession({
   // Keep connectRef current for the reconnect timer callback
   connectRef.current = connect;
 
-  // Public disconnect — cancels any pending auto-reconnect
+  // Public disconnect â€” cancels any pending auto-reconnect
   const disconnect = useCallback(async function disconnect() {
     _cancelReconnect();
     reconnectConfigRef.current = null;
@@ -376,7 +376,7 @@ export function useSession({
     await _disconnectInternal();
   }, [_cancelReconnect, _disconnectInternal]);
 
-  // Manual "reconnect now" — used by the ReconnectBanner button
+  // Manual "reconnect now" â€” used by the ReconnectBanner button
   const reconnectNow = useCallback(function reconnectNow() {
     const cfg = reconnectConfigRef.current;
     if (!cfg) return;
@@ -387,7 +387,7 @@ export function useSession({
     });
   }, [_cancelReconnect, connect]);
 
-  // ─── Caption sending ────────────────────────────────────
+  // â”€â”€â”€ Caption sending â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function _translationMeta(opts) {
     const translations = opts?.translations || {};
@@ -416,7 +416,7 @@ export function useSession({
     return data;
   }, []);
 
-  // ─── Sync / Heartbeat ───────────────────────────────────
+  // â”€â”€â”€ Sync / Heartbeat â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const sync = useCallback(async function sync() {
     if (!senderRef.current) throw new Error('Not connected');
@@ -425,7 +425,7 @@ export function useSession({
     return data;
   }, []);
 
-  // ─── Batch/Construct Logic ──────────────────────────────
+  // â”€â”€â”€ Batch/Construct Logic â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const batchBufferRef = useRef([]); // [{ text, requestId }]
   const batchTimerRef  = useRef(null);
@@ -491,7 +491,7 @@ export function useSession({
     return batchBufferRef.current.length;
   }, []);
 
-  // ─── Mic soft lock ──────────────────────────────────────
+  // â”€â”€â”€ Mic soft lock â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const _postMic = useCallback(async function _postMic(action) {
     const token = senderRef.current?._token;
@@ -506,7 +506,7 @@ export function useSession({
         },
         body: JSON.stringify({ action, clientId: CLIENT_ID }),
       });
-    } catch { /* soft lock — ignore network errors */ }
+    } catch { /* soft lock â€” ignore network errors */ }
   }, []);
 
   const claimMic   = useCallback(function claimMic()   { return _postMic('claim');   }, [_postMic]);
@@ -548,7 +548,7 @@ export function useSession({
     await senderRef.current.updateSession({ targets });
   }, []);
 
-  // ─── Image / graphics management ────────────────────────
+  // â”€â”€â”€ Image / graphics management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const uploadImage = useCallback(async function uploadImage(file, shorthand) {
     const token = senderRef.current?._token;
@@ -611,21 +611,21 @@ export function useSession({
     return `/dsk/${key}?${params}`;
   }, []);
 
-  // ─── Self-service account management ────────────────────
+  // â”€â”€â”€ Self-service account management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const getStats = useCallback(async function getStats() {
-    return api.get('/api/stats');
+    return api.get('/api/v1/stats');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const eraseSelf = useCallback(async function eraseSelf() {
-    const data = await api.del('/api/stats');
+    const data = await api.del('/api/v1/stats');
     await disconnect();
     clearPersistedConfig();
     return data;
   }, [disconnect, clearPersistedConfig]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const listFiles = useCallback(async function listFiles() {
-    return api.get('/api/file');
+    return api.get('/api/v1/file');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const listStorageLibrary = useCallback(async function listStorageLibrary({ limit = 2000 } = {}) {
@@ -647,29 +647,29 @@ export function useSession({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getSessionFeatures = useCallback(async function getSessionFeatures() {
-    return api.get('/api/features');
+    return api.get('/api/v1/features');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getStorageConfig = useCallback(async function getStorageConfig() {
-    return api.get('/api/file/storage-config');
+    return api.get('/api/v1/file/storage-config');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setStorageConfig = useCallback(async function setStorageConfig(config) {
-    return api.put('/api/file/storage-config', config);
+    return api.put('/api/v1/file/storage-config', config);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteStorageConfig = useCallback(async function deleteStorageConfig() {
-    return api.del('/api/file/storage-config');
+    return api.del('/api/v1/file/storage-config');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Icons ──────────────────────────────────────────────
+  // â”€â”€â”€ Icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const listIcons = useCallback(async function listIcons() {
-    return api.get('/api/icons');
+    return api.get('/api/v1/icons');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const uploadIcon = useCallback(async function uploadIcon({ filename, mimeType, data }) {
-    return api.post('/api/icons', { filename, mimeType, data });
+    return api.post('/api/v1/icons', { filename, mimeType, data });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteIcon = useCallback(async function deleteIcon(iconId) {
@@ -679,7 +679,7 @@ export function useSession({
   const eraseSelfRef = useRef(eraseSelf);
   eraseSelfRef.current = eraseSelf;
 
-  // ─── RTMP relay ─────────────────────────────────────────
+  // â”€â”€â”€ RTMP relay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
@@ -688,10 +688,10 @@ export function useSession({
     if (fps != null) body.fps = fps;
     if (videoBitrate) body.videoBitrate = videoBitrate;
     if (audioBitrate) body.audioBitrate = audioBitrate;
-    // sourceCameraId (plan_ingest_feeds.md §1b/§3) takes priority over sourceView server-side.
+    // sourceCameraId (plan_ingest_feeds.md Â§1b/Â§3) takes priority over sourceView server-side.
     if (sourceCameraId) body.sourceCameraId = sourceCameraId;
     else if (sourceView) body.sourceView = sourceView;
-    return api.post('/api/stream', body);
+    return api.post('/api/v1/stream', body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = {}) {
@@ -711,43 +711,43 @@ export function useSession({
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopRelay = useCallback(async function stopRelay() {
-    return api.del('/api/stream', { parseErrorBody: true });
+    return api.del('/api/v1/stream', { parseErrorBody: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getRelayStatus = useCallback(async function getRelayStatus() {
-    return api.get('/api/stream');
+    return api.get('/api/v1/stream');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getRelayHistory = useCallback(async function getRelayHistory() {
-    return api.get('/api/stream/history');
+    return api.get('/api/v1/stream/history');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const setRelayActive = useCallback(async function setRelayActive(active) {
-    return api.put('/api/stream/active', { active });
+    return api.put('/api/v1/stream/active', { active });
   }, []);
 
   const toggleRecording = useCallback(async function toggleRecording({ enabled, slot } = {}) {
-    return api.post('/api/live/recording', { enabled, slot });
+    return api.post('/api/v1/live/recording', { enabled, slot });
   }, []);
 
   const getSttStatus = useCallback(function getSttStatus() {
-    return api.get('/api/stt/status');
+    return api.get('/api/v1/stt/status');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getSttConfig = useCallback(function getSttConfig() {
-    return api.get('/api/stt/config');
+    return api.get('/api/v1/stt/config');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const updateSttConfig = useCallback(function updateSttConfig(patch) {
-    return api.put('/api/stt/config', patch);
+    return api.put('/api/v1/stt/config', patch);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const startStt = useCallback(function startStt(opts = {}) {
-    return api.post('/api/stt/start', opts);
+    return api.post('/api/v1/stt/start', opts);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopStt = useCallback(function stopStt() {
-    return api.post('/api/stt/stop', {});
+    return api.post('/api/v1/stt/stop', {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getMusicEventsHistory = useCallback(async function getMusicEventsHistory({ limit, offset, eventType } = {}) {
@@ -783,3 +783,4 @@ export function useSession({
     subscribeSseEvent,
   };
 }
+

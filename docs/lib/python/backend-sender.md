@@ -1,6 +1,6 @@
----
+﻿---
 id: lib/python/backend-sender
-title: "Python — BackendCaptionSender"
+title: "Python â€” BackendCaptionSender"
 ---
 
 # BackendCaptionSender (Python)
@@ -42,9 +42,9 @@ BackendCaptionSender(
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `backend_url` | `str` | — | Base URL of the lcyt-backend server (e.g. `"https://captions.example.com"`) |
-| `api_key` | `str` | — | API key registered in the backend's database |
-| `stream_key` | `str` | — | YouTube Live stream key |
+| `backend_url` | `str` | â€” | Base URL of the lcyt-backend server (e.g. `"https://captions.example.com"`) |
+| `api_key` | `str` | â€” | API key registered in the backend's database |
+| `stream_key` | `str` | â€” | YouTube Live stream key |
 | `domain` | `str` | `"http://localhost"` | CORS origin the session is associated with |
 | `sequence` | `int` | `0` | Starting sequence number (overridden by server on `start()`) |
 | `verbose` | `bool` | `False` | Enable verbose output |
@@ -63,7 +63,7 @@ sender.start()
 sender = BackendCaptionSender(...).start()
 ```
 
-Updates internal `sequence`, `sync_offset`, and `started_at` from the server response. Idempotent — returns the existing session if one already exists.
+Updates internal `sequence`, `sync_offset`, and `started_at` from the server response. Idempotent â€” returns the existing session if one already exists.
 
 **Returns:** `self`
 
@@ -103,7 +103,7 @@ result = sender.send("Relative time", time=5000)  # 5 sec since session start
 | `timestamp` | `str \| None` | Absolute ISO timestamp. Mutually exclusive with `time`. |
 | `time` | `int \| None` | Milliseconds since session start. Resolved server-side as `startedAt + time + syncOffset`. Mutually exclusive with `timestamp`. |
 
-**Returns:** `dict` — `{"ok": True, "requestId": "..."}` (202 Accepted)
+**Returns:** `dict` â€” `{"ok": True, "requestId": "..."}` (202 Accepted)
 
 **Raises:** `NetworkError` on HTTP failure.
 
@@ -127,7 +127,7 @@ If `captions` is `None`, drains and sends the internal queue (built with `constr
 |---|---|---|
 | `captions` | `list[dict] \| None` | List of caption dicts with `text`, optional `timestamp` or `time`. `None` = send queue. |
 
-**Returns:** `dict` — `{"ok": True, "requestId": "..."}`
+**Returns:** `dict` â€” `{"ok": True, "requestId": "..."}`
 
 **Raises:** `NetworkError` on HTTP failure.
 
@@ -149,7 +149,7 @@ sender.send_batch()  # flush the queue
 | `timestamp` | `str \| None` | Optional absolute ISO timestamp |
 | `time` | `int \| None` | Optional ms-since-session-start offset |
 
-**Returns:** `int` — current queue length.
+**Returns:** `int` â€” current queue length.
 
 ---
 
@@ -173,7 +173,7 @@ queue = sender.get_queue()
 Clear the local queue.
 
 ```python
-count = sender.clear_queue()  # int — items cleared
+count = sender.clear_queue()  # int â€” items cleared
 ```
 
 **Returns:** `int`
@@ -192,7 +192,7 @@ print(data["syncOffset"])      # ms offset
 print(data["roundTripTime"])   # ms
 ```
 
-**Returns:** `dict` — `{"syncOffset": int, "roundTripTime": int, "serverTimestamp": str, "statusCode": int}`
+**Returns:** `dict` â€” `{"syncOffset": int, "roundTripTime": int, "serverTimestamp": str, "statusCode": int}`
 
 **Raises:** `NetworkError` on failure.
 
@@ -207,7 +207,7 @@ data = sender.heartbeat()
 print(data["sequence"])
 ```
 
-**Returns:** `dict` — `{"sequence": int, "syncOffset": int}`
+**Returns:** `dict` â€” `{"sequence": int, "syncOffset": int}`
 
 **Raises:** `NetworkError` on failure.
 
@@ -251,3 +251,4 @@ sender.send_batch()
 
 sender.end()
 ```
+

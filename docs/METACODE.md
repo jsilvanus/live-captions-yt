@@ -1,4 +1,4 @@
-# LCYT Metacode Reference
+﻿# LCYT Metacode Reference
 
 Caption files (`.txt`) can embed HTML comment metacodes to control caption delivery, file
 navigation, timing, metadata, and DSK graphics overlays. Metacodes are HTML comments and
@@ -140,7 +140,7 @@ Any key not in the list above is accepted and forwarded as-is to viewers and plu
 
 ### Persistent codes are variables (`=>` TTL + namespace)
 
-Every persistent code (`section`, `speaker`, `lyrics`, custom keys, …) is a
+Every persistent code (`section`, `speaker`, `lyrics`, custom keys, â€¦) is a
 **variable**. At send, its assignment is mirrored into the project's durable
 variable store (`source: 'file'`), so it is readable via `{{name}}`, appears in
 `GET /variables`, and can carry a lifetime with the `=>` annotation:
@@ -151,7 +151,7 @@ variable store (`source: 'file'`), so it is readable via `{{name}}`, appears in
 <!-- lower-third: Live => 5c -->        reverts after 5 captions (enforcement pending)
 ```
 
-`=> <count><unit>(:<revert>)?` — units `ms`/`s`/`m`/`c`, revert to **baseline**
+`=> <count><unit>(:<revert>)?` â€” units `ms`/`s`/`m`/`c`, revert to **baseline**
 (bare), a **literal**, or the **previous** value (`~`). Spaces around `=>`/`:` are
 optional; a trailing `=>` that isn't a valid duration stays literal text. Which
 names are reserved/actionable vs. plain variables is declared in
@@ -162,13 +162,13 @@ names are reserved/actionable vs. plain variables is declared in
 
 ## Variable Insertion & Text Blocks (`{{ }}`)
 
-Unlike the metacodes above, `{{ }}` is not stripped — it is *replaced* with content that is
+Unlike the metacodes above, `{{ }}` is not stripped â€” it is *replaced* with content that is
 delivered. See `docs/plans/plan_api_connectors_variables.md` and
 `docs/plans/plan_live_variables.md` for the full model.
 
-### `{{name}}` — plain insertion
+### `{{name}}` â€” plain insertion
 
-A pure, timing-agnostic read of variable `name`'s current value. Never triggers a fetch —
+A pure, timing-agnostic read of variable `name`'s current value. Never triggers a fetch â€”
 resolution happens at send (`InputBar.jsx`'s `doSend()`) via
 `packages/lcyt-web/src/lib/metacode-variables.js`'s `interpolateVariables()`.
 
@@ -178,33 +178,33 @@ Now playing: {{now_playing}}
 
 **Live display:** while the operator has the line open (not yet sent), the caption view shows
 the variable's *current, live* value in place, in a distinct style, rather than the raw
-`{{name}}` token — bus-pushed via the shared `variable.*` SSE topic (`useVariables()`,
+`{{name}}` token â€” bus-pushed via the shared `variable.*` SSE topic (`useVariables()`,
 `VariablesContext`), no polling. Handled in `packages/lcyt-web/src/components/CaptionView.jsx`.
 
-### `{{name[N]}}` / `{{name[N*]}}` — variable-backed text blocks
+### `{{name[N]}}` / `{{name[N*]}}` â€” variable-backed text blocks
 
 Expands a variable's (possibly long) value into multiple **visible, navigable, sendable**
-virtual lines, wrapped to at most `N` characters — distinct from plain `{{name}}` (single
+virtual lines, wrapped to at most `N` characters â€” distinct from plain `{{name}}` (single
 value, one line). Use case: an `api:` call fetches a long text into a variable; the operator
 steps through it a line at a time.
 
 ```
-{{scripture[40]}}    soft wrap — break at the closest whitespace before 40 chars
-{{quote[40*]}}        hard wrap — slice at exactly 40 characters, ignoring words
+{{scripture[40]}}    soft wrap â€” break at the closest whitespace before 40 chars
+{{quote[40*]}}        hard wrap â€” slice at exactly 40 characters, ignoring words
 ```
 
 - **Block-only**: the marker must be the line's *entire* content (after other metacodes are
   stripped). Used inline mixed with other text (`Quote: {{q[40]}}`) it is left as literal,
-  unresolved text — not expanded.
+  unresolved text â€” not expanded.
 - **Virtual lines**: the wrapped segments are not written back into the raw `.txt` file. They
   exist only in the in-memory parsed line arrays, tagged `virtual: true` / `virtualBlock: name`,
   and share the source line's gutter number.
 - **Not-yet-resolved fallback**: if the variable has never resolved when the file is parsed, the
-  marker line shows a `⏳ … loading…` placeholder (tagged `varBlockPending: true`) instead of
+  marker line shows a `â³ â€¦ loadingâ€¦` placeholder (tagged `varBlockPending: true`) instead of
   expanding; it materializes automatically once the value arrives (reactive re-parse, see
   `contexts/FileContext.jsx`).
 - **Freeze**: once a block has materialized, later changes to the variable do **not** reflow it
-  — a fresh expansion only happens on an explicit reparse (raw-edit save, file reload/re-open).
+  â€” a fresh expansion only happens on an explicit reparse (raw-edit save, file reload/re-open).
   This avoids the wrapped line count shifting under the operator mid-navigation.
 - Where handled: marker detection in `packages/lcyt-web/src/lib/metacode-parser.js` (pure, no
   variable access); wrap + expansion logic in `packages/lcyt-web/src/lib/metacode-varblocks.js`;
@@ -215,7 +215,7 @@ steps through it a line at a time.
 ## Stanza Blocks
 
 Multi-line stanza text that is shown to the viewer *before* the singer begins. The stanza is
-not sent as a caption — it sets a `stanza` code on every line that follows until overridden.
+not sent as a caption â€” it sets a `stanza` code on every line that follows until overridden.
 
 ```
 <!-- stanza
@@ -269,10 +269,10 @@ line. The timer is an inline marker that coexists with content on the same line.
 <!-- timer: 2m -->
 ```
 
-- Values: a positive number, optionally with a unit — `ms` / `s` / `m`. A bare
+- Values: a positive number, optionally with a unit â€” `ms` / `s` / `m`. A bare
   number means **seconds** (e.g. `timer: 5` = 5 s), fractions allowed. Units are
   shared with the `=>` variable-TTL vocabulary (`parseDuration`); `timer` has no
-  `c`/captions unit since it is a wall-clock playback delay, not a value lifetime.
+  `c`/api/v1/captions unit since it is a wall-clock playback delay, not a value lifetime.
 - Effect: sends the line's content after the delay, then moves the pointer forward
 - Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; runtime scheduling in
   `packages/lcyt-web/src/lib/metacode-runtime.js`.
@@ -331,7 +331,7 @@ its content is auto-sent. The cue metacode is stripped from the sent text.
 
 ```
 <!-- cue:Amen -->Let us pray
-<!-- cue:Let us * -->Response text     ← wildcard matching
+<!-- cue:Let us * -->Response text     â† wildcard matching
 ```
 
 Modifier asterisks control firing eligibility relative to the current pointer:
@@ -345,8 +345,8 @@ Modifier asterisks control firing eligibility relative to the current pointer:
 The tilde modifier enables Jaro-Winkler fuzzy matching (catches STT spelling variations):
 
 ```
-<!-- cue~:we beseech thee -->Lord hear us       ← fuzzy next
-<!-- cue*~:amen -->Let us close                  ← fuzzy + skip
+<!-- cue~:we beseech thee -->Lord hear us       â† fuzzy next
+<!-- cue*~:amen -->Let us close                  â† fuzzy + skip
 ```
 
 Compact cue-expression syntax is also supported for composite conditions and named definitions:
@@ -360,17 +360,17 @@ Compact cue-expression syntax is also supported for composite conditions and nam
 
 Operators are `|` (OR), `|+` (AND), and `|-` (NOT). Shorthand terms include `exact:`, `fuzzy:`, `semantic:`, bare terms, `~term`, `~~term`, `@named`, `complex:named`, and `#event`.
 
-Bracket modifiers enable backend-only AI matching (these are skipped by the frontend —
+Bracket modifiers enable backend-only AI matching (these are skipped by the frontend â€”
 they fire only via backend `cue_fired` SSE events):
 
 ```
-<!-- cue[semantic]:prayer for healing -->Response   ← embedding similarity
-<!-- cue[events]:the speaker stands up -->Next      ← LLM event evaluation
+<!-- cue[semantic]:prayer for healing -->Response   â† embedding similarity
+<!-- cue[events]:the speaker stands up -->Next      â† LLM event evaluation
 ```
 
 - Values: phrase to match (supports `*` wildcard glob)
 - Type: Inline marker (coexists with content and other metacodes on the same line)
-- Effect: registers a cue trigger; on match → pointer jumps, content auto-sends
+- Effect: registers a cue trigger; on match â†’ pointer jumps, content auto-sends
 - Where handled: parsed in `packages/lcyt-web/src/lib/metacode-parser.js`; matching in
   `packages/lcyt-web/src/lib/metacode-runtime.js` (`buildCueMap`, `checkCueMatch`);
   auto-send in `packages/lcyt-web/src/components/InputBar.jsx`; backend cue engine in
@@ -447,7 +447,7 @@ Landscape aliases: `landscape`, `default`, `main` all refer to the same default 
 ## Line Numbering
 
 Line numbers in the caption view gutter reflect the **actual 1-based position in the raw
-text file** — the same number shown in a text editor. Metadata-only lines and blank lines
+text file** â€” the same number shown in a text editor. Metadata-only lines and blank lines
 are consumed during parsing, so gaps may appear in the sequence. The `<!-- goto: N -->`
 metacode uses these raw line numbers.
 
@@ -457,26 +457,26 @@ metacode uses these raw line numbers.
 
 | Metacode | Type | Where resolved |
 |----------|------|----------------|
-| `lang: <bcp47>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js`; backend handoff `packages/lcyt-backend/src/metacode.js` |
-| `no-translate: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
-| `section: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → `packages/plugins/lcyt-dsk/src/caption-processor.js` |
-| `speaker: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → `packages/lcyt-web/src/lib/metacode-runtime.js` |
-| `lyrics: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → planner `packages/lcyt-web/src/lib/metacode-planner.js` |
-| `explanation: <text>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` → AI context window (`packages/plugins/lcyt-agent`) |
-| `audio: start\|stop` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
-| `timer: <seconds>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
-| `goto: <line>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
-| `file: <name>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime helpers |
-| `file[server]: <path>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime helpers (fetch + fileStore) |
-| `cue: <phrase>` | Inline | `packages/lcyt-web/src/lib/metacode-parser.js` → runtime `packages/lcyt-web/src/lib/metacode-runtime.js` → `InputBar.jsx` |
+| `lang: <bcp47>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime `packages/lcyt-web/src/lib/metacode-runtime.js`; backend handoff `packages/lcyt-backend/src/metacode.js` |
+| `no-translate: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `section: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ `packages/plugins/lcyt-dsk/src/caption-processor.js` |
+| `speaker: <name>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `lyrics: true\|false` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ planner `packages/lcyt-web/src/lib/metacode-planner.js` |
+| `explanation: <text>` | Persistent | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ AI context window (`packages/plugins/lcyt-agent`) |
+| `audio: start\|stop` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `timer: <seconds>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `goto: <line>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime `packages/lcyt-web/src/lib/metacode-runtime.js` |
+| `file: <name>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime helpers |
+| `file[server]: <path>` | Action | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime helpers (fetch + fileStore) |
+| `cue: <phrase>` | Inline | `packages/lcyt-web/src/lib/metacode-parser.js` â†’ runtime `packages/lcyt-web/src/lib/metacode-runtime.js` â†’ `InputBar.jsx` |
 | `cue*: <phrase>` | Inline | Same as `cue:` with skip-forward mode |
 | `cue**: <phrase>` | Inline | Same as `cue:` with any-position mode |
 | `cue~: <phrase>` | Inline | Same as `cue:` with Jaro-Winkler fuzzy matching |
 | `cue[semantic]: <phrase>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` (embedding similarity) |
-| `cue[events]: <desc>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` → `packages/plugins/lcyt-agent` (LLM evaluation) |
+| `cue[events]: <desc>` | Inline | Backend only: `packages/plugins/lcyt-cues/src/cue-engine.js` â†’ `packages/plugins/lcyt-agent` (LLM evaluation) |
 | `stanza` block | Block | `packages/lcyt-web/src/lib/metacode-parser.js` (compatibility re-exports in `fileUtils.js`) |
-| `{{name}}` | Insertion | `packages/lcyt-web/src/lib/metacode-variables.js` (send) → live display in `CaptionView.jsx` |
-| `{{name[N]}}` / `{{name[N*]}}` | Text block | `metacode-parser.js` (marker) → `metacode-varblocks.js` (wrap) → `hooks/useFileStore.js` (virtual lines) |
+| `{{name}}` | Insertion | `packages/lcyt-web/src/lib/metacode-variables.js` (send) â†’ live display in `CaptionView.jsx` |
+| `{{name[N]}}` / `{{name[N*]}}` | Text block | `metacode-parser.js` (marker) â†’ `metacode-varblocks.js` (wrap) â†’ `hooks/useFileStore.js` (virtual lines) |
 | `graphics: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
 | `graphics[vp]: <names>` | In-text | `packages/plugins/lcyt-dsk/src/caption-processor.js` |
 
@@ -498,4 +498,5 @@ Plan boundaries:
   `packages/lcyt-web/src/lib/metacode-runtime.js`.
 - Keep compatibility re-exports in `packages/lcyt-web/src/lib/fileUtils.js`,
   `activeCodes.js`, and `plannerUtils.js` where useful.
+
 

@@ -1,10 +1,10 @@
----
-title: "get_status — Session Status"
+﻿---
+title: "get_status â€” Session Status"
 stdio: true
 sse: true
 ---
 
-# `get_status` — Session Status
+# `get_status` â€” Session Status
 
 Retrieve the current state of a caption session.
 
@@ -33,3 +33,4 @@ id: mcp/tools/get-status
 | Field | Type | Description |
 |---|---|---|
 | `syncOffset` | `number` | Current clock sync offset |
+

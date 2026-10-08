@@ -1,11 +1,11 @@
----
+﻿---
 title: Application Flow
 order: 10
 ---
 
 # Application Flow
 
-This page shows how all parts of the LCYT web app work together — from logging in to captions appearing on YouTube.
+This page shows how all parts of the LCYT web app work together â€” from logging in to captions appearing on YouTube.
 
 ---
 
@@ -18,9 +18,9 @@ flowchart TB
         L1["Open /login\nChoose backend preset\n(Normal / Minimal / Custom)"]
         L2["Probe GET /health\nDiscover features"]
         L3{"login feature?"}
-        L4["Email + Password\n→ POST /auth/login\n→ User JWT (30 d)"]
+        L4["Email + Password\nâ†’ POST /auth/login\nâ†’ User JWT (30 d)"]
         L5["API Key entry only\n(minimal mode)"]
-        L6["POST /live\n{ apiKey, targets[] }\n→ Session JWT"]
+        L6["POST /live\n{ apiKey, targets[] }\nâ†’ Session JWT"]
     end
 
     subgraph Input["Caption Input"]
@@ -37,14 +37,14 @@ flowchart TB
         B2["Metacode processor\nstrips graphics: cue: tags"]
         B3["_sendQueue\nserialised delivery\nmonotonic sequence #"]
         B4["CueEngine\nphrase / fuzzy / semantic / AI\nevent cue matching"]
-        B5["DSK caption processor\ngraphics metacodes → SSE"]
+        B5["DSK caption processor\ngraphics metacodes â†’ SSE"]
         B6["Session emitter\nroutes results to SSE"]
     end
 
     subgraph Targets["Delivery Targets"]
         direction TB
         T1["YouTube Live\nHTTP POST\n/caption_ingestion/v1"]
-        T2["Viewer SSE\nGET /viewer/:key\npublic — no auth"]
+        T2["Viewer SSE\nGET /viewer/:key\npublic â€” no auth"]
         T3["Generic HTTP\nPOST to custom URL\n{ source, sequence, captions }"]
     end
 
@@ -90,7 +90,7 @@ flowchart LR
 
     subgraph VIEWER["Viewer target"]
         VA["broadcastToViewers(key, payload)"]
-        VB["GET /viewer/:key\nSSE stream — CORS *\npublic — no auth required"]
+        VB["GET /viewer/:key\nSSE stream â€” CORS *\npublic â€” no auth required"]
         VC["lcyt-tv Android app\nor embedded viewer page\n/view/:key"]
         VA --> VB --> VC
     end
@@ -123,11 +123,11 @@ flowchart TB
         MTX["MediaMTX\nRTMP server"]
     end
 
-    subgraph lcytBackend["LCYT Backend — lcyt-rtmp plugin"]
+    subgraph lcytBackend["LCYT Backend â€” lcyt-rtmp plugin"]
         HLS["HLS Manager\nvideo + audio\n/stream-hls/:key"]
         RADIO["Radio Manager\naudio-only HLS\n/radio/:key"]
         PREV["Preview Manager\nJPEG thumbnail\n/preview/:key"]
-        STT["STT Manager\nGoogle / Whisper / OpenAI\n→ auto captions"]
+        STT["STT Manager\nGoogle / Whisper / OpenAI\nâ†’ auto captions"]
         RELAY["RTMP Relay\nup to 4 destinations"]
         SUBS["HLS Subs Manager\nWebVTT subtitle\nsidecar segments"]
         DSK["DSK Renderer\nPlaywright + Chromium\ngraphics overlay"]
@@ -177,13 +177,13 @@ sequenceDiagram
     OP->>BE: POST /captions { text: "Hello everyone" }
     BE-->>OP: 202 { ok, requestId }
 
-    BE->>YT: POST /caption_ingestion/v1?streamKey=…
+    BE->>YT: POST /caption_ingestion/v1?streamKey=â€¦
     YT-->>BE: 204 OK
 
     BE->>VW: broadcast { text, sequence, timestamp }
 
     BE-->>OP: SSE caption_result { requestId, ok: true }
-    OP-->>OP: Sent log turns green ✓
+    OP-->>OP: Sent log turns green âœ“
 ```
 
 ---
@@ -196,19 +196,20 @@ flowchart LR
         CAPTION["Caption with metacode\n<!-- graphics:logo,banner -->"]
     end
 
-    subgraph BE["Backend — lcyt-dsk plugin"]
+    subgraph BE["Backend â€” lcyt-dsk plugin"]
         PROC["DSK Caption Processor\nextracts graphics: tags"]
         SSE["DSK SSE stream\nGET /dsk/:key/events"]
         REND["Playwright Renderer\nheadless Chromium"]
-        FFMPEG["ffmpeg\nframes → RTMP"]
+        FFMPEG["ffmpeg\nframes â†’ RTMP"]
     end
 
     subgraph Outputs["Outputs"]
         DSK_PAGE["DSK page /dsk/:key\ntransparent green-screen overlay\ndisplayed in browser or OBS"]
-        RTMP_OUT["RTMP keyed output\n→ nginx-rtmp → mixer"]
+        RTMP_OUT["RTMP keyed output\nâ†’ nginx-rtmp â†’ mixer"]
     end
 
     CAPTION --> PROC
     PROC --> SSE --> DSK_PAGE
     PROC --> REND --> FFMPEG --> RTMP_OUT
 ```
+

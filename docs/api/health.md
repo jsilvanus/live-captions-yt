@@ -1,17 +1,17 @@
----
+﻿---
 id: api/health
-title: "/health — Health Check"
+title: "/health â€” Health Check"
 methods: [GET]
 auth: [none]
 ---
 
-# /health — Health Check
+# /health â€” Health Check
 
 Server health information. Suitable for load balancer health probes and uptime monitoring.
 
 ---
 
-## `GET /health` — Health Check
+## `GET /health` â€” Health Check
 
 Return server health information. Suitable for load balancer health probes and uptime monitoring.
 
@@ -23,7 +23,7 @@ Return server health information. Suitable for load balancer health probes and u
 GET /health
 ```
 
-**Response — `200 OK`**
+**Response â€” `200 OK`**
 
 ```json
 {
@@ -54,4 +54,5 @@ When `RTMP_RELAY_ACTIVE=1` is set, the response also includes an `rtmpIngest` ob
 | `activeSessions` | `number` | Number of currently active caption relay sessions |
 | `rtmpIngest.host` | `string` | RTMP ingest hostname (from `RTMP_HOST` env var) |
 | `rtmpIngest.app` | `string` | RTMP application name (from `RTMP_APP` env var) |
+
 

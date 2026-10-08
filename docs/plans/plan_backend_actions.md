@@ -1,6 +1,6 @@
----
+﻿---
 id: plan/backend_actions
-title: "Backend Cue & Action Execution — Production Commands, Action Runner, Arming"
+title: "Backend Cue & Action Execution â€” Production Commands, Action Runner, Arming"
 status: draft
 summary: "Gives cues and named actions a real backend side effect. A shared `ProductionCommands` service (lcyt-production) becomes the single path to cameras/mixers/crop for HTTP routes, AI tools and actions (direct adapter or lcyt-bridge). `cue.fired` is published on the EventBus (today only `plugin.cue_fired` reaches it, and only with a caption session). An `ActionExecutor` (lcyt-actions) runs composite actions server-side (device steps by camera/mixer label, connector/graphics/wait steps) via `POST /actions/run` and an `action.run` tool, emitting `action.*` events. A `CueActionDispatcher` subscribes to `cue.fired` behind safety rails: a per-broadcast armed switch (disarmed by default, auto-arms on go-live), cooldowns, a loop guard and role checks. Decisions (2026-10-04) are at the end."
 related: plan/named_actions, plan/cues, plan/prod, plan/vertical_crop, plan/pubsub_event_bus, plan/project_roles
@@ -19,26 +19,26 @@ The bridge and the event bus both take part, with different jobs:
 
 ```
 caption / STT / music / tracker / operator button / AI tool / MCP
-        │
-   cue engine ──publish──▶ EventBus  'cue.fired'
-                              │ (in-process subscriber)
-                              ▼
-                     CueActionDispatcher  ── armed? cooldown? loop depth?
-                              │
-                              ▼
-   POST /actions/run ─▶  ActionExecutor  (lcyt-actions)   ◀── tool action.run (AI/MCP)
-                              │  expands @refs, runs atoms in order
-            ┌─────────────────┼──────────────────┬──────────────┐
-            ▼                 ▼                  ▼              ▼
+        â”‚
+   cue engine â”€â”€publishâ”€â”€â–¶ EventBus  'cue.fired'
+                              â”‚ (in-process subscriber)
+                              â–¼
+                     CueActionDispatcher  â”€â”€ armed? cooldown? loop depth?
+                              â”‚
+                              â–¼
+   POST /actions/run â”€â–¶  ActionExecutor  (lcyt-actions)   â—€â”€â”€ tool action.run (AI/MCP)
+                              â”‚  expands @refs, runs atoms in order
+            â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+            â–¼                 â–¼                  â–¼              â–¼
    ProductionCommands     connectors         DSK graphics   client atoms
    (lcyt-production)      refresh            activate       (returned to UI:
-     │  ownership check                                      audio, goto, section)
-     ├─ direct adapter (VISCA/AMX/ATEM/OBS)
-     └─ bridgeManager.sendCommand ──SSE──▶ lcyt-bridge ──TCP/HTTP──▶ device
-                                   ◀── POST /bridge/status (result)
-     │
-     └─ notifyProgramChanged / notifyCameraPresetRecalled  → crop follow
-     └─ publish 'production.command_result'
+     â”‚  ownership check                                      audio, goto, section)
+     â”œâ”€ direct adapter (VISCA/AMX/ATEM/OBS)
+     â””â”€ bridgeManager.sendCommand â”€â”€SSEâ”€â”€â–¶ lcyt-bridge â”€â”€TCP/HTTPâ”€â”€â–¶ device
+                                   â—€â”€â”€ POST /bridge/status (result)
+     â”‚
+     â””â”€ notifyProgramChanged / notifyCameraPresetRecalled  â†’ crop follow
+     â””â”€ publish 'production.command_result'
 ```
 
 ## What exists today (and what is in the way)
@@ -60,7 +60,7 @@ const result = await productionCommands.execute(apiKey, {
   kind: 'camera.preset', cameraId, presetId,
 }, { source: 'cue', causation });
 // kinds: camera.preset, mixer.switch, crop.activate_preset (via injected crop hook), obs.scene
-// → { ok, kind, transport: 'direct'|'bridge', durationMs, error? }
+// â†’ { ok, kind, transport: 'direct'|'bridge', durationMs, error? }
 ```
 
 It does the ownership check (`owner_api_key`), picks direct adapter vs `bridgeManager.sendCommand`, fails fast if the bridge is offline (a camera move that arrives 30 s late is worse than none, so no queueing), fires the production-follow notifications, and publishes `production.command_result`. The HTTP routes and the `lcyt-tools` camera/mixer/crop tools become thin wrappers. This alone fixes the crop-follow gap and removes the duplication, and is useful even if nothing else ships.
@@ -118,4 +118,5 @@ Phases 1 and 2 are independent and can be done in parallel. 3 needs 1. 4 needs 2
   - Per-device cooldown (default 1 s, cue runs only, keyed by the physical device) as well as per-rule.
   - Atoms added: `graphics:` / `graphics[viewport]:` (DSK metacode applied directly, not a device step), `obs:<mixer>.<scene>`, `crop:<preset name or id>`, and `mixer:<mixer>.<input name>`.
   - Web UI (PR 7): ARMED/SAFE badge in the Production header (click toggles via `PUT /production/arming`; hidden when the backend does not report arming), an `actionLog` pane (live `action.*` events folded per run, newest first, skipped runs visible), and a "Run action when this cue fires" field in the cue rule dialog with a step builder (`ActionStepBuilder.jsx`: camera preset, mixer input, wait, named action; warns about duplicate device labels). Helpers in `lcyt-web/src/lib/action-atoms.js`.
-  - Label→id rewrite on save (done 2026-10-05): `executor.rewriteDeviceRefs` (handlers' `toIds`/`toLabels`) stores camera/mixer/preset/crop ids in action definitions and in a cue rule's `action.run`, and the routes show the current label slugs again on read, so a rename no longer breaks saved atoms. Atoms that do not resolve (or are ambiguous) are saved as typed and still fail at run time.
+  - Labelâ†’id rewrite on save (done 2026-10-05): `executor.rewriteDeviceRefs` (handlers' `toIds`/`toLabels`) stores camera/mixer/preset/crop ids in action definitions and in a cue rule's `action.run`, and the routes show the current label slugs again on read, so a rename no longer breaks saved atoms. Atoms that do not resolve (or are ambiguous) are saved as typed and still fail at run time.
+

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * HTTP client for backend admin API - project and feature management.
  */
 
@@ -51,7 +51,7 @@ export class ProjectAdminClient {
   }
 
   async createProject(payload) {
-    return this._request('POST', '/admin/keys', payload);
+    return this._request('POST', '/api/v1/admin/keys', payload);
   }
 
   async listProjects(options = {}) {
@@ -92,3 +92,4 @@ export class ProjectAdminClient {
     return this._request('GET', `/admin/projects/${apiKey}/device-roles`);
   }
 }
+

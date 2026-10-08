@@ -1,17 +1,17 @@
----
+﻿---
 id: api/events
-title: "/events — SSE Event Stream"
+title: "/events â€” SSE Event Stream"
 methods: [GET]
 auth: [bearer]
 ---
 
-# /events — SSE Event Stream
+# /events â€” SSE Event Stream
 
 Open a persistent Server-Sent Events connection to receive real-time caption delivery results and session events.
 
 ---
 
-## `GET /events` — SSE Event Stream
+## `GET /events` â€” SSE Event Stream
 
 **Authentication:** Bearer JWT (via `Authorization: Bearer <token>` header) or query parameter (`?token=<JWT>`)
 
@@ -31,7 +31,7 @@ or
 GET /events?token=<JWT>
 ```
 
-**Response — `200 OK`** (streaming, `Content-Type: text/event-stream`)
+**Response â€” `200 OK`** (streaming, `Content-Type: text/event-stream`)
 
 The connection stays open until the session ends or the client disconnects.
 
@@ -123,8 +123,8 @@ After receiving this event, the client should close the SSE connection and stop 
 ## Example: Full Client Flow (Browser)
 
 ```js
-// 1. Register session (target-array mode — no top-level streamKey)
-const reg = await fetch('/live', {
+// 1. Register session (target-array mode â€” no top-level streamKey)
+const reg = await fetch('/api/v1/live', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
@@ -155,7 +155,7 @@ es.addEventListener('session_closed', () => {
 });
 
 // 3. Send a caption with a Finnish translation
-const res = await fetch('/captions', {
+const res = await fetch('/api/v1/captions', {
   method: 'POST',
   headers: {
     'Content-Type': 'application/json',
@@ -175,3 +175,4 @@ const res = await fetch('/captions', {
 const { requestId } = await res.json();
 // Wait for caption_result with matching requestId on the SSE stream
 ```
+

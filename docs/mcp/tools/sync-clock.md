@@ -1,11 +1,11 @@
----
-title: "sync_clock — Synchronise Clock"
+﻿---
+title: "sync_clock â€” Synchronise Clock"
 stdio: true
 sse: true
 id: mcp/tools/sync-clock
 ---
 
-# `sync_clock` — Synchronise Clock
+# `sync_clock` â€” Synchronise Clock
 
 Perform an NTP-style clock sync for the session. This compensates for clock drift between the MCP server and YouTube, improving timestamp accuracy.
 
@@ -32,3 +32,4 @@ Call this once after `start` and periodically during long sessions.
 | Field | Type | Description |
 |---|---|---|
 | `syncOffset` | `number` | Clock offset in milliseconds. Positive means YouTube's clock is ahead. |
+

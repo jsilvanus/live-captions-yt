@@ -1,4 +1,4 @@
----
+﻿---
 id: plan/cloudfleet
 title: "Hosting Modes & Cloudfleet Deployment"
 status: implemented
@@ -19,9 +19,9 @@ All three hosting tiers are in place:
 
 | Tier | Status | Evidence |
 |------|--------|----------|
-| 1 — Local (docker-compose) | ✅ Implemented | `docker-compose.yml`, `docs/DEPLOY.md`, `docs/FIREWALL.md` |
-| 2 — Self-managed orchestrator | ✅ Implemented | `docker-compose.orchestrator.yml`, `packages/lcyt-orchestrator/`, `packages/lcyt-worker-daemon/`, `docs/hetzner_runbook.md`, `docs/hetzner_snapshot.md` |
-| 3 — Cloudfleet (Kubernetes) | ✅ Implemented | `k8s/cloudfleet/` (all 12 manifests + README) |
+| 1 â€” Local (docker-compose) | âœ… Implemented | `docker-compose.yml`, `docs/DEPLOY.md`, `docs/FIREWALL.md` |
+| 2 â€” Self-managed orchestrator | âœ… Implemented | `docker-compose.orchestrator.yml`, `packages/lcyt-orchestrator/`, `packages/lcyt-worker-daemon/`, `docs/hetzner_runbook.md`, `docs/hetzner_snapshot.md` |
+| 3 â€” Cloudfleet (Kubernetes) | âœ… Implemented | `k8s/cloudfleet/` (all 12 manifests + README) |
 
 All supporting documentation referenced in this plan exists in `docs/`.
 
@@ -30,7 +30,7 @@ All supporting documentation referenced in this plan exists in `docs/`.
 These items are not required for basic operation but would improve production hardening:
 
 - [ ] Helm chart wrapping `k8s/cloudfleet/` for easier parameterisation
-- [ ] Litestream sidecar for SQLite → S3 replication (single-replica HA)
+- [ ] Litestream sidecar for SQLite â†’ S3 replication (single-replica HA)
 - [ ] Postgres migration path for true multi-replica backend (see `plan/dock-ffmpeg` Phase 8)
 - [ ] `ServiceMonitor` CRD for Prometheus Operator scraping `/metrics`
 - [ ] CI workflow step to build and push images to CFCR on `main` branch merge
@@ -46,9 +46,9 @@ configuration.
 
 | Tier | Compose / tooling | When to use |
 |------|-------------------|-------------|
-| **1 — Local (dockerised)** | `docker-compose.yml` | Development, personal use, single small event |
-| **2 — Self-managed orchestrator** | `docker-compose.orchestrator.yml` + Hetzner VMs | Production, moderate scale, full control, cost-optimised |
-| **3 — Cloudfleet** | `k8s/cloudfleet/` Kubernetes manifests | Managed HA cluster, multi-region, enterprise, minimal ops overhead |
+| **1 â€” Local (dockerised)** | `docker-compose.yml` | Development, personal use, single small event |
+| **2 â€” Self-managed orchestrator** | `docker-compose.orchestrator.yml` + Hetzner VMs | Production, moderate scale, full control, cost-optimised |
+| **3 â€” Cloudfleet** | `k8s/cloudfleet/` Kubernetes manifests | Managed HA cluster, multi-region, enterprise, minimal ops overhead |
 
 All three tiers use the same images:
 
@@ -62,23 +62,23 @@ All three tiers use the same images:
 
 ---
 
-## Tier 1 — Local (Dockerised)
+## Tier 1 â€” Local (Dockerised)
 
 ### Architecture
 
 ```
-┌─────────────────── single VM or developer machine ────────────────────┐
-│                                                                        │
-│  nginx (reverse proxy)                                                 │
-│    └── lcyt-backend  :3000   ← Docker Compose service "lcyt-site"     │
-│    └── lcyt-mcp-http  :3001   ← same container, secondary port         │
-│  mediamtx            :1936   ← RTMP ingest                            │
-│                      :8080   ← HLS + metrics                          │
-│                      :9997   ← REST API (internal)                    │
-│  docker-socket-proxy         ← opt-in for FFMPEG_RUNNER=docker        │
-│                                                                        │
-│  lcyt-db (named Docker volume) ← SQLite                               │
-└────────────────────────────────────────────────────────────────────────┘
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ single VM or developer machine â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                                                                        â”‚
+â”‚  nginx (reverse proxy)                                                 â”‚
+â”‚    â””â”€â”€ lcyt-backend  :3000   â† Docker Compose service "lcyt-site"     â”‚
+â”‚    â””â”€â”€ lcyt-mcp-http  :3001   â† same container, secondary port         â”‚
+â”‚  mediamtx            :1936   â† RTMP ingest                            â”‚
+â”‚                      :8080   â† HLS + metrics                          â”‚
+â”‚                      :9997   â† REST API (internal)                    â”‚
+â”‚  docker-socket-proxy         â† opt-in for FFMPEG_RUNNER=docker        â”‚
+â”‚                                                                        â”‚
+â”‚  lcyt-db (named Docker volume) â† SQLite                               â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Quick start
@@ -88,7 +88,7 @@ cp .env.example .env          # set JWT_SECRET + ADMIN_KEY at minimum
 docker compose up             # starts lcyt-site + mediamtx
 ```
 
-See `docs/DEPLOY.md` § "Quick start — single VM" for the full deployment
+See `docs/DEPLOY.md` Â§ "Quick start â€” single VM" for the full deployment
 script and nginx configuration.
 
 ### File reference
@@ -104,38 +104,38 @@ script and nginx configuration.
 
 | Feature | Supported | Notes |
 |---------|-----------|-------|
-| Caption ingestion | ✅ | All transport targets (YouTube, viewer, generic) |
-| RTMP relay + HLS | ✅ | MediaMTX mode (no ffmpeg needed for HLS/radio) |
-| DSK graphics renderer | ✅ | Playwright + local ffmpeg |
-| Server-side STT | ✅ | Google, Whisper HTTP, OpenAI adapters |
-| Production control | ✅ | Bridge agents connect via SSE |
-| Horizontal scaling | ❌ | Single process; SQLite cannot be shared |
-| Burst compute workers | ❌ | Use Tier 2 or 3 for distributed ffmpeg |
-| Automatic failover | ❌ | Restart policy: `unless-stopped` only |
+| Caption ingestion | âœ… | All transport targets (YouTube, viewer, generic) |
+| RTMP relay + HLS | âœ… | MediaMTX mode (no ffmpeg needed for HLS/radio) |
+| DSK graphics renderer | âœ… | Playwright + local ffmpeg |
+| Server-side STT | âœ… | Google, Whisper HTTP, OpenAI adapters |
+| Production control | âœ… | Bridge agents connect via SSE |
+| Horizontal scaling | âŒ | Single process; SQLite cannot be shared |
+| Burst compute workers | âŒ | Use Tier 2 or 3 for distributed ffmpeg |
+| Automatic failover | âŒ | Restart policy: `unless-stopped` only |
 
 ---
 
-## Tier 2 — Self-Managed Orchestrator
+## Tier 2 â€” Self-Managed Orchestrator
 
 ### Architecture
 
 ```
-                   ┌──── Control plane VM (always-on) ─────────────────┐
-                   │  lcyt-backend  :3000                               │
-                   │  lcyt-orchestrator  :4000                          │
-                   │  mediamtx  :1936 / :8080 / :9997                  │
-                   │  lcyt-worker-daemon  :5000  ← warm-pool worker #0  │
-                   └──────────────────────┬────────────────────────────┘
-                           HTTP /jobs     │      Hetzner Cloud API
-                                          │
-           ┌──────────────────────────────┼──────────────────────────┐
-           │                             │                            │
-   ┌───────▼──────────────┐   ┌─────────▼──────────────┐            │
-   │ Worker VM #1 (warm)  │   │ Worker VM #N (burst)    │   ...      │
-   │ lcyt-worker-daemon   │   │ lcyt-worker-daemon      │            │
-   │ Docker socket        │   │ Docker socket           │            │
-   └──────────────────────┘   └─────────────────────────┘            │
-                                         Hetzner auto-provisions ─────┘
+                   â”Œâ”€â”€â”€â”€ Control plane VM (always-on) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                   â”‚  lcyt-backend  :3000                               â”‚
+                   â”‚  lcyt-orchestrator  :4000                          â”‚
+                   â”‚  mediamtx  :1936 / :8080 / :9997                  â”‚
+                   â”‚  lcyt-worker-daemon  :5000  â† warm-pool worker #0  â”‚
+                   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                           HTTP /jobs     â”‚      Hetzner Cloud API
+                                          â”‚
+           â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+           â”‚                             â”‚                            â”‚
+   â”Œâ”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”   â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â–¼â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”            â”‚
+   â”‚ Worker VM #1 (warm)  â”‚   â”‚ Worker VM #N (burst)    â”‚   ...      â”‚
+   â”‚ lcyt-worker-daemon   â”‚   â”‚ lcyt-worker-daemon      â”‚            â”‚
+   â”‚ Docker socket        â”‚   â”‚ Docker socket           â”‚            â”‚
+   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜   â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜            â”‚
+                                         Hetzner auto-provisions â”€â”€â”€â”€â”€â”˜
 ```
 
 ### Quick start
@@ -146,7 +146,7 @@ cp .env.example .env
 docker compose -f docker-compose.orchestrator.yml up
 ```
 
-See `docs/DEPLOY.md` § "Distributed mode (orchestrator)" and
+See `docs/DEPLOY.md` Â§ "Distributed mode (orchestrator)" and
 `docs/hetzner_runbook.md` for the full runbook.
 
 ### File reference
@@ -163,16 +163,16 @@ See `docs/DEPLOY.md` § "Distributed mode (orchestrator)" and
 
 | Feature | Supported | Notes |
 |---------|-----------|-------|
-| All Tier 1 features | ✅ | |
-| Distributed ffmpeg workers | ✅ | Worker daemon per VM |
-| Burst VM autoscaling | ✅ | Hetzner Cloud API (needs `HETZNER_API_TOKEN`) |
-| Warm pool | ✅ | `WARM_POOL_SIZE` keeps N workers always-on |
-| Horizontal scaling | ❌ | Backend still single process; SQLite single-writer |
-| Managed certificates | ❌ | Operator manages TLS via certbot |
+| All Tier 1 features | âœ… | |
+| Distributed ffmpeg workers | âœ… | Worker daemon per VM |
+| Burst VM autoscaling | âœ… | Hetzner Cloud API (needs `HETZNER_API_TOKEN`) |
+| Warm pool | âœ… | `WARM_POOL_SIZE` keeps N workers always-on |
+| Horizontal scaling | âŒ | Backend still single process; SQLite single-writer |
+| Managed certificates | âŒ | Operator manages TLS via certbot |
 
 ---
 
-## Tier 3 — Cloudfleet (Managed Kubernetes)
+## Tier 3 â€” Cloudfleet (Managed Kubernetes)
 
 Cloudfleet is a fully managed Kubernetes platform running on Hetzner Cloud.
 It provides a single control plane for multi-cluster, multi-cloud and on-premises
@@ -186,7 +186,7 @@ workloads with an integrated OCI-compliant container registry (CFCR).
 | Node autoscaling | Custom orchestrator (lcyt-orchestrator) | Kubernetes Cluster Autoscaler via Cloudfleet |
 | Load balancing | nginx on the VM | Kubernetes Ingress + Cloudfleet LB |
 | TLS / certificates | Certbot (manual renewal) | cert-manager (auto-renewal) |
-| Container registry | External (Docker Hub, GHCR, …) | Cloudfleet CFCR (built-in) |
+| Container registry | External (Docker Hub, GHCR, â€¦) | Cloudfleet CFCR (built-in) |
 | Rolling updates | `docker compose pull && restart` | Kubernetes rolling deployment |
 | RBAC / multi-tenant | SSH key management | Kubernetes RBAC |
 | Cost model | Pay per VM + ops time | Pay per managed cluster + nodes |
@@ -194,25 +194,25 @@ workloads with an integrated OCI-compliant container registry (CFCR).
 ### Architecture on Cloudfleet
 
 ```
-                    ┌──── Cloudfleet cluster ──────────────────────────────────┐
-                    │                                                            │
-                    │  nginx Ingress Controller (Cloudfleet-managed)            │
-                    │    https://api.example.com  ──►  lcyt-backend:3000        │
-                    │    https://mcp.example.com  ──►  lcyt-backend:3001        │
-                    │                                                            │
-                    │  lcyt-backend   Deployment (1 replica*)                   │
-                    │    PVC: lcyt-db  ← SQLite  (/data)                        │
-                    │                                                            │
-                    │  mediamtx   Deployment (1 replica)                        │
-                    │    Service/LoadBalancer :1935  ← RTMP ingest              │
-                    │    Service/ClusterIP    :8080  ← HLS (internal)           │
-                    │    Service/ClusterIP    :9997  ← REST API (internal)      │
-                    │                                                            │
-                    │  [optional] lcyt-orchestrator  Deployment (1 replica)     │
-                    │  [optional] lcyt-worker-daemon DaemonSet (needs Docker)   │
-                    └────────────────────────────────────────────────────────────┘
+                    â”Œâ”€â”€â”€â”€ Cloudfleet cluster â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+                    â”‚                                                            â”‚
+                    â”‚  nginx Ingress Controller (Cloudfleet-managed)            â”‚
+                    â”‚    https://api.example.com  â”€â”€â–º  lcyt-backend:3000        â”‚
+                    â”‚    https://mcp.example.com  â”€â”€â–º  lcyt-backend:3001        â”‚
+                    â”‚                                                            â”‚
+                    â”‚  lcyt-backend   Deployment (1 replica*)                   â”‚
+                    â”‚    PVC: lcyt-db  â† SQLite  (/data)                        â”‚
+                    â”‚                                                            â”‚
+                    â”‚  mediamtx   Deployment (1 replica)                        â”‚
+                    â”‚    Service/LoadBalancer :1935  â† RTMP ingest              â”‚
+                    â”‚    Service/ClusterIP    :8080  â† HLS (internal)           â”‚
+                    â”‚    Service/ClusterIP    :9997  â† REST API (internal)      â”‚
+                    â”‚                                                            â”‚
+                    â”‚  [optional] lcyt-orchestrator  Deployment (1 replica)     â”‚
+                    â”‚  [optional] lcyt-worker-daemon DaemonSet (needs Docker)   â”‚
+                    â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 
-* Scale to >1 replica requires migrating SQLite → Postgres (see § Scaling)
+* Scale to >1 replica requires migrating SQLite â†’ Postgres (see Â§ Scaling)
 ```
 
 ### Prerequisites
@@ -222,7 +222,7 @@ workloads with an integrated OCI-compliant container registry (CFCR).
 - `kubectl` configured to point at the Cloudfleet cluster
   (`cloudfleet kubeconfig get <cluster>` or download from the console)
 - Docker images available in a registry accessible to the cluster:
-  - Cloudfleet Container Registry (CFCR) — recommended
+  - Cloudfleet Container Registry (CFCR) â€” recommended
   - Docker Hub, GHCR, or any other OCI registry
 - `cert-manager` and an nginx Ingress Controller installed in the cluster
   (both are available as one-click apps in the Cloudfleet Charts Marketplace)
@@ -346,8 +346,8 @@ kubectl -n lcyt get svc mediamtx-rtmp -o jsonpath='{.status.loadBalancer.ingress
 `cert-manager` with the Let's Encrypt `ClusterIssuer` handles TLS
 automatically. The `30-ingress.yaml` manifest routes:
 
-- `https://api.example.com`  →  `lcyt-backend:3000`
-- `https://api.example.com/mcp` → `lcyt-backend:3001` (MCP Streamable HTTP)
+- `https://api.example.com`  â†’  `lcyt-backend:3000`
+- `https://api.example.com/mcp` â†’ `lcyt-backend:3001` (MCP Streamable HTTP)
 
 Update the `host:` fields to match your actual domain.
 
@@ -361,7 +361,7 @@ for most events.
 PostgreSQL or another shared-connection-capable database. A migration path is
 planned in `plan/dock-ffmpeg` Phase 8.
 
-Intermediate option — **Litestream** sidecar: Use
+Intermediate option â€” **Litestream** sidecar: Use
 [Litestream](https://litestream.io) as a sidecar container to replicate the
 SQLite WAL to S3. This enables read replicas and warm standbys.
 
@@ -379,7 +379,7 @@ ephemeral ffmpeg containers. Options:
 
 The recommended path on Cloudfleet is to run `lcyt-orchestrator` inside the
 cluster and let it provision **external Hetzner burst VMs** via the Hetzner
-Cloud API — identical to Tier 2. The orchestrator manifest is included in
+Cloud API â€” identical to Tier 2. The orchestrator manifest is included in
 `k8s/cloudfleet/40-*.yaml`.
 
 ### Rolling updates
@@ -407,29 +407,29 @@ installed on your cluster.
 
 | Feature | Supported | Notes |
 |---------|-----------|-------|
-| All Tier 1 features | ✅ | |
-| Distributed ffmpeg workers | ✅ | Orchestrator + external Hetzner VMs |
-| Burst VM autoscaling | ✅ | `HETZNER_API_TOKEN` on orchestrator pod |
-| Horizontal backend scaling | ⚠️ | Requires Postgres migration |
-| Managed TLS | ✅ | cert-manager + Let's Encrypt |
-| Rolling deploys | ✅ | Kubernetes rolling update strategy |
-| RBAC | ✅ | Kubernetes native RBAC |
-| Container registry | ✅ | Cloudfleet CFCR |
-| Prometheus metrics | ✅ | `/metrics` on orchestrator |
+| All Tier 1 features | âœ… | |
+| Distributed ffmpeg workers | âœ… | Orchestrator + external Hetzner VMs |
+| Burst VM autoscaling | âœ… | `HETZNER_API_TOKEN` on orchestrator pod |
+| Horizontal backend scaling | âš ï¸ | Requires Postgres migration |
+| Managed TLS | âœ… | cert-manager + Let's Encrypt |
+| Rolling deploys | âœ… | Kubernetes rolling update strategy |
+| RBAC | âœ… | Kubernetes native RBAC |
+| Container registry | âœ… | Cloudfleet CFCR |
+| Prometheus metrics | âœ… | `/metrics` on orchestrator |
 
 ---
 
 ## Comparison summary
 
-| Aspect | Tier 1 — Local | Tier 2 — Self-managed | Tier 3 — Cloudfleet |
+| Aspect | Tier 1 â€” Local | Tier 2 â€” Self-managed | Tier 3 â€” Cloudfleet |
 |--------|---------------|----------------------|---------------------|
 | **Setup effort** | Low (one `compose up`) | Medium (Compose + Hetzner API) | Medium (kubectl + Cloudfleet console) |
 | **Ops effort (ongoing)** | Low | Medium (VM SSH, snapshot management) | Low (managed control plane) |
 | **Cost** | Host cost only | Hetzner VM cost | Cloudfleet fee + Hetzner node cost |
-| **HA / failover** | ❌ | Manual (warm-pool VMs) | ✅ (Kubernetes restarts) |
+| **HA / failover** | âŒ | Manual (warm-pool VMs) | âœ… (Kubernetes restarts) |
 | **TLS management** | Manual (certbot) | Manual (certbot) | Automatic (cert-manager) |
-| **Horizontal backend scaling** | ❌ | ❌ | ⚠️ Requires Postgres |
-| **Burst compute** | ❌ | ✅ Hetzner VMs | ✅ Hetzner VMs via orchestrator |
+| **Horizontal backend scaling** | âŒ | âŒ | âš ï¸ Requires Postgres |
+| **Burst compute** | âŒ | âœ… Hetzner VMs | âœ… Hetzner VMs via orchestrator |
 | **Best for** | Dev / personal | Production, cost-conscious | Production, managed, enterprise |
 
 ---
@@ -438,10 +438,11 @@ installed on your cluster.
 
 - [x] Tier 1: `docker-compose.yml` (implemented)
 - [x] Tier 2: `docker-compose.orchestrator.yml` + Hetzner orchestrator (implemented)
-- [x] Tier 3: Kubernetes manifests in `k8s/cloudfleet/` (implemented — all 12 manifests + README)
+- [x] Tier 3: Kubernetes manifests in `k8s/cloudfleet/` (implemented â€” all 12 manifests + README)
 - [ ] Tier 3: Helm chart wrapping `k8s/cloudfleet/` for easier parameterisation
-- [ ] Tier 3: Litestream sidecar for SQLite → S3 replication (single replica HA)
+- [ ] Tier 3: Litestream sidecar for SQLite â†’ S3 replication (single replica HA)
 - [ ] Tier 3: Postgres migration path for true multi-replica backend
 - [ ] Tier 3: `ServiceMonitor` for Prometheus Operator
 - [ ] Tier 3: CI workflow step to push images to CFCR on main branch merge
 - [ ] Tier 3: Cloudfleet Charts Marketplace entry (future, post-implementation)
+

@@ -1,9 +1,9 @@
----
+﻿---
 id: plan/mediamtx
 title: "MediaMTX Integration"
 status: implemented
 summary: "MediaMTX media broker, now the sole (no-fallback) backend for radio/audio-HLS and stream previews and the default for video HLS; RTMP relay fan-out/CEA-708/DSK still run via ffmpeg with MediaMTX as an optional target broker. NginxManager for slug-based public URLs."
-supersedes: "plan/rtmp (radio/audio-HLS §1a and stream previews §2b are now fully replaced — no ffmpeg fallback remains in radio-manager.js/preview-manager.js; video HLS §2a defaults to MediaMTX too, with ffmpeg passthrough only when explicitly configured. RTMP relay fan-out §3a-3e, CEA-708 §3e, and DSK overlay §3c remain ffmpeg-driven in RtmpRelayManager, with MediaMTX available there only as an optional per-relay target broker)"
+supersedes: "plan/rtmp (radio/audio-HLS Â§1a and stream previews Â§2b are now fully replaced â€” no ffmpeg fallback remains in radio-manager.js/preview-manager.js; video HLS Â§2a defaults to MediaMTX too, with ffmpeg passthrough only when explicitly configured. RTMP relay fan-out Â§3a-3e, CEA-708 Â§3e, and DSK overlay Â§3c remain ffmpeg-driven in RtmpRelayManager, with MediaMTX available there only as an optional per-relay target broker)"
 ---
 
 # MediaMTX Integration Plan
@@ -19,14 +19,14 @@ Scope
 - Introduce MediaMTX as an option for RTMP/RTSP ingest and HLS distribution.
 - Update backend and renderer components to optionally target MediaMTX ingest endpoints instead of direct ffmpeg runners.
 - Add Docker compose and orchestration artifacts to run MediaMTX locally and in our orchestrated setups.
-- Do not remove existing ffmpeg runner work yet — migration will be opt-in per deployment.
+- Do not remove existing ffmpeg runner work yet â€” migration will be opt-in per deployment.
 
 Key repo files to review and update
-- `packages/lcyt-backend/src/rtmp-manager.js` — RTMP relay/slot management, where ingest URLs are composed and workers are started.
-- `packages/plugins/lcyt-dsk/src/renderer.js` — DSK renderer push targets (RTMP output configuration).
-- `packages/lcyt-bridge/src/bridge.js` — bridge command paths and any TCP relay assumptions (if bridges push to RTMP endpoints).
-- `docker/lcyt-ffmpeg/Dockerfile` and `docker-compose.yml` — add MediaMTX service entries and update runner definitions where needed.
-- `docs/ffmpeg-docker-usage.md` and `docs/plan_dock_ffmpeg.md` — add usage notes and Phase 8 appendix (see companion appendix below).
+- `packages/lcyt-backend/src/rtmp-manager.js` â€” RTMP relay/slot management, where ingest URLs are composed and workers are started.
+- `packages/plugins/lcyt-dsk/src/renderer.js` â€” DSK renderer push targets (RTMP output configuration).
+- `packages/lcyt-bridge/src/bridge.js` â€” bridge command paths and any TCP relay assumptions (if bridges push to RTMP endpoints).
+- `docker/lcyt-ffmpeg/Dockerfile` and `docker-compose.yml` â€” add MediaMTX service entries and update runner definitions where needed.
+- `docs/ffmpeg-docker-usage.md` and `docs/plan_dock_ffmpeg.md` â€” add usage notes and Phase 8 appendix (see companion appendix below).
 - Tests referencing RTMP runner behaviour: `packages/lcyt-backend/test/rtmp.test.js` and `packages/lcyt-backend/test/rtmp-manager.test.js` (update mocks/expectations to support MediaMTX).
 
 High-level architecture
@@ -80,7 +80,7 @@ log:
 
 Integration details and code notes
 
-### MediaMTX REST API client (implemented ✅)
+### MediaMTX REST API client (implemented âœ…)
 
 A typed REST client is now available at `packages/plugins/lcyt-rtmp/src/mediamtx-client.js` and
 exported from the `lcyt-rtmp` plugin entry point (`api.js`).
@@ -110,7 +110,7 @@ All operations call the MediaMTX v3 REST API (default port `:9997`).
 | `MEDIAMTX_API_USER` | Basic-auth username | (none) |
 | `MEDIAMTX_API_PASSWORD` | Basic-auth password | (none) |
 
-Setting `MEDIAMTX_API_URL` is sufficient to activate the MediaMTX code path — the `RtmpRelayManager`
+Setting `MEDIAMTX_API_URL` is sufficient to activate the MediaMTX code path â€” the `RtmpRelayManager`
 auto-creates a `MediaMtxClient` from that env var if no explicit instance is injected.
 
 **Integration in `RtmpRelayManager` (`packages/plugins/lcyt-rtmp/src/rtmp-manager.js`):**
@@ -142,8 +142,8 @@ assert.calledWith(mockClient.kickPath, 'mykey');
 > then some: `RtmpRelayManager` (plain relay, CEA-708, transcode, and DSK-out all branch on
 > `this._mediamtx`), `RadioManager` and `PreviewManager` (MediaMTX-only, no ffmpeg fallback at
 > all), `HlsManager` (MediaMTX by default), and `CropManager`/named-feed relay sourcing (which
-> *require* MediaMTX — no fallback exists for those). `packages/lcyt-bridge/src/bridge.js` was not
-> touched and has no MediaMTX-awareness — bridge/production hardware control is a separate control
+> *require* MediaMTX â€” no fallback exists for those). `packages/lcyt-bridge/src/bridge.js` was not
+> touched and has no MediaMTX-awareness â€” bridge/production hardware control is a separate control
 > plane from the media path this plan covers, so that item no longer applies. The list below is
 > kept for historical context only.
 
@@ -154,7 +154,7 @@ assert.calledWith(mockClient.kickPath, 'mykey');
 
 - `packages/plugins/lcyt-dsk/src/renderer.js`
   - Make RTMP output target configurable via env (e.g. `DSK_RTMP_OUTPUT`) so tests and local dev
-    can switch between direct ffmpeg→nginx and ffmpeg→MediaMTX.
+    can switch between direct ffmpegâ†’nginx and ffmpegâ†’MediaMTX.
 
 - `packages/lcyt-bridge/src/bridge.js` and production bridge code
   - Review any hard-coded RTMP target assumptions and allow `MEDIAMTX_HOST` based configuration
@@ -169,7 +169,7 @@ Migration plan (step-by-step)
 1. Spike (1 week)
    - Run MediaMTX locally via docker-compose. Push an RTMP stream from ffmpeg and confirm HLS output.
    - Verify viewer playback and measure latency compared to ffmpeg sidecar flow.
-2. Dev integration (1–2 weeks)
+2. Dev integration (1â€“2 weeks)
    - Add `mediamtx` service to `docker-compose.yml` for dev/test.
    - Add configuration knobs (`RTMP_RELAY_TYPE`, `MEDIAMTX_URL`, `MEDIAMTX_APP`) to `packages/lcyt-backend` and `packages/plugins/lcyt-dsk`.
    - Add unit/integration tests that mock/point to a local MediaMTX instance.
@@ -213,3 +213,4 @@ Notes
 References
 - MediaMTX docker image: https://github.com/bluenviron/mediamtx
 - Files in this repo to review: `packages/lcyt-backend/src/rtmp-manager.js`, `packages/plugins/lcyt-dsk/src/renderer.js`, `packages/lcyt-bridge/src/bridge.js`, `docker/lcyt-ffmpeg/Dockerfile`, `docker-compose.yml`, `docs/ffmpeg-docker-usage.md`, `docs/plan_dock_ffmpeg.md`
+

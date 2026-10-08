@@ -1,4 +1,4 @@
----
+﻿---
 title: Controls Panel
 order: 7
 ---
@@ -13,13 +13,13 @@ The Controls panel combines the session status display and diagnostic actions in
 
 ## Status section
 
-![Controls panel — status](/screenshots/panel-controls-light.png)
+![Controls panel â€” status](/screenshots/panel-controls-light.png)
 
 | Row | Description |
 |-----|-------------|
-| **Connection** | Green `● Connected` or grey `○ Disconnected` |
+| **Connection** | Green `â— Connected` or grey `â—‹ Disconnected` |
 | **Backend URL** | The relay backend the app is talking to |
-| **Sequence** | Caption sequence number — increments with every caption sent |
+| **Sequence** | Caption sequence number â€” increments with every caption sent |
 | **Clock offset** | Difference (ms) between your browser clock and the server clock. Used for accurate caption timestamps |
 | **Last connected** | Time of the most recent successful connection |
 
@@ -37,11 +37,11 @@ Click **My Files** to list caption and translation files saved on the backend fo
 
 | Action | Description |
 |--------|-------------|
-| **⟳ Sync Now** | Runs an NTP-style clock sync with the backend to minimise timestamp drift. Run this if captions appear noticeably early or late |
-| **♥ Heartbeat** | Sends a blank caption to verify the connection end-to-end without showing anything on stream |
-| **↺ Reset sequence** | Resets the caption sequence counter to 0. Use if the YouTube stream shows duplicate or out-of-order captions |
-| **↗ Set sequence** | Manually set the sequence counter to a specific number |
-| **🗑 Clear saved config** | Removes all locally stored settings (API key, stream key, preferences). Does **not** affect server-side data |
+| **âŸ³ Sync Now** | Runs an NTP-style clock sync with the backend to minimise timestamp drift. Run this if captions appear noticeably early or late |
+| **â™¥ Heartbeat** | Sends a blank caption to verify the connection end-to-end without showing anything on stream |
+| **â†º Reset sequence** | Resets the caption sequence counter to 0. Use if the YouTube stream shows duplicate or out-of-order captions |
+| **â†— Set sequence** | Manually set the sequence counter to a specific number |
+| **ðŸ—‘ Clear saved config** | Removes all locally stored settings (API key, stream key, preferences). Does **not** affect server-side data |
 
 ### Caption codes
 
@@ -59,6 +59,7 @@ File-level metadata (`<!-- lang: fi-FI -->`) overrides per-line codes.
 
 | Button | Description |
 |--------|-------------|
-| **✏ Edit File** | Switch the current file to raw text editor mode. Hold 2 seconds (or click without a file) to create a new file |
-| **✕ Clear sent log** | Remove all entries from the sent captions log |
+| **âœ Edit File** | Switch the current file to raw text editor mode. Hold 2 seconds (or click without a file) to create a new file |
+| **âœ• Clear sent log** | Remove all entries from the sent captions log |
+
 

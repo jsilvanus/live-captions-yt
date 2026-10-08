@@ -1,9 +1,9 @@
-# PostgreSQL Migration Plan for LCYT
+﻿# PostgreSQL Migration Plan for LCYT
 
 **Status:** Draft  
 **Priority:** Medium  
 **Complexity:** High  
-**Estimated Effort:** 3–4 weeks (full implementation)
+**Estimated Effort:** 3â€“4 weeks (full implementation)
 
 ---
 
@@ -27,7 +27,7 @@ This plan proposes a **phased migration** with three major deployment modes:
 
 ### Node.js Backend (`packages/lcyt-backend`)
 
-**ORM:** None — direct SQL via `better-sqlite3`  
+**ORM:** None â€” direct SQL via `better-sqlite3`  
 **Migration approach:** Inline schema creation + additive column migrations  
 **Connection:** Synchronous, single-threaded via `better-sqlite3`
 
@@ -51,7 +51,7 @@ This plan proposes a **phased migration** with three major deployment modes:
 
 ### Python Backend (`python-packages/lcyt-backend`)
 
-**ORM:** None — direct SQL via stdlib `sqlite3`  
+**ORM:** None â€” direct SQL via stdlib `sqlite3`  
 **Schema:** Mirrors Node.js core tables (`users`, `api_keys`, `organizations`, etc.)  
 **Connection:** Synchronous, single-threaded
 
@@ -60,42 +60,42 @@ This plan proposes a **phased migration** with three major deployment modes:
 ## Database Overview by Layer
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Application Layer                        │
-│  (lcyt-web frontend, lcyt-backend routes, MCP servers, etc) │
-└────────────────┬────────────────────────────────────────────┘
-                 │
-     ┌───────────┴─────────────────────────┐
-     │                                     │
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚                    Application Layer                        â”‚
+â”‚  (lcyt-web frontend, lcyt-backend routes, MCP servers, etc) â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                 â”‚
+     â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”´â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+     â”‚                                     â”‚
      v                                     v
-┌─────────────────────────────────┐  ┌──────────────────────────┐
-│   Node.js Backend               │  │   Python Backend         │
-│  (Express, 48+ table queries)   │  │  (Flask, ~20 queries)    │
-│   better-sqlite3 sync layer     │  │  sqlite3 sync layer      │
-└────────────┬────────────────────┘  └──────────────┬───────────┘
-             │                                      │
-             └──────────────┬───────────────────────┘
-                            │
+â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”  â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+â”‚   Node.js Backend               â”‚  â”‚   Python Backend         â”‚
+â”‚  (Express, 48+ table queries)   â”‚  â”‚  (Flask, ~20 queries)    â”‚
+â”‚   better-sqlite3 sync layer     â”‚  â”‚  sqlite3 sync layer      â”‚
+â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜  â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+             â”‚                                      â”‚
+             â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”¬â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
+                            â”‚
                             v
-            ┌───────────────────────────────┐
-            │  SQLite Database (monolithic) │
-            │  ./lcyt-backend.db (file)     │
-            │                               │
-            │  Tables (48+):                │
-            │  - Users & auth               │
-            │  - Organizations & teams      │
-            │  - Projects & targets         │
-            │  - Captions & streaming       │
-            │  - Events & audit logs        │
-            │  - Usage rollups & stats      │
-            └───────────────────────────────┘
+            â”Œâ”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”
+            â”‚  SQLite Database (monolithic) â”‚
+            â”‚  ./lcyt-backend.db (file)     â”‚
+            â”‚                               â”‚
+            â”‚  Tables (48+):                â”‚
+            â”‚  - Users & auth               â”‚
+            â”‚  - Organizations & teams      â”‚
+            â”‚  - Projects & targets         â”‚
+            â”‚  - Captions & streaming       â”‚
+            â”‚  - Events & audit logs        â”‚
+            â”‚  - Usage rollups & stats      â”‚
+            â””â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”˜
 ```
 
 ---
 
 ## Migration Phases
 
-### Phase 1: ORM Selection & Database Abstraction (Weeks 1–2)
+### Phase 1: ORM Selection & Database Abstraction (Weeks 1â€“2)
 
 **Goal:** Introduce a database abstraction layer that can work with both SQLite and PostgreSQL.
 
@@ -116,12 +116,12 @@ This plan proposes a **phased migration** with three major deployment modes:
 
 **Migration Strategy:**
 1. Install Prisma: `npm install -D prisma` (dev dependency)
-2. Create `packages/lcyt-backend/prisma/schema.prisma` — introspect existing SQLite database
-3. Run `npx prisma migrate init` — capture existing schema as migration
+2. Create `packages/lcyt-backend/prisma/schema.prisma` â€” introspect existing SQLite database
+3. Run `npx prisma migrate init` â€” capture existing schema as migration
 4. Create Prisma client generation in build pipeline
 5. Gradually migrate route handlers to use Prisma client instead of raw SQL
 
-**Example (before → after):**
+**Example (before â†’ after):**
 ```javascript
 // Before: Raw better-sqlite3
 const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
@@ -154,7 +154,7 @@ const user = await prisma.user.findUnique({ where: { id: userId } });
 
 **Recommendation: Proceed with Prisma for Phase 1.**
 
-### Phase 2: PostgreSQL Compose Stack & Local Development (Weeks 2–3)
+### Phase 2: PostgreSQL Compose Stack & Local Development (Weeks 2â€“3)
 
 **Goal:** Stand up a local PostgreSQL instance for development and testing.
 
@@ -239,7 +239,7 @@ DATABASE_URL="postgresql://user:pass@db.example.com:5432/lcyt"
 - If `postgresql://`, uses connection pool (via `@prisma/client` with `PrismaClient()`)
 - If `file://` or relative path, falls back to SQLite (via `better-sqlite3`)
 
-### Phase 3: Database Connection Pooling & Multi-Instance Readiness (Weeks 3–4)
+### Phase 3: Database Connection Pooling & Multi-Instance Readiness (Weeks 3â€“4)
 
 **Goal:** Ensure the backend can safely run on multiple instances with a shared database.
 
@@ -284,19 +284,19 @@ For PostgreSQL, implement connection pooling using one of:
 **Single-instance (Docker Compose):**
 ```
 nginx (reverse proxy on :80)
-  ↓
+  â†“
 lcyt-backend (container, :3000)
-  ↓
+  â†“
 PostgreSQL (container, :5432)
 ```
 
 **Multi-instance (Kubernetes / managed cloud):**
 ```
 Load Balancer (AWS ALB / Nginx)
-  ↓
-[lcyt-backend pod #1] ──┐
-[lcyt-backend pod #2] ──┼─→ PostgreSQL (managed: RDS, CloudSQL, Azure DB)
-[lcyt-backend pod #3] ──┘
+  â†“
+[lcyt-backend pod #1] â”€â”€â”
+[lcyt-backend pod #2] â”€â”€â”¼â”€â†’ PostgreSQL (managed: RDS, CloudSQL, Azure DB)
+[lcyt-backend pod #3] â”€â”€â”˜
 
 Horizontal auto-scaling based on:
 - CPU usage
@@ -327,7 +327,7 @@ Horizontal auto-scaling based on:
   }
   ```
 - [ ] Migrate `src/db/*.js` modules to use Prisma or SQLite client transparently
-- [ ] Update 5–10 critical routes (user, auth, keys) to use new abstraction
+- [ ] Update 5â€“10 critical routes (user, auth, keys) to use new abstraction
 - [ ] Run test suite, ensure existing behavior is preserved
 - [ ] Document new ORM patterns in `packages/lcyt-backend/CLAUDE.md`
 
@@ -346,7 +346,7 @@ Horizontal auto-scaling based on:
 - [ ] Implement PgBouncer sidecar in compose stack
 - [ ] Add connection pool health checks to backend startup
 - [ ] Replace in-memory session store with Redis (optional, Phase 3+)
-- [ ] Load test: spin up 3–5 backend instances + shared PostgreSQL
+- [ ] Load test: spin up 3â€“5 backend instances + shared PostgreSQL
 - [ ] Document Kubernetes manifests for managed PostgreSQL deployment
 
 ---
@@ -398,7 +398,7 @@ GRACEFUL_FALLBACK=1
 2. **Migration cutover:**
    - Maintain SQLite as read-only snapshot for 48 hours
    - Dual-write during transition period
-   - Gradual traffic shift (10% → 50% → 100%)
+   - Gradual traffic shift (10% â†’ 50% â†’ 100%)
 
 3. **Rollback plan:**
    - Keep SQLite read-only until 7 days post-cutover
@@ -433,7 +433,7 @@ npm run test:schema-compat
 | **Supabase** | PostgreSQL (managed) | PostgreSQL + REST API + Auth layer; includes free tier |
 | **Azure** | Azure Database for PostgreSQL | Enterprise, advanced disaster recovery, Microsoft ecosystem |
 | **Heroku** | Postgres add-on | Simplest option for Heroku deployments; Eco plan available |
-| **PlanetScale** | MySQL (not Postgres) | — N/A for this plan — |
+| **PlanetScale** | MySQL (not Postgres) | â€” N/A for this plan â€” |
 
 **Recommendation for self-hosters:** DigitalOcean Managed DB (simplicity + cost) or roll your own with PostgreSQL + WAL archival.
 
@@ -443,25 +443,25 @@ npm run test:schema-compat
 
 | Phase | Duration | Key Milestones |
 |---|---|---|
-| **Phase 1** | Week 1–2 | Prisma integration, basic tests passing |
-| **Phase 2** | Week 2–3 | Compose stack stable, CI matrix running |
-| **Phase 3** | Week 3–4 | Load testing, multi-instance docs, deployment runbook |
+| **Phase 1** | Week 1â€“2 | Prisma integration, basic tests passing |
+| **Phase 2** | Week 2â€“3 | Compose stack stable, CI matrix running |
+| **Phase 3** | Week 3â€“4 | Load testing, multi-instance docs, deployment runbook |
 | **Pilot** | Week 5 | Early adopter canary (small customer base) |
-| **Rollout** | Week 6–8 | Staged production cutover, monitoring |
-| **Stabilization** | Week 9–10 | Post-launch issues, SQLite deprecation notice |
+| **Rollout** | Week 6â€“8 | Staged production cutover, monitoring |
+| **Stabilization** | Week 9â€“10 | Post-launch issues, SQLite deprecation notice |
 
 ---
 
 ## Success Criteria
 
-- ✅ All 48+ tables correctly migrated to PostgreSQL
-- ✅ Zero data loss during migration
-- ✅ Test suite passes for both SQLite and PostgreSQL
-- ✅ Same performance (captions delivered in <100ms) on both databases
-- ✅ Backend scales to 5+ concurrent instances with shared database
-- ✅ Multi-user, multi-project workloads stable
-- ✅ Backup/restore procedure documented and tested
-- ✅ Rollback plan executed successfully in staging
+- âœ… All 48+ tables correctly migrated to PostgreSQL
+- âœ… Zero data loss during migration
+- âœ… Test suite passes for both SQLite and PostgreSQL
+- âœ… Same performance (captions delivered in <100ms) on both databases
+- âœ… Backend scales to 5+ concurrent instances with shared database
+- âœ… Multi-user, multi-project workloads stable
+- âœ… Backup/restore procedure documented and tested
+- âœ… Rollback plan executed successfully in staging
 
 ---
 
@@ -560,8 +560,9 @@ DATABASE_URL="postgresql://lcyt_user:password@localhost:5432/lcyt" npm test -w p
 
 ## See Also
 
-- [docs/PLANS.md](../PLANS.md) — Plan index
-- [packages/lcyt-backend/CLAUDE.md](../../packages/lcyt-backend/CLAUDE.md) — Backend architecture
-- [.env.example](../../.env.example) — Environment variables
-- [docker-compose.yml](../../docker-compose.yml) — Current compose stack (SQLite)
+- [docs/PLANS.md](../PLANS.md) â€” Plan index
+- [packages/lcyt-backend/CLAUDE.md](../../packages/lcyt-backend/CLAUDE.md) â€” Backend architecture
+- [.env.example](../../.env.example) â€” Environment variables
+- [docker-compose.yml](../../docker-compose.yml) â€” Current compose stack (SQLite)
+
 

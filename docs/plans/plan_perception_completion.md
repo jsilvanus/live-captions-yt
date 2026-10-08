@@ -1,5 +1,5 @@
----
-title: Perception Completion — Real Detector, Feed Attribution, LLM Hand-off
+﻿---
+title: Perception Completion â€” Real Detector, Feed Attribution, LLM Hand-off
 status: implemented 2026-10-05 (phases 1-4: detector, tracker, attribution, reliability, LLM hand-off, crop auto-follow, status panel); not yet run against real hardware, a real fleet or real service footage
 related: plan/video_perception, plan/compute_split, plan/ai_roles_framework, plan/vertical_crop, plan/ai_observability
 ---
@@ -16,7 +16,7 @@ Pipeline today, end to end:
 1. `lcyt-production/src/perception-manager.js` submits a `perception` stream job (fffleet when `FFFLEET_URL` is set, else orchestrator or worker daemon). One job per dedicated-feed camera, plus one shared-feed job per project for mixer-only cameras.
 2. The job (`lcyt-compute/src/perception/job.js` and `runner.js`) polls a JPEG over HTTP from `/preview/:key/incoming` every `emitIntervalMs` (min 200 ms, default 1000 ms).
 3. `stub-backend.js` returns a fake "person" box that sways with a sine wave, plus a fixed framing score of 0.7.
-4. The job POSTs `{apiKey, cameraId|feedKind, ts, objects, framing, visible}` to `/production/perception/ingest`.
+4. The job POSTs `{apiKey, cameraId|feedKind, ts, objects, framing, visible}` to `/api/v1/production/api/v1/perception/api/v1/ingest`.
 5. `perception-aggregator.js` emits `camera.track_state` (per camera, feeds World State) and a project-level `track_state` (label union, what the cue engine reads). `shared-feed-resolver.js` re-tags shared-feed detections with the camera currently on program.
 
 What is real: dispatch, contract, aggregation, resolver, cue and World State consumers. What is fake: the detector, the framing score, and (importantly) the frame rate.
@@ -203,3 +203,4 @@ Decided by Juha, 2026-10-05:
 6. The stub detector is for tests and demos only; production jobs fail loudly instead of faking data.
 7. Reference shots for feed-only attribution are per camera and per preset, taken with LCYT's existing hold-a-preset-button screenshot gesture. Finding (code read 2026-10-05): that gesture does not record per preset today. `PresetButton` in `lcyt-web/.../workspace/panes/index.jsx` calls `captureThumbnail(camera)` without the preset id, and the backend stores one file per camera (`camera-thumbnail.js`, `thumbnailPath(cameraId)`), so holding any preset overwrites the camera's single thumbnail. Needed change (Phase 2b): send `presetId`, store `<cameraId>-<presetId>.jpg` with a per-preset captured-at, keep the camera-level image as fallback, and show the captured marker per preset instead of per camera.
 8. No frame upload in v1: the Describer keeps fetching the preview JPEG and the trigger carries a timestamp. The `FrameProvider` interface lets an upload provider be added later.
+
