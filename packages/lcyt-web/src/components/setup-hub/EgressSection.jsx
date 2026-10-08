@@ -65,20 +65,20 @@ export function EgressSection() {
     getRelayStatus()
       .then(s => { setRelayStatus(s); setRelayActiveState(!!s.active); })
       .catch(() => setRelayStatus(null));
-  }, [backendUrl, getSessionToken]);
+  }, [connected, getRelayStatus]);
 
   const refreshFeedCameras = useCallback(async () => {
-    if (!session?.connected) { setFeedCameras([]); return; }
+    if (!connected || !backendUrl) { setFeedCameras([]); return; }
     try {
       const token = getSessionToken?.();
-      const r = await fetch(`${session.backendUrl}/production/cameras`, {
+      const r = await fetch(`${backendUrl}/production/cameras`, {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!r.ok) return;
       const cams = await r.json();
       setFeedCameras((cams || []).filter(c => FEED_CAMERA_TYPES.has(c.controlType) && c.cameraKey));
     } catch { /* ignore — source picker just stays hidden */ }
-  }, [backendUrl, getSessionToken]);
+  }, [connected, backendUrl, getSessionToken]);
 
   useEffect(() => { refreshStatus(); refreshFeedCameras(); }, [refreshStatus, refreshFeedCameras]);
 
