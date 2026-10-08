@@ -753,7 +753,7 @@ if (process.env.STATIC_DIR) {
 // Routes
 // ---------------------------------------------------------------------------
 
-// Metrics endpoint — optional auth gate
+// Metrics endpoint — optional auth gate (kept at root for Prometheus scraping)
 app.get('/metrics', async (req, res) => {
   if (!process.env.METRICS_TOKEN) {
     return res.status(404).json({ error: 'Metrics endpoint disabled' });
@@ -766,7 +766,7 @@ app.get('/metrics', async (req, res) => {
   res.send(await metrics.getMetricsText());
 });
 
-// Health check — no auth required. RTMP relay and music are hot (settings.get()
+// Health check — no auth required (kept at root for load balancers). RTMP relay and music are hot (settings.get()
 // read live, matching the request-time gate on their routers below); graphics
 // reuses the frozen boot-time `graphicsEnabled` since that capability is
 // restart-tier (see above).
@@ -808,10 +808,14 @@ app.get('/health', (req, res) => {
 if (settings.get('contact.name') && settings.get('contact.email')) {
   console.info(`✓ Contact info configured: ${settings.get('contact.name')} <${settings.get('contact.email')}>`);
 } else {
-  console.info('ℹ CONTACT_NAME/CONTACT_EMAIL not set — GET /contact will return 404.');
+  console.info('ℹ CONTACT_NAME/CONTACT_EMAIL not set — GET /api/contact will return 404.');
 }
 
-app.get('/contact', (req, res) => {
+// Create a router for all API endpoints under /api/
+const apiRouter = express.Router();
+
+// All API routes now live under /api/
+apiRouter.get('/contact', (req, res) => {
   const name = settings.get('contact.name');
   const email = settings.get('contact.email');
   if (!name || !email) return res.status(404).json({ error: 'Contact information not configured' });
@@ -821,7 +825,7 @@ app.get('/contact', (req, res) => {
   res.status(200).json({ name, email, ...(phone ? { phone } : {}), ...(website ? { website } : {}) });
 });
 
-app.use(createSessionRouters(db, store, jwtSecret, auth, {
+apiRouter.use(createSessionRouters(db, store, jwtSecret, auth, {
   relayManager,
   dskCaptionProcessor: _dskCaptionProcessor,
   soundCaptionProcessor: _soundCaptionProcessor,
@@ -831,20 +835,20 @@ app.use(createSessionRouters(db, store, jwtSecret, auth, {
   recordingsStore: mediaStores.recordingsStore,
   settings,
 }));
-app.use(createAccountRouters(db, jwtSecret, { loginEnabled, settings }));
-app.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
-app.use('/admin', createAdminRouter(db, jwtSecret));
+apiRouter.use(createAccountRouters(db, jwtSecret, { loginEnabled, settings }));
+apiRouter.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
+apiRouter.use('/admin', createAdminRouter(db, jwtSecret));
 // Admin metrics: rollup time series + "right now" live panel
 // (plan_metering_audit §6.1). Same admin auth as the /admin router.
-app.use('/admin/metrics', createAdminMiddleware(db, jwtSecret), createAdminMetricsRouter(db, { store, metrics, metricsPollers }));
+apiRouter.use('/admin/metrics', createAdminMiddleware(db, jwtSecret), createAdminMetricsRouter(db, { store, metrics, metricsPollers }));
 // Server Settings admin surface (plan_env_to_ui_settings.md) — same admin auth as /admin/metrics.
-app.use('/admin/server-settings', createAdminMiddleware(db, jwtSecret), createAdminSettingsRouter(db, settings));
-app.use('/images',   imagesRouter);
-app.use('/dsk',      dskRouter);
-app.use('/dsk',      dskTemplatesRouter);
-app.use('/dsk',      dskViewportsRouter);
-app.use('/dsk-rtmp', dskRtmpRouter);
-app.use(createContentRouters(
+apiRouter.use('/admin/server-settings', createAdminMiddleware(db, jwtSecret), createAdminSettingsRouter(db, settings));
+apiRouter.use('/images',   imagesRouter);
+apiRouter.use('/dsk',      dskRouter);
+apiRouter.use('/dsk',      dskTemplatesRouter);
+apiRouter.use('/dsk',      dskViewportsRouter);
+apiRouter.use('/dsk-rtmp', dskRtmpRouter);
+apiRouter.use(createContentRouters(
   db,
   auth,
   store,
@@ -862,16 +866,16 @@ app.use(createContentRouters(
   },
   scopedAuth
 ));
-app.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
-app.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
+apiRouter.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
+apiRouter.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
 // scope; topics are further narrowed per-token by tokenAllowsTopic.
-app.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:read' }), createEventsStreamRouter(eventBus));
+apiRouter.use('/events/stream', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:read' }), createEventsStreamRouter(eventBus));
 // Public catalog of subscribable event topics — single source of truth for the
 // Setup Hub scope picker (no project data, so no auth). Mounted before the
 // session `/events` router; that router only matches exactly `/events`.
-app.use('/events/topics', createEventsCatalogRouter());
+apiRouter.use('/events/topics', createEventsCatalogRouter());
 // Phase 3 — External event publishing (POST /events). Fenced to `external.*`
 // namespace; rate/size limited; always audited. `requiredScope: 'events:write'`
 // is enforced for external (`lcytmcp_`) tokens only — per
@@ -879,18 +883,18 @@ app.use('/events/topics', createEventsCatalogRouter());
 // carry their own project-membership authorization and have full delegation,
 // so the scope gate doesn't apply to them (same as every other scopedAuth()
 // router in this file).
-app.use('/events', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:write' }), createEventsPublishRouter(eventBus));
+apiRouter.use('/events', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'events:write' }), createEventsPublishRouter(eventBus));
 // Phase 1 — In-process MCP endpoint (Streamable HTTP). Backed by the shared
 // tool registry; scoped per-tool; destructive tools staged for confirmation.
 // `requiredScope: 'mcp:connect'` is likewise enforced for external tokens
 // only — see the note above /events.
-app.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'mcp:connect' }), createMcpEndpointRouter({
+apiRouter.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredScope: 'mcp:connect' }), createMcpEndpointRouter({
   registry: _toolRegistry, eventBus, db, assistantManager: _assistantManager,
 }));
 // Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
 // confirm/reject pending actions.
-app.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
-app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
+apiRouter.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
+apiRouter.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
   bridgeManager: productionBridgeManager,
   // 'setup' tier: explicit project owner/admin, or an org owner/admin's
   // unconditional override on a team-visible project (plan_project_roles.md,
@@ -899,33 +903,33 @@ app.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
   isExplicitProjectAdmin: (apiKey, userId) => hasProjectRole(db, 'setup', apiKey, userId),
   checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
 }));
-app.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
-app.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
-app.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-app.use('/roles', createRolesRouter(db, scopedAuth('role'), {
+apiRouter.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
+apiRouter.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
+apiRouter.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
+apiRouter.use('/roles', createRolesRouter(db, scopedAuth('role'), {
   checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
 }));
-app.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
-app.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
-app.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
-app.use('/roles/assistant', createProductionAssistantRouter(
+apiRouter.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
+apiRouter.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
+apiRouter.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
+apiRouter.use('/roles/assistant', createProductionAssistantRouter(
   db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry, sceneSummary: (k) => _sceneSummary?.(k) ?? null },
   productionBridgeManager,
 ));
-app.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
+apiRouter.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
 // Setup-tier writes only (GET stays open to any project member, see
 // requireProjectRole's own doc comment) — connector auth_config can hold
 // credentials, same risk class as /ai/providers (plan_project_roles.md).
-app.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
-app.use('/actions', createActionsRouter(db, scopedAuth('action'), {
+apiRouter.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
+apiRouter.use('/actions', createActionsRouter(db, scopedAuth('action'), {
   executor: _actionExecutor,
   checkProjectRole: _checkProjectRole,
 }));
-app.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
-app.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
-app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
-app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
+apiRouter.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
+apiRouter.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
+apiRouter.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
+apiRouter.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // fps30 tracker subsystem (plan_video_perception.md Phase 2/3): job dispatch
 // (start/stop a per-camera or shared-feed perception job on the
 // fffleet fleet) and the ingest side (a worker POSTs
@@ -941,6 +945,7 @@ app.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // hands out to the DSK renderer for the same reason — not
 // DEFAULT_PREVIEW_BASE_URL, which defaults to http://localhost:$PORT and is
 // only correct for lcyt-production's own in-process preview fetches.
+// Note: Use /api/production routes for perception/attribution
 const _perceptionBackendUrl = settings.get('app.backend_url') || DEFAULT_PREVIEW_BASE_URL;
 // Per-job ingest tokens: an explicit secret, else one derived from the JWT secret (domain-separated).
 const _perceptionIngestSecret = process.env.PERCEPTION_INGEST_SECRET
@@ -996,8 +1001,9 @@ onKeyDeleted((apiKey) => {
   _feedAttributor?.clearProject?.(apiKey);
   _cropFollow?.clearProject?.(apiKey);
 });
-app.use('/production/attribution', createAttributionRouter(_feedAttributor, { db, auth: scopedAuth('production') }));
-app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
+
+apiRouter.use('/production/attribution', createAttributionRouter(_feedAttributor, { db, auth: scopedAuth('production') }));
+apiRouter.use('/production/perception', createPerceptionRouter(_perceptionAggregator, _sharedFeedResolver, {
   perceptionManager: _perceptionManager,
   internalToken: process.env.BACKEND_INTERNAL_TOKEN || null,
   jobTokensEnabled: !!_perceptionIngestSecret,
@@ -1009,8 +1015,8 @@ app.use('/production/perception', createPerceptionRouter(_perceptionAggregator, 
   auth: scopedAuth('production'),
 }));
 
-app.use('/production/arming', createArmingRouter(db, scopedAuth('production'), eventBus));
-app.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
+apiRouter.use('/production/arming', createArmingRouter(db, scopedAuth('production'), eventBus));
+apiRouter.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
   commands: productionCommands,
@@ -1057,14 +1063,14 @@ function gatedRouter(getEnabled) {
       allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
       requireSetup: requireProjectRole(db, 'setup'),
     });
-  app.use('/rtmp',       rtmpGate(rtmpRouter));
-  app.use('/feed-rtmp',  rtmpGate(feedRtmpRouter));
-  app.use('/ingestion',  rtmpGate(ingestionRouter));
-  app.use('/stream',     rtmpGate(streamRouter));
-  app.use('/stream-hls', rtmpGate(streamHlsRouter));
-  app.use('/radio',      rtmpGate(radioRouter));
-  app.use('/preview',    rtmpGate(previewRouter));
-  app.use('/crop',       rtmpGate(cropRouter));
+  apiRouter.use('/rtmp',       rtmpGate(rtmpRouter));
+  apiRouter.use('/feed-rtmp',  rtmpGate(feedRtmpRouter));
+  apiRouter.use('/ingestion',  rtmpGate(ingestionRouter));
+  apiRouter.use('/stream',     rtmpGate(streamRouter));
+  apiRouter.use('/stream-hls', rtmpGate(streamHlsRouter));
+  apiRouter.use('/radio',      rtmpGate(radioRouter));
+  apiRouter.use('/preview',    rtmpGate(previewRouter));
+  apiRouter.use('/crop',       rtmpGate(cropRouter));
 }
 
 // Music detection (server-side HLS audio analysis) routes — same hot-gate
@@ -1073,8 +1079,11 @@ function gatedRouter(getEnabled) {
 if (musicManager) {
   const musicGate = gatedRouter(() => settings.get('music.detection_active'));
   const [musicRouter, musicConfigRouter] = createMusicRouters(db, auth, musicManager);
-  app.use('/music', musicGate(musicRouter), musicGate(musicConfigRouter));
+  apiRouter.use('/music', musicGate(musicRouter), musicGate(musicConfigRouter));
 }
+
+// Mount all API routes under /api prefix
+app.use('/api', apiRouter);
 
 // ---------------------------------------------------------------------------
 // SPA fallback (must be LAST, after all API routes)
