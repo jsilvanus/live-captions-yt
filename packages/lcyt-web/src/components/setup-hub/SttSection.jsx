@@ -24,6 +24,7 @@ export function SttSection() {
   const session = useSessionContext();
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
 
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -34,7 +35,7 @@ export function SttSection() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) return;
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token) return;
     setLoading(true);
     setError(null);
@@ -48,12 +49,12 @@ export function SttSection() {
     } finally {
       setLoading(false);
     }
-  }, [connected, backendUrl, session]);
+  }, [connected, backendUrl, getSessionToken]);
 
   useEffect(() => { load(); }, [load]);
 
   async function handleSave() {
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token || !config) return;
     setSaving(true);
     setError(null);

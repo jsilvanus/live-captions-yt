@@ -12,12 +12,11 @@ const inputStyle = { padding: '0.4rem 0.5rem', borderRadius: 6, border: '1px sol
 const labelStyle = { fontSize: '0.8em', fontWeight: 600, opacity: 0.8, display: 'block', marginBottom: 2 };
 const fieldStyle = { marginBottom: '0.6rem' };
 
-function useApi(session) {
+function useApi({ backendUrl, getSessionToken } = {}) {
   // Depend on the specific fields read, not the whole session object — a
   // fresh useSession() return value on every render would otherwise give
   // this a new identity each time too, re-triggering every effect that
   // depends on it (re-fetching connectors/requests/mappings on every render).
-  const { backendUrl, getSessionToken } = session;
   const call = useCallback(async (path, { method = 'GET', body } = {}) => {
     const token = getSessionToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -355,19 +354,22 @@ function VariablesPanel({ api }) {
  */
 export function ConnectorsSection() {
   const session = useSessionContext();
-  const api = useApi(session);
+  const connected = session?.connected;
+  const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
+  const api = useApi({ backendUrl, getSessionToken });
   const [connectors, setConnectors] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
   const [editingSlug, setEditingSlug] = useState(null);
   const [variablesOpen, setVariablesOpen] = useState(false);
 
   const load = useCallback(async () => {
-    if (!session?.connected) return;
+    if (!connected) return;
     try {
       const data = await api('/connectors');
       setConnectors(data.connectors);
     } catch { /* ignore */ }
-  }, [api, session?.connected]);
+  }, [api, connected]);
 
   useEffect(() => { load(); }, [load]);
 

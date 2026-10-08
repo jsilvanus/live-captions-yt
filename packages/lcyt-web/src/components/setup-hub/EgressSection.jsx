@@ -48,6 +48,12 @@ const FEED_CAMERA_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
 
 export function EgressSection() {
   const session = useSessionContext();
+  const connected = session?.connected;
+  const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
+  const getRelayStatus = session?.getRelayStatus;
+  const configureRelay = session?.configureRelay;
+  const setRelayActive = session?.setRelayActive;
   const [relayList, setRelayList] = useState(buildInitialRelayList);
   const [editingSlot, setEditingSlot] = useState(null);
   const [relayStatus, setRelayStatus] = useState(null);
@@ -55,24 +61,24 @@ export function EgressSection() {
   const [feedCameras, setFeedCameras] = useState([]);
 
   const refreshStatus = useCallback(() => {
-    if (!session?.connected) { setRelayStatus(null); return; }
-    session.getRelayStatus()
+    if (!connected || !getRelayStatus) { setRelayStatus(null); return; }
+    getRelayStatus()
       .then(s => { setRelayStatus(s); setRelayActiveState(!!s.active); })
       .catch(() => setRelayStatus(null));
-  }, [session]);
+  }, [connected, getRelayStatus]);
 
   const refreshFeedCameras = useCallback(async () => {
-    if (!session?.connected) { setFeedCameras([]); return; }
+    if (!connected || !backendUrl) { setFeedCameras([]); return; }
     try {
-      const token = session.getSessionToken?.();
-      const r = await fetch(`${session.backendUrl}/production/cameras`, {
+      const token = getSessionToken?.();
+      const r = await fetch(`${backendUrl}/production/cameras`, {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!r.ok) return;
       const cams = await r.json();
       setFeedCameras((cams || []).filter(c => FEED_CAMERA_TYPES.has(c.controlType) && c.cameraKey));
     } catch { /* ignore — source picker just stays hidden */ }
-  }, [session]);
+  }, [connected, backendUrl, getSessionToken]);
 
   useEffect(() => { refreshStatus(); refreshFeedCameras(); }, [refreshStatus, refreshFeedCameras]);
 
@@ -93,7 +99,7 @@ export function EgressSection() {
   }
 
   async function persistRelayToBackend(entry) {
-    if (!session?.connected) return;
+    if (!connected || !configureRelay) return;
     const targetType = entry.targetType || 'youtube';
     let targetUrl = null;
     let targetName = null;
@@ -106,7 +112,7 @@ export function EgressSection() {
     }
     if (!targetUrl) return;
     try {
-      await session.configureRelay({
+      await configureRelay({
         slot: entry.slot,
         targetUrl,
         targetName,
@@ -155,7 +161,8 @@ export function EgressSection() {
 
   async function handleRelayActive(active) {
     try {
-      await session.setRelayActive(active);
+      if (!setRelayActive) return;
+      await setRelayActive(active);
       setRelayActiveState(active);
       refreshStatus();
     } catch { /* surfaced via refreshStatus() staying at prior state */ }
@@ -189,7 +196,7 @@ export function EgressSection() {
         />
       ))}
 
-      {session?.connected && (
+      {connected && (
         <SetupItemRow
           name="Relay status"
           meta={relayActive ? 'Active — will fan-out when stream arrives' : 'Inactive — incoming stream accepted but not relayed'}

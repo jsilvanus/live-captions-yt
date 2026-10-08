@@ -16,6 +16,9 @@ import { Dialog } from '../Dialog.jsx';
  */
 export function WebRadioSection() {
   const session = useSessionContext();
+  const connected = session?.connected;
+  const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -23,22 +26,22 @@ export function WebRadioSection() {
   const [saving, setSaving] = useState(false);
 
   const authedFetch = useCallback((path, opts = {}) => {
-    const token = session.getSessionToken?.();
-    return fetch(`${session.backendUrl}${path}`, {
+    const token = getSessionToken?.();
+    return fetch(`${backendUrl}${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
-  }, [session]);
+  }, [backendUrl, getSessionToken]);
 
   const load = useCallback(async () => {
-    if (!session?.connected) return;
+    if (!connected) return;
     setLoading(true);
     try {
       const r = await authedFetch('/radio/config');
       if (r.ok) setConfig((await r.json()) || null);
     } catch { /* backend not implemented yet — leave config null */ }
     finally { setLoading(false); }
-  }, [session?.connected, authedFetch]);
+  }, [connected, authedFetch]);
 
   useEffect(() => { load(); }, [load]);
 

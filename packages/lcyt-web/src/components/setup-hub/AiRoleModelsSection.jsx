@@ -11,8 +11,7 @@ const fieldStyle = { marginBottom: '0.6rem' };
 // Same small authenticated-fetch idiom as ConnectorsSection.jsx — kept local
 // rather than shared, matching this directory's existing convention of each
 // Section owning its own thin fetch wrapper.
-function useApi(session) {
-  const { backendUrl, getSessionToken } = session;
+function useApi({ backendUrl, getSessionToken } = {}) {
   const call = useCallback(async (path, { method = 'GET', body } = {}) => {
     const token = getSessionToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
@@ -182,14 +181,17 @@ function RoleConfigDialog({ api, role, config, providers, onClose, onSaved }) {
  */
 export function AiRoleModelsSection() {
   const session = useSessionContext();
-  const api = useApi(session);
+  const connected = session?.connected;
+  const backendUrl = session?.backendUrl;
+  const getSessionToken = session?.getSessionToken;
+  const api = useApi({ backendUrl, getSessionToken });
   const [roles, setRoles] = useState([]);
   const [providers, setProviders] = useState([]);
   const [configs, setConfigs] = useState({});
   const [editingRoleCode, setEditingRoleCode] = useState(null);
 
   const load = useCallback(async () => {
-    if (!session?.connected) return;
+    if (!connected) return;
     try {
       const [catalog, providerList] = await Promise.all([
         api('/roles/catalog'),
@@ -207,7 +209,7 @@ export function AiRoleModelsSection() {
       );
       setConfigs(Object.fromEntries(entries));
     } catch { /* ignore — surfaced per-row via empty state */ }
-  }, [api, session?.connected]);
+  }, [api, connected]);
 
   useEffect(() => { load(); }, [load]);
 
