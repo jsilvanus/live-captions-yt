@@ -28,7 +28,7 @@ export function StorageSection() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) return;
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token) return;
     setLoading(true);
     setError(null);
@@ -43,7 +43,7 @@ export function StorageSection() {
     } finally {
       setLoading(false);
     }
-  }, [connected, backendUrl, session]);
+  }, [connected, backendUrl, getSessionToken]);
 
   useEffect(() => { load(); }, [load]);
 

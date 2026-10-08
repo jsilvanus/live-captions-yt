@@ -46,42 +46,42 @@ export function IngestionSection() {
   const [editingSlot, setEditingSlot] = useState(null); // 'video' | 'dsk' | null
 
   const authedFetch = useCallback((path, opts = {}) => {
-    const token = session.getSessionToken?.();
-    return fetch(`${session.backendUrl}${path}`, {
+    const token = getSessionToken?.();
+    return fetch(`${backendUrl}${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
-  }, [session]);
+  }, [backendUrl, getSessionToken]);
 
   const load = useCallback(async () => {
-    if (!session?.connected) return;
+    if (!connected) return;
     setLoading(true);
     try {
       const r = await authedFetch('/ingestion/config');
       if (r.ok) setConfig((await r.json()) || null);
     } catch { /* backend not implemented yet — leave config null */ }
     finally { setLoading(false); }
-  }, [session?.connected, authedFetch]);
+  }, [connected, authedFetch]);
 
   const loadFeedCameras = useCallback(async () => {
-    if (!session?.connected) return;
+    if (!connected) return;
     try {
       const r = await authedFetch('/production/cameras');
       if (!r.ok) return;
       const cams = await r.json();
       setFeedCameras((cams || []).filter(c => FEED_CAMERA_TYPES.has(c.controlType) && c.cameraKey));
     } catch { /* ignore */ }
-  }, [session?.connected, authedFetch]);
+  }, [connected, authedFetch]);
 
   const loadRelays = useCallback(async () => {
-    if (!session?.connected) return;
+    if (!connected) return;
     try {
       const r = await authedFetch('/stream');
       if (!r.ok) return;
       const body = await r.json();
       setRelays(body?.relays || []);
     } catch { /* RTMP relay not active on this backend — leave relays empty */ }
-  }, [session?.connected, authedFetch]);
+  }, [connected, authedFetch]);
 
   useEffect(() => { load(); loadFeedCameras(); loadRelays(); }, [load, loadFeedCameras, loadRelays]);
 

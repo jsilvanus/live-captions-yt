@@ -35,7 +35,7 @@ export function SttSection() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) return;
-    const token = session.getSessionToken?.();
+    const token = getSessionToken?.();
     if (!token) return;
     setLoading(true);
     setError(null);
@@ -49,7 +49,7 @@ export function SttSection() {
     } finally {
       setLoading(false);
     }
-  }, [connected, backendUrl, session]);
+  }, [connected, backendUrl, getSessionToken]);
 
   useEffect(() => { load(); }, [load]);
 
