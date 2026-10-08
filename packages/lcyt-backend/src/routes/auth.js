@@ -69,6 +69,12 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   const userAuth = createUserAuthMiddleware(jwtSecret);
   const metrics = getMetricsInstance();
   const recentFailedLogins = new Map();
+  const requireLoginEnabled = (req, res, next) => {
+    if (!loginEnabled) {
+      return res.status(503).json({ error: 'User logins are disabled on this server' });
+    }
+    next();
+  };
 
   function resolveIp(req) {
     return req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
@@ -96,16 +102,8 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     }
   });
 
-  // All remaining routes return 503 if logins are disabled
-  router.use((req, res, next) => {
-    if (!loginEnabled) {
-      return res.status(503).json({ error: 'User logins are disabled on this server' });
-    }
-    next();
-  });
-
   // POST /auth/register
-  router.post('/register', LOGIN_RATE_LIMIT, async (req, res) => {
+  router.post('/register', requireLoginEnabled, LOGIN_RATE_LIMIT, async (req, res) => {
     const { email, password, name } = req.body || {};
     if (!email || typeof email !== 'string') {
       return res.status(400).json({ error: 'email is required' });
@@ -132,7 +130,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // POST /auth/login
-  router.post('/login', LOGIN_RATE_LIMIT, async (req, res) => {
+  router.post('/login', requireLoginEnabled, LOGIN_RATE_LIMIT, async (req, res) => {
     const { email, password } = req.body || {};
     if (!email || !password) {
       return res.status(400).json({ error: 'email and password are required' });
@@ -207,7 +205,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // PATCH /auth/me — update own profile (name); requires user token
-  router.patch('/me', userAuth, (req, res) => {
+  router.patch('/me', requireLoginEnabled, userAuth, (req, res) => {
     const { name } = req.body || {};
     if (name === undefined) {
       return res.status(400).json({ error: 'name is required' });
@@ -231,20 +229,20 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // GET /auth/me/export — export the current user's own data
-  router.get('/me/export', userAuth, (req, res) => {
+  router.get('/me/export', requireLoginEnabled, userAuth, (req, res) => {
     const exportData = getUserAccountExport(db, req.user.userId);
     if (!exportData) return res.status(404).json({ error: 'User not found' });
     res.json(exportData);
   });
 
   // DELETE /auth/me/data — delete the user's owned projects, keep the account
-  router.delete('/me/data', userAuth, (req, res) => {
+  router.delete('/me/data', requireLoginEnabled, userAuth, (req, res) => {
     const deletedProjectCount = deleteOwnedProjectsForUser(db, req.user.userId);
     res.json({ deletedProjectCount });
   });
 
   // DELETE /auth/me — full account deletion
-  router.delete('/me', userAuth, (req, res) => {
+  router.delete('/me', requireLoginEnabled, userAuth, (req, res) => {
     const orgRows = db.prepare(`
       SELECT om.org_id
       FROM org_members om
@@ -268,7 +266,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // POST /auth/change-password — requires user token
-  router.post('/change-password', userAuth, async (req, res) => {
+  router.post('/change-password', requireLoginEnabled, userAuth, async (req, res) => {
     const { currentPassword, newPassword } = req.body || {};
     if (!currentPassword || !newPassword) {
       return res.status(400).json({ error: 'currentPassword and newPassword are required' });

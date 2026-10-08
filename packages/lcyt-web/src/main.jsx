@@ -118,9 +118,6 @@ function AuthGate({ children }) {
           const cfg = JSON.parse(localStorage.getItem('lcyt.session.config') || '{}');
           if (cfg.backendUrl && cfg.apiKey) return true;
         }
-        // Mode 3: Local install mode (backend with local-mode feature) — redirect to login
-        // which will auto-authenticate via /auth/local
-        if (Array.isArray(features) && features.includes('local-mode')) return true;
       }
       return false;
     } catch {

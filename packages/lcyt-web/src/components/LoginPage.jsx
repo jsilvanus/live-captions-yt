@@ -15,6 +15,23 @@ const PRESETS = [
   { id: 'custom',  label: 'Custom',  url: '' },
 ];
 
+const LOCALHOST_RE = /^(localhost|127\.0\.0\.1|::1|\[::1\])$/i;
+
+function isLocalBrowserHost() {
+  return LOCALHOST_RE.test(window.location.hostname);
+}
+
+function hasStoredUserForBackend(url) {
+  try {
+    const raw = localStorage.getItem('lcyt-user');
+    if (!raw) return false;
+    const parsed = JSON.parse(raw);
+    return !!(parsed?.token && parsed?.backendUrl === url.replace(/\/$/, ''));
+  } catch {
+    return false;
+  }
+}
+
 function getInitialPreset() {
   try {
     const saved = localStorage.getItem(KEYS.backend.preset);
@@ -63,7 +80,7 @@ export function LoginPage() {
   const [preset, setPreset] = useState(getInitialPreset);
   const [customUrl, setCustomUrl] = useState('');
   const [probing, setProbing] = useState(false);
-  const [features, setFeatures] = useState(() => getBackendFeatures() || null);    // null = not probed yet
+  const [features, setFeatures] = useState(() => (isLocalBrowserHost() ? null : (getBackendFeatures() || null)));    // null = not probed yet
   const [probeError, setProbeError] = useState(null);
 
   // Phase 2: authentication (depends on features)
@@ -86,37 +103,56 @@ export function LoginPage() {
     setError(null);
   }, [backendUrl]);
 
-  // Auto-probe localhost on mount for local-mode auto-login
+  // Auto-probe the current localhost backend for local-mode auto-login.
+  // This intentionally overrides stale saved backend features from previous
+  // sessions so a local install can always self-authenticate.
   useEffect(() => {
-    const autoProbeLocalhost = async () => {
-      // Only auto-probe if we're at localhost and haven't detected features yet
-      if (!window.location.hostname.match(/^(localhost|127\.0\.0\.1|::1|\[::1\])$/i)) return;
-      if (features !== null) return; // Already probed or user made a selection
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 3000);
 
+    const autoProbeLocalhost = async () => {
+      if (!isLocalBrowserHost()) return;
       const localUrl = `${window.location.protocol}//${window.location.host}`;
+      if (hasStoredUserForBackend(localUrl)) return;
       try {
         const res = await fetch(`${localUrl}/health`, {
           cache: 'no-store',
-          signal: AbortSignal.timeout(3000),
+          signal: ac.signal,
         });
         if (!res.ok) return;
         const data = await res.json();
         if (!data.ok || !Array.isArray(data.features)) return;
+
+        setPreset('custom');
+        setCustomUrl(localUrl);
         setFeatures(data.features);
         saveBackendFeatures(data.features);
 
         // Auto-login in local-mode
         if (data.features.includes('local-mode')) {
+          try {
+            localStorage.removeItem(KEYS.session.config);
+            localStorage.removeItem(KEYS.session.autoConnect);
+            localStorage.setItem(KEYS.backend.preset, 'custom');
+          } catch {
+            // Ignore storage cleanup failures; private browsing may block writes.
+          }
           await loginLocal(localUrl);
-          window.location.assign('/');
+          window.location.assign('/projects');
         }
       } catch {
         // Silently ignore probe failures; user can manually select backend
+      } finally {
+        clearTimeout(timer);
       }
     };
 
     autoProbeLocalhost();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    return () => {
+      clearTimeout(timer);
+      ac.abort();
+    };
+  }, [loginLocal]);
 
   // ─── Phase 1: Probe backend ─────────────────────────────
 

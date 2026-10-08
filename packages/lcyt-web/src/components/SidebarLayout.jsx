@@ -9,6 +9,16 @@ import { StorageQuotaMonitor } from './StorageQuotaMonitor.jsx';
 
 const MOBILE_BREAKPOINT = 768;
 
+function isLocalModeInstall() {
+  try {
+    const raw = localStorage.getItem('lcyt.backend.features');
+    const features = raw ? JSON.parse(raw) : [];
+    return Array.isArray(features) && features.includes('local-mode');
+  } catch {
+    return false;
+  }
+}
+
 function MobileDrawer({ open, onClose }) {
   const [, navigate] = useLocation();
 
@@ -63,6 +73,7 @@ export function SidebarLayout({ children }) {
   // classic caption layout, which most of the app never visits).
   useEffect(() => {
     try {
+      if (isLocalModeInstall()) return;
       if (!localStorage.getItem('lcyt:privacyAccepted') && location !== '/account') {
         navigate('/account');
       }

@@ -4,7 +4,7 @@ import * as fs from 'node:fs';
 import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
 import { addMember, getMemberAccessLevel, getMemberCount, getAccessibleProjectsForUser } from '../db/project-members.js';
-import { adminMiddleware } from '../middleware/admin.js';
+import { createAdminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 import { hasProjectRole } from '../middleware/project-access.js';
 
@@ -41,6 +41,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  */
 export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, settings = null } = {}) {
   const router = Router();
+  const adminMiddleware = createAdminMiddleware(db, jwtSecret);
 
   // POST /keys — Create API key (admin) OR user project OR free-tier sign-up (?freetier)
   router.post('/', (req, res) => {

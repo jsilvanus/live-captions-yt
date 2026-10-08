@@ -422,6 +422,11 @@ export function AccountPage() {
 
   useEffect(() => {
     try {
+      const featuresRaw = localStorage.getItem('lcyt.backend.features');
+      const features = featuresRaw ? JSON.parse(featuresRaw) : [];
+      if (Array.isArray(features) && features.includes('local-mode')) {
+        return;
+      }
       if (!localStorage.getItem('lcyt:privacyAccepted')) {
         setPrivacyRequireAcceptance(true);
         setPrivacyOpen(true);
