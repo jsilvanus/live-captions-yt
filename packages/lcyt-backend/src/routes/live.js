@@ -3,7 +3,7 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast, armOnGoLive, disarmOnEnd } from '../db.js';
+import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast, armOnGoLive, disarmOnEnd, loadSession } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
@@ -240,7 +240,24 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
 
     // Generate deterministic session ID. streamKey defaults to '' for sessions
     // that use only the targets array (no primary stream key).
-    const sessionId = makeSessionId(apiKey, streamKey || '', domain);
+    // When reconnecting without streamKey, we need to check the database for
+    // the original streamKey to ensure consistent session ID.
+    let effectiveStreamKey = streamKey || '';
+    let sessionId = makeSessionId(apiKey, effectiveStreamKey, domain);
+    
+    // If session not found in memory and no streamKey was provided,
+    // try loading from database with the default empty streamKey first
+    if (!store.has(sessionId) && !streamKey) {
+      try {
+        const dbSession = loadSession(db, sessionId);
+        if (dbSession && dbSession.streamKey) {
+          effectiveStreamKey = dbSession.streamKey;
+          sessionId = makeSessionId(apiKey, effectiveStreamKey, domain);
+        }
+      } catch (_) {
+        // DB lookup failed or session doesn't exist, continue with empty streamKey
+      }
+    }
 
     // Idempotent: if session already exists, return existing JWT. If session
     // was rehydrated (no in-memory sender) and has no JWT, generate a fresh
@@ -258,10 +275,14 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
           return res.status(400).json({ error: targetsResult.error });
         }
         // Clean up old secondary senders first
+        const cleanupPromises = [];
         for (const t of (existing.extraTargets || [])) {
           if (t.type === 'youtube' && t.sender) {
-            Promise.resolve(t.sender.end()).catch(() => {});
+            cleanupPromises.push(Promise.resolve(t.sender.end()).catch(() => {}));
           }
+        }
+        if (cleanupPromises.length > 0) {
+          await Promise.all(cleanupPromises);
         }
         existing.extraTargets = targetsResult.extraTargets;
       }

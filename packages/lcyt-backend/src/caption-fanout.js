@@ -75,7 +75,7 @@ export function createCaptionFanout({ db }) {
           const text = routed
             ? composeCaptionText(e.text, routed.lang, e.translations, routed.showOriginal)
             : e.composedText;
-          target.sender.send(text, e.timestamp).catch(err => {
+          target.sender.send(text, e.tsStr).catch(err => {
             console.warn(`[captions] Extra YouTube target ${target.id} error: ${err.message}`);
           });
         }

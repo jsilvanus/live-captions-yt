@@ -295,7 +295,11 @@ export class SessionStore {
       try {
         saveSession(this.db, {
           sessionId: session.sessionId,
+          apiKey: session.apiKey,
+          streamKey: session.streamKey,
+          domain: session.domain,
           sequence: session.sequence,
+          startedAt: typeof session.startedAt === 'string' ? session.startedAt : new Date(session.startedAt).toISOString(),
           lastActivity: new Date(session.lastActivityAt).toISOString(),
           syncOffset: session.syncOffset,
         });
