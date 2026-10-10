@@ -75,7 +75,9 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
     let line;
     if (format === 'vtt') {
       // VTT cue times must be relative to the session (stream) start, not epoch time.
-      const absMs = timestamp ? new Date(timestamp).getTime() : Date.now();
+      // Ensure timestamp is parsed as UTC (add Z if missing, as backend passes ISO without Z).
+      const ts = timestamp ? (timestamp.endsWith('Z') ? timestamp : `${timestamp}Z`) : '';
+      const absMs = ts ? new Date(ts).getTime() : Date.now();
       if (entry.seq.baseMs === null) {
         entry.seq.baseMs = Number.isFinite(sessionStartMs) ? sessionStartMs : absMs;
       }

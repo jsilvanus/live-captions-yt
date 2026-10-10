@@ -161,6 +161,35 @@ export class DbClient {
   }
 
   /**
+   * Execute PRAGMA command (SQLite only)
+   * @param {string} pragma
+   * @param {object} [options]
+   */
+  pragma(pragma, options) {
+    if (this.type === 'sqlite') {
+      return this.sqlite.pragma(pragma, options);
+    } else {
+      throw new Error('PRAGMA not supported for PostgreSQL');
+    }
+  }
+
+  /**
+   * Backup database (SQLite only)
+   * Synchronous for SQLite (better-sqlite3 is sync)
+   * @param {string} path - Destination file path
+   * @returns {Promise<void>} - Always returns a promise for consistency
+   */
+  backup(path) {
+    if (this.type === 'sqlite') {
+      // better-sqlite3.backup() is synchronous, but we return a Promise
+      // for consistency with async PostgreSQL code paths
+      return Promise.resolve(this.sqlite.backup(path));
+    } else {
+      return Promise.reject(new Error('Backup not supported for PostgreSQL'));
+    }
+  }
+
+  /**
    * Close database connection
    */
   async close() {
