@@ -22,7 +22,16 @@ export function rewritePlaylistReferences(text, baseUrl) {
   }).join('\n');
 }
 
-async function streamVideoAsset(req, res, video, relativePath = 'playlist.m3u8', { recordingsStore = null } = {}) {
+// Delivery mode for S3-stored recordings. 'redirect' needs a store that can presign.
+function wantsRedirect(settings, recordingsStore, relativePath) {
+  if (typeof recordingsStore?.presign !== 'function') return false;
+  // Playlists are always proxied: their entries are rewritten to point back at this router.
+  if (relativePath.endsWith('.m3u8')) return false;
+  const mode = settings ? settings.get('storage.file_serve') : process.env.FILE_SERVE;
+  return mode === 'redirect';
+}
+
+async function streamVideoAsset(req, res, video, relativePath = 'playlist.m3u8', { recordingsStore = null, settings = null } = {}) {
   const apiKey = req.session?.apiKey;
   const safeRelativePath = String(relativePath || 'playlist.m3u8').replace(/^\/+/, '');
 
@@ -30,6 +39,14 @@ async function streamVideoAsset(req, res, video, relativePath = 'playlist.m3u8',
     const storagePrefix = video.storageKey || video.id;
     const objectKey = `${storagePrefix}/${safeRelativePath}`;
     try {
+      if (wantsRedirect(settings, recordingsStore, safeRelativePath)) {
+        const ttl = Number(settings ? settings.get('storage.redirect_ttl_seconds') : process.env.FILE_SERVE_TTL_SECONDS) || 300;
+        // Same 404 as the proxy path when the object is missing, instead of redirecting to an S3 error page.
+        await recordingsStore.stat(objectKey);
+        const url = await recordingsStore.presign(objectKey, { expiresSeconds: ttl });
+        res.setHeader('Cache-Control', 'private, no-store');
+        return res.redirect(302, url);
+      }
       const opened = await recordingsStore.stream(objectKey, { range: req.headers.range });
       const contentType = opened.contentType || (safeRelativePath.endsWith('.m3u8') ? 'application/vnd.apple.mpegurl' : 'application/octet-stream');
       res.setHeader('Content-Type', contentType);
@@ -60,7 +77,7 @@ async function streamVideoAsset(req, res, video, relativePath = 'playlist.m3u8',
   createReadStream(assetPath).pipe(res);
 }
 
-export function createVideosRouter(auth, db, { recordingsStore = null } = {}) {
+export function createVideosRouter(auth, db, { recordingsStore = null, settings = null } = {}) {
   const router = Router();
   const limiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
   router.use(limiter);
@@ -90,14 +107,14 @@ export function createVideosRouter(auth, db, { recordingsStore = null } = {}) {
   router.get('/:id/playlist.m3u8', auth, async (req, res) => {
     const video = getVideo(db, req.session.apiKey, req.params.id);
     if (!video) return res.status(404).json({ error: 'Video not found' });
-    await streamVideoAsset(req, res, video, 'playlist.m3u8', { recordingsStore });
+    await streamVideoAsset(req, res, video, 'playlist.m3u8', { recordingsStore, settings });
   });
 
   router.get('/:id/*', auth, async (req, res) => {
     const video = getVideo(db, req.session.apiKey, req.params.id);
     if (!video) return res.status(404).json({ error: 'Video not found' });
     const relativePath = req.params[0] || 'playlist.m3u8';
-    await streamVideoAsset(req, res, video, relativePath, { recordingsStore });
+    await streamVideoAsset(req, res, video, relativePath, { recordingsStore, settings });
   });
 
   router.delete('/:id', auth, async (req, res) => {

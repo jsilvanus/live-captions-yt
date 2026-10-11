@@ -92,16 +92,16 @@ GET    /file
        Query: ?format=vtt, ?date=2026-06-26, ?limit=20
        Response: [{ id, name, size, created_at, url }]
 
-GET    /file/:id
+GET    /api/v1/file/:id
        Download a caption file
        Query: ?format=json (convert format)
        Response: file contents (Content-Type: text/plain|application/json)
 
-DELETE /file/:id
+DELETE /api/v1/file/:id
        Delete a caption file
        Response: 204
 
-POST   /file?action=upload
+POST   /api/v1/file?action=upload
        Upload a caption file (multipart form)
        Form: file (binary), name (optional)
        Response: 201 { id, name, url }
@@ -200,9 +200,9 @@ CREATE TABLE caption_files (
 Files can be converted on download via query param:
 
 ```
-GET /file/:id?format=json       → Convert to JSON array
-GET /file/:id?format=vtt        → Convert to WebVTT
-GET /file/:id                   → Original format
+GET /api/v1/file/:id?format=json       → Convert to JSON array
+GET /api/v1/file/:id?format=vtt        → Convert to WebVTT
+GET /api/v1/file/:id                   → Original format
 ```
 
 ## Testing

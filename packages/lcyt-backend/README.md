@@ -15,25 +15,25 @@ An Express.js HTTP relay server that bridges web clients to YouTube Live's capti
 - [Admin CLI](#admin-cli)
 - [Docker](#docker)
 - [API Reference](#api-reference)
-  - [POST /live](#post-live)
-  - [GET /live](#get-live)
-  - [DELETE /live](#delete-live)
-  - [POST /captions](#post-captions)
-  - [GET /events](#get-events)
-  - [POST /sync](#post-sync)
-  - [GET /stats](#get-stats)
-  - [DELETE /stats](#delete-stats)
-  - [GET /usage](#get-usage)
-  - [POST /mic](#post-mic)
-  - [GET /file](#get-file)
-  - [GET /file/:id](#get-fileid)
-  - [DELETE /file/:id](#delete-fileid)
-  - [GET /health](#get-health)
-  - [Admin: GET /keys](#admin-get-keys)
-  - [Admin: POST /keys](#admin-post-keys)
-  - [Admin: GET /keys/:key](#admin-get-keyskey)
-  - [Admin: PATCH /keys/:key](#admin-patch-keyskey)
-  - [Admin: DELETE /keys/:key](#admin-delete-keyskey)
+  - [POST /api/v1/live](#post-apiv1live)
+  - [GET /api/v1/live](#get-apiv1live)
+  - [DELETE /api/v1/live](#delete-apiv1live)
+  - [POST /api/v1/captions](#post-apiv1captions)
+  - [GET /api/v1/events](#get-apiv1events)
+  - [POST /api/v1/sync](#post-apiv1sync)
+  - [GET /api/v1/stats](#get-apiv1stats)
+  - [DELETE /api/v1/stats](#delete-apiv1stats)
+  - [GET /api/v1/usage](#get-apiv1usage)
+  - [POST /api/v1/mic](#post-apiv1mic)
+  - [GET /api/v1/file](#get-apiv1file)
+  - [GET /api/v1/file/:id](#get-apiv1fileid)
+  - [DELETE /api/v1/file/:id](#delete-apiv1fileid)
+  - [GET /api/v1/health](#get-apiv1health)
+  - [Admin: GET /api/v1/admin/keys](#admin-get-keys)
+  - [Admin: POST /api/v1/admin/keys](#admin-post-keys)
+  - [Admin: GET /api/v1/admin/keys/:key](#admin-get-keyskey)
+  - [Admin: PATCH /api/v1/admin/keys/:key](#admin-patch-keyskey)
+  - [Admin: DELETE /api/v1/admin/keys/:key](#admin-delete-keyskey)
 - [Authentication](#authentication)
 - [Session Lifecycle](#session-lifecycle)
 - [Testing](#testing)
@@ -258,7 +258,7 @@ All request and response bodies are JSON (`Content-Type: application/json`).
 
 ---
 
-### POST /live
+### POST /api/v1/live
 
 Register a new caption session (or retrieve an existing one for the same credentials).
 
@@ -274,7 +274,7 @@ Register a new caption session (or retrieve an existing one for the same credent
   "domain":    "string (required) — your app's origin URL, e.g. https://example.com",
   "targets":   [
     { "id": "uuid", "type": "youtube", "streamKey": "xxxx-xxxx-xxxx-xxxx-xxxx" },
-    { "id": "uuid", "type": "generic", "url": "https://example.com/captions", "headers": {} }
+    { "id": "uuid", "type": "generic", "url": "https://example.com/api/v1/captions", "headers": {} }
   ],
   "sequence":  0,
   "streamKey": "string (optional, legacy single-target mode)"
@@ -324,7 +324,7 @@ Each target entry:
 
 ---
 
-### GET /live
+### GET /api/v1/live
 
 Check the current status of an active session.
 
@@ -350,7 +350,7 @@ Check the current status of an active session.
 
 ---
 
-### DELETE /live
+### DELETE /api/v1/live
 
 Tear down a session. Closes the YouTube connection and removes the session from memory.
 
@@ -376,7 +376,7 @@ Tear down a session. Closes the YouTube connection and removes the session from 
 
 ---
 
-### POST /captions
+### POST /api/v1/captions
 
 Send one or more captions to YouTube.
 
@@ -425,7 +425,7 @@ If `translations[captionLang]` is missing, `text` is sent as-is.
 
 **Backend file saving**
 
-If `backend_file_enabled` is enabled on the API key, the original text and all translations are appended to per-session files under `$FILES_DIR/<apiKey>/`. See [`GET /file`](#get-file) and the `/file` routes below.
+If `backend_file_enabled` is enabled on the API key, the original text and all translations are appended to per-session files under `$FILES_DIR/<apiKey>/`. See [`GET /file`](#get-apiv1file) and the `/file` routes below.
 
 **Response `202 Accepted`** (always, for valid auth + session):
 
@@ -450,7 +450,7 @@ Delivery failures (YouTube errors, network errors) arrive as `caption_error` eve
 
 ---
 
-### GET /events
+### GET /api/v1/events
 
 Subscribe to the real-time SSE stream of caption delivery results for the current session.
 
@@ -473,7 +473,7 @@ Subscribe to the real-time SSE stream of caption delivery results for the curren
 **Example (browser):**
 
 ```javascript
-const es = new EventSource(`https://captions.example.com/events?token=${encodeURIComponent(jwt)}`);
+const es = new EventSource(`https://captions.example.com/api/v1/events?token=${encodeURIComponent(jwt)}`);
 
 es.addEventListener('caption_result', (e) => {
   const { requestId, sequence, statusCode } = JSON.parse(e.data);
@@ -497,7 +497,7 @@ es.addEventListener('session_closed', () => es.close());
 
 ---
 
-### POST /sync
+### POST /api/v1/sync
 
 Perform an NTP-style clock synchronization with the YouTube caption server. Updates the session's `syncOffset`.
 
@@ -532,7 +532,7 @@ Perform an NTP-style clock synchronization with the YouTube caption server. Upda
 
 ---
 
-### GET /stats
+### GET /api/v1/stats
 
 Return usage statistics for the authenticated API key.
 
@@ -564,7 +564,7 @@ Return usage statistics for the authenticated API key.
 
 ---
 
-### DELETE /stats
+### DELETE /api/v1/stats
 
 GDPR right-to-erasure. Anonymises the API key record and deletes all associated personal data. The session is torn down immediately. Email is retained until key expiry for fraud prevention.
 
@@ -585,7 +585,7 @@ GDPR right-to-erasure. Anonymises the API key record and deletes all associated 
 
 ---
 
-### GET /usage
+### GET /api/v1/usage
 
 Return per-domain caption and session statistics. Useful for dashboards.
 
@@ -622,7 +622,7 @@ Return per-domain caption and session statistics. Useful for dashboards.
 
 ---
 
-### POST /mic
+### POST /api/v1/mic
 
 Claim or release the advisory "mic lock" for a session. Used in collaborative setups where multiple browser tabs share one stream and only one should hold the active microphone at a time. The lock is soft (advisory only) — any client can claim it.
 
@@ -656,7 +656,7 @@ Claim or release the advisory "mic lock" for a session. Used in collaborative se
 
 ---
 
-### GET /file
+### GET /api/v1/file
 
 List all caption/translation files stored on the backend for the authenticated API key.
 
@@ -691,7 +691,7 @@ Files are only created when `backend_file_enabled = true` is set on the API key.
 
 ---
 
-### GET /file/:id
+### GET /api/v1/file/:id
 
 Download a specific caption file.
 
@@ -705,7 +705,7 @@ Download a specific caption file.
 
 ---
 
-### DELETE /file/:id
+### DELETE /api/v1/file/:id
 
 Delete a caption file. Removes both the database record and the file from disk.
 
@@ -735,7 +735,7 @@ Content-Type: application/json
 
 ---
 
-### GET /health
+### GET /api/v1/health
 
 Liveness check. Returns server uptime and active session count.
 
@@ -857,7 +857,7 @@ Update an API key's owner, expiry, limits, or feature flags.
 | `expires` | `string \| null` | Expiry date (`YYYY-MM-DD`). Pass `null` to remove expiry. |
 | `daily_limit` | `number \| null` | Daily caption limit. Pass `null` to remove. |
 | `lifetime_limit` | `number \| null` | Lifetime caption limit. Pass `null` to remove. |
-| `backend_file_enabled` | `boolean` | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`GET /file`](#get-file). |
+| `backend_file_enabled` | `boolean` | Enable (`true`) or disable (`false`) backend caption file saving for this key. Disabled by default. See [`GET /file`](#get-apiv1file). |
 | `relay_allowed` | `boolean` | Allow RTMP relay for this key. Disabled by default. |
 | `radio_enabled` | `boolean` | Enable audio-only radio HLS output for this key. Disabled by default. |
 | `hls_enabled` | `boolean` | Enable video HLS output for this key. Disabled by default. |
@@ -922,27 +922,27 @@ Used for all `/keys` routes. The key must match the `ADMIN_KEY` environment vari
 ```
 Client                          lcyt-backend                    YouTube
   │                                  │                              │
-  │── POST /live ──────────────────> │                              │
+  │── POST /api/v1/live ────────────> │                              │
   │   {apiKey, domain, targets:[…]}  │── validates API key in SQLite│
   │                                  │── creates YoutubeLiveCaption │
   │                                  │   Sender(s) from targets     │
   │                                  │── runs initial sync ────────>│
   │<── {token, sessionId, ...} ──── │<─── sync response ───────────│
   │                                  │                              │
-  │── GET /events?token=... ───────> │                              │
+  │── GET /api/v1/events?token=...─> │                              │
   │<── text/event-stream open ────── │                              │
   │<── event: connected ──────────── │                              │
   │                                  │                              │
-  │── POST /captions ──────────────> │                              │
+  │── POST /api/v1/captions ───────> │                              │
   │   Authorization: Bearer <token>  │                              │
   │<── 202 {ok, requestId} ───────── │                              │
   │                                  │── sender.send() ────────────>│  (async)
   │<── event: caption_result ─────── │<─── 200 OK ─────────────────│
   │                                  │                              │
-  │── POST /sync ──────────────────> │                              │
+  │── POST /api/v1/sync ────────────> │                              │
   │<── {syncOffset, rtt} ─────────── │── sender.sync() ───────────>│
   │                                  │                              │
-  │── DELETE /live ────────────────> │                              │
+  │── DELETE /api/v1/live ─────────> │                              │
   │<── {removed: true} ─────────── │── sender.end() ─────────────>│
   │<── event: session_closed ─────── │── session removed from memory│
 ```

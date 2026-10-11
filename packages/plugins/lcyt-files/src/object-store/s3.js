@@ -12,6 +12,7 @@ export async function createS3ObjectStore({
   endpoint,
   credentials,
   prefix = '',
+  publicEndpoint,
 }) {
   if (!bucket) throw new Error('bucket is required');
 
@@ -31,14 +32,15 @@ export async function createS3ObjectStore({
     import('@aws-sdk/lib-storage'),
   ]);
 
-  const client = new S3Client({
+  const clientConfig = {
     region,
     ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
     ...(credentials ? { credentials } : {}),
     // S3-compatible stores (versitygw, R2, Hetzner, MinIO) often reject the SDK's default trailing-checksum requests.
     requestChecksumCalculation: 'WHEN_REQUIRED',
     responseChecksumValidation: 'WHEN_REQUIRED',
-  });
+  };
+  const client = new S3Client(clientConfig);
 
   function toStoredKey(key) {
     const normalized = normalizeObjectKey(key);
@@ -171,8 +173,34 @@ export async function createS3ObjectStore({
     return targetPath;
   }
 
+  /**
+   * Short-lived direct download URL for an object, for redirect serving.
+   * Signed for `publicEndpoint` when set (the address browsers reach; SigV4 covers the
+   * Host header, so rewriting the host after signing would give a 403), else for `endpoint`.
+   * Signing makes no network call. The URL is a bearer link: anyone holding it can read
+   * the object until it expires.
+   */
+  async function presign(key, { expiresSeconds = 300, filename, contentType } = {}) {
+    const storedKey = toStoredKey(key);
+    const { getSignedUrl } = await import('@aws-sdk/s3-request-presigner');
+    const signer = publicEndpoint && publicEndpoint !== endpoint
+      ? new S3Client({ ...clientConfig, endpoint: publicEndpoint, forcePathStyle: true })
+      : client;
+    try {
+      return await getSignedUrl(signer, new GetObjectCommand({
+        Bucket: bucket,
+        Key: storedKey,
+        ...(filename ? { ResponseContentDisposition: `attachment; filename="${String(filename).replace(/["\\\r\n]/g, '_')}"` } : {}),
+        ...(contentType ? { ResponseContentType: contentType } : {}),
+      }), { expiresIn: Math.max(1, Math.floor(expiresSeconds)) });
+    } finally {
+      if (signer !== client) signer.destroy?.();
+    }
+  }
+
   return {
     type: 's3',
+    presign,
     put,
     putFile,
     stream,
