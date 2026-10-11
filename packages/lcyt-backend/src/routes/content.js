@@ -61,7 +61,7 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
     router.use('/broadcasts/:id/platforms', createBroadcastPlatformsRouter(db, scoped('broadcast'), platforms));
   }
   router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
-  router.use('/videos',          createVideosRouter(scoped('video'), db, { recordingsStore }));
+  router.use('/videos',          createVideosRouter(scoped('video'), db, { recordingsStore, settings }));
   router.use('/translation',     createTranslationRouter(scoped('translation'), db));
   router.use('/bridge-download', createBridgeDownloadRouter(settings));
   return router;

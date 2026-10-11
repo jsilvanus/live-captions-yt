@@ -50,7 +50,7 @@ describe()                                      → string (startup log message)
 | `S3_PREFIX` | Object key prefix | `captions` |
 | `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | Static credentials | — (uses AWS chain) |
 
-**Object store (`src/object-store/`):** `createObjectStoreFromEnv({ settings, localBaseDir, s3Prefix })` returns the local or S3 store (`put`, `putFile`, `stream` with Range, `stat`, `exists`, `delete`, `deletePrefix`, `list`, `materialize`) used by graphics, icons, thumbnails, recordings and backups. The S3 client sends checksums only `WHEN_REQUIRED` (versitygw, R2, Hetzner reject the SDK's default trailing checksums); the caption adapter and the legacy backend client do the same. `createLocalAdapter`/`createS3Adapter` are exported for the migration tool.
+**Object store (`src/object-store/`):** `createObjectStoreFromEnv({ settings, localBaseDir, s3Prefix })` returns the local or S3 store (`put`, `putFile`, `stream` with Range, `stat`, `exists`, `delete`, `deletePrefix`, `list`, `materialize`) used by graphics, icons, thumbnails, recordings and backups. The S3 client sends checksums only `WHEN_REQUIRED` (versitygw, R2, Hetzner reject the SDK's default trailing checksums); the caption adapter and the legacy backend client do the same. The S3 store also has `presign(key, { expiresSeconds, filename, contentType })` (signed for `publicEndpoint` when set; the local store has none), used by `routes/videos.js` for `FILE_SERVE=redirect`. `createLocalAdapter`/`createS3Adapter` are exported for the migration tool.
 
 **Notes:**
 - The `caption_files` DB table is owned by `lcyt-backend/src/db/schema.js` (unchanged).
