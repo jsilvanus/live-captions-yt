@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useProjectFeatures } from '../../../hooks/useProjectFeatures.js';
-import { computeSteps } from '../lib/computeSteps.js';
+import { computeSteps, isSkippableStep } from '../lib/computeSteps.js';
 import { applyDeps } from '../lib/applyDeps.js';
 import { readLocalSettings } from '../lib/readLocalSettings.js';
 import { saveWizard } from '../lib/saveWizard.js';
-import { DRAFT_KEY } from '../lib/constants.js';
+import { DRAFT_KEY, DRAFT_VERSION } from '../lib/constants.js';
+import { resolveIntent, mergeDerivedFeatures } from '../lib/capabilities.js';
 import { markOnboarded } from '../../../lib/onboarding.js';
 
 /**
@@ -16,6 +17,13 @@ export function useWizardState(backendUrl, token, apiKey) {
 
   const [selectedFeatures, setSelectedFeaturesRaw] = useState(() => new Set(['captions']));
   const [configs, setConfigs] = useState({});
+  // Production-level answers (phase 1 of the wizard refactor); features derive from these
+  // via resolveIntent() when setIntentAnswers() is used. The classic feature step still works.
+  const [intents, setIntentsRaw] = useState(() => new Set());
+  const [answers, setAnswersRaw] = useState({});
+  // Features the intent answers switched on last time, so changing an answer
+  // removes only those and keeps features the project already had.
+  const [derivedFeatures, setDerivedFeaturesRaw] = useState(() => new Set());
   const [localSettings, setLocalSettings] = useState(() => readLocalSettings());
   const [stepIndex, setStepIndex] = useState(0);
   const [depNotices, setDepNotices] = useState([]);
@@ -28,7 +36,7 @@ export function useWizardState(backendUrl, token, apiKey) {
   const initialConfigsRef    = useRef(null);
 
   // Computed steps
-  const steps = computeSteps(selectedFeatures);
+  const steps = computeSteps(selectedFeatures, intents);
 
   // When backend features load, initialize state (once)
   useEffect(() => {
@@ -46,7 +54,11 @@ export function useWizardState(backendUrl, token, apiKey) {
       setSelectedFeaturesRaw(set);
       setConfigs(draft.configs || {});
       setLocalSettings(draft.localSettings || readLocalSettings());
-      setStepIndex(draft.stepIndex || 0);
+      // Legacy drafts (no version) were saved against the old step list; start those over.
+      setStepIndex(draft.version === DRAFT_VERSION ? (draft.stepIndex || 0) : 0);
+      setIntentsRaw(new Set(Array.isArray(draft.intents) ? draft.intents : []));
+      setAnswersRaw(draft.answers && typeof draft.answers === 'object' ? draft.answers : {});
+      setDerivedFeaturesRaw(new Set(Array.isArray(draft.derivedFeatures) ? draft.derivedFeatures : []));
     } else {
       // Seed from backend features
       const backendSet = new Set(features.filter(f => f.enabled).map(f => f.code));
@@ -76,13 +88,17 @@ export function useWizardState(backendUrl, token, apiKey) {
     if (!initialized) return;
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        version: DRAFT_VERSION,
+        intents: [...intents],
+        answers,
+        derivedFeatures: [...derivedFeatures],
         selectedFeatures: [...selectedFeatures],
         configs,
         localSettings,
         stepIndex,
       }));
     } catch {}
-  }, [selectedFeatures, configs, localSettings, stepIndex, initialized]);
+  }, [selectedFeatures, configs, localSettings, stepIndex, intents, answers, derivedFeatures, initialized]);
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -98,16 +114,34 @@ export function useWizardState(backendUrl, token, apiKey) {
     else setDepNotices([]);
   }, []);
 
+  /**
+   * Set the production intents/answers and update the feature selection from them.
+   * Only the features the previous answers derived are replaced; features the
+   * project already had stay selected. Returns the resolved capabilities so the
+   * UI can show steps, Hub cards and prerequisites.
+   */
+  const setIntentAnswers = useCallback((nextIntents, nextAnswers) => {
+    const intentSet = nextIntents instanceof Set ? new Set(nextIntents) : new Set(nextIntents);
+    const resolved = resolveIntent(intentSet, nextAnswers);
+    const merged = mergeDerivedFeatures(selectedFeatures, derivedFeatures, resolved.features);
+    setIntentsRaw(intentSet);
+    setAnswersRaw(nextAnswers);
+    setDerivedFeaturesRaw(new Set(resolved.features));
+    setSelectedFeaturesRaw(merged);
+    setDepNotices(resolved.autoEnabled);
+    return resolved;
+  }, [selectedFeatures, derivedFeatures]);
+
   const handleNext = useCallback(() => {
-    setStepIndex(i => Math.min(i + 1, steps.length - 1));
+    setStepIndex(i => Math.min(Math.min(i, steps.length - 1) + 1, steps.length - 1));
   }, [steps.length]);
 
   const handleBack = useCallback(() => {
-    setStepIndex(i => Math.max(i - 1, 0));
+    setStepIndex(i => Math.max(Math.min(i, steps.length - 1) - 1, 0));
   }, []);
 
   const handleSkip = useCallback(() => {
-    setStepIndex(i => Math.min(i + 1, steps.length - 1));
+    setStepIndex(i => Math.min(Math.min(i, steps.length - 1) + 1, steps.length - 1));
   }, [steps.length]);
 
   const handleEditStep = useCallback((idx) => {
@@ -136,9 +170,11 @@ export function useWizardState(backendUrl, token, apiKey) {
     }
   }, [selectedFeatures, configs, localSettings, updateFeature, backendUrl, token, apiKey]);
 
-  const currentStep = steps[stepIndex] || steps[0];
-  const isLastStep = stepIndex === steps.length - 1;
-  const isConfigStep = currentStep && currentStep.id !== 'features' && currentStep.id !== 'review';
+  // Steps can disappear when answers change (e.g. the questions step); keep the index valid.
+  const safeIndex = Math.min(stepIndex, steps.length - 1);
+  const currentStep = steps[safeIndex] || steps[0];
+  const isLastStep = safeIndex === steps.length - 1;
+  const isConfigStep = !!currentStep && isSkippableStep(currentStep.id);
 
   // Next is disabled on targets step if no valid target
   const nextDisabled = (() => {
@@ -156,10 +192,13 @@ export function useWizardState(backendUrl, token, apiKey) {
   })();
 
   return {
+    intents,
+    answers,
+    setIntentAnswers,
     selectedFeatures,
     configs,
     localSettings,
-    stepIndex,
+    stepIndex: safeIndex,
     depNotices,
     saving,
     saveError,

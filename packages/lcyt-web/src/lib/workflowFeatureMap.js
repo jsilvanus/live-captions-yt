@@ -14,7 +14,8 @@
 export const FEATURE_TO_CARD_IDS = {
   captions:         ['caption-targets'],
   'viewer-target':  ['caption-targets'],
-  'restream': ['caption-targets'],
+  'restream':       ['egress'],
+  'cea-captions':   ['caption-targets'],
   translations:     ['languages'],
   'file-saving':          ['storage'],
   'files-local':          ['storage'],
@@ -24,7 +25,7 @@ export const FEATURE_TO_CARD_IDS = {
   'files-browser-local':  ['storage'],
   'graphics-server': ['viewports'],
   'graphics-client': ['viewports'],
-  ingest: ['egress'],
+  ingest: ['egress', 'ingestion'],
   radio:  ['radio'],
   'stt-server': ['stt'],
   'device-control': ['cameras', 'mixers', 'encoders', 'bridges'],
@@ -41,4 +42,22 @@ export function cardIdsForEnabledFeatures(features) {
     for (const cardId of FEATURE_TO_CARD_IDS[f.code] || []) ids.add(cardId);
   }
   return ids;
+}
+
+/**
+ * Why each card shows under the Workflow filter: card id -> feature codes
+ * (of the enabled features) that bring it in.
+ * @param {{code: string, enabled: boolean}[]} features
+ * @returns {Map<string, string[]>}
+ */
+export function cardReasons(features) {
+  const reasons = new Map();
+  for (const f of features) {
+    if (!f.enabled) continue;
+    for (const cardId of FEATURE_TO_CARD_IDS[f.code] || []) {
+      if (!reasons.has(cardId)) reasons.set(cardId, []);
+      reasons.get(cardId).push(f.code);
+    }
+  }
+  return reasons;
 }
