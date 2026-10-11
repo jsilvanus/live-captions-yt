@@ -11,7 +11,7 @@
  *
  *   import { initRtmpControl, createRtmpRouters } from 'lcyt-rtmp';
  *
- *   // Always initialize (runs DB migrations, creates manager instances).
+ *   // Always initialize (creates manager instances).
  *   const rtmp = await initRtmpControl(db);
  *
  *   // Wire hlsSubsManager into the viewer route for subtitle sidecar support.
@@ -38,7 +38,7 @@
  *   await rtmp.stop();
  */
 
-import { runMigrations, writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat } from './db.js';
+import { writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat } from './db.js';
 import { RtmpRelayManager, probeFfmpeg } from './rtmp-manager.js';
 import logger from 'lcyt/logger';
 import { HlsManager } from './hls-manager.js';
@@ -69,11 +69,11 @@ export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follo
 /**
  * Initialize the RTMP relay plugin.
  *
- * Runs DB migrations and creates all manager instances.
- * Safe to call regardless of RTMP_RELAY_ACTIVE — migrations are
- * always idempotent and managers are lightweight.
+ * Creates all manager instances. Safe to call regardless of
+ * RTMP_RELAY_ACTIVE — managers are lightweight. The tables come from the
+ * backend's Prisma schema, the plugin runs no migrations.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('../../lcyt-backend/src/store.js').SessionStore} [store]
  *   Optional session store — injected into SttManager for transcript delivery.
  *   Pass after the store is created in server.js.
@@ -92,13 +92,11 @@ export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follo
  * }>}
  */
 export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null, settings = null } = {}) {
-  runMigrations(db);
-
   const ffmpegCaps = (settings ? settings.get('media.rtmp_relay_active') : process.env.RTMP_RELAY_ACTIVE === '1')
     ? probeFfmpeg()
     : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
 
-  // Stat tracking: map from `${apiKey}:${slot}` → rtmp_stream_stats row id
+  // Stat tracking: map from `${apiKey}:${slot}` → promise of the rtmp_stream_stats row id
   const _rtmpStatIds = new Map();
 
   // Build MediaMTX client when API URL is configured. MediaMtxClient's
@@ -120,9 +118,10 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
     ffmpegCaps,
     mediamtxClient,
     settings,
-    onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
+    async onStreamStarted(apiKey, slot, { targetUrl, targetName, captionMode, startedAt }) {
       try {
-        const id = writeRtmpStreamStart(db, {
+        // Keep the promise so an end that races with the insert still finds the row id.
+        const idPromise = writeRtmpStreamStart(db, {
           apiKey,
           slot,
           targetUrl,
@@ -130,25 +129,27 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
           captionMode,
           startedAt: startedAt.toISOString(),
         });
-        _rtmpStatIds.set(`${apiKey}:${slot}`, id);
+        _rtmpStatIds.set(`${apiKey}:${slot}`, idPromise);
+        await idPromise;
       } catch (err) {
+        _rtmpStatIds.delete(`${apiKey}:${slot}`);
         logger.error(`[rtmp] Failed to write stream start stat: ${err.message}`);
       }
     },
-    onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs, captionsSent = 0 }) {
+    async onStreamEnded(apiKey, slot, { targetUrl, captionMode, startedAt, endedAt, durationMs, captionsSent = 0 }) {
       try {
         const statKey = `${apiKey}:${slot}`;
-        const statId  = _rtmpStatIds.get(statKey);
+        const statId  = await _rtmpStatIds.get(statKey);
         _rtmpStatIds.delete(statKey);
         if (statId) {
-          writeRtmpStreamEnd(db, {
+          await writeRtmpStreamEnd(db, {
             streamStatId: statId,
             endedAt: endedAt.toISOString(),
             durationMs,
             captionsSent: captionsSent || 0,
           });
         }
-        incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
+        await incrementRtmpAnonDailyStat(db, { targetUrl, captionMode, durationMs });
         metrics?.count('rtmp.streams', 1, { project: apiKey });
         if (durationMs > 0) metrics?.count('rtmp.stream_seconds', durationMs / 1000, { project: apiKey });
       } catch (err) {
@@ -204,7 +205,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  *
  * Mount the returned routers only when RTMP relay is active.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth  Project-access Bearer middleware — applied to the config-only sub-routers (ingestion/stream/radio-config/crop); the public/callback sub-routers (rtmp, feed-rtmp, stream-hls, preview) never consume it
  * @param {{ relayManager: RtmpRelayManager, hlsManager: HlsManager, radioManager: RadioManager, previewManager: PreviewManager }} managers
  * @param {{ allowedRtmpDomains?: string, metrics?: object, settings?: object, requireSetup?: import('express').RequestHandler }} [opts]  requireSetup gates config-only writes at the Setup tier (plan_project_roles.md); defaults to a no-op passthrough

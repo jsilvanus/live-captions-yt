@@ -32,7 +32,7 @@ function sendEvent(res, eventName, data) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth — session JWT Bearer auth middleware
  * @param {import('../music-manager.js').MusicManager} musicManager
  * @returns {import('express').Router}
@@ -70,7 +70,7 @@ export function createMusicRouter(db, auth, musicManager) {
 
   // ── GET /music/events/history ────────────────────────────────────────────
 
-  router.get('/events/history', auth, (req, res) => {
+  router.get('/events/history', auth, async (req, res) => {
     const { apiKey } = req.session;
     const { eventType = null } = req.query;
 
@@ -85,13 +85,13 @@ export function createMusicRouter(db, auth, musicManager) {
     let offset = parseInt(req.query.offset, 10);
     if (!Number.isInteger(offset) || offset < 0) offset = 0;
 
-    const { events, total } = getMusicEventsPage(db, apiKey, { limit, offset, eventType });
+    const { events, total } = await getMusicEventsPage(db, apiKey, { limit, offset, eventType });
     res.json({ events, total, limit, offset });
   });
 
   // ── GET /music/:key/live (public SSE) ────────────────────────────────────
 
-  router.get('/:key/live', (req, res) => {
+  router.get('/:key/live', async (req, res) => {
     const apiKey = req.params.key;
     if (!apiKey) return res.status(400).json({ error: 'Missing key' });
 
@@ -103,9 +103,15 @@ export function createMusicRouter(db, auth, musicManager) {
 
     sendEvent(res, 'connected', { apiKey });
 
+    let closedEarly = false;
+    const markClosed = () => { closedEarly = true; };
+    req.on('close', markClosed);
+
     // Seed the newly-connected client with the most recent persisted state
     // (music_events) so it doesn't have to wait for the next live transition.
-    const recentEvents = getRecentMusicEvents(db, apiKey, 20);
+    const recentEvents = await getRecentMusicEvents(db, apiKey, 20);
+    req.off('close', markClosed);
+    if (closedEarly) return;
     const lastLabelEvent = recentEvents.find((e) => e.event_type === 'label_change');
     const lastBpmEvent = recentEvents.find((e) => e.event_type === 'bpm_update');
     if (lastLabelEvent || lastBpmEvent) {

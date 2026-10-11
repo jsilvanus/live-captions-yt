@@ -1,13 +1,5 @@
 /**
- * Plugin-owned tables (prod_*, ai_config) on SQLite exist only after the plugin DDL ran, on the legacy
- * better-sqlite3 handle. On PostgreSQL they all come from prisma/postgres/migrations/0001_init.sql, so
- * this is a no-op there.
+ * Plugin tables (prod_*, ai_config, ...) come from the backend Prisma schema on both SQLite and PostgreSQL,
+ * so there is nothing to create here any more. Kept so existing tests keep working.
  */
-import { runMigrations as runProductionMigrations } from '../../../plugins/lcyt-production/src/db.js';
-import { runAiMigrations } from '../../src/ai/config.js';
-
-export function ensurePluginTables(db) {
-  if (!db.$legacy) return;
-  runProductionMigrations(db.$legacy);
-  runAiMigrations(db.$legacy);
-}
+export function ensurePluginTables(_db) {}

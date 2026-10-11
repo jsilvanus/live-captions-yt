@@ -35,14 +35,13 @@ export { createLocalAdapter } from './adapters/local.js';
 export { createS3Adapter } from './adapters/s3.js';
 
 import { createStorageAdapter, createStorageResolver } from './storage.js';
-import { runFilesDbMigrations } from './db.js';
 import logger from 'lcyt/logger';
 
 /**
- * Initialise the files plugin: run DB migrations, create the global storage
+ * Initialise the files plugin: create the global storage
  * adapter, and create the per-key storage resolver.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {{ settings?: { get: (key: string) => * } }} [opts] - lcyt-backend's
  *   SettingsService (plan_env_to_ui_settings.md), duck-typed.
  * @returns {Promise<{
@@ -52,9 +51,6 @@ import logger from 'lcyt/logger';
  * }>}
  */
 export async function initFilesControl(db, { settings = null } = {}) {
-  // Create the key_storage_config table if it doesn't exist
-  runFilesDbMigrations(db);
-
   // Create the global (operator-configured) adapter
   const storage = await createStorageAdapter(settings);
   logger.info(storage.describe?.() ?? '✓ File storage initialised');

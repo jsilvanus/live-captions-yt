@@ -207,10 +207,10 @@ function trackEntryMatches(entry, pattern, threshold) {
 
 export class CueEngine {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {import('lcyt-backend/db').Db} db Prisma client
    */
   constructor(db) {
-    /** @type {import('better-sqlite3').Database} */
+    /** @type {import('lcyt-backend/db').Db} */
     this._db = db;
 
     /**
@@ -380,11 +380,13 @@ export class CueEngine {
   /**
    * Load (and cache) enabled rules for an API key.
    * @param {string} apiKey
-   * @returns {Array<object>}
+   * @returns {Promise<Array<object>>}
    */
-  _loadRules(apiKey) {
+  async _loadRules(apiKey) {
     if (this._ruleCache.has(apiKey)) return this._ruleCache.get(apiKey);
-    const rules = listCueRules(this._db, apiKey).filter(r => r.enabled);
+    // Named conditions first: pre-sorting composite trees resolves their refs from that cache.
+    await this._loadNamedConditions(apiKey);
+    const rules = (await listCueRules(this._db, apiKey)).filter(r => r.enabled);
     // Pre-compile regex patterns and composite condition trees once
     for (const rule of rules) {
       if (rule.match_type === 'regex') {
@@ -414,12 +416,15 @@ export class CueEngine {
   /**
    * Load (and cache) named condition trees for an API key.
    * @param {string} apiKey
-   * @returns {Map<string, object>} name → condition tree
+   * @returns {Promise<Map<string, object>>} name → condition tree
    */
-  _loadNamedConditions(apiKey) {
+  async _loadNamedConditions(apiKey) {
+    if (this._namedConditionCache.has(apiKey)) return this._namedConditionCache.get(apiKey);
+    const rows = await listNamedConditions(this._db, apiKey);
+    // Another caller may have filled the cache while the query ran.
     if (this._namedConditionCache.has(apiKey)) return this._namedConditionCache.get(apiKey);
     const map = new Map();
-    for (const row of listNamedConditions(this._db, apiKey)) {
+    for (const row of rows) {
       try {
         map.set(row.name, JSON.parse(row.condition_tree));
       } catch {
@@ -452,13 +457,13 @@ export class CueEngine {
    * @param {object} rule
    * @param {string} matched
    */
-  _recordFired(apiKey, rule, matched) {
+  async _recordFired(apiKey, rule, matched) {
     try {
       let action = {};
       try { action = JSON.parse(rule.action); } catch {
         logger.warn(`[cues] Malformed action JSON for rule ${rule.id}`);
       }
-      insertCueEvent(this._db, apiKey, {
+      await insertCueEvent(this._db, apiKey, {
         rule_id: rule.id,
         rule_name: rule.name,
         matched,
@@ -573,7 +578,8 @@ export class CueEngine {
   /** Resolve a `@name`/ref target against the file-local defs first, then the DB-backed named-condition cache. */
   _resolveRefTarget(apiKey, name, localDefs) {
     if (localDefs && Object.prototype.hasOwnProperty.call(localDefs, name)) return localDefs[name];
-    return this._loadNamedConditions(apiKey).get(name);
+    // Sync lookup in the cache; callers load it first (`_loadNamedConditions`).
+    return this._namedConditionCache.get(apiKey)?.get(name);
   }
 
   /**
@@ -648,6 +654,12 @@ export class CueEngine {
    */
   async evaluateComposite(apiKey, node, ctx = {}, localDefs = {}, visited = new Set()) {
     if (!node) return { matched: false, leaf: null };
+    // Refs and cost ordering read the named-condition cache synchronously: fill it once per evaluation.
+    if (visited.size === 0) {
+      try { await this._loadNamedConditions(apiKey); } catch (err) {
+        logger.warn('[cues] Could not load named conditions:', err?.message);
+      }
+    }
     if (typeof node === 'string') {
       return this._resolveAndEvaluateRef(apiKey, node, ctx, localDefs, visited);
     }
@@ -701,11 +713,11 @@ export class CueEngine {
    * @param {string} apiKey
    * @param {string} text — the caption text (already stripped of other metacodes)
    * @param {object} [codes] — current persistent codes (section, speaker, etc.)
-   * @returns {Array<{ rule: object, matched: string }>} — list of fired rules
+   * @returns {Promise<Array<{ rule: object, matched: string }>>} — list of fired rules
    */
-  evaluate(apiKey, text, codes = {}) {
+  async evaluate(apiKey, text, codes = {}) {
     if (!text && !codes) return [];
-    const rules = this._loadRules(apiKey);
+    const rules = await this._loadRules(apiKey);
     const now = Date.now();
     const fired = [];
 
@@ -750,7 +762,7 @@ export class CueEngine {
       if (matched !== null) {
         this._lastFired.set(rule.id, now);
         fired.push({ rule, matched });
-        this._recordFired(apiKey, rule, matched);
+        await this._recordFired(apiKey, rule, matched);
       }
     }
 
@@ -852,7 +864,7 @@ export class CueEngine {
           this._firedInSection.set(apiKey, bySection);
         }
         fired.push({ rule, matched });
-        this._recordFired(apiKey, rule, matched);
+        await this._recordFired(apiKey, rule, matched);
       }
     }
 
@@ -877,7 +889,7 @@ export class CueEngine {
    */
   async evaluateEventCues(apiKey, text, onFired) {
     if (!this._agentEvaluateFn) return;
-    const rules = this._loadRules(apiKey);
+    const rules = await this._loadRules(apiKey);
     const now = Date.now();
 
     for (const rule of rules) {
@@ -901,7 +913,7 @@ export class CueEngine {
         if (result.matched) {
           this._lastFired.set(rule.id, Date.now());
           const matched = `event_cue:${rule.pattern} (${result.confidence.toFixed(2)})`;
-          this._recordFired(apiKey, rule, matched);
+          await this._recordFired(apiKey, rule, matched);
           onFired?.([{ rule, matched }]);
         }
       } catch (err) {
@@ -923,7 +935,7 @@ export class CueEngine {
    * @returns {Promise<Array<{ rule: object, matched: string }>>}
    */
   async evaluateCompositeRules(apiKey, text, codes = {}, onFired) {
-    const rules = this._loadRules(apiKey);
+    const rules = await this._loadRules(apiKey);
     const now = Date.now();
     const recent = (this._recentLines.get(apiKey) || []).slice();
 
@@ -946,7 +958,7 @@ export class CueEngine {
 
         this._lastFired.set(rule.id, Date.now());
         const matched = result.leaf ? `composite:${result.leaf.type}:${result.leaf.pattern}` : (rule.pattern || rule.name || 'composite');
-        this._recordFired(apiKey, rule, matched);
+        await this._recordFired(apiKey, rule, matched);
 
         return { rule, matched };
       } catch (err) {
@@ -970,11 +982,11 @@ export class CueEngine {
    * @param {string} apiKey
    * @param {{ labels: Array<{ label: string, confidence?: number, region?: object }>, ts?: number }} state
    * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for matches
-   * @returns {Array<{ rule: object, matched: string }>} — fired rules
+   * @returns {Promise<Array<{ rule: object, matched: string }>>} — fired rules
    */
-  evaluateTrackerEvent(apiKey, state, onFired) {
+  async evaluateTrackerEvent(apiKey, state, onFired) {
     this._trackerState.set(apiKey, state && typeof state === 'object' ? state : { labels: [] });
-    const rules = this._loadRules(apiKey);
+    const rules = await this._loadRules(apiKey);
     const now = Date.now();
     const fired = [];
     const labels = Array.isArray(state?.labels) ? state.labels : [];
@@ -994,7 +1006,7 @@ export class CueEngine {
       this._lastFired.set(rule.id, now);
       const matched = `track:${rule.pattern}`;
       fired.push({ rule, matched });
-      this._recordFired(apiKey, rule, matched);
+      await this._recordFired(apiKey, rule, matched);
     }
 
     if (fired.length > 0) onFired?.(fired);
@@ -1017,10 +1029,10 @@ export class CueEngine {
    * @param {string} apiKey
    * @param {string} label — current sound label ('music', 'speech', 'silence')
    * @param {(results: Array<{ rule: object, matched: string }>) => void} [onFired] — callback for async silence timer results
-   * @returns {Array<{ rule: object, matched: string }>} — immediately fired rules (music_start/music_stop)
+   * @returns {Promise<Array<{ rule: object, matched: string }>>} — immediately fired rules (music_start/music_stop)
    */
-  evaluateSoundEvent(apiKey, label, onFired) {
-    const rules = this._loadRules(apiKey);
+  async evaluateSoundEvent(apiKey, label, onFired) {
+    const rules = await this._loadRules(apiKey);
     const now = Date.now();
     const fired = [];
 
@@ -1078,8 +1090,7 @@ export class CueEngine {
                 if (state.currentLabel === 'silence') {
                   this._lastFired.set(ruleRef.id, Date.now());
                   const result = { rule: ruleRef, matched: `silence:${minSeconds}s` };
-                  this._recordFired(apiKey, ruleRef, result.matched);
-                  onFired?.([result]);
+                  this._recordFired(apiKey, ruleRef, result.matched).then(() => onFired?.([result]));
                 }
               }, remainingMs);
             }
@@ -1093,7 +1104,7 @@ export class CueEngine {
       if (matched !== null) {
         this._lastFired.set(rule.id, now);
         fired.push({ rule, matched });
-        this._recordFired(apiKey, rule, matched);
+        await this._recordFired(apiKey, rule, matched);
       }
     }
 

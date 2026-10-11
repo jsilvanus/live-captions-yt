@@ -12,16 +12,16 @@ import { parseActionItems } from 'lcyt/actions';
 /**
  * @param {object} deps
  * @param {{ isDeviceAtom: (metacode: string) => boolean }|null} deps.executor
- * @param {((tier: string, apiKey: string, userId: any) => boolean)|null} deps.checkProjectRole
- * @returns {(req: import('express').Request, apiKey: string, expr: unknown) => ({ status: number, error: string }|null)}
+ * @param {((tier: string, apiKey: string, userId: any) => boolean|Promise<boolean>)|null} deps.checkProjectRole
+ * @returns {(req: import('express').Request, apiKey: string, expr: unknown) => Promise<{ status: number, error: string }|null>}
  */
 export function createAuthoringGuard({ executor, checkProjectRole }) {
-  return function guard(req, apiKey, expr) {
+  return async function guard(req, apiKey, expr) {
     if (!executor || typeof expr !== 'string' || !expr.trim()) return null;
     const hasDevice = parseActionItems(expr).some((i) => i.metacode && executor.isDeviceAtom(i.metacode));
     if (!hasDevice) return null;
     if (!req.user?.userId) return null;
-    if (typeof checkProjectRole !== 'function' || !checkProjectRole('setup', apiKey, req.user.userId)) {
+    if (typeof checkProjectRole !== 'function' || !(await checkProjectRole('setup', apiKey, req.user.userId))) {
       return { status: 403, error: 'Explicit project admin/owner access required to save an action that controls devices' };
     }
     return null;

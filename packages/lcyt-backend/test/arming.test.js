@@ -13,7 +13,6 @@ import { SessionStore } from '../src/store.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createArmingRouter } from '../src/routes/arming.js';
 import { createLiveRouter } from '../src/routes/live.js';
-import { ensureRtmpTables as runRtmpMigrations } from './helpers/rtmp-tables.js';
 import {
   createBroadcast, getBroadcast, bindSessionStart, completeBroadcast, activateBroadcast,
   getArming, setArmed, armOnGoLive, disarmOnEnd,
@@ -24,7 +23,6 @@ let db, key, server, baseUrl, bus, events, store;
 
 before(() => new Promise(async (resolve) => {
   db = await initDb(':memory:');
-  runRtmpMigrations(db);
   key = (await createKey(db, { owner: 'Arming' })).key;
   bus = new EventBus();
   events = [];

@@ -5,11 +5,11 @@
 
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -38,17 +38,16 @@ function sessionAuth(req, res, next) {
   }
 }
 
-before(() => {
-  db = new Database(':memory:');
-  runAiRolesMigrations(db);
-  runProviderRegistryMigrations(db);
-  providerId = createProvider(db, {
+before(async () => {
+  db = await initDb(':memory:');
+  await runAiRolesMigrations(db);
+  providerId = (await createProvider(db, {
     scope: 'site', kind: 'api', vendor: 'openai', name: 'Test provider', baseUrl: 'https://api.test', apiKeyRef: 'sk-test',
-  }).id;
+  })).id;
   token = jwt.sign({ sessionId: 's1', apiKey: 'key1' }, JWT_SECRET, { expiresIn: '1h' });
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 afterEach(() => {
   global.fetch = realFetch;
   if (manager) { manager.stop('key1', 'tracker'); manager.stop('key1', 'describer'); manager = null; }
@@ -98,10 +97,10 @@ describe('POST /roles/:roleCode/start', () => {
   });
 
   it('503s for a bridge-relayed provider when no bridge manager is injected', async () => {
-    const bridgeProviderId = createProvider(db, {
+    const bridgeProviderId = (await createProvider(db, {
       scope: 'site', kind: 'ollama', vendor: 'ollama', name: 'Bridge Ollama', baseUrl: 'http://ollama:11434', bridgeInstanceId: 'bridge-1',
-    }).id;
-    setRoleConfig(db, 'key1', 'describer', { enabled: true, providerId: bridgeProviderId, modelName: 'llava' });
+    })).id;
+    await setRoleConfig(db, 'key1', 'describer', { enabled: true, providerId: bridgeProviderId, modelName: 'llava' });
     await startApp();
     const res = await fetch(`${baseUrl}/roles/describer/start`, { method: 'POST', headers: bearer() });
     assert.equal(res.status, 503);
@@ -111,10 +110,10 @@ describe('POST /roles/:roleCode/start', () => {
     const bridgeManager = {
       sendCommand: async () => ({ ok: true, status: 200, body: { choices: [{ message: { content: 'ok' } }] } }),
     };
-    const bridgeProviderId = createProvider(db, {
+    const bridgeProviderId = (await createProvider(db, {
       scope: 'site', kind: 'ollama', vendor: 'ollama', name: 'Bridge Ollama', baseUrl: 'http://ollama:11434', bridgeInstanceId: 'bridge-2',
-    }).id;
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId: bridgeProviderId, modelName: 'llava' });
+    })).id;
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId: bridgeProviderId, modelName: 'llava' });
     mockPreview();
     await startApp(bridgeManager);
     const res = await fetch(`${baseUrl}/roles/tracker/start`, { method: 'POST', headers: bearer() });
@@ -122,7 +121,7 @@ describe('POST /roles/:roleCode/start', () => {
   });
 
   it('starts the loop when enabled with a direct provider', async () => {
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockPreview();
     await startApp();
     const res = await fetch(`${baseUrl}/roles/tracker/start`, { method: 'POST', headers: bearer() });
@@ -144,7 +143,7 @@ describe('POST /roles/:roleCode/stop', () => {
   });
 
   it('stops a running loop', async () => {
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockPreview();
     await startApp();
     await fetch(`${baseUrl}/roles/tracker/start`, { method: 'POST', headers: bearer() });
@@ -184,7 +183,7 @@ describe('GET /roles/:roleCode/captures', () => {
   });
 
   it('lists captures (without frame bytes) recorded by the running poll loop', async () => {
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     global.fetch = async (url, init) => {
       if (typeof url === 'string' && url.includes('/preview/')) {
         return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('x') };
@@ -217,7 +216,7 @@ describe('GET /roles/:roleCode/captures/:id/frame', () => {
   });
 
   it('serves the raw captured JPEG bytes for a known capture', async () => {
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     global.fetch = async (url, init) => {
       if (typeof url === 'string' && url.includes('/preview/')) {
         return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('jpeg-frame-bytes') };
@@ -261,7 +260,7 @@ describe('POST /roles/:roleCode/captures/:id/replay', () => {
   });
 
   it('replays a captured frame against an edited prompt and returns the original + replay diff', async () => {
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     global.fetch = async (url, init) => {
       if (typeof url === 'string' && url.includes('/preview/')) {
         return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('x') };
@@ -292,7 +291,7 @@ describe('POST /roles/:roleCode/captures/:id/replay', () => {
   });
 
   it('404s for an unknown capture id (once a provider is configured)', async () => {
-    setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'tracker', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     await startApp();
     const res = await fetch(`${baseUrl}/roles/tracker/captures/nonexistent/replay`, {
       method: 'POST', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: '{}',

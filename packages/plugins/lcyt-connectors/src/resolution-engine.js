@@ -38,17 +38,17 @@ function toRequest(row, mappings) {
 
 /**
  * @param {object} deps
- * @param {import('better-sqlite3').Database} deps.db
+ * @param {import('lcyt-backend/db').Db} deps.db
  * @param {import('./variables-bus.js').VariablesBus} deps.bus
  * @param {{ resolveStorage: (apiKey: string) => Promise<object> }} [deps.filesControl] — for image/binary responses
  */
 export function createResolutionEngine({ db, bus, filesControl = null }) {
   /** Build a { name: value } snapshot of all variables currently known for a project. */
-  function snapshotVariables(apiKey) {
+  async function snapshotVariables(apiKey) {
     // Revert any due TTLs first so interpolation uses the reverted value. The
     // active scheduler is the primary emit path; this is the lazy fallback.
-    materializeExpired(db, apiKey);
-    const rows = listVariables(db, apiKey);
+    await materializeExpired(db, apiKey);
+    const rows = await listVariables(db, apiKey);
     const snapshot = {};
     for (const row of rows) {
       snapshot[row.name] = row.current_value !== null && row.current_value !== undefined
@@ -65,11 +65,15 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
     const objectKey = `connector-variables/${request.id}-${Date.now()}`;
     const { storedKey } = await storage.putObject(apiKey, objectKey, buffer, contentType || 'application/octet-stream');
     const ref = storage.publicUrl(apiKey, objectKey) || storedKey;
-    return mappings.map((mapping) => setConnectorVariable(db, apiKey, mapping.variable_name, ref, request.id));
+    const rows = [];
+    for (const mapping of mappings) rows.push(await setConnectorVariable(db, apiKey, mapping.variable_name, ref, request.id));
+    return rows;
   }
 
-  function writeValues(apiKey, request, values) {
-    return Object.entries(values).map(([name, value]) => setConnectorVariable(db, apiKey, name, value, request.id));
+  async function writeValues(apiKey, request, values) {
+    const rows = [];
+    for (const [name, value] of Object.entries(values)) rows.push(await setConnectorVariable(db, apiKey, name, value, request.id));
+    return rows;
   }
 
   /**
@@ -77,13 +81,13 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
    * @returns {Promise<{ ok: boolean, variables: Array<object>, error?: string }>}
    */
   async function fireRequest(apiKey, connectorSlug, requestSlug) {
-    const connectorRow = getConnectorBySlug(db, apiKey, connectorSlug);
+    const connectorRow = await getConnectorBySlug(db, apiKey, connectorSlug);
     if (!connectorRow) return { ok: false, variables: [], error: `Unknown connector: ${connectorSlug}` };
-    const requestRow = getRequestBySlug(db, connectorRow.id, requestSlug);
+    const requestRow = await getRequestBySlug(db, connectorRow.id, requestSlug);
     if (!requestRow) return { ok: false, variables: [], error: `Unknown request: ${connectorSlug}.${requestSlug}` };
 
-    const snapshot = snapshotVariables(apiKey);
-    const mappingRows = listMappings(db, requestRow.id);
+    const snapshot = await snapshotVariables(apiKey);
+    const mappingRows = await listMappings(db, requestRow.id);
     const connector = toConnector(connectorRow);
     const request = toRequest(requestRow, mappingRows);
 
@@ -94,7 +98,7 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
       return { ok: false, variables: [], error: `Invalid request: ${err.message}` };
     }
 
-    const orgId = getApiKeyOrgId(db, apiKey);
+    const orgId = await getApiKeyOrgId(db, apiKey);
     // First hop is checked here so the error names the org/site rule layer;
     // varfetch re-checks it and every redirect hop with the merged lists.
     const guard = await checkUrlAllowed(db, built.url, orgId);
@@ -105,7 +109,7 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
     try {
       const result = await varfetchFire({
         connector, request, variables: snapshot,
-        network: toNetworkOptions(loadNetworkPolicy(db, orgId)),
+        network: toNetworkOptions(await loadNetworkPolicy(db, orgId)),
       });
       let updated = [];
       if (result.ok && BINARY_TYPES.has(requestRow.response_type)) {
@@ -113,7 +117,7 @@ export function createResolutionEngine({ db, bus, filesControl = null }) {
           updated = await storeBinaryResponse(apiKey, requestRow, mappingRows, result.body, result.contentType);
         }
       } else {
-        updated = writeValues(apiKey, requestRow, result.values);
+        updated = await writeValues(apiKey, requestRow, result.values);
       }
       for (const row of updated) {
         bus.emitVariableUpdated(apiKey, serializeVariableRow(row));

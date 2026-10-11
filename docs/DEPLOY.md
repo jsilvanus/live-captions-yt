@@ -562,3 +562,13 @@ BACKUP_DIR=/backups   # volume-mount this directory
 
 Backups are written once per day to `$BACKUP_DIR/<YYYY-MM-DD>/lcyt-backend.db`. With `FILE_STORAGE=s3` they go to `backups/<YYYY-MM-DD>/lcyt-backend.db` in the bucket instead (uploaded from a temporary copy, size-checked) and old dates are removed by the same retention rule.
 
+### Moving an existing SQLite database to PostgreSQL
+
+To switch a running install from SQLite (`DB_PATH`) to PostgreSQL (`DATABASE_URL=postgresql://...`) without losing data:
+
+1. Stop the backend and back up the SQLite file (`sqlite3 lcyt-backend.db ".backup lcyt-backend.before-pg.db"`, or copy the file while the backend is stopped).
+2. Dry run (writes nothing): `npm run db:migrate-sqlite -w lcyt-backend -- --from ./lcyt-backend.db --to postgresql://user@host/db --dry-run`
+3. Copy: `npm run db:migrate-sqlite -w lcyt-backend -- --from ./lcyt-backend.db --to postgresql://user@host/db`
+
+The script applies the PostgreSQL migrations, copies every table in foreign-key order, converts values to the column types, resets the id sequences and prints the row counts per table; it exits 1 if the target has fewer rows than the source. Files on disk (caption files, graphics, recordings) are not moved. The run is idempotent: after a failure, run it again to finish. Then set `DATABASE_URL` in the environment and restart the backend; `DB_PATH` is no longer read.
+

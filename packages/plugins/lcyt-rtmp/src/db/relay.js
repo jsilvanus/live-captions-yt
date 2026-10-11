@@ -1,12 +1,12 @@
 /**
  * Get a full api_keys row by key value.
  * Used by RTMP routes to read per-key config (e.g. cea708_delay_ms).
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} key
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getKey(db, key) {
-  return db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key) ?? null;
+export async function getKey(db, key) {
+  return (await db.api_keys.findUnique({ where: { key } })) ?? null;
 }
 
 /**
@@ -17,12 +17,12 @@ export function getKey(db, key) {
  * treating `name` as the literal api_key when no rotated key matches
  * (today's behavior, unchanged for any key that has never rotated).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} name  nginx-rtmp `$name` / MediaMTX stream name
- * @returns {string} the resolved api_key
+ * @returns {Promise<string>} the resolved api_key
  */
-export function resolveApiKeyFromIngestStreamKey(db, name) {
-  const row = db.prepare('SELECT key FROM api_keys WHERE ingest_stream_key = ?').get(name);
+export async function resolveApiKeyFromIngestStreamKey(db, name) {
+  const row = await db.api_keys.findFirst({ where: { ingest_stream_key: name }, select: { key: true } });
   return row ? row.key : name;
 }
 
@@ -31,12 +31,12 @@ export function resolveApiKeyFromIngestStreamKey(db, name) {
 
 /**
  * Check whether RTMP relay is allowed for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isRelayAllowed(db, apiKey) {
-  const row = db.prepare('SELECT relay_allowed FROM api_keys WHERE key = ?').get(apiKey);
+export async function isRelayAllowed(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { relay_allowed: true } });
   return row ? row.relay_allowed === 1 : false;
 }
 
@@ -46,12 +46,12 @@ export function isRelayAllowed(db, apiKey) {
  * Check whether the audio-only HLS "radio" feature is enabled for an API key.
  * The api_key must have radio_enabled = 1 (set by admin via PATCH /keys/:key).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isRadioEnabled(db, apiKey) {
-  const row = db.prepare('SELECT radio_enabled FROM api_keys WHERE key = ?').get(apiKey);
+export async function isRadioEnabled(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { radio_enabled: true } });
   return row ? row.radio_enabled === 1 : false;
 }
 
@@ -61,12 +61,12 @@ export function isRadioEnabled(db, apiKey) {
  * Check whether the video+audio HLS embed feature is enabled for an API key.
  * The api_key must have hls_enabled = 1 (set by admin via PATCH /keys/:key).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isHlsEnabled(db, apiKey) {
-  const row = db.prepare('SELECT hls_enabled FROM api_keys WHERE key = ?').get(apiKey);
+export async function isHlsEnabled(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { hls_enabled: true } });
   return row ? row.hls_enabled === 1 : false;
 }
 
@@ -77,12 +77,12 @@ export function isHlsEnabled(db, apiKey) {
  * and HLS endpoints of an API key.  Defaults to `'*'` (allow all origins) when
  * the key does not exist or the column is NULL.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {string}  e.g. `'*'` or `'https://example.com'`
+ * @returns {Promise<string>}  e.g. `'*'` or `'https://example.com'`
  */
-export function getEmbedCors(db, apiKey) {
-  const row = db.prepare('SELECT embed_cors FROM api_keys WHERE key = ?').get(apiKey);
+export async function getEmbedCors(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { embed_cors: true } });
   return row?.embed_cors || '*';
 }
 
@@ -92,25 +92,25 @@ export function getEmbedCors(db, apiKey) {
  * Both relay_allowed (admin permission) and relay_active (user toggle) must be
  * true for the fan-out to start when nginx sends an on_publish callback.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isRelayActive(db, apiKey) {
-  const row = db.prepare('SELECT relay_active FROM api_keys WHERE key = ?').get(apiKey);
+export async function isRelayActive(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { relay_active: true } });
   return row ? row.relay_active === 1 : false;
 }
 
 /**
  * Set the relay_active flag for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
  * @param {boolean} active
- * @returns {boolean} true if the key was found and updated
+ * @returns {Promise<boolean>} true if the key was found and updated
  */
-export function setRelayActive(db, apiKey, active) {
-  const result = db.prepare('UPDATE api_keys SET relay_active = ? WHERE key = ?').run(active ? 1 : 0, apiKey);
-  return result.changes > 0;
+export async function setRelayActive(db, apiKey, active) {
+  const result = await db.api_keys.updateMany({ where: { key: apiKey }, data: { relay_active: active ? 1 : 0 } });
+  return result.count > 0;
 }
 
 /**
@@ -147,60 +147,48 @@ function formatRelayRow(row) {
   };
 }
 
-// LEFT JOIN so rows with no source_camera_id (the common case) still return —
-// prod_cameras is owned by lcyt-production but shares the same db instance
-// repo-wide (same cross-plugin-query pattern as resolveRelaySourceCameraKey()).
-// prod_cameras may not exist at all in a deployment/test that only runs
-// lcyt-rtmp's own migrations (e.g. lcyt-backend/test/stream.test.js's bare
-// in-memory db) — probe once and fall back to the plain query, same
-// defensive pattern lcyt-dsk's camera-thumbnail.js uses for pre-migration
-// schemas elsewhere in the repo.
-// Keyed by db instance (not a single module-level flag) — a test process can
-// legitimately hold multiple db instances with different schemas at once.
-const _hasProdCamerasCache = new WeakMap();
-export function hasProdCamerasTable(db) {
-  if (!_hasProdCamerasCache.has(db)) {
-    _hasProdCamerasCache.set(db, !!db.prepare(
-      "SELECT 1 FROM sqlite_master WHERE type='table' AND name='prod_cameras'"
-    ).get());
+// prod_cameras is owned by lcyt-production but shares the same database repo-wide (same cross-plugin
+// query pattern as resolveRelaySourceCameraKey()). The camera key is looked up separately and attached
+// to each row so rtmp-manager.js (which has no db handle of its own) can use it directly.
+async function withSourceCameraKeys(db, rows) {
+  const ids = [...new Set(rows.map(r => r.source_camera_id).filter(Boolean))];
+  const keys = new Map();
+  if (ids.length) {
+    const cams = await db.prod_cameras.findMany({ where: { id: { in: ids } }, select: { id: true, camera_key: true } });
+    for (const c of cams) keys.set(c.id, c.camera_key);
   }
-  return _hasProdCamerasCache.get(db);
-}
-
-function relaysSelectSql(db) {
-  return hasProdCamerasTable(db)
-    ? `SELECT r.*, c.camera_key AS source_camera_key FROM rtmp_relays r LEFT JOIN prod_cameras c ON c.id = r.source_camera_id`
-    : `SELECT r.* FROM rtmp_relays r`;
+  return rows.map(r => ({ ...r, source_camera_key: r.source_camera_id ? (keys.get(r.source_camera_id) ?? null) : null }));
 }
 
 /**
  * Get all configured relay slots for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {object[]} ordered by slot ascending
+ * @returns {Promise<object[]>} ordered by slot ascending
  */
-export function getRelays(db, apiKey) {
-  return db.prepare(`${relaysSelectSql(db)} WHERE r.api_key = ? ORDER BY r.slot`)
-    .all(apiKey)
-    .map(formatRelayRow);
+export async function getRelays(db, apiKey) {
+  const rows = await db.rtmp_relays.findMany({ where: { api_key: apiKey }, orderBy: { slot: 'asc' } });
+  return (await withSourceCameraKeys(db, rows)).map(formatRelayRow);
 }
 
 /**
  * Get a specific relay slot for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
  * @param {number} slot
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getRelaySlot(db, apiKey, slot) {
-  const row = db.prepare(`${relaysSelectSql(db)} WHERE r.api_key = ? AND r.slot = ?`).get(apiKey, slot);
-  return row ? formatRelayRow(row) : null;
+export async function getRelaySlot(db, apiKey, slot) {
+  const row = await db.rtmp_relays.findUnique({ where: { api_key_slot: { api_key: apiKey, slot } } });
+  if (!row) return null;
+  const [withKey] = await withSourceCameraKeys(db, [row]);
+  return formatRelayRow(withKey);
 }
 
 /**
  * @deprecated Use getRelays() or getRelaySlot(). Kept for migration compatibility.
  */
-export function getRelay(db, apiKey) {
+export async function getRelay(db, apiKey) {
   return getRelaySlot(db, apiKey, 1);
 }
 
@@ -222,37 +210,39 @@ export function buildRelayFfmpegUrl(relay) {
  * slot must be a positive integer — no upper bound (plan_ingest_feeds.md §1b
  * removes the earlier 4-slot cap; a future per-team quota is a deliberate
  * non-goal of that plan, not enforced here).
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
  * @param {number} slot  positive integer
  * @param {string} targetUrl
  * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceCameraId?: string|null }} [opts]
- * @returns {object}
+ * @returns {Promise<object>}
  */
-export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceCameraId = null } = {}) {
+export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceCameraId = null } = {}) {
   if (!Number.isInteger(slot) || slot < 1) {
     throw new RangeError(`slot must be a positive integer, got ${slot}`);
   }
   if (sourceView !== 'program' && sourceView !== 'crop') {
     throw new RangeError(`sourceView must be 'program' or 'crop', got ${sourceView}`);
   }
-  db.prepare(`
-    INSERT INTO rtmp_relays (api_key, slot, target_url, target_name, caption_mode, record_on_start, record_on_button, scale, fps, video_bitrate, audio_bitrate, source_view, source_camera_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(api_key, slot) DO UPDATE SET
-      target_url      = excluded.target_url,
-      target_name     = excluded.target_name,
-      caption_mode    = excluded.caption_mode,
-      record_on_start = excluded.record_on_start,
-      record_on_button = excluded.record_on_button,
-      scale           = excluded.scale,
-      fps             = excluded.fps,
-      video_bitrate   = excluded.video_bitrate,
-      audio_bitrate   = excluded.audio_bitrate,
-      source_view     = excluded.source_view,
-      source_camera_id = excluded.source_camera_id,
-      updated_at      = datetime('now')
-  `).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http', recordOnStart ? 1 : 0, recordOnButton ? 1 : 0, scale || null, fps ?? null, videoBitrate || null, audioBitrate || null, sourceView, sourceCameraId || null);
+  const values = {
+    target_url: targetUrl,
+    target_name: targetName || null,
+    caption_mode: captionMode || 'http',
+    record_on_start: recordOnStart ? 1 : 0,
+    record_on_button: recordOnButton ? 1 : 0,
+    scale: scale || null,
+    fps: fps ?? null,
+    video_bitrate: videoBitrate || null,
+    audio_bitrate: audioBitrate || null,
+    source_view: sourceView,
+    source_camera_id: sourceCameraId || null,
+  };
+  const now = db.$util.sqlNow();
+  await db.rtmp_relays.upsert({
+    where: { api_key_slot: { api_key: apiKey, slot } },
+    create: { api_key: apiKey, slot, ...values, created_at: now, updated_at: now },
+    update: { ...values, updated_at: now },
+  });
   return getRelaySlot(db, apiKey, slot);
 }
 
@@ -272,14 +262,13 @@ export function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, ca
  * MCP path which deliberately stays unscoped — see lcyt-tools/CLAUDE.md)
  * remains resolvable by any project, matching the pre-existing open/legacy
  * behavior for those rows.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} cameraId
  * @param {string} requestingApiKey
- * @returns {string|null} camera_key, or null if not found / has no camera_key / owned by a different project
+ * @returns {Promise<string|null>} camera_key, or null if not found / has no camera_key / owned by a different project
  */
-export function resolveRelaySourceCameraKey(db, cameraId, requestingApiKey) {
-  if (!hasProdCamerasTable(db)) return null;
-  const row = db.prepare('SELECT camera_key, owner_api_key FROM prod_cameras WHERE id = ?').get(cameraId);
+export async function resolveRelaySourceCameraKey(db, cameraId, requestingApiKey) {
+  const row = await db.prod_cameras.findUnique({ where: { id: cameraId }, select: { camera_key: true, owner_api_key: true } });
   if (!row?.camera_key) return null;
   if (row.owner_api_key != null && row.owner_api_key !== requestingApiKey) return null;
   return row.camera_key;
@@ -294,44 +283,47 @@ export function resolveRelaySourceCameraKey(db, cameraId, requestingApiKey) {
  * in that scenario, since every existing trigger (routes/rtmp.js's on_publish,
  * PUT /stream/active) keys off the PRIMARY apiKey's own publish state, never
  * a referenced camera's.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} cameraId
- * @returns {string[]}
+ * @returns {Promise<string[]>}
  */
-export function getApiKeysReferencingCamera(db, cameraId) {
-  return db.prepare('SELECT DISTINCT api_key FROM rtmp_relays WHERE source_camera_id = ?')
-    .all(cameraId)
-    .map(r => r.api_key);
+export async function getApiKeysReferencingCamera(db, cameraId) {
+  const rows = await db.rtmp_relays.findMany({
+    where: { source_camera_id: cameraId },
+    distinct: ['api_key'],
+    select: { api_key: true },
+  });
+  return rows.map(r => r.api_key);
 }
 
 /**
  * Delete a specific relay slot for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
  * @param {number} slot
- * @returns {boolean} true if a row was deleted
+ * @returns {Promise<boolean>} true if a row was deleted
  */
-export function deleteRelaySlot(db, apiKey, slot) {
-  const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ? AND slot = ?').run(apiKey, slot);
-  return result.changes > 0;
+export async function deleteRelaySlot(db, apiKey, slot) {
+  const result = await db.rtmp_relays.deleteMany({ where: { api_key: apiKey, slot } });
+  return result.count > 0;
 }
 
 /**
  * Delete all relay slots for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {number} number of rows deleted
+ * @returns {Promise<number>} number of rows deleted
  */
-export function deleteAllRelays(db, apiKey) {
-  const result = db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(apiKey);
-  return result.changes;
+export async function deleteAllRelays(db, apiKey) {
+  const result = await db.rtmp_relays.deleteMany({ where: { api_key: apiKey } });
+  return result.count;
 }
 
 /**
  * @deprecated Use deleteAllRelays(). Kept for migration compatibility.
  */
-export function deleteRelay(db, apiKey) {
-  return deleteAllRelays(db, apiKey) > 0;
+export async function deleteRelay(db, apiKey) {
+  return (await deleteAllRelays(db, apiKey)) > 0;
 }
 
 // ─── RTMP stream stats (per-stream, personified) ─────────────────────────────
@@ -347,57 +339,74 @@ function categoriseEndpoint(targetUrl) {
 
 /**
  * Insert a new RTMP stream stat record (call when relay starts).
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {{ apiKey: string, slot?: number, targetUrl: string, targetName?: string|null, captionMode?: string, startedAt?: string }} data
- * @returns {number} The row id
+ * @returns {Promise<number>} The row id
  */
-export function writeRtmpStreamStart(db, { apiKey, slot = 1, targetUrl, targetName = null, captionMode = 'http', startedAt }) {
-  const result = db.prepare(
-    'INSERT INTO rtmp_stream_stats (api_key, slot, target_url, target_name, caption_mode, started_at) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(apiKey, slot, targetUrl, targetName || null, captionMode || 'http', startedAt || new Date().toISOString());
-  return result.lastInsertRowid;
+export async function writeRtmpStreamStart(db, { apiKey, slot = 1, targetUrl, targetName = null, captionMode = 'http', startedAt }) {
+  const row = await db.rtmp_stream_stats.create({
+    data: {
+      api_key: apiKey,
+      slot,
+      target_url: targetUrl,
+      target_name: targetName || null,
+      caption_mode: captionMode || 'http',
+      started_at: startedAt || new Date().toISOString(),
+    },
+  });
+  return row.id;
 }
 
 /**
  * Complete an RTMP stream stat record when the relay ends.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {{ streamStatId: number, endedAt?: string, durationMs: number, captionsSent?: number }} data
  */
-export function writeRtmpStreamEnd(db, { streamStatId, endedAt, durationMs, captionsSent = 0 }) {
-  db.prepare(
-    'UPDATE rtmp_stream_stats SET ended_at = ?, duration_ms = ?, captions_sent = ? WHERE id = ?'
-  ).run(endedAt || new Date().toISOString(), durationMs, captionsSent, streamStatId);
+export async function writeRtmpStreamEnd(db, { streamStatId, endedAt, durationMs, captionsSent = 0 }) {
+  await db.rtmp_stream_stats.updateMany({
+    where: { id: streamStatId },
+    data: { ended_at: endedAt || new Date().toISOString(), duration_ms: Math.round(durationMs), captions_sent: captionsSent },
+  });
 }
 
 /**
  * Get all RTMP stream stats for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {object[]}
+ * @returns {Promise<object[]>}
  */
-export function getRtmpStreamStats(db, apiKey) {
-  return db.prepare(
-    `SELECT id, slot, target_url AS targetUrl, target_name AS targetName, caption_mode AS captionMode,
-            started_at AS startedAt, ended_at AS endedAt, duration_ms AS durationMs,
-            captions_sent AS captionsSent
-     FROM rtmp_stream_stats WHERE api_key = ? ORDER BY id DESC LIMIT 100`
-  ).all(apiKey);
+export async function getRtmpStreamStats(db, apiKey) {
+  const rows = await db.rtmp_stream_stats.findMany({
+    where: { api_key: apiKey },
+    orderBy: { id: 'desc' },
+    take: 100,
+  });
+  return rows.map(r => ({
+    id: r.id,
+    slot: r.slot,
+    targetUrl: r.target_url,
+    targetName: r.target_name,
+    captionMode: r.caption_mode,
+    startedAt: r.started_at,
+    endedAt: r.ended_at,
+    durationMs: db.$util.num(r.duration_ms),
+    captionsSent: r.captions_sent,
+  }));
 }
 
 /**
  * Increment anonymous RTMP daily stats when a relay stream ends.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {{ targetUrl: string, captionMode?: string, durationMs: number }} data
  */
-export function incrementRtmpAnonDailyStat(db, { targetUrl, captionMode = 'http', durationMs }) {
+export async function incrementRtmpAnonDailyStat(db, { targetUrl, captionMode = 'http', durationMs }) {
   const date = new Date().toISOString().slice(0, 10);
   const endpointType = categoriseEndpoint(targetUrl);
   const durationSeconds = Math.round(durationMs / 1000);
-  db.prepare(`
-    INSERT INTO rtmp_anon_daily_stats (date, endpoint_type, caption_mode, streams_count, duration_seconds)
-    VALUES (?, ?, ?, 1, ?)
-    ON CONFLICT (date, endpoint_type, caption_mode) DO UPDATE SET
-      streams_count    = streams_count + 1,
-      duration_seconds = duration_seconds + excluded.duration_seconds
-  `).run(date, endpointType, captionMode || 'http', durationSeconds);
+  const mode = captionMode || 'http';
+  await db.rtmp_anon_daily_stats.upsert({
+    where: { date_endpoint_type_caption_mode: { date, endpoint_type: endpointType, caption_mode: mode } },
+    create: { date, endpoint_type: endpointType, caption_mode: mode, streams_count: 1, duration_seconds: durationSeconds },
+    update: { streams_count: { increment: 1 }, duration_seconds: { increment: durationSeconds } },
+  });
 }

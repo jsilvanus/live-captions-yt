@@ -22,7 +22,7 @@ export function createCameraTools(deps) {
       description: 'List configured cameras (PTZ control type, presets, mixer input assignment).',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
-      handler: () => ({ ok: true, cameras: listCameras(db) }),
+      handler: async () => ({ ok: true, cameras: await listCameras(db) }),
     },
     {
       name: 'camera.create',

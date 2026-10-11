@@ -148,11 +148,6 @@ if (!process.env.ADMIN_KEY) {
 // boot even though most of this block is startup logging, not enforcement.
 
 const db = await initDb();
-// Plugins (lcyt-*) still run synchronous SQL on the better-sqlite3 handle until they are moved to Prisma.
-const pdb = db.$legacy;
-if (!pdb) {
-  throw new Error('PostgreSQL mode is not available yet: the plugin packages still use the SQLite handle. Unset DATABASE_URL or wait for the plugin migration.');
-}
 const settings = await SettingsService.create(db);
 
 const _allowedDomains = settings.get('app.allowed_domains');
@@ -274,24 +269,24 @@ const {
   registry: productionRegistry,
   bridgeManager: productionBridgeManager,
   mediamtxClient: productionMediamtxClient,
-} = await initProductionControl(pdb, { settings });
+} = await initProductionControl(db, { settings });
 // One shared device-command service for the HTTP routes and the AI tool
 // registry (docs/plans/plan_backend_actions.md).
 const productionCommands = createProductionCommands({
-  db: pdb, registry: productionRegistry, bridgeManager: productionBridgeManager, eventBus,
+  db, registry: productionRegistry, bridgeManager: productionBridgeManager, eventBus,
 });
 
 // Files plugin — storage adapter for caption file I/O (local FS or S3).
 // Always initialised so FILE_STORAGE configuration is logged at startup.
 // Wire into RTMP plugin so HLS segments can be published to storage.
-const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(pdb, { settings });
+const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db, { settings });
 const mediaStores = await createMediaStores(settings);
 
-// RTMP plugin — run DB migrations, create all manager instances.
-// Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
+// RTMP plugin — create all manager instances (tables come from the Prisma schema).
+// Always initialized, regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
 // Pass resolveStorage so HLS manager can publish segments/playlists to storage.
-const rtmp = await initRtmpControl(pdb, store, { metrics, resolveStorage, settings });
+const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer
@@ -305,12 +300,12 @@ const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, 
 // a no-op — crop following has no meaning without a project to scope it to.
 productionRegistry.onProgramChanged(({ apiKey, mixerId, inputNumber }) => {
   if (!apiKey) return;
-  rtmp.cropManager.applyForSource(pdb, apiKey, { mixerId, mixerInput: inputNumber })
+  rtmp.cropManager.applyForSource(db, apiKey, { mixerId, mixerInput: inputNumber })
     .catch(err => console.warn(`[crop] follow-program (mixer switch) failed for ${apiKey.slice(0, 8)}: ${err.message}`));
 });
 productionRegistry.onCameraPresetRecalled(({ apiKey, cameraId, preset }) => {
   if (!apiKey) return;
-  rtmp.cropManager.applyForSource(pdb, apiKey, { cameraId, cameraPreset: preset })
+  rtmp.cropManager.applyForSource(db, apiKey, { cameraId, cameraPreset: preset })
     .catch(err => console.warn(`[crop] follow-program (camera preset) failed for ${apiKey.slice(0, 8)}: ${err.message}`));
 });
 
@@ -329,7 +324,7 @@ const graphicsEnabled = settings.get('graphics.enabled');
 let _dskCaptionProcessor = null;
 let stopDsk = async () => {};
 if (graphicsEnabled) {
-  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(pdb, dskBus, relayManager, { metrics, settings }));
+  ({ captionProcessor: _dskCaptionProcessor, stop: stopDsk } = await initDskControl(db, dskBus, relayManager, { metrics, settings }));
 }
 
 // Background metric pollers: storage gauges and MediaMTX egress deltas (plan_metering_audit §4.2–4.3).
@@ -353,19 +348,19 @@ sttManager?.setDeliveryHelpers({
   fanOutToTargets: createCaptionFanout({ db }),
 });
 
-// Music detection plugin — run DB migrations, create the SoundCaptionProcessor, and
+// Music detection plugin — create the SoundCaptionProcessor, and
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
 // The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
-const { musicManager } = await initMusicControl(pdb, store, { metrics, settings });
+const { musicManager } = await initMusicControl(db, store, { metrics, settings });
 rtmp.musicManager = musicManager;
-const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db: pdb });
+const _soundCaptionProcessor = createSoundCaptionProcessor({ store, db });
 
 // Cue Engine plugin — run DB migrations, create the CueEngine and CueProcessor.
 // The processor strips <!-- cue:... --> metacodes and evaluates phrase/regex/section
 // rules, firing cue_fired SSE events on GET /events and logging to the cue_events table.
-const { engine: _cueEngine } = await initCueEngine(pdb);
-const _cueProcessor = createCueProcessor({ store, db: pdb, engine: _cueEngine, eventBus });
+const { engine: _cueEngine } = await initCueEngine(db);
+const _cueProcessor = createCueProcessor({ store, db, engine: _cueEngine, eventBus });
 
 // Wire sound_label events (from lcyt-music) to cue engine for
 // music_start, music_stop, and silence cue rules.
@@ -380,7 +375,7 @@ const {
   agent: _agent, providerRegistry: _providerRegistry,
   rolesBus: _rolesBus, assistantManager: _assistantManager, visionRoleManager: _visionRoleManager,
   sceneState: _sceneState,
-} = await initAgent(pdb, { eventBus, metrics, settings });
+} = await initAgent(db, { eventBus, metrics, settings });
 
 // Bridge-relayed providers (plan/ai_model_registry): discovery/inference for a
 // provider with bridge_instance_id set dispatches through the production
@@ -423,14 +418,14 @@ const _operatorManager = new OperatorManager({
 });
 
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
-// user-defined outbound API connectors. Runs its own DB migrations
-// (api_connectors, api_requests, api_response_mappings, variables tables).
-const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler, pollScheduler: _connectorsPollScheduler } = initConnectors(pdb, {
+// user-defined outbound API connectors. Tables come from the
+// backend Prisma schema (api_connectors, api_requests, api_response_mappings, variables).
+const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler, pollScheduler: _connectorsPollScheduler } = await initConnectors(db, {
   filesControl: { resolveStorage },
   eventBus,
 });
-// Named Actions plugin — runs its own migration (action_defs table).
-initActions(pdb);
+// Named Actions plugin (action_defs table comes from the core schema).
+await initActions(db);
 
 const _checkProjectRole = async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId);
 // Server-side action runner (plan_backend_actions.md): lcyt-actions stays
@@ -438,7 +433,7 @@ const _checkProjectRole = async (tier, apiKey, userId) => await hasProjectRole(d
 // subsystem. Device atoms go through ProductionCommands (ownership check,
 // bridge routing, crop follow); `device: true` is what a disarmed project skips.
 const _actionExecutor = createActionExecutor({
-  db: pdb,
+  db,
   eventBus,
   handlers: {
     // deviceKey names the physical device so the executor's per-device cooldown
@@ -451,21 +446,21 @@ const _actionExecutor = createActionExecutor({
     crop: {
       device: true,
       deviceKey: () => 'crop',
-      toIds: (apiKey, value) => {
-        const presets = listCropPresets(pdb, apiKey);
+      toIds: async (apiKey, value) => {
+        const presets = await listCropPresets(db, apiKey);
         if (presets.some((p) => p.id === value)) return null;
         const found = presets.filter((p) => slugifyLabel(p.name) === slugifyLabel(value));
         return found.length === 1 ? found[0].id : null;
       },
-      toLabels: (apiKey, value) => {
-        const presets = listCropPresets(pdb, apiKey);
+      toLabels: async (apiKey, value) => {
+        const presets = await listCropPresets(db, apiKey);
         const preset = presets.find((p) => p.id === value);
         const slug = preset && slugifyLabel(preset.name);
         return slug && presets.filter((p) => slugifyLabel(p.name) === slug).length === 1 ? slug : null;
       },
-      run: (apiKey, value) => {
+      run: async (apiKey, value) => {
         const slug = slugifyLabel(value);
-        const presets = listCropPresets(pdb, apiKey);
+        const presets = await listCropPresets(db, apiKey);
         const matches = presets.filter((p) => p.id === value);
         const found = matches.length ? matches : presets.filter((p) => slugifyLabel(p.name) === slug);
         if (found.length === 0) return { ok: false, code: 'not_found', error: `Crop preset '${value}' not found` };
@@ -511,7 +506,7 @@ _cueActionDispatcher.start();
 // broadcast_platform_links, broadcast_platform_stats) and starts the live-stats
 // poller. Must come after the core schema: its tables carry real foreign keys
 // onto api_keys and broadcasts.
-const { tokenService: _platformTokenService, poller: _platformStatsPoller } = initPlatforms(pdb, {
+const { tokenService: _platformTokenService, poller: _platformStatsPoller } = await initPlatforms(db, {
   eventBus,
   getOAuthConfig: () => ({
     clientId: settings.get('app.youtube_client_id'),
@@ -672,7 +667,7 @@ const userAuth = createUserAuthMiddleware(jwtSecret);
 // subscribers use the unified `/events/stream` instead.
 const scopedAuth = (resource) => createProjectAccessMiddleware(db, jwtSecret, { requiredScope: resource });
 // DSK routers require auth — must be created after auth is initialized.
-const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(pdb, dskBus, scopedAuth('dsk'), relayManager, {
+const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmpRouter } = createDskRouters(db, dskBus, scopedAuth('dsk'), relayManager, {
   metrics, settings,
   mediaStores,
   // Setup-tier writes only (plan_project_roles.md, decided 2026-07-26) —
@@ -871,7 +866,7 @@ apiRouter.use(createContentRouters(
   },
   scopedAuth
 ));
-apiRouter.use('/cues', createCueRouter(pdb, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
+apiRouter.use('/cues', createCueRouter(db, scopedAuth('cue'), _cueEngine, { authoringGuard: _actionAuthoringGuard, rewriteRun: (k, run, dir) => _actionExecutor.rewriteDeviceRefs(k, run, dir) }));
 apiRouter.use('/mcp-tokens', createMcpTokensRouter(db, scopedAuth('token')));
 // Unified external event stream over the shared EventBus (additive; the bespoke
 // per-plugin SSE endpoints are unchanged). External tokens need an `events:read`
@@ -899,7 +894,7 @@ apiRouter.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredSco
 // Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
 // confirm/reject pending actions.
 apiRouter.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
-apiRouter.use('/ai/providers', createProjectAiProvidersRouter(pdb, scopedAuth('ai'), {
+apiRouter.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
   bridgeManager: productionBridgeManager,
   // 'setup' tier: explicit project owner/admin, or an org owner/admin's
   // unconditional override on a team-visible project (plan_project_roles.md,
@@ -908,33 +903,33 @@ apiRouter.use('/ai/providers', createProjectAiProvidersRouter(pdb, scopedAuth('a
   isExplicitProjectAdmin: async (apiKey, userId) => await hasProjectRole(db, 'setup', apiKey, userId),
   checkProjectRole: async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId),
 }));
-apiRouter.use('/ai', createAiRouter(pdb, scopedAuth('ai'), settings));
-apiRouter.use('/agent', createAgentRouter(pdb, scopedAuth('agent'), _agent));
-apiRouter.use('/admin/ai-providers', createAdminAiProvidersRouter(pdb, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
-apiRouter.use('/roles', createRolesRouter(pdb, scopedAuth('role'), {
+apiRouter.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
+apiRouter.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
+apiRouter.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
+apiRouter.use('/roles', createRolesRouter(db, scopedAuth('role'), {
   checkProjectRole: async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId),
 }));
-apiRouter.use('/roles', createRolesChatRouter(pdb, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
-apiRouter.use('/roles', createVisionRolesRouter(pdb, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
+apiRouter.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
+apiRouter.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
 apiRouter.use('/scene', createSceneRouter(scopedAuth('role'), _sceneState));
 apiRouter.use('/roles/assistant', createProductionAssistantRouter(
-  pdb, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
+  db, scopedAuth('role'), _toolsContext, _assistantManager, _agent,
   { listCameras, listMixers, registry: productionRegistry, sceneSummary: (k) => _sceneSummary?.(k) ?? null },
   productionBridgeManager,
 ));
-apiRouter.use('/roles/planner', createPlannerRouter(pdb, scopedAuth('role'), _agent, productionBridgeManager));
+apiRouter.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _agent, productionBridgeManager));
 // Setup-tier writes only (GET stays open to any project member, see
 // requireProjectRole's own doc comment) — connector auth_config can hold
 // credentials, same risk class as /ai/providers (plan_project_roles.md).
-apiRouter.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(pdb, scopedAuth('connector'), _connectorsPollScheduler));
-apiRouter.use('/actions', createActionsRouter(pdb, scopedAuth('action'), {
+apiRouter.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
+apiRouter.use('/actions', createActionsRouter(db, scopedAuth('action'), {
   executor: _actionExecutor,
   checkProjectRole: _checkProjectRole,
 }));
-apiRouter.use('/platforms', createPlatformsRouter(pdb, scopedAuth('platform'), platformDeps));
-apiRouter.use('/variables', createVariablesRouter(pdb, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
-apiRouter.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(pdb, createAdminMiddleware(db, jwtSecret)));
-apiRouter.use(createOrgNetworkRulesRouter(pdb, createUserAuthMiddleware(jwtSecret)));
+apiRouter.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
+apiRouter.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
+apiRouter.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
+apiRouter.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));
 // fps30 tracker subsystem (plan_video_perception.md Phase 2/3): job dispatch
 // (start/stop a per-camera or shared-feed perception job on the
 // fffleet fleet) and the ingest side (a worker POSTs
@@ -959,10 +954,10 @@ const _perceptionManager = createPerceptionManager({
   previewBaseUrl: _perceptionBackendUrl,
   callbackBaseUrl: _perceptionBackendUrl,
   tokenSecret: _perceptionIngestSecret,
-  db: pdb,
+  db,
 });
 // Re-attach to perception jobs recorded before this process started, then keep jobs in step with the feeds.
-const _perceptionAutostart = createPerceptionAutostart({ db: pdb, manager: _perceptionManager, mediamtxClient: productionMediamtxClient });
+const _perceptionAutostart = createPerceptionAutostart({ db, manager: _perceptionManager, mediamtxClient: productionMediamtxClient });
 _perceptionManager.adopt()
   .then((r) => { if (r.adopted || r.dropped) console.warn(`[perception] re-adopted ${r.adopted} job(s), dropped ${r.dropped}`); })
   .catch((err) => console.warn(`[perception] re-adoption failed: ${err.message}`))
@@ -1014,14 +1009,14 @@ apiRouter.use('/production/perception', createPerceptionRouter(_perceptionAggreg
   jobTokensEnabled: !!_perceptionIngestSecret,
   overview: createPerceptionOverview({
     db, sceneState: _sceneState, attributor: _feedAttributor, perceptionManager: _perceptionManager,
-    sharedAutostart: { get: (k) => getSharedAutostart(pdb, k) },
+    sharedAutostart: { get: (k) => getSharedAutostart(db, k) },
   }),
-  sharedAutostart: { get: (k) => getSharedAutostart(pdb, k), set: (k, v) => setSharedAutostart(pdb, k, v) },
+  sharedAutostart: { get: (k) => getSharedAutostart(db, k), set: (k, v) => setSharedAutostart(db, k, v) },
   auth: scopedAuth('production'),
 }));
 
 apiRouter.use('/production/arming', createArmingRouter(db, scopedAuth('production'), eventBus));
-apiRouter.use('/production', createProductionRouter(pdb, productionRegistry, productionBridgeManager, {
+apiRouter.use('/production', createProductionRouter(db, productionRegistry, productionBridgeManager, {
   publicUrl: settings.get('app.public_url'),
   mediamtxClient: productionMediamtxClient,
   commands: productionCommands,
@@ -1064,7 +1059,7 @@ function gatedRouter(getEnabled) {
   // consume `auth` at all, so they're unaffected (plan_project_roles.md;
   // previously left ungated, see CONSIDER.md).
   const { rtmpRouter, feedRtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
-    createRtmpRouters(pdb, scopedAuth('rtmp'), rtmp, {
+    createRtmpRouters(db, scopedAuth('rtmp'), rtmp, {
       allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
       requireSetup: requireProjectRole(db, 'setup'),
     });
@@ -1083,7 +1078,7 @@ function gatedRouter(getEnabled) {
 // plugin either loaded or didn't), only the active/inactive flag is live.
 if (musicManager) {
   const musicGate = gatedRouter(() => settings.get('music.detection_active'));
-  const [musicRouter, musicConfigRouter] = createMusicRouters(pdb, auth, musicManager);
+  const [musicRouter, musicConfigRouter] = createMusicRouters(db, auth, musicManager);
   apiRouter.use('/music', musicGate(musicRouter), musicGate(musicConfigRouter));
 }
 

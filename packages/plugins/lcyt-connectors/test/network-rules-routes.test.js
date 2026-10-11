@@ -1,28 +1,25 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 
-let Database, express;
+let express;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
 } catch {
-  console.log('# better-sqlite3/express not available — skipping network-rules route tests');
+  console.log('# express not available — skipping network-rules route tests');
   process.exit(0);
 }
 
-const { runMigrations } = await import('../src/db.js');
 const { createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter } = await import('../src/routes/network-rules.js');
 
-// Minimal stand-ins for the lcyt-backend core tables these routes read
-// (organizations/org_members) — the real schema lives in lcyt-backend/src/db/schema.js.
-function createCoreOrgTables(db) {
-  db.exec(`
-    CREATE TABLE organizations (id INTEGER PRIMARY KEY, owner_user_id INTEGER NOT NULL);
-    CREATE TABLE org_members (org_id INTEGER, user_id INTEGER, role TEXT NOT NULL DEFAULT 'member');
-  `);
-  db.prepare('INSERT INTO organizations (id, owner_user_id) VALUES (1, 100)').run(); // user 100 owns org 1
-  db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (1, 200, 'admin')").run();  // user 200 is org admin
-  db.prepare("INSERT INTO org_members (org_id, user_id, role) VALUES (1, 300, 'member')").run(); // user 300 is a plain member
+// Seed the lcyt-backend core tables these routes read (organizations/org_members).
+async function createCoreOrgTables(db) {
+  for (const id of [100, 200, 300]) {
+    await db.users.create({ data: { id, email: `user${id}@example.com`, password_hash: 'x' } });
+  }
+  await db.organizations.create({ data: { id: 1, name: 'Org', slug: 'org', owner_user_id: 100 } }); // user 100 owns org 1
+  await db.org_members.create({ data: { org_id: 1, user_id: 200, role: 'admin' } });  // user 200 is org admin
+  await db.org_members.create({ data: { org_id: 1, user_id: 300, role: 'member' } }); // user 300 is a plain member
 }
 
 function fakeAdminAuth(req, res, next) {
@@ -39,12 +36,11 @@ function fakeUserAuth(req, res, next) {
 }
 
 describe('network rules routes', () => {
-  let server, baseUrl;
+  let server, baseUrl, db;
 
   before(async () => {
-    const db = new Database(':memory:');
-    runMigrations(db);
-    createCoreOrgTables(db);
+    db = await initDb(':memory:');
+    await createCoreOrgTables(db);
 
     const app = express();
     app.use(express.json());
@@ -55,7 +51,10 @@ describe('network rules routes', () => {
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => new Promise((resolve) => server.close(resolve)));
+  after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await db.close();
+  });
 
   async function req(path, { method = 'GET', body, userId } = {}) {
     const res = await fetch(`${baseUrl}${path}`, {

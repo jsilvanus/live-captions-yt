@@ -97,12 +97,12 @@ function _emitCueResults(emitCueFired, apiKey, fired) {
 }
 
 /**
- * @param {{ store: object|null, db: import('better-sqlite3').Database, engine: import('./cue-engine.js').CueEngine, eventBus?: import('lcyt/event-bus').EventBus|null }} opts
- * @returns {(apiKey: string, text: string, codes?: object) => string}
+ * @param {{ store: object|null, db: import('lcyt-backend/db').Db, engine: import('./cue-engine.js').CueEngine, eventBus?: import('lcyt/event-bus').EventBus|null }} opts
+ * @returns {(apiKey: string, text: string, codes?: object) => Promise<string>}
  */
 export function createCueProcessor({ store, db, engine, eventBus = null }) {
   const emitCueFired = createCueEmitter({ store, eventBus });
-  return function processCueCaption(apiKey, text, codes = {}) {
+  return async function processCueCaption(apiKey, text, codes = {}) {
     if (!text && (!codes || Object.keys(codes).length === 0)) return text || '';
 
     // Reset lastIndex for global regex before each call
@@ -129,7 +129,7 @@ export function createCueProcessor({ store, db, engine, eventBus = null }) {
       // Persist to DB
       if (db) {
         try {
-          insertCueEvent(db, apiKey, {
+          await insertCueEvent(db, apiKey, {
             rule_id: EXPLICIT_CUE_RULE_ID,
             rule_name: label,
             matched: label,
@@ -147,7 +147,7 @@ export function createCueProcessor({ store, db, engine, eventBus = null }) {
     // Evaluate automatic rules from the CueEngine
     if (engine) {
       if (typeof engine.pushContextLine === 'function') engine.pushContextLine(apiKey, cleanText);
-      const fired = engine.evaluate(apiKey, cleanText, codes);
+      const fired = await engine.evaluate(apiKey, cleanText, codes);
       for (const { rule, matched } of fired) {
         let action = {};
         try { action = JSON.parse(rule.action); } catch { /* ignore */ }
@@ -230,19 +230,23 @@ function _attachSoundListener(session, engine, emitCueFired) {
   if (!session?.emitter || session._cueSoundListenerAttached) return;
   session._cueSoundListenerAttached = true;
 
-  session.emitter.on('event', (evt) => {
+  session.emitter.on('event', async (evt) => {
     if (evt.type !== 'sound_label') return;
     const label = evt.data?.label;
     if (!label) return;
 
-    // Evaluate music_start, music_stop, and silence rules
-    const fired = engine.evaluateSoundEvent(session.apiKey, label, (delayedResults) => {
-      // Silence timer callback — fire cue_fired events for the delayed results
-      _emitCueFired(emitCueFired, session, delayedResults, 'sound');
-    });
+    try {
+      // Evaluate music_start, music_stop, and silence rules
+      const fired = await engine.evaluateSoundEvent(session.apiKey, label, (delayedResults) => {
+        // Silence timer callback — fire cue_fired events for the delayed results
+        _emitCueFired(emitCueFired, session, delayedResults, 'sound');
+      });
 
-    // Emit immediately fired rules (music_start, music_stop)
-    _emitCueFired(emitCueFired, session, fired, 'sound');
+      // Emit immediately fired rules (music_start, music_stop)
+      _emitCueFired(emitCueFired, session, fired, 'sound');
+    } catch (err) {
+      console.warn('[cues] Sound cue evaluation error:', err?.message);
+    }
   });
 }
 
@@ -281,13 +285,17 @@ function _attachTrackerListener(session, engine, emitCueFired) {
   if (!session?.emitter || session._cueTrackerListenerAttached) return;
   session._cueTrackerListenerAttached = true;
 
-  session.emitter.on('event', (evt) => {
+  session.emitter.on('event', async (evt) => {
     if (evt.type !== 'track_state') return;
     const state = evt.data;
     if (!state) return;
 
-    const fired = engine.evaluateTrackerEvent(session.apiKey, state);
-    _emitCueFired(emitCueFired, session, fired, 'track');
+    try {
+      const fired = await engine.evaluateTrackerEvent(session.apiKey, state);
+      _emitCueFired(emitCueFired, session, fired, 'track');
+    } catch (err) {
+      console.warn('[cues] Tracker cue evaluation error:', err?.message);
+    }
   });
 }
 

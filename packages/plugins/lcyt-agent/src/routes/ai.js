@@ -12,7 +12,7 @@ import { getAiConfig, setAiConfig, VALID_PROVIDERS } from '../ai-config.js';
 import { isServerEmbeddingAvailable } from '../embeddings.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth — JWT Bearer auth middleware
  * @param {import('../../../lcyt-backend/src/settings/service.js').SettingsService} [settings] — optional settings service for server-level defaults
  * @returns {import('express').Router}
@@ -21,11 +21,11 @@ export function createAiRouter(db, auth, settings = null) {
   const router = Router();
 
   /** GET /ai/config — get AI config for the authenticated session's API key */
-  router.get('/config', auth, (req, res) => {
+  router.get('/config', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
 
-    const config = getAiConfig(db, apiKey);
+    const config = await getAiConfig(db, apiKey);
     const defaults = {
       embeddingProvider: 'none',
       embeddingModel: '',
@@ -39,7 +39,7 @@ export function createAiRouter(db, auth, settings = null) {
   });
 
   /** PUT /ai/config — update AI config */
-  router.put('/config', auth, (req, res) => {
+  router.put('/config', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
 
@@ -56,7 +56,7 @@ export function createAiRouter(db, auth, settings = null) {
       }
     }
 
-    setAiConfig(db, apiKey, {
+    await setAiConfig(db, apiKey, {
       embeddingProvider,
       embeddingModel,
       embeddingApiKey,
@@ -68,7 +68,7 @@ export function createAiRouter(db, auth, settings = null) {
   });
 
   /** GET /ai/status — server-level AI capability info (no auth required for feature detection) */
-  router.get('/status', (req, res) => {
+  router.get('/status', async (req, res) => {
     res.set('Cache-Control', 'private, max-age=3600, stale-while-revalidate=3600');
     return res.json({
       serverEmbeddingAvailable: settings ? !!settings.get('ai.embedding_api_key') : isServerEmbeddingAvailable(),

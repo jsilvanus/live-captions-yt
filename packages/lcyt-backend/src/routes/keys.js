@@ -223,7 +223,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
       }
 
       if (req.query.permanent === 'true') {
-        const imageRows = deleteAllImages(db, req.params.key);
+        const imageRows = await deleteAllImages(db, req.params.key);
         // Files live in the local or S3 object stores; remove them before the rows naming them go.
         await purgeKeyFiles(db, req.params.key, { mediaStores, resolveStorage, imageRows });
         await deleteKey(db, req.params.key);

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/api.js",
   "scripts": {
-    "test": "node --test test/*.test.js"
+    "test": "cross-env LCYT_DB_SQL_COMPAT=1 ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --test test/*.test.js"
   },
   "dependencies": {
     "express": "^4.21"

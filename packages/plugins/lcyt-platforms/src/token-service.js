@@ -42,7 +42,7 @@ export class CredentialUnusableError extends Error {
 
 /**
  * @param {object} deps
- * @param {import('better-sqlite3').Database} deps.db
+ * @param {import('lcyt-backend/db').Db} deps.db
  * @param {(platform: string) => object|null} deps.getAdapter
  * @param {() => object} deps.getOAuthConfig  called per refresh so a settings
  *   change takes effect without a restart
@@ -99,7 +99,7 @@ export function createTokenService({ db, getAdapter, getOAuthConfig, getKey = lo
       throw err;
     }
 
-    updateCredentialTokens(db, row.id, {
+    await updateCredentialTokens(db, row.id, {
       accessTokenEnc: encryptSecret(tokens.accessToken, key),
       expiresAt: tokens.expiresAt,
     });
@@ -114,7 +114,7 @@ export function createTokenService({ db, getAdapter, getOAuthConfig, getKey = lo
    * @returns {Promise<string>}
    */
   async function getAccessToken(credentialId, { now = Date.now(), forceRefresh = false } = {}) {
-    const row = getCredentialById(db, credentialId);
+    const row = await getCredentialById(db, credentialId);
     if (!row) {
       throw new CredentialUnusableError('Platform credential not found', { credentialId, reason: 'missing' });
     }

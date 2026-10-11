@@ -8,7 +8,6 @@
  */
 
 import { Router } from 'express';
-import { runMigrations } from './db.js';
 import { DeviceRegistry } from './registry.js';
 import { BridgeManager } from './bridge-manager.js';
 import { MediaMtxClient } from './mediamtx-client.js';
@@ -23,16 +22,15 @@ import { DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath, thumbn
 import { createPerceptionAutostart, setSharedAutostart, getSharedAutostart } from './perception-autostart.js';
 
 /**
- * Run DB migrations and start the device registry and bridge manager.
+ * Start the device registry and bridge manager.
  * Call once at server startup before mounting routes.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {{ settings?: { get: (key: string) => * } }} [opts] - lcyt-backend's
  *   SettingsService (plan_env_to_ui_settings.md), duck-typed.
  * @returns {Promise<{ registry: DeviceRegistry, bridgeManager: BridgeManager, mediamtxClient: MediaMtxClient|null }>}
  */
 export async function initProductionControl(db, { settings = null } = {}) {
-  runMigrations(db);
   const bridgeManager = new BridgeManager(db);
   const registry = new DeviceRegistry(db);
   await registry.start();
@@ -63,7 +61,7 @@ export async function initProductionControl(db, { settings = null } = {}) {
  * Create the Express router for all production control endpoints.
  * Mount at /production in the main server.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {DeviceRegistry} registry
  * @param {BridgeManager} bridgeManager
  * @param {object} [opts]

@@ -54,7 +54,7 @@ const CHAINING_SOURCES = new Set(['event_cue', 'composite', 'sound', 'track']);
  * @param {object} deps
  * @param {import('lcyt/event-bus').EventBus} deps.eventBus
  * @param {{ run: Function }} deps.executor
- * @param {(apiKey: string) => boolean} deps.isArmed
+ * @param {(apiKey: string) => boolean|Promise<boolean>} deps.isArmed
  * @param {number} [deps.cooldownMs]
  * @param {number} [deps.chainWindowMs]
  * @param {number} [deps.maxDepth]
@@ -145,7 +145,7 @@ export function createCueActionDispatcher({
       result = await executor.run(apiKey, { expr: run }, {
         source: 'cue',
         stopOnError: data.action.stopOnError === true,
-        skipDevices: !isArmed(apiKey),
+        skipDevices: !(await isArmed(apiKey)),
         deviceCooldown: true,
         causation,
       });

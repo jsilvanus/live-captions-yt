@@ -64,7 +64,7 @@ export function getMixerAdapter(mixer) {
 
 export class DeviceRegistry {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {import('lcyt-backend/db').Db} db
    */
   constructor(db) {
     this._db = db;
@@ -149,14 +149,10 @@ export class DeviceRegistry {
    * Logs warnings for unreachable devices but does not throw.
    */
   async start() {
-    const cameras = this._db
-      .prepare('SELECT * FROM prod_cameras ORDER BY sort_order, created_at')
-      .all()
+    const cameras = (await this._db.prod_cameras.findMany({ orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] }))
       .map(parseCamera);
 
-    const mixers = this._db
-      .prepare('SELECT * FROM prod_mixers ORDER BY created_at')
-      .all()
+    const mixers = (await this._db.prod_mixers.findMany({ orderBy: { created_at: 'asc' } }))
       .map(parseMixer);
 
     await Promise.all([
@@ -190,7 +186,7 @@ export class DeviceRegistry {
    * @param {string} presetId
    */
   async callPreset(cameraId, presetId) {
-    const camera = this._loadCamera(cameraId);
+    const camera = await this._loadCamera(cameraId);
     const entry = this._cameraConnections.get(cameraId);
     if (!entry) throw new Error(`No connection for camera '${camera.name}'`);
     await entry.adapter.callPreset(entry.handle, camera, presetId);
@@ -206,7 +202,7 @@ export class DeviceRegistry {
       try { await existing.adapter.disconnect(existing.handle); } catch { /* ignore */ }
       this._cameraConnections.delete(cameraId);
     }
-    const camera = this._loadCamera(cameraId);
+    const camera = await this._loadCamera(cameraId);
     await this._connectCamera(camera);
   }
 
@@ -232,7 +228,7 @@ export class DeviceRegistry {
    * @param {number} inputNumber  1-based input number
    */
   async switchSource(mixerId, inputNumber) {
-    const mixer = this._loadMixer(mixerId);
+    const mixer = await this._loadMixer(mixerId);
     const entry = this._mixerConnections.get(mixerId);
     if (!entry) throw new Error(`No connection for mixer '${mixer.name}'`);
     // Pass mixer so adapters that need connectionConfig (e.g. AMX) can look up commands
@@ -270,7 +266,7 @@ export class DeviceRegistry {
       try { await existing.adapter.disconnect(existing.handle); } catch { /* ignore */ }
       this._mixerConnections.delete(mixerId);
     }
-    const mixer = this._loadMixer(mixerId);
+    const mixer = await this._loadMixer(mixerId);
     await this._connectMixer(mixer);
   }
 
@@ -310,14 +306,14 @@ export class DeviceRegistry {
     }
   }
 
-  _loadCamera(cameraId) {
-    const row = this._db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(cameraId);
+  async _loadCamera(cameraId) {
+    const row = await this._db.prod_cameras.findUnique({ where: { id: cameraId } });
     if (!row) throw new Error(`Camera not found: ${cameraId}`);
     return parseCamera(row);
   }
 
-  _loadMixer(mixerId) {
-    const row = this._db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(mixerId);
+  async _loadMixer(mixerId) {
+    const row = await this._db.prod_mixers.findUnique({ where: { id: mixerId } });
     if (!row) throw new Error(`Mixer not found: ${mixerId}`);
     return parseMixer(row);
   }

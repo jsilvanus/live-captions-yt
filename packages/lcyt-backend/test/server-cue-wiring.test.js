@@ -31,8 +31,7 @@ const API_KEY = 'server-cue-wiring-key';
 before(async () => {
   if (PG) return;
   await createKey(db, { key: API_KEY, owner: 'Cue Wiring Test' });
-  // lcyt-cues still runs synchronous SQL on the legacy better-sqlite3 handle (see src/server.js `pdb`).
-  insertCueRule(db.$legacy, {
+  await insertCueRule(db, {
     id: 'rule-track-person',
     api_key: API_KEY,
     name: 'Person detected',

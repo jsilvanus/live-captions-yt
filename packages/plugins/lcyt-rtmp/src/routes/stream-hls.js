@@ -115,7 +115,7 @@ function buildPlayerSnippet(hlsKey, backendOrigin) {
  *  3. Embeddable player snippet (public, CORS *):
  *       GET /stream-hls/:key/player.js  — self-contained vanilla-JS video player
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('../hls-manager.js').HlsManager} hlsManager
  * @returns {Router}
  */
@@ -141,7 +141,7 @@ export function createStreamHlsRouter(db, hlsManager, metrics = null) {
     }
 
     if (call === 'publish') {
-      if (!isHlsEnabled(db, hlsKey)) {
+      if (!(await isHlsEnabled(db, hlsKey))) {
         return res.status(403).send('HLS not enabled for this key');
       }
       try {
@@ -186,15 +186,15 @@ export function createStreamHlsRouter(db, hlsManager, metrics = null) {
   // ── HLS proxy and player snippet ─────────────────────────────────────────
 
   // CORS preflight for HLS/player routes
-  router.options('/:key/*', (req, res) => {
-    const cors = HLS_KEY_RE.test(req.params.key) ? getEmbedCors(db, req.params.key) : '*';
+  router.options('/:key/*', async (req, res) => {
+    const cors = HLS_KEY_RE.test(req.params.key) ? await getEmbedCors(db, req.params.key) : '*';
     setCorsHeaders(res, cors);
     res.status(204).end();
   });
 
   // GET /stream-hls/:key/player.js — vanilla-JS video player snippet
   // Registered BEFORE /:key/:file so it takes precedence for "player.js".
-  router.get('/:key/player.js', hlsRateLimit, (req, res) => {
+  router.get('/:key/player.js', hlsRateLimit, async (req, res) => {
     const { key } = req.params;
     if (!HLS_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid HLS key format' });
@@ -203,7 +203,7 @@ export function createStreamHlsRouter(db, hlsManager, metrics = null) {
     const backendOrigin = process.env.BACKEND_URL
       || `${req.protocol}://${req.get('host')}`;
 
-    setCorsHeaders(res, getEmbedCors(db, key));
+    setCorsHeaders(res, await getEmbedCors(db, key));
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(buildPlayerSnippet(key, backendOrigin));
@@ -245,7 +245,7 @@ export function createStreamHlsRouter(db, hlsManager, metrics = null) {
       });
     }
 
-    const cors = getEmbedCors(db, key);
+    const cors = await getEmbedCors(db, key);
     setCorsHeaders(res, cors);
     const isPlaylist = file.endsWith('.m3u8');
     // init.mp4 changes when the publisher restarts with different codec params,

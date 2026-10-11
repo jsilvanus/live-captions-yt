@@ -16,9 +16,8 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import Database from 'better-sqlite3';
 
-import { runMigrations } from '../src/db.js';
+import { initDb } from 'lcyt-backend/db';
 import { createDskTemplatesRouter } from '../src/routes/dsk-templates.js';
 import { saveTemplate } from '../src/db/dsk-templates.js';
 
@@ -56,17 +55,15 @@ function sessionOnlyAuth(req, _res, next) {
 
 const permissiveDeps = { checkProjectRole: () => true };
 
-before(() => {
-  db = new Database(':memory:');
-  db.exec('CREATE TABLE IF NOT EXISTS caption_files (id INTEGER PRIMARY KEY)');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 
 describe('dsk-templates live graphics-operate routes — Production-tier gate', () => {
   it('POST .../activate: a plain session JWT (no req.user) fails OPEN — DskControlPage.jsx sidebar mode', async () => {
-    const id = saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
+    const id = await saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
     const { server, baseUrl } = await listen(makeApp(sessionOnlyAuth, { checkProjectRole: () => false }));
     const res = await fetch(`${baseUrl}/dsk/proj-a/templates/${id}/activate`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -77,7 +74,7 @@ describe('dsk-templates live graphics-operate routes — Production-tier gate', 
   });
 
   it('POST .../activate: a real per-user JWT is checked against the production tier and rejected', async () => {
-    const id = saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
+    const id = await saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
     const seen = [];
     const { server, baseUrl } = await listen(makeApp(realUserAuth, { checkProjectRole: (tier) => { seen.push(tier); return false; } }));
     const res = await fetch(`${baseUrl}/dsk/proj-a/templates/${id}/activate`, {
@@ -89,7 +86,7 @@ describe('dsk-templates live graphics-operate routes — Production-tier gate', 
   });
 
   it('POST .../activate: a real per-user JWT with operator+ succeeds', async () => {
-    const id = saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
+    const id = await saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
     const { server, baseUrl } = await listen(makeApp(realUserAuth, permissiveDeps));
     const res = await fetch(`${baseUrl}/dsk/proj-a/templates/${id}/activate`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -99,7 +96,7 @@ describe('dsk-templates live graphics-operate routes — Production-tier gate', 
   });
 
   it('POST .../activate: no deps at all fails closed for a real per-user JWT', async () => {
-    const id = saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
+    const id = await saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
     const { server, baseUrl } = await listen(makeApp(realUserAuth)); // no deps
     const res = await fetch(`${baseUrl}/dsk/proj-a/templates/${id}/activate`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -109,7 +106,7 @@ describe('dsk-templates live graphics-operate routes — Production-tier gate', 
   });
 
   it('POST /template (activate-by-id alias) is gated the same way', async () => {
-    const id = saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
+    const id = await saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
     const { server, baseUrl } = await listen(makeApp(realUserAuth, { checkProjectRole: () => false }));
     const res = await fetch(`${baseUrl}/dsk/proj-a/template`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
@@ -149,7 +146,7 @@ describe('dsk-templates live graphics-operate routes — Production-tier gate', 
   });
 
   it('cross-key access is still rejected before requireProduction ever matters (checkOwner)', async () => {
-    const id = saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
+    const id = await saveTemplate(db, { apiKey: 'proj-a', name: 'T1', templateJson: { layers: [] } });
     const { server, baseUrl } = await listen(makeApp(realUserAuth, permissiveDeps));
     // Authenticated as proj-b, but the URL's :apikey segment is proj-a.
     const res = await fetch(`${baseUrl}/dsk/proj-a/templates/${id}/activate`, {

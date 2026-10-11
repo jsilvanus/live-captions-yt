@@ -4,20 +4,23 @@
  * packages/lcyt-tools (plan/mcp's shared tool-schema module).
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { runMigrations } from '../src/db.js';
 import {
   listCameras, getCameraById, createCamera, updateCamera, deleteCamera,
   listMixers, getMixerById, createMixer, updateMixer, deleteMixer,
 } from '../src/crud.js';
 
-function makeDb() {
-  const db = new Database(':memory:');
-  runMigrations(db);
+const openDbs = [];
+async function makeDb() {
+  const db = await initDb(':memory:');
+  openDbs.push(db);
   return db;
 }
+
+after(async () => { for (const d of openDbs) await d.close(); });
 
 /** Minimal registry stub — reload/remove are fire-and-forget in crud.js. */
 function makeRegistryStub() {
@@ -34,95 +37,95 @@ function makeRegistryStub() {
 }
 
 describe('camera CRUD', () => {
-  it('createCamera validates name and controlType', () => {
-    const db = makeDb();
+  it('createCamera validates name and controlType', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    assert.equal(createCamera(db, registry, { controlType: 'none' }).ok, false);
-    assert.equal(createCamera(db, registry, { name: 'Cam', controlType: 'bogus' }).ok, false);
+    assert.equal((await createCamera(db, registry, { controlType: 'none' })).ok, false);
+    assert.equal((await createCamera(db, registry, { name: 'Cam', controlType: 'bogus' })).ok, false);
   });
 
-  it('creates, lists, updates, and deletes a camera', () => {
-    const db = makeDb();
+  it('creates, lists, updates, and deletes a camera', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = createCamera(db, registry, { name: 'Cam 1', controlType: 'none' });
+    const created = await createCamera(db, registry, { name: 'Cam 1', controlType: 'none' });
     assert.equal(created.ok, true);
     assert.equal(created.camera.name, 'Cam 1');
     assert.ok(registry.calls.some(([fn, id]) => fn === 'reloadCamera' && id === created.camera.id));
 
-    assert.equal(listCameras(db).length, 1);
-    assert.equal(getCameraById(db, created.camera.id).name, 'Cam 1');
+    assert.equal((await listCameras(db)).length, 1);
+    assert.equal((await getCameraById(db, created.camera.id)).name, 'Cam 1');
 
-    const updated = updateCamera(db, registry, created.camera.id, { name: 'Cam 1 Renamed' });
+    const updated = await updateCamera(db, registry, created.camera.id, { name: 'Cam 1 Renamed' });
     assert.equal(updated.ok, true);
     assert.equal(updated.camera.name, 'Cam 1 Renamed');
 
-    const del = deleteCamera(db, registry, created.camera.id);
+    const del = await deleteCamera(db, registry, created.camera.id);
     assert.equal(del.ok, true);
-    assert.equal(getCameraById(db, created.camera.id), null);
+    assert.equal(await getCameraById(db, created.camera.id), null);
     assert.ok(registry.calls.some(([fn]) => fn === 'removeCamera'));
   });
 
-  it('updateCamera/deleteCamera 404 for unknown id', () => {
-    const db = makeDb();
+  it('updateCamera/deleteCamera 404 for unknown id', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    assert.equal(updateCamera(db, registry, 'no-such-id', { name: 'X' }).status, 404);
-    assert.equal(deleteCamera(db, registry, 'no-such-id').status, 404);
+    assert.equal((await updateCamera(db, registry, 'no-such-id', { name: 'X' })).status, 404);
+    assert.equal((await deleteCamera(db, registry, 'no-such-id')).status, 404);
   });
 
-  it('updateCamera rejects an invalid controlType', () => {
-    const db = makeDb();
+  it('updateCamera rejects an invalid controlType', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = createCamera(db, registry, { name: 'Cam', controlType: 'none' });
-    const res = updateCamera(db, registry, created.camera.id, { controlType: 'bogus' });
+    const created = await createCamera(db, registry, { name: 'Cam', controlType: 'none' });
+    const res = await updateCamera(db, registry, created.camera.id, { controlType: 'bogus' });
     assert.equal(res.ok, false);
   });
 
-  it("accepts controlType 'rtmp' with a camera_key (plan_ingest_feeds.md §1a)", () => {
-    const db = makeDb();
+  it("accepts controlType 'rtmp' with a camera_key (plan_ingest_feeds.md §1a)", async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
+    const created = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
     assert.equal(created.ok, true);
     assert.equal(created.camera.controlType, 'rtmp');
     assert.equal(created.camera.cameraKey, 'altar-cam');
   });
 
-  it('createCamera rejects a camera_key with unsafe characters (code-review follow-up)', () => {
-    const db = makeDb();
+  it('createCamera rejects a camera_key with unsafe characters (code-review follow-up)', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const res = createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar cam; rm -rf' });
+    const res = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar cam; rm -rf' });
     assert.equal(res.ok, false);
     assert.match(res.error, /letters, digits, underscore, and hyphen/);
   });
 
-  it('updateCamera rejects a camera_key with unsafe characters (code-review follow-up)', () => {
-    const db = makeDb();
+  it('updateCamera rejects a camera_key with unsafe characters (code-review follow-up)', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
-    const res = updateCamera(db, registry, created.camera.id, { cameraKey: '$(evil)' });
+    const created = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
+    const res = await updateCamera(db, registry, created.camera.id, { cameraKey: '$(evil)' });
     assert.equal(res.ok, false);
     assert.match(res.error, /letters, digits, underscore, and hyphen/);
     // Unchanged in the DB — the malformed value must not have been persisted.
-    assert.equal(getCameraById(db, created.camera.id).cameraKey, 'altar-cam');
+    assert.equal((await getCameraById(db, created.camera.id)).cameraKey, 'altar-cam');
   });
 
-  it('createCamera stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', () => {
-    const db = makeDb();
+  it('createCamera stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const owned = createCamera(db, registry, { name: 'Owned', controlType: 'none', ownerApiKey: 'proj-a' });
+    const owned = await createCamera(db, registry, { name: 'Owned', controlType: 'none', ownerApiKey: 'proj-a' });
     assert.equal(owned.camera.isOwned, true);
 
-    const legacy = createCamera(db, registry, { name: 'Legacy', controlType: 'none' });
+    const legacy = await createCamera(db, registry, { name: 'Legacy', controlType: 'none' });
     assert.equal(legacy.camera.isOwned, false);
   });
 
-  it('accepts and persists label, zone, overlapLinks fields (plan_video_perception.md Phase 1)', () => {
-    const db = makeDb();
+  it('accepts and persists label, zone, overlapLinks fields (plan_video_perception.md Phase 1)', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
     const overlapLinksData = [
       { cameraId: 'cam-2', kind: 'overlaps_with' },
       { cameraId: 'cam-3', presetId: 'wide', kind: 'alternate_for' },
     ];
-    const created = createCamera(db, registry, {
+    const created = await createCamera(db, registry, {
       name: 'Pulpit',
       controlType: 'none',
       label: 'pulpit',
@@ -134,64 +137,64 @@ describe('camera CRUD', () => {
     assert.equal(created.camera.zone, 'front');
     assert.deepEqual(created.camera.overlapLinks, overlapLinksData);
 
-    const updated = updateCamera(db, registry, created.camera.id, { label: 'pulpit-cam' });
+    const updated = await updateCamera(db, registry, created.camera.id, { label: 'pulpit-cam' });
     assert.equal(updated.ok, true);
     assert.equal(updated.camera.label, 'pulpit-cam');
     assert.equal(updated.camera.zone, 'front');
     assert.deepEqual(updated.camera.overlapLinks, overlapLinksData);
   });
 
-  it('migrations are idempotent — running them twice does not error', () => {
-    const db = makeDb();
-    // runMigrations was already called in makeDb(); calling again should succeed
-    runMigrations(db);
-    const result = createCamera(db, makeRegistryStub(), { name: 'Test', controlType: 'none', label: 'test' });
+  it('migrations are idempotent — running them twice does not error', async () => {
+    const db = await makeDb();
+    // runMigrations is a no-op now (tables come from the backend schema); calling it must stay harmless
+    await runMigrations(db);
+    const result = await createCamera(db, makeRegistryStub(), { name: 'Test', controlType: 'none', label: 'test' });
     assert.equal(result.ok, true);
   });
 });
 
 describe('mixer CRUD', () => {
-  it('createMixer validates name and type', () => {
-    const db = makeDb();
+  it('createMixer validates name and type', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    assert.equal(createMixer(db, registry, { type: 'lcyt' }).ok, false);
-    assert.equal(createMixer(db, registry, { name: 'Mix', type: 'bogus' }).ok, false);
+    assert.equal((await createMixer(db, registry, { type: 'lcyt' })).ok, false);
+    assert.equal((await createMixer(db, registry, { name: 'Mix', type: 'bogus' })).ok, false);
   });
 
-  it('creates, lists, updates, and deletes a mixer', () => {
-    const db = makeDb();
+  it('creates, lists, updates, and deletes a mixer', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = createMixer(db, registry, { name: 'Mixer 1', type: 'lcyt' });
+    const created = await createMixer(db, registry, { name: 'Mixer 1', type: 'lcyt' });
     assert.equal(created.ok, true);
     assert.equal(created.mixer.name, 'Mixer 1');
     assert.equal(created.mixer.connected, false);
 
-    assert.equal(listMixers(db, registry).length, 1);
-    assert.equal(getMixerById(db, registry, created.mixer.id).name, 'Mixer 1');
+    assert.equal((await listMixers(db, registry)).length, 1);
+    assert.equal((await getMixerById(db, registry, created.mixer.id)).name, 'Mixer 1');
 
-    const updated = updateMixer(db, registry, created.mixer.id, { name: 'Mixer 1 Renamed' });
+    const updated = await updateMixer(db, registry, created.mixer.id, { name: 'Mixer 1 Renamed' });
     assert.equal(updated.ok, true);
     assert.equal(updated.mixer.name, 'Mixer 1 Renamed');
 
-    const del = deleteMixer(db, registry, created.mixer.id);
+    const del = await deleteMixer(db, registry, created.mixer.id);
     assert.equal(del.ok, true);
-    assert.equal(getMixerById(db, registry, created.mixer.id), null);
+    assert.equal(await getMixerById(db, registry, created.mixer.id), null);
   });
 
-  it('updateMixer/deleteMixer 404 for unknown id', () => {
-    const db = makeDb();
+  it('updateMixer/deleteMixer 404 for unknown id', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    assert.equal(updateMixer(db, registry, 'no-such-id', { name: 'X' }).status, 404);
-    assert.equal(deleteMixer(db, registry, 'no-such-id').status, 404);
+    assert.equal((await updateMixer(db, registry, 'no-such-id', { name: 'X' })).status, 404);
+    assert.equal((await deleteMixer(db, registry, 'no-such-id')).status, 404);
   });
 
-  it('createMixer stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', () => {
-    const db = makeDb();
+  it('createMixer stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', async () => {
+    const db = await makeDb();
     const registry = makeRegistryStub();
-    const owned = createMixer(db, registry, { name: 'Owned', type: 'lcyt', ownerApiKey: 'proj-a' });
+    const owned = await createMixer(db, registry, { name: 'Owned', type: 'lcyt', ownerApiKey: 'proj-a' });
     assert.equal(owned.mixer.isOwned, true);
 
-    const legacy = createMixer(db, registry, { name: 'Legacy', type: 'lcyt' });
+    const legacy = await createMixer(db, registry, { name: 'Legacy', type: 'lcyt' });
     assert.equal(legacy.mixer.isOwned, false);
   });
 });

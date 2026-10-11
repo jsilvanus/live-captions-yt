@@ -6,9 +6,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
 import { initDb, createKey, updateKey, formatKey } from '../src/db.js';
-import { SQLITE_ONLY_PLUGIN, ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 
-async function initTestDb() { const db = await initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { return initDb(':memory:'); }
 import { isHlsEnabled } from 'lcyt-rtmp/src/db.js';
 import { createStreamHlsRouter } from 'lcyt-rtmp/src/routes/stream-hls.js';
 import { createPreviewRouter } from 'lcyt-rtmp/src/routes/preview.js';
@@ -40,37 +39,37 @@ async function getJson(server, path) {
 // DB helpers: hls_enabled column
 // ---------------------------------------------------------------------------
 
-describe('hls_enabled DB column', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('hls_enabled DB column', () => {
   let db;
 
   before(async () => { db = await initTestDb(); });
-  after(() => { db.close(); });
+  after(async () => { await db.close(); });
 
   it('defaults to false on createKey', async () => {
     const k = await createKey(db, { owner: 'Alice' });
-    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), false);
+    assert.strictEqual(await isHlsEnabled(db, k.key), false);
   });
 
   it('can be set to true on createKey', async () => {
     const k = await createKey(db, { owner: 'Bob', hls_enabled: true });
-    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), true);
+    assert.strictEqual(await isHlsEnabled(db, k.key), true);
   });
 
-  it('isHlsEnabled returns false for unknown key', () => {
-    assert.strictEqual(isHlsEnabled(db.$legacy, 'no-such-key'), false);
+  it('isHlsEnabled returns false for unknown key', async () => {
+    assert.strictEqual(await isHlsEnabled(db, 'no-such-key'), false);
   });
 
   it('isHlsEnabled returns true after updateKey', async () => {
     const k = await createKey(db, { owner: 'Carol' });
-    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), false);
+    assert.strictEqual(await isHlsEnabled(db, k.key), false);
     await updateKey(db, k.key, { hls_enabled: true });
-    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), true);
+    assert.strictEqual(await isHlsEnabled(db, k.key), true);
   });
 
   it('isHlsEnabled returns false after disabling', async () => {
     const k = await createKey(db, { owner: 'Dave', hls_enabled: true });
     await updateKey(db, k.key, { hls_enabled: false });
-    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), false);
+    assert.strictEqual(await isHlsEnabled(db, k.key), false);
   });
 
   it('formatKey includes hlsEnabled field', async () => {
@@ -149,7 +148,7 @@ describe('PreviewManager', () => {
 // POST /stream-hls nginx callbacks
 // ---------------------------------------------------------------------------
 
-describe('POST /stream-hls — nginx callbacks', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('POST /stream-hls — nginx callbacks', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
@@ -159,16 +158,16 @@ describe('POST /stream-hls — nginx callbacks', { skip: SQLITE_ONLY_PLUGIN }, (
     manager = new HlsManager();
 
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
     });
   });
 
-  after(() => new Promise(resolve => {
+  after(() => new Promise(async resolve => {
     server.close(resolve);
-    db.close();
+    await db.close();
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
@@ -210,7 +209,7 @@ describe('POST /stream-hls — nginx callbacks', { skip: SQLITE_ONLY_PLUGIN }, (
 // GET /stream-hls/:key/index.m3u8 — HLS playlist serving
 // ---------------------------------------------------------------------------
 
-describe('GET /stream-hls/:key/index.m3u8', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('GET /stream-hls/:key/index.m3u8', () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
@@ -240,7 +239,7 @@ describe('GET /stream-hls/:key/index.m3u8', { skip: SQLITE_ONLY_PLUGIN }, () => 
 
     manager = new HlsManager();
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db, manager));
     await new Promise(resolve => {
       appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -249,7 +248,7 @@ describe('GET /stream-hls/:key/index.m3u8', { skip: SQLITE_ONLY_PLUGIN }, () => 
   after(() => new Promise(resolve => {
     if (savedMtxUrl !== undefined) process.env.MEDIAMTX_HLS_BASE_URL = savedMtxUrl;
     else delete process.env.MEDIAMTX_HLS_BASE_URL;
-    appServer.close(() => mockMtxServer.close(() => { db.close(); resolve(); }));
+    appServer.close(() => mockMtxServer.close(async () => { await db.close(); resolve(); }));
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
@@ -291,7 +290,7 @@ describe('GET /stream-hls/:key/index.m3u8', { skip: SQLITE_ONLY_PLUGIN }, () => 
 // GET /stream-hls/:key/:segment — HLS segment proxy (proxies to MediaMTX)
 // ---------------------------------------------------------------------------
 
-describe('GET /stream-hls/:key/:segment', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('GET /stream-hls/:key/:segment', () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
@@ -321,7 +320,7 @@ describe('GET /stream-hls/:key/:segment', { skip: SQLITE_ONLY_PLUGIN }, () => {
 
     manager = new HlsManager();
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db, manager));
     await new Promise(resolve => {
       appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -330,7 +329,7 @@ describe('GET /stream-hls/:key/:segment', { skip: SQLITE_ONLY_PLUGIN }, () => {
   after(() => new Promise(resolve => {
     if (savedMtxUrl !== undefined) process.env.MEDIAMTX_HLS_BASE_URL = savedMtxUrl;
     else delete process.env.MEDIAMTX_HLS_BASE_URL;
-    appServer.close(() => mockMtxServer.close(() => { db.close(); resolve(); }));
+    appServer.close(() => mockMtxServer.close(async () => { await db.close(); resolve(); }));
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
@@ -391,7 +390,7 @@ describe('GET /stream-hls/:key/:segment', { skip: SQLITE_ONLY_PLUGIN }, () => {
 // GET /stream-hls/:key/player.js — embeddable video player snippet
 // ---------------------------------------------------------------------------
 
-describe('GET /stream-hls/:key/player.js', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('GET /stream-hls/:key/player.js', () => {
   let db, server, manager;
 
   before(async () => {
@@ -401,16 +400,16 @@ describe('GET /stream-hls/:key/player.js', { skip: SQLITE_ONLY_PLUGIN }, () => {
     manager = new HlsManager();
 
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
     });
   });
 
-  after(() => new Promise(resolve => {
+  after(() => new Promise(async resolve => {
     server.close(resolve);
-    db.close();
+    await db.close();
   }));
 
   it('returns 400 for too-short key', async () => {

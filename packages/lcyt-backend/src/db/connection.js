@@ -19,6 +19,7 @@ import '../express-async.js';
 import { fileURLToPath } from 'node:url';
 import { join, dirname, resolve } from 'node:path';
 import { initSqliteSchema } from './schema.js';
+import { sqlNow, num } from './helpers.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PKG_ROOT = join(__dirname, '..', '..');
@@ -78,6 +79,34 @@ async function maybeSqlCompat(prisma, dialect) {
 }
 
 /**
+ * Open a PostgreSQL database by URL and return the Prisma client initDb() would build for it.
+ * Pending migrations are applied under the advisory lock unless `migrate` is false.
+ * `throwawaySchema` runs in a new schema of that database which close() drops (tests, dry runs).
+ * @param {string} url postgresql:// URL (a `schema` query parameter selects the schema)
+ */
+export async function openPostgresUrl(url, { migrate = true, throwawaySchema = false } = {}) {
+  if (!isPostgresUrl(url)) throw new Error('openPostgresUrl: expected a postgresql:// URL');
+  const PrismaClient = await loadClient('postgres');
+  let testSchema = null;
+  let dbUrl = url;
+  if (throwawaySchema) {
+    testSchema = `t_${randomBytes(6).toString('hex')}`;
+    const boot = new PrismaClient({ datasources: { db: { url } } });
+    await boot.$executeRawUnsafe(`CREATE SCHEMA "${testSchema}"`);
+    await boot.$disconnect();
+    dbUrl = `${url}${url.includes('?') ? '&' : '?'}schema=${testSchema}`;
+  }
+  const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
+  prisma.$testSchema = testSchema ? { name: testSchema, url } : null;
+  if (migrate) await applyPostgresMigrations(prisma);
+  prisma.$dialect = 'postgres';
+  prisma.$legacy = null;
+  prisma.$util = { sqlNow, num };
+  prisma.close = () => closeDb(prisma);
+  return prisma;
+}
+
+/**
  * Open the database and return the Prisma client.
  * @param {string} [dbPath] SQLite file (ignored on PostgreSQL)
  * @returns {Promise<import('../../generated/sqlite').PrismaClient & { $dialect: string, $legacy: any }>}
@@ -88,23 +117,8 @@ export async function initDb(dbPath) {
 
   if (isPostgresUrl(url)) {
     _dialect = 'postgres';
-    const PrismaClient = await loadClient('postgres');
     // ':memory:' (tests) = a throw-away schema in the configured database, dropped on close.
-    let testSchema = null;
-    let dbUrl = url;
-    if (dbPath === ':memory:') {
-      testSchema = `t_${randomBytes(6).toString('hex')}`;
-      const boot = new PrismaClient({ datasources: { db: { url } } });
-      await boot.$executeRawUnsafe(`CREATE SCHEMA "${testSchema}"`);
-      await boot.$disconnect();
-      dbUrl = `${url}${url.includes('?') ? '&' : '?'}schema=${testSchema}`;
-    }
-    const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
-    prisma.$testSchema = testSchema ? { name: testSchema, url } : null;
-    await applyPostgresMigrations(prisma);
-    prisma.$dialect = 'postgres';
-    prisma.$legacy = null;
-    prisma.close = () => closeDb(prisma);
+    const prisma = await openPostgresUrl(url, { throwawaySchema: dbPath === ':memory:' });
     return maybeSqlCompat(prisma, 'postgres');
   }
 
@@ -120,6 +134,7 @@ export async function initDb(dbPath) {
   await prisma.$queryRawUnsafe('PRAGMA busy_timeout = 5000');
   prisma.$dialect = 'sqlite';
   prisma.$legacy = legacy;
+  prisma.$util = { sqlNow, num };
   prisma.$tmpDir = tmpDir;
   prisma.close = () => closeDb(prisma);
   return maybeSqlCompat(prisma, 'sqlite');

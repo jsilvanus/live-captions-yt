@@ -1,12 +1,12 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 
-let Database, express;
+let express;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
 } catch {
-  console.log('# better-sqlite3/express not available — skipping lcyt-connectors route tests');
+  console.log('# express not available — skipping lcyt-connectors route tests');
   process.exit(0);
 }
 
@@ -23,11 +23,11 @@ function fakeAuth(req, res, next) {
 }
 
 describe('lcyt-connectors routes', () => {
-  let server, baseUrl;
+  let server, baseUrl, db;
 
   before(async () => {
-    const db = new Database(':memory:');
-    const { bus, engine, scheduler } = initConnectors(db, {});
+    db = await initDb(':memory:');
+    const { bus, engine, scheduler } = await initConnectors(db, {});
     const app = express();
     app.use(express.json());
     app.use('/connectors', createConnectorsRouter(db, fakeAuth));
@@ -38,7 +38,10 @@ describe('lcyt-connectors routes', () => {
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => new Promise((resolve) => server.close(resolve)));
+  after(async () => {
+    await new Promise((resolve) => server.close(resolve));
+    await db.close();
+  });
 
   async function json(path, opts) {
     const res = await fetch(`${baseUrl}${path}`, {
@@ -211,12 +214,10 @@ describe('lcyt-connectors routes', () => {
 const { createPollScheduler } = await import('../src/poll-scheduler.js');
 
 describe('lcyt-connectors routes — constant poll toggle', () => {
-  let server, baseUrl, fireCalls, scheduler;
+  let server, baseUrl, fireCalls, scheduler, db;
 
   before(async () => {
-    const db = new Database(':memory:');
-    const { runMigrations } = await import('../src/db.js');
-    runMigrations(db);
+    db = await initDb(':memory:');
     fireCalls = [];
     const fakeEngine = {
       fireRequest: async (apiKey, connectorSlug, requestSlug) => {
@@ -234,9 +235,10 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => {
+  after(async () => {
     scheduler.stopAll();
-    return new Promise((resolve) => server.close(resolve));
+    await new Promise((resolve) => server.close(resolve));
+    await db.close();
   });
 
   async function json(path, opts) {
@@ -299,7 +301,7 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
     // Force an immediate fire to observe which slug the scheduler resolves —
     // in production this just happens on the next natural interval tick.
     scheduler.stop(requestId);
-    scheduler.start(requestId, 5000);
+    await scheduler.start(requestId, 5000);
     await new Promise((r) => setImmediate(r));
     assert.deepEqual(fireCalls, [['key1', 'news', 'headlines-renamed']]);
   });
@@ -315,9 +317,7 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
   });
 
   test('PUT .../poll 501s without a pollScheduler wired', async () => {
-    const db = new Database(':memory:');
-    const { runMigrations } = await import('../src/db.js');
-    runMigrations(db);
+    const db = await initDb(':memory:');
     const app = express();
     app.use(express.json());
     app.use('/connectors', createConnectorsRouter(db, fakeAuth)); // no scheduler passed
@@ -339,5 +339,6 @@ describe('lcyt-connectors routes — constant poll toggle', () => {
     });
     assert.equal(res.status, 501);
     await new Promise((resolve) => s.close(resolve));
+    await db.close();
   });
 });

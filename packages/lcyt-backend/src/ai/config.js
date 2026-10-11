@@ -1,32 +1,15 @@
 /**
- * AI / Embedding configuration — DB migrations and helpers.
- *
- * Tables:
- *   ai_config — per-API-key AI model settings (embedding provider, API keys, thresholds)
+ * AI / Embedding configuration helpers (the ai_config table comes from the backend schema).
  *
  * Three source modes for AI models:
  *   - 'server' — server admin provides API key via env vars, available to all users
  *   - 'openai' — user provides their own OpenAI API key
  *   - 'custom' — user provides custom embedding API endpoint + key
  *   - 'none'   — AI features disabled (default)
- *
- * @param {any} db  legacy better-sqlite3 handle (`db.$legacy`); a Prisma client is ignored
  */
-export function runAiMigrations(db) {
-  // Prisma client (PostgreSQL, or SQLite via Prisma): the tables come from schema.js / the migrations. Nothing to do.
-  if (!db || typeof db.exec !== 'function') return;
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ai_config (
-      api_key             TEXT PRIMARY KEY,
-      embedding_provider  TEXT NOT NULL DEFAULT 'none',
-      embedding_model     TEXT NOT NULL DEFAULT '',
-      embedding_api_key   TEXT NOT NULL DEFAULT '',
-      embedding_api_url   TEXT NOT NULL DEFAULT '',
-      fuzzy_threshold     REAL NOT NULL DEFAULT 0.75,
-      updated_at          INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    )
-  `);
-}
+
+/** No-op kept for old callers: the table is created by the backend schema. */
+export async function runAiMigrations() {}
 
 /**
  * Valid embedding providers.

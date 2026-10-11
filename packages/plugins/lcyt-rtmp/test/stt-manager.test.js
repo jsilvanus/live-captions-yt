@@ -238,8 +238,8 @@ describe('SttManager', () => {
       _sendQueue:   Promise.resolve(),
     };
 
-    // getSttConfig(db, apiKey) does `db.prepare(...).get(apiKey)` — stub just enough of the shape.
-    const fakeDb = { prepare: () => ({ get: () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) }) };
+    // getSttConfig(db, apiKey) does `db.stt_config.findUnique(...)` — stub just enough of the shape.
+    const fakeDb = { stt_config: { findUnique: async () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) } };
 
     globalThis.fetch = async (url) => {
       // The HlsSegmentFetcher also polls a playlist URL in the background —
@@ -296,7 +296,7 @@ describe('SttManager', () => {
       _sendQueue:   Promise.resolve(),
     };
 
-    const fakeDb = { prepare: () => ({ get: () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) }) };
+    const fakeDb = { stt_config: { findUnique: async () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) } };
 
     globalThis.fetch = async (url) => {
       if (String(url).includes('mymemory')) {
@@ -343,7 +343,7 @@ describe('SttManager', () => {
       _sendQueue:   Promise.resolve(),
     };
 
-    const fakeDb = { prepare: () => ({ get: () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) }) };
+    const fakeDb = { stt_config: { findUnique: async () => ({ language: 'en-US', provider: 'google', audio_source: 'hls', auto_start: 0 }) } };
 
     globalThis.fetch = async (url) => {
       if (String(url).includes('mymemory')) {
@@ -394,7 +394,7 @@ describe('SttManager', () => {
 
     globalThis.fetch = async () => ({ ok: false, status: 404 });
 
-    const mgr = new SttManager(makeStore([fakeSession]), { prepare: () => ({ get: () => null }) });
+    const mgr = new SttManager(makeStore([fakeSession]), { stt_config: { findUnique: async () => null } });
     // Deliberately do NOT call setDeliveryHelpers().
 
     await mgr.start('mykey2', { provider: 'google', language: 'en-US' });

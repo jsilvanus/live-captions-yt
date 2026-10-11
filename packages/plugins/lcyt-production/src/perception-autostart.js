@@ -13,18 +13,22 @@
  */
 
 /** Per-project shared-feed switch (table prod_perception_settings). */
-export function setSharedAutostart(db, apiKey, enabled) {
-  db.prepare(`INSERT INTO prod_perception_settings (api_key, shared_enabled) VALUES (?, ?)
-    ON CONFLICT(api_key) DO UPDATE SET shared_enabled = excluded.shared_enabled`).run(apiKey, enabled ? 1 : 0);
+export async function setSharedAutostart(db, apiKey, enabled) {
+  await db.prod_perception_settings.upsert({
+    where: { api_key: apiKey },
+    create: { api_key: apiKey, shared_enabled: enabled ? 1 : 0 },
+    update: { shared_enabled: enabled ? 1 : 0 },
+  });
 }
 
-export function getSharedAutostart(db, apiKey) {
-  return !!db.prepare('SELECT shared_enabled FROM prod_perception_settings WHERE api_key = ?').get(apiKey)?.shared_enabled;
+export async function getSharedAutostart(db, apiKey) {
+  const row = await db.prod_perception_settings.findUnique({ where: { api_key: apiKey } });
+  return !!row?.shared_enabled;
 }
 
 /**
  * @param {{
- *   db: import('better-sqlite3').Database,
+ *   db: import('lcyt-backend/db').Db,
  *   manager: ReturnType<typeof import('./perception-manager.js').createPerceptionManager>,
  *   mediamtxClient: { isPathPublishing: (path: string) => Promise<boolean> } | null,
  *   intervalMs?: number, graceCycles?: number, log?: (msg: string) => void,
@@ -68,7 +72,10 @@ export function createPerceptionAutostart({ db, manager, mediamtxClient, interva
     if (busy) return;
     busy = true;
     try {
-      for (const cam of db.prepare('SELECT id, camera_key, owner_api_key FROM prod_cameras WHERE perception_enabled = 1 AND camera_key IS NOT NULL').all()) {
+      for (const cam of await db.prod_cameras.findMany({
+        where: { perception_enabled: 1, camera_key: { not: null } },
+        select: { id: true, camera_key: true, owner_api_key: true },
+      })) {
         if (!cam.owner_api_key) {
           if (!warned.has(cam.id)) { warned.add(cam.id); log(`[perception] camera ${cam.id} has auto-start on but no owning project; skipped`); }
           continue;
@@ -77,7 +84,7 @@ export function createPerceptionAutostart({ db, manager, mediamtxClient, interva
         await reconcile(key, await liveness(cam.camera_key), !!manager.status(key),
           () => manager.start(cam.owner_api_key, { id: cam.id, cameraKey: cam.camera_key }), () => manager.stop(key));
       }
-      for (const row of db.prepare('SELECT api_key FROM prod_perception_settings WHERE shared_enabled = 1').all()) {
+      for (const row of await db.prod_perception_settings.findMany({ where: { shared_enabled: 1 }, select: { api_key: true } })) {
         const key = `shared:${row.api_key}`;
         await reconcile(key, await liveness(row.api_key), !!manager.sharedFeedStatus(row.api_key),
           () => manager.startSharedFeed(row.api_key), () => manager.stopSharedFeed(row.api_key));
@@ -86,8 +93,8 @@ export function createPerceptionAutostart({ db, manager, mediamtxClient, interva
       for (const key of [...mine]) {
         if (key.startsWith('shared:')) {
           const apiKey = key.slice('shared:'.length);
-          if (!getSharedAutostart(db, apiKey) && await manager.stopSharedFeed(apiKey)) mine.delete(key);
-        } else if (!db.prepare('SELECT 1 FROM prod_cameras WHERE id = ? AND perception_enabled = 1').get(key)) {
+          if (!(await getSharedAutostart(db, apiKey)) && await manager.stopSharedFeed(apiKey)) mine.delete(key);
+        } else if (!(await db.prod_cameras.findFirst({ where: { id: key, perception_enabled: 1 }, select: { id: true } }))) {
           if (await manager.stop(key)) mine.delete(key);
         }
       }

@@ -11,36 +11,15 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import { initSqliteSchema } from '../src/db/schema.js';
-import { runAiMigrations } from '../src/ai/config.js';
-import { initProductionControl } from 'lcyt-production';
-import { initFilesControl } from 'lcyt-files';
-import { initRtmpControl } from 'lcyt-rtmp';
-import { initDskControl } from 'lcyt-dsk';
-import { initCueEngine } from 'lcyt-cues';
-import { initAgent } from 'lcyt-agent';
-import { initConnectors } from 'lcyt-connectors';
-import { initActions } from 'lcyt-actions';
-import { initPlatforms } from 'lcyt-platforms';
-import { initMusicControl } from 'lcyt-music';
 
 const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { Prisma } = require('../generated/sqlite');
 
+// lcyt-production, lcyt-agent, lcyt-connectors and lcyt-platforms own no DDL any more: their tables come from schema.sql.
 async function buildFullSqlite(file) {
-  const db = initSqliteSchema(file);
-  runAiMigrations(db);
-  await initProductionControl(db, {});
-  await initFilesControl(db, {});
-  await initRtmpControl(db, null, {});
-  await initDskControl(db, { on() {}, emit() {} }, null, {});
-  await initCueEngine(db);
-  await initAgent(db, {});
-  initConnectors(db, {});
-  initActions(db);
-  initPlatforms(db, {});
-  await initMusicControl(db, null, {});
-  return db;
+  // Every table (core and plugin-owned) comes from initSqliteSchema; plugins create none.
+  return initSqliteSchema(file);
 }
 
 test('schema.prisma matches the SQLite tables (names, columns, nullability, primary keys)', async () => {
@@ -74,4 +53,10 @@ test('PostgreSQL schema and initial migration are derived from schema.prisma', (
     'prisma/schema.postgresql.prisma', '--script'], { cwd: root, encoding: 'utf8' });
   assert.equal(readFileSync(join(root, 'prisma/postgres/migrations/0001_init.sql'), 'utf8'), sql,
     'prisma/postgres/migrations/0001_init.sql is stale: npm run db:pg:build -- --migration 0001_init');
+});
+
+test('prisma/sqlite/schema.sql matches schema.prisma', async () => {
+  const { buildSqliteSql } = await import('../scripts/prisma-sqlite.mjs');
+  assert.equal(readFileSync(join(root, 'prisma/sqlite/schema.sql'), 'utf8'), buildSqliteSql(),
+    'prisma/sqlite/schema.sql is stale: npm run db:sqlite:build');
 });

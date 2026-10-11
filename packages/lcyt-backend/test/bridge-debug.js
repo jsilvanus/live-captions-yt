@@ -44,7 +44,7 @@ function spawnEchoServer(port) {
   await new Promise(r => setTimeout(r, 300));
 
   const { createTestServer } = await import('./test-server.js');
-  const { app, db, bridgeManager: productionBridgeManager } = createTestServer(DB_PATH);
+  const { app, db, bridgeManager: productionBridgeManager } = await createTestServer(DB_PATH);
   const srv = app.listen(0);
   await new Promise((res, rej) => srv.once('listening', res).once('error', rej));
   const port = srv.address().port;

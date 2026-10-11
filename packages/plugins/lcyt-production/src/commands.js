@@ -65,7 +65,7 @@ function classifyError(err) {
 
 /**
  * @param {object} deps
- * @param {import('better-sqlite3').Database} deps.db
+ * @param {import('lcyt-backend/db').Db} deps.db
  * @param {import('./registry.js').DeviceRegistry} deps.registry
  * @param {import('./bridge-manager.js').BridgeManager|null} [deps.bridgeManager]
  * @param {import('lcyt/event-bus').EventBus|null} [deps.eventBus]
@@ -97,7 +97,7 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
   async function callCameraPreset(apiKey, cameraId, presetId, meta = {}) {
     const started = Date.now();
     const base = { kind: 'camera.preset', cameraId, presetId, source: meta.source ?? 'unknown' };
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(cameraId);
+    const row = await db.prod_cameras.findUnique({ where: { id: cameraId } });
     if (!row || (apiKey && row.owner_api_key != null && row.owner_api_key !== apiKey)) {
       return finish(apiKey, base, started, { ok: false, code: 'not_found', error: 'Camera not found' });
     }
@@ -152,7 +152,7 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
     if (!Number.isInteger(inputNumber) || inputNumber < 0) {
       return finish(apiKey, base, started, { ok: false, code: 'bad_request', error: 'inputNumber must be a non-negative integer' });
     }
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(mixerId);
+    const row = await db.prod_mixers.findUnique({ where: { id: mixerId } });
     if (!row || (apiKey && row.owner_api_key != null && row.owner_api_key !== apiKey)) {
       return finish(apiKey, base, started, { ok: false, code: 'not_found', error: 'Mixer not found' });
     }
@@ -197,8 +197,8 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
    * @param {string|null} apiKey
    * @param {string} ref
    */
-  function resolveCamera(apiKey, ref) {
-    const cameras = db.prepare('SELECT * FROM prod_cameras').all().filter(visibleTo(apiKey)).map(parseCamera);
+  async function resolveCamera(apiKey, ref) {
+    const cameras = (await db.prod_cameras.findMany()).filter(visibleTo(apiKey)).map(parseCamera);
     const r = pickDevice(cameras, ref, 'Camera', (c, slug) => slugifyLabel(c.label) === slug || slugifyLabel(c.name) === slug);
     return r.ok ? { ok: true, camera: r.device } : r;
   }
@@ -208,8 +208,8 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
    * @param {string|null} apiKey
    * @param {string} ref
    */
-  function resolveMixer(apiKey, ref) {
-    const mixers = db.prepare('SELECT * FROM prod_mixers').all().filter(visibleTo(apiKey)).map(parseMixer);
+  async function resolveMixer(apiKey, ref) {
+    const mixers = (await db.prod_mixers.findMany()).filter(visibleTo(apiKey)).map(parseMixer);
     const r = pickDevice(mixers, ref, 'Mixer', (m, slug) => slugifyLabel(m.name) === slug);
     return r.ok ? { ok: true, mixer: r.device } : r;
   }
@@ -231,7 +231,7 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
   async function runCameraAtom(apiKey, value, meta = {}) {
     const parts = splitAtom(value);
     if (!parts) return { ok: false, code: 'bad_request', error: `camera atom needs <camera>.<preset>, got '${value}'` };
-    const cam = resolveCamera(apiKey, parts[0]);
+    const cam = await resolveCamera(apiKey, parts[0]);
     if (!cam.ok) return cam;
     const presets = cam.camera.controlConfig?.presets ?? [];
     const slug = slugifyLabel(parts[1]);
@@ -253,7 +253,7 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
     if (!parts) {
       return { ok: false, code: 'bad_request', error: `mixer atom needs <mixer>.<input number or name>, got '${value}'` };
     }
-    const mix = resolveMixer(apiKey, parts[0]);
+    const mix = await resolveMixer(apiKey, parts[0]);
     if (!mix.ok) return mix;
     let input;
     if (/^\d+$/.test(parts[1])) {
@@ -289,10 +289,10 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
   };
 
   /** `camera:<camera>.<preset>` with ids; null when it does not resolve. */
-  function cameraAtomToIds(apiKey, value) {
+  async function cameraAtomToIds(apiKey, value) {
     const parts = splitAtom(value);
     if (!parts) return null;
-    const cam = resolveCamera(apiKey, parts[0]);
+    const cam = await resolveCamera(apiKey, parts[0]);
     if (!cam.ok) return null;
     const preset = findPreset(cam.camera, parts[1]);
     if (!preset) return null;
@@ -300,35 +300,35 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
   }
 
   /** `camera:<camera>.<preset>` with the current label slugs; null when it does not resolve. */
-  function cameraAtomToLabels(apiKey, value) {
+  async function cameraAtomToLabels(apiKey, value) {
     const parts = splitAtom(value);
     if (!parts) return null;
-    const cam = resolveCamera(apiKey, parts[0]);
+    const cam = await resolveCamera(apiKey, parts[0]);
     if (!cam.ok) return null;
     const preset = findPreset(cam.camera, parts[1]);
     if (!preset) return null;
     const camRef = cameraSlug(cam.camera);
-    const camOut = camRef && resolveCamera(apiKey, camRef).camera?.id === cam.camera.id ? camRef : cam.camera.id;
+    const camOut = camRef && (await resolveCamera(apiKey, camRef)).camera?.id === cam.camera.id ? camRef : cam.camera.id;
     const presetRef = presetSlug(preset);
     const presetOut = presetRef && findPreset(cam.camera, presetRef)?.id === preset.id ? presetRef : preset.id;
     return `${camOut}.${presetOut}`;
   }
 
   /** `mixer:<mixer>.<input>` / `obs:<mixer>.<scene>` with the mixer as id; the input part is kept as written. */
-  function mixerAtomToIds(apiKey, value) {
+  async function mixerAtomToIds(apiKey, value) {
     const parts = splitAtom(value);
     if (!parts) return null;
-    const mix = resolveMixer(apiKey, parts[0]);
+    const mix = await resolveMixer(apiKey, parts[0]);
     return mix.ok ? `${mix.mixer.id}.${parts[1]}` : null;
   }
 
-  function mixerAtomToLabels(apiKey, value) {
+  async function mixerAtomToLabels(apiKey, value) {
     const parts = splitAtom(value);
     if (!parts) return null;
-    const mix = resolveMixer(apiKey, parts[0]);
+    const mix = await resolveMixer(apiKey, parts[0]);
     if (!mix.ok) return null;
     const ref = slugifyLabel(mix.mixer.name);
-    const out = ref && resolveMixer(apiKey, ref).mixer?.id === mix.mixer.id ? ref : mix.mixer.id;
+    const out = ref && (await resolveMixer(apiKey, ref)).mixer?.id === mix.mixer.id ? ref : mix.mixer.id;
     return `${out}.${parts[1]}`;
   }
 

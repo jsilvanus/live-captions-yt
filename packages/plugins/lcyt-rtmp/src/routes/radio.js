@@ -156,7 +156,7 @@ function buildPlayerSnippet(radioKey, backendOrigin, radioManager, meta = {}) {
  *  When NginxManager is active, clients use the slug URL directly and the
  *  proxy routes serve as a fallback for clients that hit the backend.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('../radio-manager.js').RadioManager} radioManager
  * @param {import('../stt-manager.js').SttManager} [sttManager]
  * @param {import('express').RequestHandler} [auth]  Session JWT Bearer middleware — required for GET/PUT /config
@@ -177,16 +177,16 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
     });
   }
 
-  router.get('/config', requireAuthConfigured, (req, res) => {
+  router.get('/config', requireAuthConfigured, async (req, res) => {
     const apiKey = req.session.apiKey;
-    const config = getRadioConfig(db, apiKey);
+    const config = await getRadioConfig(db, apiKey);
     res.json({ ...config, live: radioManager.isRunning(apiKey) });
   });
 
-  router.put('/config', requireAuthConfigured, (req, res) => {
+  router.put('/config', requireAuthConfigured, async (req, res) => {
     const apiKey = req.session.apiKey;
     const { title, description, coverImageUrl, autoplay } = req.body || {};
-    const result = setRadioConfig(db, apiKey, { title, description, coverImageUrl, autoplay });
+    const result = await setRadioConfig(db, apiKey, { title, description, coverImageUrl, autoplay });
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.json({ ...result.config, live: radioManager.isRunning(apiKey) });
   });
@@ -209,10 +209,10 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
 
     // Resolve the stream name to the project's api_key — a no-op unless the
     // project has rotated its ingest stream key via POST /ingestion/config/rotate.
-    const radioKey = resolveApiKeyFromIngestStreamKey(db, name);
+    const radioKey = await resolveApiKeyFromIngestStreamKey(db, name);
 
     if (call === 'publish') {
-      if (!isRadioEnabled(db, radioKey)) {
+      if (!(await isRadioEnabled(db, radioKey))) {
         return res.status(403).send('radio not enabled for this key');
       }
       try {
@@ -225,7 +225,7 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
       // Auto-start STT if configured
       if (sttManager) {
         try {
-          const cfg = getSttConfig(db, radioKey);
+          const cfg = await getSttConfig(db, radioKey);
           if (cfg?.autoStart) {
             sttManager.start(radioKey, {
               provider:    cfg.provider,
@@ -285,15 +285,15 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
   // ── HLS proxy, player snippet, info ──────────────────────────────────────
 
   // CORS preflight for HLS/player routes
-  router.options('/:key/*', (req, res) => {
-    const cors = RADIO_KEY_RE.test(req.params.key) ? getEmbedCors(db, req.params.key) : '*';
+  router.options('/:key/*', async (req, res) => {
+    const cors = RADIO_KEY_RE.test(req.params.key) ? await getEmbedCors(db, req.params.key) : '*';
     setCorsHeaders(res, cors);
     res.status(204).end();
   });
 
   // GET /radio/:key/player.js — vanilla-JS player snippet
   // Registered BEFORE /:key/:file so it takes precedence for "player.js".
-  router.get('/:key/player.js', hlsRateLimit, (req, res) => {
+  router.get('/:key/player.js', hlsRateLimit, async (req, res) => {
     const { key } = req.params;
     if (!RADIO_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid radio key format' });
@@ -303,9 +303,9 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
     const backendOrigin = process.env.BACKEND_URL
       || `${req.protocol}://${req.get('host')}`;
 
-    const { title, coverImageUrl, autoplay } = getRadioConfig(db, key);
+    const { title, coverImageUrl, autoplay } = await getRadioConfig(db, key);
 
-    setCorsHeaders(res, getEmbedCors(db, key));
+    setCorsHeaders(res, await getEmbedCors(db, key));
     res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(buildPlayerSnippet(key, backendOrigin, radioManager, { title, coverImageUrl, autoplay }));
@@ -315,7 +315,7 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
   // Returns the public HLS URL and live status without exposing the API key in the URL.
   // When NginxManager is active, hlsUrl uses the slug-based nginx proxy URL.
   // Respects radio_enabled flag: when disabled, live is always false and hlsUrl is omitted.
-  router.get('/:key/info', hlsRateLimit, (req, res) => {
+  router.get('/:key/info', hlsRateLimit, async (req, res) => {
     const { key } = req.params;
     if (!RADIO_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid radio key format' });
@@ -325,14 +325,14 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
       || `${req.protocol}://${req.get('host')}`;
 
     // Check if radio is enabled for this key. If not, report as not live and omit hlsUrl.
-    const enabled = isRadioEnabled(db, key);
+    const enabled = await isRadioEnabled(db, key);
     const live    = enabled && radioManager.isRunning(key);
 
     // Metadata has no secrets in it (title/description/cover/autoplay), so it's
     // safe to expose alongside the stream info for embeddable "Now Playing" UIs.
-    const { title, description, coverImageUrl, autoplay } = getRadioConfig(db, key);
+    const { title, description, coverImageUrl, autoplay } = await getRadioConfig(db, key);
 
-    setCorsHeaders(res, getEmbedCors(db, key));
+    setCorsHeaders(res, await getEmbedCors(db, key));
     res.setHeader('Cache-Control', 'no-cache, no-store');
 
     const response = { live, title, description, coverImageUrl, autoplay };
@@ -386,7 +386,7 @@ export function createRadioRouter(db, radioManager, sttManager = null, auth = nu
       });
     }
 
-    const cors = getEmbedCors(db, key);
+    const cors = await getEmbedCors(db, key);
     setCorsHeaders(res, cors);
     const isPlaylist = file.endsWith('.m3u8');
     // init.mp4 changes when the publisher restarts with different codec params,

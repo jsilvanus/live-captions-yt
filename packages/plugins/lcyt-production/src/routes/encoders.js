@@ -29,7 +29,7 @@ export function parseEncoder(row) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('../bridge-manager.js').BridgeManager|null} [bridgeManager]
  * @param {{ auth?: import('express').RequestHandler, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts]
  *   `opts.auth` (real project-access middleware, e.g. scopedAuth('production'))
@@ -57,23 +57,21 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
   const requireProduction = requireTier(opts.deps ?? {}, 'production');
 
   // GET /production/encoders — list all encoders
-  router.get('/', (_req, res) => {
-    const rows = db
-      .prepare('SELECT * FROM prod_encoders ORDER BY created_at')
-      .all()
+  router.get('/', async (_req, res) => {
+    const rows = (await db.prod_encoders.findMany({ orderBy: { created_at: 'asc' } }))
       .map(parseEncoder);
     res.json(rows);
   });
 
   // GET /production/encoders/:id — single encoder
-  router.get('/:id', (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
+  router.get('/:id', async (req, res) => {
+    const row = await db.prod_encoders.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
     res.json(parseEncoder(row));
   });
 
   // POST /production/encoders — create encoder
-  router.post('/', requireSetup, (req, res) => {
+  router.post('/', requireSetup, async (req, res) => {
     const {
       name,
       type,
@@ -93,18 +91,20 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
     }
 
     const id = randomUUID();
-    db.prepare(`
-      INSERT INTO prod_encoders (id, name, type, connection_config, connection_source, bridge_instance_id)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(id, name, type, JSON.stringify(connectionConfig), connectionSource, bridgeInstanceId);
+    await db.prod_encoders.create({
+      data: {
+        id, name, type, connection_config: JSON.stringify(connectionConfig), connection_source: connectionSource,
+        bridge_instance_id: bridgeInstanceId ?? null,
+      },
+    });
 
-    res.status(201).json(parseEncoder(db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(id)));
+    res.status(201).json(parseEncoder(await db.prod_encoders.findUnique({ where: { id } })));
   });
 
   // PUT /production/encoders/:id — update encoder
-  router.put('/:id', requireSetup, (req, res) => {
+  router.put('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(id);
+    const existing = await db.prod_encoders.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Encoder not found' });
 
     const {
@@ -122,28 +122,30 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
       return res.status(400).json({ error: `connectionSource must be one of: ${VALID_CONNECTION_SOURCES.join(', ')}` });
     }
 
-    db.prepare(`
-      UPDATE prod_encoders
-      SET name = ?, type = ?, connection_config = ?, connection_source = ?, bridge_instance_id = ?
-      WHERE id = ?
-    `).run(name, type, JSON.stringify(connectionConfig), connectionSource, bridgeInstanceId ?? null, id);
+    await db.prod_encoders.updateMany({
+      where: { id },
+      data: {
+        name, type, connection_config: JSON.stringify(connectionConfig), connection_source: connectionSource,
+        bridge_instance_id: bridgeInstanceId ?? null,
+      },
+    });
 
-    res.json(parseEncoder(db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(id)));
+    res.json(parseEncoder(await db.prod_encoders.findUnique({ where: { id } })));
   });
 
   // DELETE /production/encoders/:id — delete encoder
-  router.delete('/:id', requireSetup, (req, res) => {
+  router.delete('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(id);
+    const existing = await db.prod_encoders.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Encoder not found' });
 
-    db.prepare('DELETE FROM prod_encoders WHERE id = ?').run(id);
+    await db.prod_encoders.deleteMany({ where: { id } });
     res.status(204).end();
   });
 
   // POST /production/encoders/:id/start — start encoder
   router.post('/:id/start', requireProduction, async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
+    const row = await db.prod_encoders.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
 
     const encoder = parseEncoder(row);
@@ -170,7 +172,7 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
 
   // POST /production/encoders/:id/stop — stop encoder
   router.post('/:id/stop', requireProduction, async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
+    const row = await db.prod_encoders.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
 
     const encoder = parseEncoder(row);
@@ -197,7 +199,7 @@ export function createEncodersRouter(db, bridgeManager = null, opts = {}) {
 
   // POST /production/encoders/:id/test — test HTTP reachability
   router.post('/:id/test', requireProduction, async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_encoders WHERE id = ?').get(req.params.id);
+    const row = await db.prod_encoders.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: 'Encoder not found' });
 
     const encoder = parseEncoder(row);

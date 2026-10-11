@@ -194,7 +194,7 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
     if (Array.isArray(newDefault)) newDefault.forEach(n => allNames.add(n));
     for (const arr of Object.values(newViewports)) if (Array.isArray(arr)) arr.forEach(n => allNames.add(n));
     for (const name of allNames) {
-      const row = getImageByShorthand(db, apiKey, name);
+      const row = await getImageByShorthand(db, apiKey, name);
       if (!row) continue;
       const meta = safeParseJson(row.settings_json);
       imageMeta[name] = meta?.viewports ?? {};
@@ -213,7 +213,7 @@ export function createDskCaptionProcessor({ db, dskBus, relayManager }) {
       // Respect per-image viewport visibility for the landscape/default slot.
       const imagePaths = [];
       for (const name of newDefault) {
-        const row = getImageByShorthand(db, apiKey, name);
+        const row = await getImageByShorthand(db, apiKey, name);
         if (!row) continue;
         if (row.mime_type === 'image/svg+xml') continue; // SVG not supported by relay overlay
         const meta = safeParseJson(row.settings_json);

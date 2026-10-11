@@ -17,7 +17,6 @@ import { addMember } from '../src/db/project-members.js';
 import { createProjectAccessMiddleware } from '../src/middleware/project-access.js';
 import { createSttRouter } from '../src/routes/stt.js';
 import { setSttConfig, getSttConfig } from '../src/db/stt.js';
-import { ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 
 const JWT_SECRET = 'test-stt-secret';
 const API_KEY    = 'test-api-key-stt';
@@ -54,7 +53,6 @@ let server, baseUrl, db, sttManager, token, ownerToken;
 
 before(() => new Promise(async (resolve) => {
   db = await initDb(':memory:');
-  runMigrations(db);
 
   // Real API key row (needed so getKey()/getEffectiveProjectAccessLevel() —
   // used by requireProjectRole('setup') on PUT /stt/config — can resolve it).

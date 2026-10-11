@@ -5,11 +5,11 @@
 
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -53,18 +53,16 @@ function makeToolsContext(handlers = {}) {
   };
 }
 
-before(() => new Promise((resolve) => {
-  db = new Database(':memory:');
-  runAiRolesMigrations(db);
-  runProviderRegistryMigrations(db);
-  providerId = createProvider(db, {
+before(async () => {
+  db = await initDb(':memory:');
+  await runAiRolesMigrations(db);
+  providerId = (await createProvider(db, {
     scope: 'site', kind: 'api', vendor: 'openai', name: 'Test provider', baseUrl: 'https://api.test', apiKeyRef: 'sk-test',
-  }).id;
+  })).id;
   token = jwt.sign({ sessionId: 's1', apiKey: 'key1' }, JWT_SECRET, { expiresIn: '1h' });
-  resolve();
-}));
+});
 
-after(() => db.close());
+after(async () => { await db.close(); });
 afterEach(() => { global.fetch = realFetch; if (server) { server.close(); server = null; } });
 
 function startApp(toolsContext) {
@@ -129,7 +127,7 @@ describe('POST /roles/:roleCode/message', () => {
   });
 
   it('503s when the configured provider is unresolvable', async () => {
-    setRoleConfig(db, 'key1', 'setup_assistant', { enabled: true, providerId: 'no-such-provider', modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'setup_assistant', { enabled: true, providerId: 'no-such-provider', modelName: 'gpt-4o-mini' });
     await startApp(makeToolsContext());
     const res = await fetch(`${baseUrl}/roles/setup_assistant/message`, {
       method: 'POST', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'hi' }),
@@ -138,7 +136,7 @@ describe('POST /roles/:roleCode/message', () => {
   });
 
   it('runs a full turn and returns the reply when no tools are held back', async () => {
-    setRoleConfig(db, 'key1', 'setup_assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'setup_assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockChat(() => ({ role: 'assistant', content: 'Here is your setup.' }));
     await startApp(makeToolsContext());
     const res = await fetch(`${baseUrl}/roles/setup_assistant/message`, {
@@ -152,7 +150,7 @@ describe('POST /roles/:roleCode/message', () => {
   });
 
   it('returns pendingActions for a destructive tool call in confirm mode (the default)', async () => {
-    setRoleConfig(db, 'key1', 'setup_assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini', harnessConfig: {} });
+    await setRoleConfig(db, 'key1', 'setup_assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini', harnessConfig: {} });
     let call = 0;
     mockChat(() => {
       call++;
@@ -168,7 +166,7 @@ describe('POST /roles/:roleCode/message', () => {
   });
 
   it('executes a non-destructive mutating tool directly in auto mode', async () => {
-    setRoleConfig(db, 'key1', 'setup_assistant', {
+    await setRoleConfig(db, 'key1', 'setup_assistant', {
       enabled: true, providerId, modelName: 'gpt-4o-mini',
       harnessConfig: { mode: 'auto', autoConfirmed: true },
     });
@@ -189,7 +187,7 @@ describe('POST /roles/:roleCode/message', () => {
   });
 
   it("uses harnessConfig.toolAllowlist to narrow the role's default tool set", async () => {
-    setRoleConfig(db, 'key1', 'dsk_designer', { enabled: true, providerId, modelName: 'gpt-4o-mini', harnessConfig: { toolAllowlist: ['camera.list'] } });
+    await setRoleConfig(db, 'key1', 'dsk_designer', { enabled: true, providerId, modelName: 'gpt-4o-mini', harnessConfig: { toolAllowlist: ['camera.list'] } });
     let sentTools = null;
     mockChat((body) => { sentTools = body.tools; return { role: 'assistant', content: 'ok' }; });
     await startApp(makeToolsContext());

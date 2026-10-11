@@ -7,14 +7,16 @@ import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import Database from 'better-sqlite3';
 
-import { runMigrations } from '../src/db.js';
+import { initDb } from 'lcyt-backend/db';
 import { createDskRouter } from '../src/routes/dsk.js';
 import { createDskViewportsRouter, RESERVED_VIEWPORT_NAMES, sanitizeDisplaySettings, publicDisplaySettings } from '../src/routes/dsk-viewports.js';
 import { viewportStreamName, parseStreamName, isViewportStream } from '../src/stream-names.js';
 import { createDskRtmpRouter } from '../src/routes/dsk-rtmp.js';
 import { upsertViewport } from '../src/db/viewports.js';
+
+// Tests seed and inspect rows with plain SQL (async db.prepare/exec on the Prisma client, test-only).
+process.env.LCYT_DB_SQL_COMPAT ??= '1';
 
 let server, baseUrl, db;
 
@@ -39,46 +41,32 @@ const permissiveDeps = { checkProjectRole: () => true };
 
 const stubBus = { addDskSubscriber() {}, removeDskSubscriber() {} };
 
-before(() => new Promise(resolve => {
-  db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS caption_files (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, api_key TEXT, filename TEXT,
-      size_bytes INTEGER, type TEXT, format TEXT, created_at TEXT DEFAULT (datetime('now'))
-    )
-  `);
-  db.exec(`
-    CREATE TABLE api_keys (
-      key TEXT PRIMARY KEY, active INTEGER NOT NULL DEFAULT 1,
-      public_slug TEXT UNIQUE, ingest_stream_key TEXT
-    )
-  `);
-  runMigrations(db);
-
+before(async () => {
+  db = await initDb(':memory:');
   const app = express();
   app.use(express.json());
   app.use('/dsk', createDskRouter(db, stubBus));
   app.use('/dsk', createDskViewportsRouter(db, stubAuth, permissiveDeps));
 
   server = createServer(app);
-  server.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); });
-}));
-
-after(() => new Promise(resolve => { db.close(); server.close(resolve); }));
-
-beforeEach(() => {
-  db.prepare('DELETE FROM dsk_viewports').run();
-  db.prepare('DELETE FROM api_keys').run();
+  await new Promise(resolve => server.listen(0, () => { baseUrl = `http://127.0.0.1:${server.address().port}`; resolve(); }));
 });
 
-function makeKey(key, slug = null) {
-  db.prepare('INSERT INTO api_keys (key, active, public_slug) VALUES (?, 1, ?)').run(key, slug);
+after(async () => { await new Promise(resolve => server.close(resolve)); await db.close(); });
+
+beforeEach(async () => {
+  await db.dsk_viewports.deleteMany({});
+  await db.api_keys.deleteMany({});
+});
+
+async function makeKey(key, slug = null) {
+  await db.prepare("INSERT INTO api_keys (key, owner, active, public_slug) VALUES (?, 'test', 1, ?)").run(key, slug);
 }
 
 describe('DSK public route slug resolution', () => {
   it('resolves a project public slug to its data', async () => {
-    makeKey('secret-api-key', 'sunday-service');
-    upsertViewport(db, 'secret-api-key', { name: 'vertical-left', viewportType: 'vertical', width: 1080, height: 1920 });
+    await makeKey('secret-api-key', 'sunday-service');
+    await upsertViewport(db, 'secret-api-key', { name: 'vertical-left', viewportType: 'vertical', width: 1080, height: 1920 });
 
     const res = await fetch(`${baseUrl}/dsk/sunday-service/viewports/public`);
     assert.equal(res.status, 200);
@@ -89,8 +77,8 @@ describe('DSK public route slug resolution', () => {
   });
 
   it('still resolves the raw api key (legacy URLs)', async () => {
-    makeKey('secret-api-key', 'sunday-service');
-    upsertViewport(db, 'secret-api-key', { name: 'v1', viewportType: 'vertical' });
+    await makeKey('secret-api-key', 'sunday-service');
+    await upsertViewport(db, 'secret-api-key', { name: 'v1', viewportType: 'vertical' });
 
     const res = await fetch(`${baseUrl}/dsk/secret-api-key/viewports/public`);
     assert.equal(res.status, 200);
@@ -99,19 +87,19 @@ describe('DSK public route slug resolution', () => {
   });
 
   it('404s an unknown segment', async () => {
-    makeKey('secret-api-key', 'sunday-service');
+    await makeKey('secret-api-key', 'sunday-service');
     const res = await fetch(`${baseUrl}/dsk/no-such-slug/viewports/public`);
     assert.equal(res.status, 404);
   });
 
   it('serves a shorter cache TTL so settings edits propagate', async () => {
-    makeKey('k', 's');
+    await makeKey('k', 's');
     const res = await fetch(`${baseUrl}/dsk/s/viewports/public`);
     assert.match(res.headers.get('cache-control'), /max-age=60/);
   });
 
   it('exposes projectSlug null on the authed viewports listing when unset', async () => {
-    makeKey('plain-key', null);
+    await makeKey('plain-key', null);
     const res = await fetch(`${baseUrl}/dsk/plain-key/viewports`, { headers: { 'x-api-key': 'plain-key' } });
     assert.equal(res.status, 200);
     const data = await res.json();
@@ -119,7 +107,7 @@ describe('DSK public route slug resolution', () => {
   });
 
   it('returns projectSlug on the authed viewports listing when set', async () => {
-    makeKey('plain-key', 'my-slug');
+    await makeKey('plain-key', 'my-slug');
     const res = await fetch(`${baseUrl}/dsk/plain-key/viewports`, { headers: { 'x-api-key': 'plain-key' } });
     const data = await res.json();
     assert.equal(data.projectSlug, 'my-slug');
@@ -134,7 +122,7 @@ describe('reserved viewport names', () => {
   });
 
   it('rejects creating a viewport named after a sibling route', async () => {
-    makeKey('k1');
+    await makeKey('k1');
     const res = await fetch(`${baseUrl}/dsk/k1/viewports`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': 'k1' },
@@ -145,7 +133,7 @@ describe('reserved viewport names', () => {
   });
 
   it('allows a normal viewport name', async () => {
-    makeKey('k2');
+    await makeKey('k2');
     const res = await fetch(`${baseUrl}/dsk/k2/viewports`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': 'k2' },
@@ -180,7 +168,7 @@ describe('sanitizeDisplaySettings', () => {
 
 describe('viewport display settings persistence', () => {
   it('round-trips display settings through create and the public endpoint', async () => {
-    makeKey('ds1', 'ds-slug');
+    await makeKey('ds1', 'ds-slug');
     const create = await fetch(`${baseUrl}/dsk/ds1/viewports`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds1' },
@@ -200,7 +188,7 @@ describe('viewport display settings persistence', () => {
   });
 
   it('a text-layers-only PUT does not wipe display settings (and vice versa)', async () => {
-    makeKey('ds2');
+    await makeKey('ds2');
     await fetch(`${baseUrl}/dsk/ds2/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds2' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical', displaySettings: { background: 'transparent' } }),
@@ -227,7 +215,7 @@ describe('viewport display settings persistence', () => {
   });
 
   it('clears display settings when PUT sends null', async () => {
-    makeKey('ds3');
+    await makeKey('ds3');
     await fetch(`${baseUrl}/dsk/ds3/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ds3' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical', displaySettings: { background: 'transparent' } }),
@@ -275,7 +263,7 @@ describe('stream config sanitize + public stripping', () => {
   });
 
   it('never exposes pushUrls on the public viewports endpoint', async () => {
-    makeKey('st1', 'st-slug');
+    await makeKey('st1', 'st-slug');
     await fetch(`${baseUrl}/dsk/st1/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'st1' },
       body: JSON.stringify({
@@ -293,7 +281,7 @@ describe('stream config sanitize + public stripping', () => {
 
 describe('single-composite invariant', () => {
   it('demotes a prior composite viewport when a new one becomes composite', async () => {
-    makeKey('ci1');
+    await makeKey('ci1');
     const mk = (name) => fetch(`${baseUrl}/dsk/ci1/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ci1' },
       body: JSON.stringify({ name, viewportType: 'landscape', displaySettings: { stream: { enabled: true, mode: 'composite' } } }),
@@ -309,7 +297,7 @@ describe('single-composite invariant', () => {
   });
 
   it('rejects viewport names containing the __ delimiter', async () => {
-    makeKey('ci2');
+    await makeKey('ci2');
     const res = await fetch(`${baseUrl}/dsk/ci2/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'ci2' },
       body: JSON.stringify({ name: 'foo__bar', viewportType: 'vertical' }),
@@ -364,8 +352,8 @@ describe('dsk-rtmp composite exclusion + chromaKey passthrough', () => {
   });
 
   it('passes the composite viewport chromaKey through to the relay', async () => {
-    makeKey('ckkey');
-    upsertViewport(db, 'ckkey', {
+    await makeKey('ckkey');
+    await upsertViewport(db, 'ckkey', {
       name: 'prog', viewportType: 'landscape',
       displaySettingsJson: JSON.stringify({ stream: { enabled: true, mode: 'composite', chromaKey: { enabled: true, color: '#00B140', similarity: 0.25 } } }),
     });
@@ -391,7 +379,7 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
     await new Promise((resolve) => noDepsServer.listen(0, resolve));
     const noDepsBase = `http://127.0.0.1:${noDepsServer.address().port}`;
 
-    makeKey('gate1');
+    await makeKey('gate1');
     const res = await fetch(`${noDepsBase}/dsk/gate1/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate1' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
@@ -408,7 +396,7 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
     await new Promise((resolve) => rejectServer.listen(0, resolve));
     const rejectBase = `http://127.0.0.1:${rejectServer.address().port}`;
 
-    makeKey('gate2');
+    await makeKey('gate2');
     const res = await fetch(`${rejectBase}/dsk/gate2/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate2' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
@@ -430,7 +418,7 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
     await new Promise((resolve) => sessionServer.listen(0, resolve));
     const sessionBase = `http://127.0.0.1:${sessionServer.address().port}`;
 
-    makeKey('gate3');
+    await makeKey('gate3');
     const res = await fetch(`${sessionBase}/dsk/gate3/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate3' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
@@ -447,7 +435,7 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
     await new Promise((resolve) => readServer.listen(0, resolve));
     const readBase = `http://127.0.0.1:${readServer.address().port}`;
 
-    makeKey('gate4');
+    await makeKey('gate4');
     const res = await fetch(`${readBase}/dsk/gate4/viewports`, { headers: { 'x-api-key': 'gate4' } });
     assert.equal(res.status, 200);
     await new Promise((resolve) => readServer.close(resolve));
@@ -466,7 +454,7 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
     await new Promise((resolve) => noDepsServer.listen(0, resolve));
     const noDepsBase = `http://127.0.0.1:${noDepsServer.address().port}`;
 
-    makeKey('gate5');
+    await makeKey('gate5');
     const res = await fetch(`${noDepsBase}/dsk/gate5/viewports`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', 'x-api-key': 'gate5' },
       body: JSON.stringify({ name: 'v1', viewportType: 'vertical' }),
@@ -479,17 +467,17 @@ describe('viewport CRUD Setup-tier gate (plan_project_roles.md, decided 2026-07-
 describe('getCompositeChromaKey', () => {
   it('returns the enabled chromaKey of the composite viewport only', async () => {
     const { getCompositeChromaKey } = await import('../src/db/viewports.js');
-    makeKey('gck');
+    await makeKey('gck');
     // standalone viewport with chromaKey — must be ignored
-    upsertViewport(db, 'gck', { name: 'vert', displaySettingsJson: JSON.stringify({ stream: { mode: 'standalone', chromaKey: { enabled: true, color: '#111111' } } }) });
-    assert.equal(getCompositeChromaKey(db, 'gck'), null);
+    await upsertViewport(db, 'gck', { name: 'vert', displaySettingsJson: JSON.stringify({ stream: { mode: 'standalone', chromaKey: { enabled: true, color: '#111111' } } }) });
+    assert.equal(await getCompositeChromaKey(db, 'gck'), null);
 
     // composite but chromaKey disabled — null
-    upsertViewport(db, 'gck', { name: 'prog', displaySettingsJson: JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: false } } }) });
-    assert.equal(getCompositeChromaKey(db, 'gck'), null);
+    await upsertViewport(db, 'gck', { name: 'prog', displaySettingsJson: JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: false } } }) });
+    assert.equal(await getCompositeChromaKey(db, 'gck'), null);
 
     // composite + enabled — returned
-    upsertViewport(db, 'gck', { name: 'prog', displaySettingsJson: JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: true, color: '#0a0b0c' } } }) });
-    assert.equal(getCompositeChromaKey(db, 'gck').color, '#0a0b0c');
+    await upsertViewport(db, 'gck', { name: 'prog', displaySettingsJson: JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: true, color: '#0a0b0c' } } }) });
+    assert.equal((await getCompositeChromaKey(db, 'gck')).color, '#0a0b0c');
   });
 });

@@ -20,6 +20,8 @@
     "test:integration": "cross-env LCYT_DB_SQL_COMPAT=1 ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/integration/*.test.js",
     "db:generate": "node scripts/prisma-generate.mjs",
     "db:pg:build": "node scripts/prisma-pg.mjs",
+    "db:sqlite:build": "node scripts/prisma-sqlite.mjs",
+    "db:migrate-sqlite": "node scripts/migrate-sqlite.mjs",
     "postinstall": "node scripts/prisma-generate.mjs --soft"
   },
   "dependencies": {

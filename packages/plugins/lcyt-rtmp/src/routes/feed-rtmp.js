@@ -14,13 +14,10 @@
  * (mirrors how DSK-ingest reasoning works, just for a different table).
  *
  * prod_cameras is owned by lcyt-production, but the two plugins share one
- * SQLite db instance repo-wide, so this queries it directly rather than
- * taking a hard dependency — the same cross-plugin-query pattern already
- * used by resolveApiKeyFromIngestStreamKey() (db/relay.js) and its DSK-side
- * duplicate, and by db/relay.js's own resolveRelaySourceCameraKey(). Reuses
- * that module's hasProdCamerasTable() guard (code-review follow-up — this
- * file originally queried prod_cameras with no existence guard at all,
- * unlike the egress-side lookup added in the same PR).
+ * database repo-wide, so this queries it directly rather than taking a hard
+ * dependency — the same cross-plugin-query pattern already used by
+ * resolveApiKeyFromIngestStreamKey() (db/relay.js) and by db/relay.js's own
+ * resolveRelaySourceCameraKey().
  *
  * Nginx-rtmp configuration example:
  *
@@ -39,7 +36,7 @@
 
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
-import { hasProdCamerasTable, getApiKeysReferencingCamera, isRelayActive, getRelays, getKey } from '../db.js';
+import { getApiKeysReferencingCamera, isRelayActive, getRelays, getKey } from '../db.js';
 
 // camera_key validation: same shape as the main relay keys / DSK app names.
 const CAMERA_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
@@ -47,24 +44,22 @@ const CAMERA_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
 /**
  * Resolve an incoming nginx-rtmp stream `name` to the prod_cameras row it
  * belongs to. Only rows with control_type='rtmp' are eligible — a camera's
- * mere existence with that type is the accept/reject gate. Degrades to
- * "unknown" rather than throwing when prod_cameras doesn't exist at all
- * (e.g. a test harness running only lcyt-rtmp's own migrations).
- * @param {import('better-sqlite3').Database} db
+ * mere existence with that type is the accept/reject gate.
+ * @param {object} db  Prisma client
  * @param {string} cameraKey
- * @returns {{ id: string, camera_key: string }|null}
+ * @returns {Promise<{ id: string, camera_key: string }|null>}
  */
-function resolveFeedCamera(db, cameraKey) {
-  if (!hasProdCamerasTable(db)) return null;
-  return db.prepare(
-    "SELECT id, camera_key FROM prod_cameras WHERE camera_key = ? AND control_type = 'rtmp'"
-  ).get(cameraKey) ?? null;
+async function resolveFeedCamera(db, cameraKey) {
+  return (await db.prod_cameras.findFirst({
+    where: { camera_key: cameraKey, control_type: 'rtmp' },
+    select: { id: true, camera_key: true },
+  })) ?? null;
 }
 
 /**
  * Create the Express router for named-feed RTMP ingest callbacks.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @returns {Router}
  */
@@ -85,7 +80,7 @@ export function createFeedRtmpRouter(db, relayManager) {
       return res.status(400).send('invalid stream name');
     }
 
-    const camera = resolveFeedCamera(db, name);
+    const camera = await resolveFeedCamera(db, name);
     if (!camera) {
       logger.warn(`[feed-rtmp] Rejected publish: no 'rtmp'-type camera with camera_key '${name}'`);
       return res.status(403).send('unknown feed');
@@ -107,12 +102,12 @@ export function createFeedRtmpRouter(db, relayManager) {
       // camera's (code-review follow-up: this was previously missing
       // entirely, so a pure named-feed egress silently never worked unless
       // the project's own ingest also happened to publish at some point).
-      const apiKeys = getApiKeysReferencingCamera(db, camera.id);
+      const apiKeys = await getApiKeysReferencingCamera(db, camera.id);
       for (const apiKey of apiKeys) {
-        if (!isRelayActive(db, apiKey)) continue;
+        if (!(await isRelayActive(db, apiKey))) continue;
         try {
-          const relays = getRelays(db, apiKey);
-          const keyRow = getKey(db, apiKey);
+          const relays = await getRelays(db, apiKey);
+          const keyRow = await getKey(db, apiKey);
           await relayManager.startAll(apiKey, relays, { cea708DelayMs: keyRow?.cea708_delay_ms ?? 0 });
         } catch (err) {
           logger.error(`[feed-rtmp] Failed to start relay for ${apiKey.slice(0, 8)}… after feed '${name}' publish: ${err.message}`);

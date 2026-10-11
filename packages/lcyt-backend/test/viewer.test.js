@@ -23,7 +23,6 @@ import { createViewerRouter, broadcastToViewers } from '../src/routes/viewer.js'
 import { createCaptionsRouter } from '../src/routes/captions.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createLiveRouter } from '../src/routes/live.js';
-import { ensureRtmpTables as runRtmpMigrations } from './helpers/rtmp-tables.js';
 
 const JWT_SECRET = 'test-viewer-secret';
 
@@ -41,7 +40,6 @@ let server, baseUrl, store, db;
 
 before(() => new Promise(async (resolve) => {
   db = await initDb(':memory:');
-  runRtmpMigrations(db); // POST /live checks rtmp_relays for the recordOnStart flag
   await createKey(db, { key: 'test-key', owner: 'Test User' });
 
   store = new SessionStore({ cleanupInterval: 0 });

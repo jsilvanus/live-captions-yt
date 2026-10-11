@@ -1,16 +1,10 @@
-import { test, describe } from 'node:test';
+import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { randomBytes } from 'node:crypto';
 
-let Database;
-try {
-  Database = (await import('better-sqlite3')).default;
-} catch {
-  console.log('# better-sqlite3 not available — skipping lcyt-platforms token-service tests');
-  process.exit(0);
-}
 
-const { runMigrations, upsertCredential, getCredentialById, revokeCredential } = await import('../src/db.js');
+const { upsertCredential, getCredentialById, revokeCredential } = await import('../src/db.js');
 const { encryptSecret, decryptSecret } = await import('../src/crypto.js');
 const { createTokenService, CredentialUnusableError, REFRESH_SKEW_MS } = await import('../src/token-service.js');
 const { NetworkError } = await import('lcyt/errors');
@@ -21,17 +15,18 @@ const getKey = () => KEY;
 /** ISO in this repo's no-trailing-Z convention. */
 const iso = (ms) => new Date(ms).toISOString().replace(/Z$/, '');
 
-function createDb() {
-  const db = new Database(':memory:');
-  db.exec('CREATE TABLE api_keys (key TEXT PRIMARY KEY)');
-  db.exec('CREATE TABLE broadcasts (id TEXT PRIMARY KEY)');
-  runMigrations(db);
-  db.prepare('INSERT INTO api_keys (key) VALUES (?)').run('key1');
+const opened = [];
+after(async () => { for (const d of opened) await d.close(); });
+
+async function createDb() {
+  const db = await initDb(':memory:');
+  opened.push(db);
+  await db.api_keys.create({ data: { key: 'key1', owner: 'test' } });
   return db;
 }
 
-function seed(db, { expiresAt, accessToken = 'access-current', refreshToken = 'refresh-1' } = {}) {
-  return upsertCredential(db, 'key1', {
+async function seed(db, { expiresAt, accessToken = 'access-current', refreshToken = 'refresh-1' } = {}) {
+  return await upsertCredential(db, 'key1', {
     platform: 'youtube',
     externalAccountId: 'UC1',
     accountLabel: 'Channel',
@@ -69,8 +64,8 @@ function makeService(db, adapter) {
 
 describe('getAccessToken', () => {
   test('returns the stored token when it is still valid', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + 3600_000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + 3600_000) });
     const { adapter, calls } = makeAdapter();
     const token = await makeService(db, adapter).getAccessToken(row.id);
     assert.equal(token, 'access-current');
@@ -79,8 +74,8 @@ describe('getAccessToken', () => {
 
   test('refreshes inside the expiry skew window', async () => {
     // A token with 30s left would otherwise die mid-request.
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + REFRESH_SKEW_MS - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + REFRESH_SKEW_MS - 1000) });
     const { adapter, calls } = makeAdapter();
     const token = await makeService(db, adapter).getAccessToken(row.id);
     assert.equal(token, 'access-refreshed');
@@ -88,12 +83,12 @@ describe('getAccessToken', () => {
   });
 
   test('persists the refreshed token encrypted', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     const { adapter } = makeAdapter();
     await makeService(db, adapter).getAccessToken(row.id);
 
-    const after = getCredentialById(db, row.id);
+    const after = await getCredentialById(db, row.id);
     assert.notEqual(after.access_token_enc, row.access_token_enc);
     assert.equal(decryptSecret(after.access_token_enc, KEY), 'access-refreshed');
     assert.ok(!after.access_token_enc.includes('access-refreshed'));
@@ -102,16 +97,16 @@ describe('getAccessToken', () => {
 
   test('treats an unparseable expiry as expired', async () => {
     // Refreshing unnecessarily is cheap; using a dead token is not.
-    const db = createDb();
-    const row = seed(db, { expiresAt: 'not-a-date' });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: 'not-a-date' });
     const { adapter, calls } = makeAdapter();
     assert.equal(await makeService(db, adapter).getAccessToken(row.id), 'access-refreshed');
     assert.equal(calls.length, 1);
   });
 
   test('forceRefresh bypasses a still-valid token', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + 3600_000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + 3600_000) });
     const { adapter, calls } = makeAdapter();
     await makeService(db, adapter).getAccessToken(row.id, { forceRefresh: true });
     assert.equal(calls.length, 1);
@@ -121,8 +116,8 @@ describe('getAccessToken', () => {
     // The poller ticking while an operator hits Go Live. Two refreshes racing
     // would both write, and with a provider that rotates refresh tokens the
     // loser's would already be invalid.
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     let resolveRefresh;
     const gate = new Promise(r => { resolveRefresh = r; });
     const calls = [];
@@ -145,8 +140,8 @@ describe('getAccessToken', () => {
   });
 
   test('a failed refresh does not wedge later attempts', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     let attempt = 0;
     const adapter = {
       platform: 'youtube',
@@ -166,7 +161,7 @@ describe('getAccessToken', () => {
 
 describe('unusable credentials', () => {
   test('a missing credential', async () => {
-    const db = createDb();
+    const db = await createDb();
     const { adapter } = makeAdapter();
     await assert.rejects(
       () => makeService(db, adapter).getAccessToken('nope'),
@@ -175,9 +170,9 @@ describe('unusable credentials', () => {
   });
 
   test('a revoked credential is refused rather than silently used', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + 3600_000) });
-    revokeCredential(db, 'key1', row.id);
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + 3600_000) });
+    await revokeCredential(db, 'key1', row.id);
     const { adapter } = makeAdapter();
     await assert.rejects(
       () => makeService(db, adapter).getAccessToken(row.id),
@@ -186,8 +181,8 @@ describe('unusable credentials', () => {
   });
 
   test('a 400/401 from the token endpoint means reconnect, not retry', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     for (const status of [400, 401]) {
       const adapter = {
         platform: 'youtube',
@@ -203,8 +198,8 @@ describe('unusable credentials', () => {
   test('a transient upstream failure stays a NetworkError', async () => {
     // Distinguishable from "reconnect the account", which is what the route
     // layer turns into different messages.
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     const adapter = {
       platform: 'youtube',
       async refreshAccessToken() { throw new NetworkError('upstream down', 503); },
@@ -217,8 +212,8 @@ describe('unusable credentials', () => {
 
   test('an undecryptable refresh token names the likely cause', async () => {
     // The documented cost of PLATFORM_CREDENTIAL_KEY rotation being unbuilt.
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     const service = createTokenService({
       db,
       getAdapter: () => makeAdapter().adapter,
@@ -234,8 +229,8 @@ describe('unusable credentials', () => {
   });
 
   test('a corrupt access token still recovers via refresh', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + 3600_000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + 3600_000) });
     db.prepare('UPDATE platform_credentials SET access_token_enc = ? WHERE id = ?')
       .run(encryptSecret('x', randomBytes(32)), row.id);
     const { adapter } = makeAdapter();
@@ -243,8 +238,8 @@ describe('unusable credentials', () => {
   });
 
   test('an unregistered platform', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() - 1000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
     db.prepare('UPDATE platform_credentials SET platform = ? WHERE id = ?').run('facebook', row.id);
     const { adapter } = makeAdapter();
     await assert.rejects(
@@ -256,19 +251,19 @@ describe('unusable credentials', () => {
 
 describe('readRefreshToken', () => {
   test('decrypts for the disconnect path only', async () => {
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + 3600_000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + 3600_000) });
     const { adapter } = makeAdapter();
-    assert.equal(makeService(db, adapter).readRefreshToken(getCredentialById(db, row.id)), 'refresh-1');
+    assert.equal(makeService(db, adapter).readRefreshToken(await getCredentialById(db, row.id)), 'refresh-1');
   });
 
   test('returns null rather than throwing when it cannot decrypt', async () => {
     // Nothing to revoke remotely — the local revocation must still proceed.
-    const db = createDb();
-    const row = seed(db, { expiresAt: iso(Date.now() + 3600_000) });
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() + 3600_000) });
     const service = createTokenService({
       db, getAdapter: () => null, getOAuthConfig: () => ({}), getKey: () => randomBytes(32),
     });
-    assert.equal(service.readRefreshToken(getCredentialById(db, row.id)), null);
+    assert.equal(service.readRefreshToken(await getCredentialById(db, row.id)), null);
   });
 });

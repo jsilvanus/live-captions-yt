@@ -1,5 +1,5 @@
 /**
- * Vertical-crop DB migrations and helpers (plan_vertical_crop.md §1).
+ * Vertical-crop DB helpers (async, Prisma client) (plan_vertical_crop.md §1).
  *
  * Tables:
  *   crop_config       — one row per api_key: output geometry + behaviour flags
@@ -12,80 +12,20 @@
  * survive an input-resolution change; pixel conversion happens in
  * crop-manager.js at apply time.
  *
- * NOTE: better-sqlite3 enables `PRAGMA foreign_keys` by default, so the
- * ON DELETE CASCADE declarations work; the manual deletes here are redundant.
+ * The tables come from the backend's Prisma schema / PostgreSQL migrations. Foreign keys are enforced
+ * (ON DELETE CASCADE), the manual deletes below are redundant but kept.
+ *
+ * crop_source_map is read and written with raw SQL (the Prisma model API is used for the other tables).
+ * camera_preset is TEXT: it always holds an opaque string preset key (see toPresetKeyOrNull).
  */
 import { randomUUID } from 'node:crypto';
-import { hasProdCamerasTable } from './relay.js';
-
-export function runCropMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS crop_config (
-      api_key         TEXT PRIMARY KEY,
-      enabled         INTEGER NOT NULL DEFAULT 0,
-      aspect_w        INTEGER NOT NULL DEFAULT 9,
-      aspect_h        INTEGER NOT NULL DEFAULT 16,
-      out_w           INTEGER,
-      out_h           INTEGER,
-      video_bitrate   TEXT,
-      follow_program  INTEGER NOT NULL DEFAULT 1,
-      transition_ms   INTEGER NOT NULL DEFAULT 0,
-      active_set_id   TEXT,
-      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-
-  // auto_follow: keep the crop window on the people the perception detector sees (opt-in, plan_perception_completion.md Phase 4)
-  if (!db.prepare('PRAGMA table_info(crop_config)').all().some(c => c.name === 'auto_follow')) {
-    db.exec('ALTER TABLE crop_config ADD COLUMN auto_follow INTEGER NOT NULL DEFAULT 0');
-  }
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS crop_preset_sets (
-      id          TEXT PRIMARY KEY,
-      api_key     TEXT NOT NULL,
-      name        TEXT NOT NULL,
-      sort_order  INTEGER NOT NULL DEFAULT 0,
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (api_key, name)
-    )
-  `);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS crop_presets (
-      id          TEXT PRIMARY KEY,
-      api_key     TEXT NOT NULL,
-      set_id      TEXT REFERENCES crop_preset_sets(id) ON DELETE CASCADE,
-      name        TEXT NOT NULL,
-      x_norm      REAL NOT NULL DEFAULT 0.5,
-      y_norm      REAL NOT NULL DEFAULT 0.0,
-      sort_order  INTEGER NOT NULL DEFAULT 0,
-      created_at  TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (api_key, set_id, name)
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_crop_presets_key ON crop_presets(api_key, set_id)');
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS crop_source_map (
-      id             TEXT PRIMARY KEY,
-      api_key        TEXT NOT NULL,
-      mixer_id       TEXT,
-      mixer_input    INTEGER,
-      camera_id      TEXT,
-      camera_preset  INTEGER,
-      preset_id      TEXT NOT NULL REFERENCES crop_presets(id) ON DELETE CASCADE
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_crop_source_map_key ON crop_source_map(api_key)');
-}
 
 // ── helpers ─────────────────────────────────────────────────────────────────
 
 const clamp01 = v => Math.max(0, Math.min(1, Number(v)));
 
 /**
- * Coerce a mixer-input / camera-preset value to an integer or null.
+ * Coerce a mixer-input value to an integer or null.
  * JSON bodies and env-derived values often carry these as strings; the
  * source-map resolver compares with strict equality, so both the stored and
  * the queried values must be normalised to the same type.
@@ -106,12 +46,9 @@ function toIntOrNull(v) {
  * `registry.callPreset()`/`onCameraPresetRecalled` actually pass around) are
  * arbitrary per-camera string ids ('wide', 'close', a UUID — see that
  * plugin's amx.js/visca-ip.js adapters), not a universal numeric PTZ preset
- * number. `crop_source_map.camera_preset` therefore stores that opaque id
- * verbatim rather than coercing it to an integer — the column keeps its
- * INTEGER declaration for legacy compatibility (SQLite's type affinity does
- * not reject a non-numeric TEXT value in an INTEGER-affinity column, it just
- * stores it as-is), and `resolveCropPresetForSource()` compares both sides
- * as strings so a pre-existing numeric-camera_preset row still matches.
+ * number. `crop_source_map.camera_preset` (TEXT) therefore stores that opaque
+ * id verbatim, and `resolveCropPresetForSource()` compares both sides as
+ * strings.
  */
 function toPresetKeyOrNull(v) {
   if (v === null || v === undefined || v === '') return null;
@@ -128,12 +65,13 @@ function toPresetKeyOrNull(v) {
  * (lcyt-production has no camera→mixer FK — see routes/mixers.js's
  * GET /:id/sources, which reads it the same unscoped way), so this only
  * takes the input number.
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
-export function resolveCameraIdForMixerInput(db, mixerInput) {
+export async function resolveCameraIdForMixerInput(db, mixerInput) {
   if (mixerInput === null || mixerInput === undefined) return null;
-  if (!hasProdCamerasTable(db)) return null;
-  const row = db.prepare('SELECT id FROM prod_cameras WHERE mixer_input = ?').get(mixerInput);
+  const input = Number(mixerInput);
+  if (!Number.isInteger(input)) return null;
+  const row = await db.prod_cameras.findFirst({ where: { mixer_input: input }, select: { id: true } });
   return row?.id ?? null;
 }
 
@@ -158,18 +96,18 @@ const DEFAULT_CONFIG = Object.freeze({
 });
 
 /**
- * @returns {object} config (defaults when no row exists)
+ * @returns {Promise<object>} config (defaults when no row exists)
  */
-export function getCropConfig(db, apiKey) {
-  const row = db.prepare('SELECT * FROM crop_config WHERE api_key = ?').get(apiKey);
+export async function getCropConfig(db, apiKey) {
+  const row = await db.crop_config.findUnique({ where: { api_key: apiKey } });
   return row ? formatConfig(row) : { ...DEFAULT_CONFIG };
 }
 
 /**
  * Upsert crop config. Only provided fields change.
- * @returns {{ ok: true, config: object } | { ok: false, error: string }}
+ * @returns {Promise<{ ok: true, config: object } | { ok: false, error: string }>}
  */
-export function setCropConfig(db, apiKey, patch = {}) {
+export async function setCropConfig(db, apiKey, patch = {}) {
   const { enabled, aspectW, aspectH, outW, outH, videoBitrate, followProgram, transitionMs, activeSetId, autoFollow } = patch;
 
   const isPosInt = v => Number.isInteger(v) && v > 0;
@@ -184,11 +122,11 @@ export function setCropConfig(db, apiKey, patch = {}) {
     return { ok: false, error: "videoBitrate must look like '4500k'" };
   }
   if (activeSetId !== undefined && activeSetId !== null) {
-    const set = db.prepare('SELECT id FROM crop_preset_sets WHERE api_key = ? AND id = ?').get(apiKey, activeSetId);
+    const set = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(activeSetId) }, select: { id: true } });
     if (!set) return { ok: false, error: 'activeSetId does not reference one of this project\'s sets' };
   }
 
-  const existing = db.prepare('SELECT * FROM crop_config WHERE api_key = ?').get(apiKey);
+  const existing = await db.crop_config.findUnique({ where: { api_key: apiKey } });
   const cur = existing ? formatConfig(existing) : { ...DEFAULT_CONFIG };
   const next = {
     enabled:       enabled       !== undefined ? Boolean(enabled)       : cur.enabled,
@@ -203,19 +141,21 @@ export function setCropConfig(db, apiKey, patch = {}) {
     autoFollow:    autoFollow    !== undefined ? Boolean(autoFollow)    : cur.autoFollow,
   };
 
-  db.prepare(`
-    INSERT INTO crop_config (api_key, enabled, aspect_w, aspect_h, out_w, out_h, video_bitrate, follow_program, transition_ms, active_set_id, auto_follow, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(api_key) DO UPDATE SET
-      enabled = excluded.enabled, aspect_w = excluded.aspect_w, aspect_h = excluded.aspect_h,
-      out_w = excluded.out_w, out_h = excluded.out_h, video_bitrate = excluded.video_bitrate,
-      follow_program = excluded.follow_program, transition_ms = excluded.transition_ms,
-      active_set_id = excluded.active_set_id, auto_follow = excluded.auto_follow, updated_at = datetime('now')
-  `).run(
-    apiKey, next.enabled ? 1 : 0, next.aspectW, next.aspectH, next.outW, next.outH,
-    next.videoBitrate, next.followProgram ? 1 : 0, next.transitionMs, next.activeSetId, next.autoFollow ? 1 : 0,
-  );
-  return { ok: true, config: getCropConfig(db, apiKey) };
+  const values = {
+    enabled: next.enabled ? 1 : 0,
+    aspect_w: next.aspectW,
+    aspect_h: next.aspectH,
+    out_w: next.outW,
+    out_h: next.outH,
+    video_bitrate: next.videoBitrate,
+    follow_program: next.followProgram ? 1 : 0,
+    transition_ms: next.transitionMs,
+    active_set_id: next.activeSetId,
+    auto_follow: next.autoFollow ? 1 : 0,
+    updated_at: db.$util.sqlNow(),
+  };
+  await db.crop_config.upsert({ where: { api_key: apiKey }, create: { api_key: apiKey, ...values }, update: values });
+  return { ok: true, config: await getCropConfig(db, apiKey) };
 }
 
 // ── preset sets ─────────────────────────────────────────────────────────────
@@ -224,74 +164,85 @@ function formatSet(row) {
   return { id: row.id, name: row.name, sortOrder: row.sort_order, createdAt: row.created_at };
 }
 
-export function listCropSets(db, apiKey) {
-  return db.prepare('SELECT * FROM crop_preset_sets WHERE api_key = ? ORDER BY sort_order, created_at')
-    .all(apiKey).map(formatSet);
+export async function listCropSets(db, apiKey) {
+  const rows = await db.crop_preset_sets.findMany({
+    where: { api_key: apiKey },
+    orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+  });
+  return rows.map(formatSet);
 }
+
+const isUniqueViolation = err => err?.code === 'P2002' || /UNIQUE|unique constraint/i.test(err?.message ?? '');
 
 /**
  * Create a preset set; optionally clone all presets (and their source-map
  * rows) from another set as a starting point.
- * @returns {{ ok: true, set: object } | { ok: false, error: string }}
+ * @returns {Promise<{ ok: true, set: object } | { ok: false, error: string }>}
  */
-export function createCropSet(db, apiKey, { name, sortOrder = 0, cloneFromSetId = null } = {}) {
+export async function createCropSet(db, apiKey, { name, sortOrder = 0, cloneFromSetId = null } = {}) {
   if (!name || typeof name !== 'string' || !name.trim()) return { ok: false, error: 'name is required' };
   const id = randomUUID();
+  const createdAt = db.$util.sqlNow();
   try {
-    db.transaction(() => {
-      db.prepare('INSERT INTO crop_preset_sets (id, api_key, name, sort_order) VALUES (?, ?, ?, ?)')
-        .run(id, apiKey, name.trim(), sortOrder);
+    await db.$transaction(async tx => {
+      await tx.crop_preset_sets.create({ data: { id, api_key: apiKey, name: name.trim(), sort_order: sortOrder, created_at: createdAt } });
       if (cloneFromSetId) {
-        const source = db.prepare('SELECT * FROM crop_presets WHERE api_key = ? AND set_id = ? ORDER BY sort_order, created_at')
-          .all(apiKey, cloneFromSetId);
+        const source = await tx.crop_presets.findMany({
+          where: { api_key: apiKey, set_id: cloneFromSetId },
+          orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+        });
         for (const p of source) {
           const newPresetId = randomUUID();
-          db.prepare('INSERT INTO crop_presets (id, api_key, set_id, name, x_norm, y_norm, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)')
-            .run(newPresetId, apiKey, id, p.name, p.x_norm, p.y_norm, p.sort_order);
-          const maps = db.prepare('SELECT * FROM crop_source_map WHERE api_key = ? AND preset_id = ?').all(apiKey, p.id);
+          await tx.crop_presets.create({
+            data: { id: newPresetId, api_key: apiKey, set_id: id, name: p.name, x_norm: p.x_norm, y_norm: p.y_norm, sort_order: p.sort_order, created_at: createdAt },
+          });
+          const maps = await tx.$queryRaw`SELECT * FROM crop_source_map WHERE api_key = ${apiKey} AND preset_id = ${p.id}`;
           for (const m of maps) {
-            db.prepare('INSERT INTO crop_source_map (id, api_key, mixer_id, mixer_input, camera_id, camera_preset, preset_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-              .run(randomUUID(), apiKey, m.mixer_id, m.mixer_input, m.camera_id, m.camera_preset, newPresetId);
+            await insertSourceMapRow(tx, {
+              id: randomUUID(), apiKey, mixerId: m.mixer_id, mixerInput: db.$util.num(m.mixer_input),
+              cameraId: m.camera_id, cameraPreset: m.camera_preset, presetId: newPresetId,
+            });
           }
         }
       }
-    })();
+    });
   } catch (err) {
-    if (/UNIQUE/.test(err.message)) return { ok: false, error: `A set named "${name.trim()}" already exists` };
+    if (isUniqueViolation(err)) return { ok: false, error: `A set named "${name.trim()}" already exists` };
     return { ok: false, error: err.message };
   }
-  const row = db.prepare('SELECT * FROM crop_preset_sets WHERE id = ?').get(id);
+  const row = await db.crop_preset_sets.findUnique({ where: { id } });
   return { ok: true, set: formatSet(row) };
 }
 
-export function updateCropSet(db, apiKey, id, { name, sortOrder } = {}) {
-  const existing = db.prepare('SELECT * FROM crop_preset_sets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function updateCropSet(db, apiKey, id, { name, sortOrder } = {}) {
+  const existing = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(id) } });
   if (!existing) return { ok: false, error: 'Set not found', status: 404 };
   try {
-    db.prepare('UPDATE crop_preset_sets SET name = ?, sort_order = ? WHERE api_key = ? AND id = ?')
-      .run(
-        typeof name === 'string' && name.trim() ? name.trim() : existing.name,
-        sortOrder ?? existing.sort_order,
-        apiKey, id,
-      );
+    await db.crop_preset_sets.update({
+      where: { id: existing.id },
+      data: {
+        name: typeof name === 'string' && name.trim() ? name.trim() : existing.name,
+        sort_order: sortOrder ?? existing.sort_order,
+      },
+    });
   } catch (err) {
-    if (/UNIQUE/.test(err.message)) return { ok: false, error: `A set named "${name}" already exists` };
+    if (isUniqueViolation(err)) return { ok: false, error: `A set named "${name}" already exists` };
     return { ok: false, error: err.message };
   }
-  return { ok: true, set: formatSet(db.prepare('SELECT * FROM crop_preset_sets WHERE id = ?').get(id)) };
+  return { ok: true, set: formatSet(await db.crop_preset_sets.findUnique({ where: { id: existing.id } })) };
 }
 
 /** Deletes a set with its presets and their source-map rows (manual cascade). */
-export function deleteCropSet(db, apiKey, id) {
-  const existing = db.prepare('SELECT id FROM crop_preset_sets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function deleteCropSet(db, apiKey, id) {
+  const existing = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(id) }, select: { id: true } });
   if (!existing) return false;
-  db.transaction(() => {
-    db.prepare('DELETE FROM crop_source_map WHERE api_key = ? AND preset_id IN (SELECT id FROM crop_presets WHERE api_key = ? AND set_id = ?)')
-      .run(apiKey, apiKey, id);
-    db.prepare('DELETE FROM crop_presets WHERE api_key = ? AND set_id = ?').run(apiKey, id);
-    db.prepare('DELETE FROM crop_preset_sets WHERE api_key = ? AND id = ?').run(apiKey, id);
-    db.prepare('UPDATE crop_config SET active_set_id = NULL WHERE api_key = ? AND active_set_id = ?').run(apiKey, id);
-  })();
+  await db.$transaction(async tx => {
+    const presets = await tx.crop_presets.findMany({ where: { api_key: apiKey, set_id: existing.id }, select: { id: true } });
+    await tx.crop_source_map.deleteMany({ where: { api_key: apiKey, preset_id: { in: presets.map(p => p.id) } } });
+    await tx.crop_presets.deleteMany({ where: { api_key: apiKey, set_id: existing.id } });
+    await tx.crop_preset_sets.deleteMany({ where: { api_key: apiKey, id: existing.id } });
+    await tx.crop_config.updateMany({ where: { api_key: apiKey, active_set_id: existing.id }, data: { active_set_id: null } });
+  });
   return true;
 }
 
@@ -313,69 +264,75 @@ function formatPreset(row) {
  * List presets. When `setId` is undefined the project's ACTIVE set is used
  * (null = the implicit default set, i.e. presets with set_id IS NULL).
  */
-export function listCropPresets(db, apiKey, { setId } = {}) {
-  const effectiveSetId = setId !== undefined ? setId : getCropConfig(db, apiKey).activeSetId;
-  const rows = effectiveSetId === null
-    ? db.prepare('SELECT * FROM crop_presets WHERE api_key = ? AND set_id IS NULL ORDER BY sort_order, created_at').all(apiKey)
-    : db.prepare('SELECT * FROM crop_presets WHERE api_key = ? AND set_id = ? ORDER BY sort_order, created_at').all(apiKey, effectiveSetId);
+export async function listCropPresets(db, apiKey, { setId } = {}) {
+  const effectiveSetId = setId !== undefined ? setId : (await getCropConfig(db, apiKey)).activeSetId;
+  const rows = await db.crop_presets.findMany({
+    where: { api_key: apiKey, set_id: effectiveSetId === null ? null : String(effectiveSetId) },
+    orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+  });
   return rows.map(formatPreset);
 }
 
-export function getCropPreset(db, apiKey, id) {
-  const row = db.prepare('SELECT * FROM crop_presets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function getCropPreset(db, apiKey, id) {
+  const row = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id) } });
   return row ? formatPreset(row) : null;
 }
 
-export function createCropPreset(db, apiKey, { name, xNorm = 0.5, yNorm = 0, setId = null, sortOrder = 0 } = {}) {
+export async function createCropPreset(db, apiKey, { name, xNorm = 0.5, yNorm = 0, setId = null, sortOrder = 0 } = {}) {
   if (!name || typeof name !== 'string' || !name.trim()) return { ok: false, error: 'name is required' };
   if (!Number.isFinite(Number(xNorm)) || !Number.isFinite(Number(yNorm))) {
     return { ok: false, error: 'xNorm and yNorm must be numbers' };
   }
   if (setId !== null) {
-    const set = db.prepare('SELECT id FROM crop_preset_sets WHERE api_key = ? AND id = ?').get(apiKey, setId);
+    const set = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(setId) }, select: { id: true } });
     if (!set) return { ok: false, error: 'setId does not reference one of this project\'s sets' };
   }
   const id = randomUUID();
   try {
-    db.prepare('INSERT INTO crop_presets (id, api_key, set_id, name, x_norm, y_norm, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(id, apiKey, setId, name.trim(), clamp01(xNorm), clamp01(yNorm), sortOrder);
+    await db.crop_presets.create({
+      data: {
+        id, api_key: apiKey, set_id: setId, name: name.trim(), x_norm: clamp01(xNorm), y_norm: clamp01(yNorm),
+        sort_order: sortOrder, created_at: db.$util.sqlNow(),
+      },
+    });
   } catch (err) {
-    if (/UNIQUE/.test(err.message)) return { ok: false, error: `A preset named "${name.trim()}" already exists in this set` };
+    if (isUniqueViolation(err)) return { ok: false, error: `A preset named "${name.trim()}" already exists in this set` };
     return { ok: false, error: err.message };
   }
-  return { ok: true, preset: getCropPreset(db, apiKey, id) };
+  return { ok: true, preset: await getCropPreset(db, apiKey, id) };
 }
 
-export function updateCropPreset(db, apiKey, id, { name, xNorm, yNorm, sortOrder } = {}) {
-  const existing = db.prepare('SELECT * FROM crop_presets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function updateCropPreset(db, apiKey, id, { name, xNorm, yNorm, sortOrder } = {}) {
+  const existing = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id) } });
   if (!existing) return { ok: false, error: 'Preset not found', status: 404 };
   if ((xNorm !== undefined && !Number.isFinite(Number(xNorm))) || (yNorm !== undefined && !Number.isFinite(Number(yNorm)))) {
     return { ok: false, error: 'xNorm and yNorm must be numbers' };
   }
   try {
-    db.prepare('UPDATE crop_presets SET name = ?, x_norm = ?, y_norm = ?, sort_order = ? WHERE api_key = ? AND id = ?')
-      .run(
-        typeof name === 'string' && name.trim() ? name.trim() : existing.name,
-        xNorm !== undefined ? clamp01(xNorm) : existing.x_norm,
-        yNorm !== undefined ? clamp01(yNorm) : existing.y_norm,
-        sortOrder ?? existing.sort_order,
-        apiKey, id,
-      );
+    await db.crop_presets.update({
+      where: { id: existing.id },
+      data: {
+        name: typeof name === 'string' && name.trim() ? name.trim() : existing.name,
+        x_norm: xNorm !== undefined ? clamp01(xNorm) : existing.x_norm,
+        y_norm: yNorm !== undefined ? clamp01(yNorm) : existing.y_norm,
+        sort_order: sortOrder ?? existing.sort_order,
+      },
+    });
   } catch (err) {
-    if (/UNIQUE/.test(err.message)) return { ok: false, error: `A preset named "${name}" already exists in this set` };
+    if (isUniqueViolation(err)) return { ok: false, error: `A preset named "${name}" already exists in this set` };
     return { ok: false, error: err.message };
   }
-  return { ok: true, preset: getCropPreset(db, apiKey, id) };
+  return { ok: true, preset: await getCropPreset(db, apiKey, existing.id) };
 }
 
 /** Deletes a preset and its source-map rows (manual cascade). */
-export function deleteCropPreset(db, apiKey, id) {
-  const existing = db.prepare('SELECT id FROM crop_presets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function deleteCropPreset(db, apiKey, id) {
+  const existing = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id) }, select: { id: true } });
   if (!existing) return false;
-  db.transaction(() => {
-    db.prepare('DELETE FROM crop_source_map WHERE api_key = ? AND preset_id = ?').run(apiKey, id);
-    db.prepare('DELETE FROM crop_presets WHERE api_key = ? AND id = ?').run(apiKey, id);
-  })();
+  await db.$transaction(async tx => {
+    await tx.crop_source_map.deleteMany({ where: { api_key: apiKey, preset_id: existing.id } });
+    await tx.crop_presets.deleteMany({ where: { api_key: apiKey, id: existing.id } });
+  });
   return true;
 }
 
@@ -392,13 +349,27 @@ function formatMapRow(row) {
   };
 }
 
-export function listCropSourceMap(db, apiKey) {
-  return db.prepare('SELECT * FROM crop_source_map WHERE api_key = ?').all(apiKey).map(formatMapRow);
+/** Raw rows of crop_source_map with BigInt integers turned into numbers. */
+async function sourceMapRows(db, apiKey, id = null) {
+  const rows = id === null
+    ? await db.$queryRaw`SELECT * FROM crop_source_map WHERE api_key = ${apiKey}`
+    : await db.$queryRaw`SELECT * FROM crop_source_map WHERE api_key = ${apiKey} AND id = ${id}`;
+  return rows.map(r => ({ ...r, mixer_input: db.$util.num(r.mixer_input) }));
 }
 
-export function createCropSourceMapEntry(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null, presetId } = {}) {
+/** Insert one crop_source_map row. camera_preset is TEXT; the caller passes it already normalised. */
+async function insertSourceMapRow(db, { id, apiKey, mixerId, mixerInput, cameraId, cameraPreset, presetId }) {
+  await db.$executeRaw`INSERT INTO crop_source_map (id, api_key, mixer_id, mixer_input, camera_id, camera_preset, preset_id)
+    VALUES (${id}, ${apiKey}, ${mixerId ?? null}, ${mixerInput ?? null}, ${cameraId ?? null}, ${cameraPreset ?? null}, ${presetId})`;
+}
+
+export async function listCropSourceMap(db, apiKey) {
+  return (await sourceMapRows(db, apiKey)).map(formatMapRow);
+}
+
+export async function createCropSourceMapEntry(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null, presetId } = {}) {
   if (!presetId) return { ok: false, error: 'presetId is required' };
-  const preset = db.prepare('SELECT id FROM crop_presets WHERE api_key = ? AND id = ?').get(apiKey, presetId);
+  const preset = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(presetId) }, select: { id: true } });
   if (!preset) return { ok: false, error: 'presetId does not reference one of this project\'s presets' };
 
   const normMixerInput   = toIntOrNull(mixerInput);
@@ -413,13 +384,19 @@ export function createCropSourceMapEntry(db, apiKey, { mixerId = null, mixerInpu
     return { ok: false, error: 'At least one of mixerId/mixerInput or cameraId must be set' };
   }
   const id = randomUUID();
-  db.prepare('INSERT INTO crop_source_map (id, api_key, mixer_id, mixer_input, camera_id, camera_preset, preset_id) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, apiKey, normMixerId, normMixerInput, normCameraId, normCameraPreset, presetId);
-  return { ok: true, entry: formatMapRow(db.prepare('SELECT * FROM crop_source_map WHERE id = ?').get(id)) };
+  try {
+    await insertSourceMapRow(db, {
+      id, apiKey, mixerId: normMixerId, mixerInput: normMixerInput, cameraId: normCameraId, cameraPreset: normCameraPreset, presetId: preset.id,
+    });
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  const [row] = await sourceMapRows(db, apiKey, id);
+  return { ok: true, entry: formatMapRow(row) };
 }
 
-export function deleteCropSourceMapEntry(db, apiKey, id) {
-  return db.prepare('DELETE FROM crop_source_map WHERE api_key = ? AND id = ?').run(apiKey, id).changes > 0;
+export async function deleteCropSourceMapEntry(db, apiKey, id) {
+  return (await db.crop_source_map.deleteMany({ where: { api_key: apiKey, id: String(id) } })).count > 0;
 }
 
 /**
@@ -430,9 +407,9 @@ export function deleteCropSourceMapEntry(db, apiKey, id) {
  * different set is ignored.
  *
  * @param {object} src { mixerId?, mixerInput?, cameraId?, cameraPreset? }
- * @returns {object|null} the winning preset (formatPreset shape) or null
+ * @returns {Promise<object|null>} the winning preset (formatPreset shape) or null
  */
-export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
+export async function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
   // Normalise caller-provided values (JSON bodies often carry numbers as
   // strings) so the strict comparisons below match the normalised DB values.
   mixerInput   = toIntOrNull(mixerInput);
@@ -441,8 +418,8 @@ export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerIn
   mixerId  = mixerId  != null && mixerId  !== '' ? String(mixerId)  : null;
   cameraId = cameraId != null && cameraId !== '' ? String(cameraId) : null;
 
-  const activeSetId = getCropConfig(db, apiKey).activeSetId;
-  const rows = db.prepare('SELECT * FROM crop_source_map WHERE api_key = ?').all(apiKey);
+  const activeSetId = (await getCropConfig(db, apiKey)).activeSetId;
+  const rows = await sourceMapRows(db, apiKey);
 
   let best = null;
   let bestScore = -1;
@@ -453,8 +430,8 @@ export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerIn
       score += 4;
       if (row.camera_preset !== null) {
         // String comparison — camera_preset is an opaque per-camera preset
-        // id (see toPresetKeyOrNull above), not always stored as TEXT (a
-        // pre-existing row may hold a plain SQLite INTEGER).
+        // id (see toPresetKeyOrNull above); String() also covers a query
+        // that arrives as a number.
         if (cameraPreset === null || String(row.camera_preset) !== String(cameraPreset)) continue;
         score += 4;
       }
@@ -472,7 +449,7 @@ export function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerIn
     }
     if (score === 0) continue;
 
-    const preset = db.prepare('SELECT * FROM crop_presets WHERE api_key = ? AND id = ?').get(apiKey, row.preset_id);
+    const preset = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: row.preset_id } });
     if (!preset) continue;
     if ((preset.set_id ?? null) !== activeSetId) continue;
 

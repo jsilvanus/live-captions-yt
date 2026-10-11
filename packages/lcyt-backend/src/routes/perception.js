@@ -86,11 +86,11 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
     res.json({ ok: true, stopped });
   });
 
-  sharedRouter.get('/shared/status', (req, res) => {
+  sharedRouter.get('/shared/status', async (req, res) => {
     if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
-    res.json({ ok: true, status: perceptionManager.sharedFeedStatus(apiKey), auto: sharedAutostart ? sharedAutostart.get(apiKey) : false });
+    res.json({ ok: true, status: perceptionManager.sharedFeedStatus(apiKey), auto: sharedAutostart ? await sharedAutostart.get(apiKey) : false });
   });
 
   // GET /overview — cameras, shared-feed job and feed attribution in one read (camera status panel)
@@ -102,12 +102,12 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
   });
 
   // POST /shared/auto { enabled } — run the shared-feed job automatically while the program feed is live
-  sharedRouter.post('/shared/auto', (req, res) => {
+  sharedRouter.post('/shared/auto', async (req, res) => {
     if (!sharedAutostart) return res.status(503).json({ error: 'Perception auto-start not configured' });
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
     if (typeof req.body?.enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
-    sharedAutostart.set(apiKey, req.body.enabled);
+    await sharedAutostart.set(apiKey, req.body.enabled);
     res.json({ ok: true, auto: req.body.enabled });
   });
 

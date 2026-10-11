@@ -6,18 +6,13 @@ import { EventEmitter } from 'node:events';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Minimal mock DB — tracks inserts without real SQLite. */
+/** Minimal mock Prisma client — tracks music_events inserts without a real database. */
 function makeMockDb() {
   const inserts = [];
-  function makeStmt(inserts) {
-    return {
-      run(...args) { inserts.push(args); return { lastInsertRowid: inserts.length }; },
-      all() { return []; },
-    };
-  }
   return {
-    exec() {},
-    prepare() { return makeStmt(inserts); },
+    music_events: {
+      create: async ({ data }) => { inserts.push(data); return { id: inserts.length, ...data }; },
+    },
     inserts,
   };
 }
@@ -47,160 +42,160 @@ describe('createSoundCaptionProcessor', () => {
     ({ createSoundCaptionProcessor } = await import('../src/sound-caption-processor.js'));
   });
 
-  test('strips sound metacode and returns clean text', () => {
+  test('strips sound metacode and returns clean text', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    const result = proc('test-key', 'Hello <!-- sound:music --> world');
+    const result = await proc('test-key', 'Hello <!-- sound:music --> world');
     assert.equal(result, 'Hello  world'.trim());
   });
 
-  test('strips bpm metacode', () => {
+  test('strips bpm metacode', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    const result = proc('test-key', 'Text <!-- bpm:128 --> here');
+    const result = await proc('test-key', 'Text <!-- bpm:128 --> here');
     assert.equal(result, 'Text  here'.trim());
   });
 
-  test('strips both metacodes from same caption', () => {
+  test('strips both metacodes from same caption', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    const result = proc('test-key', '<!-- sound:music --> <!-- bpm:140 -->');
+    const result = await proc('test-key', '<!-- sound:music --> <!-- bpm:140 -->');
     assert.equal(result, '');
   });
 
-  test('returns unchanged text when no metacodes present', () => {
+  test('returns unchanged text when no metacodes present', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    const result = proc('test-key', 'Normal caption text');
+    const result = await proc('test-key', 'Normal caption text');
     assert.equal(result, 'Normal caption text');
   });
 
-  test('returns empty string for null/undefined input', () => {
+  test('returns empty string for null/undefined input', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
     // null/undefined → return as-is (falsy passthrough)
-    assert.equal(proc('test-key', null), null);
-    assert.equal(proc('test-key', undefined), undefined);
-    assert.equal(proc('test-key', ''), '');
+    assert.equal(await proc('test-key', null), null);
+    assert.equal(await proc('test-key', undefined), undefined);
+    assert.equal(await proc('test-key', ''), '');
   });
 
-  test('emits sound_label SSE event for sound metacode', () => {
+  test('emits sound_label SSE event for sound metacode', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    proc('test-key', '<!-- sound:music -->');
+    await proc('test-key', '<!-- sound:music -->');
 
     const soundEvt = store.emitted.find(e => e.type === 'sound_label');
     assert.ok(soundEvt, 'sound_label event should be emitted');
     assert.equal(soundEvt.data.label, 'music');
   });
 
-  test('emits bpm_update SSE event for bpm metacode', () => {
+  test('emits bpm_update SSE event for bpm metacode', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    proc('test-key', '<!-- bpm:128 -->');
+    await proc('test-key', '<!-- bpm:128 -->');
 
     const bpmEvt = store.emitted.find(e => e.type === 'bpm_update');
     assert.ok(bpmEvt, 'bpm_update event should be emitted');
     assert.equal(bpmEvt.data.bpm, 128);
   });
 
-  test('emits both SSE events when both metacodes are present', () => {
+  test('emits both SSE events when both metacodes are present', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    proc('test-key', '<!-- sound:speech --> <!-- bpm:75 -->');
+    await proc('test-key', '<!-- sound:speech --> <!-- bpm:75 -->');
 
     const types = store.emitted.map(e => e.type);
     assert.ok(types.includes('sound_label'), 'sound_label should be emitted');
     assert.ok(types.includes('bpm_update'), 'bpm_update should be emitted');
   });
 
-  test('does not emit SSE events when no metacodes present', () => {
+  test('does not emit SSE events when no metacodes present', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    proc('test-key', 'No metacodes here');
+    await proc('test-key', 'No metacodes here');
 
     assert.equal(store.emitted.length, 0);
   });
 
-  test('does not emit SSE event for unknown session key', () => {
+  test('does not emit SSE event for unknown session key', async () => {
     const db = makeMockDb();
     const store = makeMockStore('other-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
     // Using a different apiKey — session won't be found
-    proc('unknown-key', '<!-- sound:silence -->');
+    await proc('unknown-key', '<!-- sound:silence -->');
 
     assert.equal(store.emitted.length, 0);
   });
 
-  test('inserts label_change event into DB', () => {
+  test('inserts label_change event into DB', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    proc('test-key', '<!-- sound:music -->');
+    await proc('test-key', '<!-- sound:music -->');
 
     assert.ok(db.inserts.length > 0, 'DB insert should have been called');
-    // First positional arg to .run() is apiKey
-    assert.equal(db.inserts[0][0], 'test-key');
+    assert.equal(db.inserts[0].api_key, 'test-key');
+    assert.equal(db.inserts[0].event_type, 'label_change');
   });
 
-  test('handles gracefully when store is null', () => {
+  test('handles gracefully when store is null', async () => {
     const db = makeMockDb();
     const proc = createSoundCaptionProcessor({ store: null, db });
 
     // Should not throw even with no store
-    const result = proc('any-key', '<!-- sound:music -->');
+    const result = await proc('any-key', '<!-- sound:music -->');
     assert.equal(result, '');
   });
 
-  test('handles gracefully when db is null', () => {
+  test('handles gracefully when db is null', async () => {
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db: null });
 
     // Should not throw even with no db
-    const result = proc('test-key', '<!-- sound:music -->');
+    const result = await proc('test-key', '<!-- sound:music -->');
     assert.equal(result, '');
     // SSE event should still be emitted
     const soundEvt = store.emitted.find(e => e.type === 'sound_label');
     assert.ok(soundEvt);
   });
 
-  test('case-insensitive: SOUND and BPM in caps', () => {
+  test('case-insensitive: SOUND and BPM in caps', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    const result = proc('test-key', '<!-- SOUND:MUSIC --> text <!-- BPM:90 -->');
+    const result = await proc('test-key', '<!-- SOUND:MUSIC --> text <!-- BPM:90 -->');
     assert.equal(result, 'text');
     assert.ok(store.emitted.find(e => e.type === 'sound_label'));
     assert.ok(store.emitted.find(e => e.type === 'bpm_update'));
   });
 
-  test('preserves surrounding text after stripping metacodes', () => {
+  test('preserves surrounding text after stripping metacodes', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createSoundCaptionProcessor({ store, db });
 
-    const result = proc('test-key', 'Before <!-- sound:silence --> After');
+    const result = await proc('test-key', 'Before <!-- sound:silence --> After');
     assert.equal(result, 'Before  After'.trim());
   });
 });

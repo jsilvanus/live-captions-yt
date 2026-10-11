@@ -39,16 +39,11 @@ function makeDb(configFn, { callCount } = {}) {
   if (callCount) callCount.ref = counter;
 
   return {
-    prepare: (sql) => {
-      if (sql.includes('SELECT') && sql.includes('key_storage_config')) {
-        return {
-          get: (key) => {
-            counter.n++;
-            return configFn(key);
-          },
-        };
-      }
-      return { get: () => null, run: () => {}, all: () => [] };
+    key_storage_config: {
+      findUnique: async ({ where }) => {
+        counter.n++;
+        return configFn(where.api_key);
+      },
     },
   };
 }

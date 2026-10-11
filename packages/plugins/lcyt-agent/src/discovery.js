@@ -45,37 +45,34 @@ export function inferCapabilities(entry) {
  * last_seen_at bumped; new ones are inserted with source 'discovered'.
  * Absent rows are left untouched (upsert-not-delete).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} providerId
  * @param {Array<object>} entries — Ollama /api/tags "models" array
- * @returns {number} — how many entries were processed
+ * @returns {Promise<number>} — how many entries were processed
  */
-export function upsertDiscoveredModels(db, providerId, entries) {
-  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const upsert = db.prepare(`
-    INSERT INTO ai_provider_models
-      (provider_id, model_name, capabilities, source, parameter_size, quantization, discovered_at, last_seen_at)
-    VALUES (?, ?, ?, 'discovered', ?, ?, ?, ?)
-    ON CONFLICT (provider_id, model_name) DO UPDATE SET
-      last_seen_at = excluded.last_seen_at,
-      parameter_size = excluded.parameter_size,
-      quantization = excluded.quantization
-  `);
-  const tx = db.transaction(() => {
+export async function upsertDiscoveredModels(db, providerId, entries) {
+  const now = db.$util.sqlNow();
+  await db.$transaction(async (tx) => {
     for (const entry of entries) {
       if (!entry?.name) continue;
-      upsert.run(
-        providerId,
-        entry.name,
-        JSON.stringify(inferCapabilities(entry)),
-        entry.details?.parameter_size ?? null,
-        entry.details?.quantization_level ?? null,
-        now,
-        now,
-      );
+      const parameter_size = entry.details?.parameter_size ?? null;
+      const quantization = entry.details?.quantization_level ?? null;
+      await tx.ai_provider_models.upsert({
+        where: { provider_id_model_name: { provider_id: providerId, model_name: entry.name } },
+        create: {
+          provider_id: providerId,
+          model_name: entry.name,
+          capabilities: JSON.stringify(inferCapabilities(entry)),
+          source: 'discovered',
+          parameter_size,
+          quantization,
+          discovered_at: now,
+          last_seen_at: now,
+        },
+        update: { last_seen_at: now, parameter_size, quantization },
+      });
     }
   });
-  tx();
   return entries.filter((e) => e?.name).length;
 }
 
@@ -133,7 +130,7 @@ async function fetchOllamaTags(provider, { bridgeManager } = {}) {
  *
  * Updates ai_providers.last_discovery_at / last_discovery_error either way.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {object} provider — raw ai_providers row
  * @param {{ bridgeManager?: object }} [deps]
  * @returns {Promise<{ ok: boolean, discovered: number, skipped?: true, error?: string }>}
@@ -145,16 +142,18 @@ export async function discoverProvider(db, provider, deps = {}) {
 
   try {
     const entries = await fetchOllamaTags(provider, deps);
-    const discovered = upsertDiscoveredModels(db, provider.id, entries);
-    db.prepare(
-      "UPDATE ai_providers SET last_discovery_at = datetime('now'), last_discovery_error = NULL WHERE id = ?"
-    ).run(provider.id);
+    const discovered = await upsertDiscoveredModels(db, provider.id, entries);
+    await db.ai_providers.updateMany({
+      where: { id: provider.id },
+      data: { last_discovery_at: db.$util.sqlNow(), last_discovery_error: null },
+    });
     return { ok: true, discovered };
   } catch (err) {
     logger.warn(`[agent] discovery failed for provider ${provider.id}: ${err.message}`);
-    db.prepare(
-      "UPDATE ai_providers SET last_discovery_at = datetime('now'), last_discovery_error = ? WHERE id = ?"
-    ).run(err.message, provider.id);
+    await db.ai_providers.updateMany({
+      where: { id: provider.id },
+      data: { last_discovery_at: db.$util.sqlNow(), last_discovery_error: err.message },
+    });
     return { ok: false, discovered: 0, error: err.message };
   }
 }

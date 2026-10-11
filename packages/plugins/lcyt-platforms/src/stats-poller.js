@@ -36,10 +36,10 @@ const QUOTA_REASONS = new Set(['quotaExceeded', 'rateLimitExceeded', 'userRateLi
 
 /**
  * @param {object} deps
- * @param {import('better-sqlite3').Database} deps.db
+ * @param {import('lcyt-backend/db').Db} deps.db
  * @param {(platform: string) => object|null} deps.getAdapter
  * @param {(credentialId: string) => Promise<string>} deps.getAccessToken
- * @param {(broadcastId: string) => string|null} deps.getProjectForBroadcast  broadcast → api_key, for per-project event delivery
+ * @param {(broadcastId: string) => string|null|Promise<string|null>} deps.getProjectForBroadcast  broadcast → api_key, for per-project event delivery
  * @param {{ publish: (projectId: string, topic: string, data: object) => void }} [deps.eventBus]
  * @param {() => number} [deps.getIntervalMs]
  */
@@ -74,17 +74,17 @@ export function createStatsPoller({
       const accessToken = await getAccessToken(link.credential_id);
       const { concurrentViewers } = await adapter.getLiveStats(accessToken, link.external_broadcast_id);
 
-      insertStats(db, {
+      await insertStats(db, {
         broadcastId: link.broadcast_id,
         platform: link.platform,
         kind: STATS_LIVE_SNAPSHOT,
         concurrentViewers,
       });
-      updateLink(db, link.id, { lastSyncError: null });
+      await updateLink(db, link.id, { lastSyncError: null });
 
       // Push rather than making the UI poll our REST route on top of us
       // polling YouTube — same delivery pattern as dsk.*/cue.* topics.
-      const projectId = getProjectForBroadcast(link.broadcast_id);
+      const projectId = await getProjectForBroadcast(link.broadcast_id);
       if (eventBus && projectId) {
         eventBus.publish(projectId, 'platform.stats_updated', {
           broadcastId: link.broadcast_id,
@@ -101,7 +101,7 @@ export function createStatsPoller({
       // mid-sweep takes its link with it), and that would escape pollLink and
       // abandon every link still queued in this sweep.
       try {
-        updateLink(db, link.id, { lastSyncError: err.message });
+        await updateLink(db, link.id, { lastSyncError: err.message });
       } catch (writeErr) {
         logger.warn(`[platforms] could not record sync error on link ${link.id}: ${writeErr.message}`);
       }
@@ -126,7 +126,7 @@ export function createStatsPoller({
 
     let links;
     try {
-      links = listLiveLinks(db);
+      links = await listLiveLinks(db);
     } catch (err) {
       logger.warn(`[platforms] could not read live links: ${err.message}`);
       return;

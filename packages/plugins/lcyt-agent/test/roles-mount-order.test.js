@@ -7,11 +7,11 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -42,10 +42,9 @@ function sessionAuth(req, res, next) {
   }
 }
 
-before(() => new Promise((resolve) => {
-  db = new Database(':memory:');
-  runAiRolesMigrations(db);
-  runProviderRegistryMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
+  await runAiRolesMigrations(db);
   token = jwt.sign({ sessionId: 's1', apiKey: 'key1' }, JWT_SECRET, { expiresIn: '1h' });
 
   const rolesBus = new RolesBus();
@@ -63,10 +62,11 @@ before(() => new Promise((resolve) => {
   app.use('/roles/assistant', createProductionAssistantRouter(db, sessionAuth, toolsContext, manager, agent));
 
   server = createServer(app);
-  server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
-}));
+  await new Promise((resolve) => server.listen(0, resolve));
+  baseUrl = `http://localhost:${server.address().port}`;
+});
 
-after(() => new Promise((resolve) => { db.close(); server.close(resolve); }));
+after(async () => { await db.close(); await new Promise((resolve) => server.close(resolve)); });
 
 function bearer(tok = token) { return { Authorization: `Bearer ${tok}` }; }
 

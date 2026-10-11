@@ -10,7 +10,7 @@
  *   sceneState: { getState: (apiKey: string) => { cameras?: object } },
  *   attributor: { status: (apiKey: string) => object },
  *   perceptionManager: { status: (id: string) => object|null, sharedFeedStatus: (apiKey: string) => object|null },
- *   sharedAutostart: { get: (apiKey: string) => boolean },
+ *   sharedAutostart: { get: (apiKey: string) => boolean | Promise<boolean> },
  *   now?: () => number,
  * }} deps
  * @returns {(apiKey: string) => Promise<object>}
@@ -47,7 +47,7 @@ export function createPerceptionOverview({ db, sceneState, attributor, perceptio
     });
     return {
       attribution,
-      shared: { running: !!perceptionManager.sharedFeedStatus(apiKey), auto: !!sharedAutostart.get(apiKey) },
+      shared: { running: !!perceptionManager.sharedFeedStatus(apiKey), auto: !!(await sharedAutostart.get(apiKey)) },
       cameras,
     };
   };

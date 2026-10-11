@@ -68,19 +68,19 @@ function dskSourceUrl(apiKey, settings = null) {
  * Mirrors `resolveApiKeyFromIngestStreamKey()` in lcyt-rtmp's db/relay.js —
  * duplicated here (rather than imported) since lcyt-dsk has no dependency on
  * lcyt-rtmp; both plugins query the shared `api_keys` table directly instead.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} name
- * @returns {string}
+ * @returns {Promise<string>}
  */
-function resolveApiKeyFromIngestStreamKey(db, name) {
-  const row = db.prepare('SELECT key FROM api_keys WHERE ingest_stream_key = ?').get(name);
+async function resolveApiKeyFromIngestStreamKey(db, name) {
+  const row = await db.api_keys.findFirst({ where: { ingest_stream_key: name }, select: { key: true } });
   return row ? row.key : name;
 }
 
 /**
  * Create the Express router for DSK RTMP ingest callbacks.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @param {{ get: (key: string) => *, source: (key: string) => string }} [settings] -
  *   lcyt-backend's SettingsService (plan_env_to_ui_settings.md), duck-typed.
@@ -111,13 +111,13 @@ export function createDskRtmpRouter(db, relayManager, settings = null) {
       return res.status(200).send('ok');
     }
 
-    const apiKey = resolveApiKeyFromIngestStreamKey(db, name);
+    const apiKey = await resolveApiKeyFromIngestStreamKey(db, name);
     const rtmpUrl = dskSourceUrl(apiKey, settings);
 
     if (call === 'publish') {
       // Phase 5: key the program composite with the composite viewport's chromaKey (if any).
       let chromaKey = null;
-      try { chromaKey = getCompositeChromaKey(db, apiKey); } catch { /* pre-migration schema */ }
+      try { chromaKey = await getCompositeChromaKey(db, apiKey); } catch { /* pre-migration schema */ }
       logger.info(`[dsk-rtmp] on_publish: key=${apiKey.slice(0, 8)}… → ${rtmpUrl}${chromaKey ? ' (keyed)' : ''}`);
       try {
         await relayManager.setDskRtmpSource(apiKey, rtmpUrl, { chromaKey });

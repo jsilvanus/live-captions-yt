@@ -23,7 +23,6 @@
  *   await stopDsk();
  */
 
-import { runMigrations } from './db.js';
 import { startRenderer, stopRenderer } from './renderer.js';
 import { createDskCaptionProcessor } from './caption-processor.js';
 import { createDskRouter } from './routes/dsk.js';
@@ -36,12 +35,12 @@ export { deleteAllImages, listImages, getImageByKey, updateImageSettings, delete
 /**
  * Initialise the DSK plugin.
  *
- * - Runs DB migrations (dsk_templates table + caption_files image columns)
+ * - Tables come from lcyt-backend's schema (no plugin migrations)
  * - Starts the Playwright headless Chromium renderer
  * - Returns a captionProcessor function for injection into createCaptionsRouter()
  * - Returns a stop() function for graceful shutdown
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {object} dskBus  — DskBus instance (addDskSubscriber / emitDskEvent / graphics state)
  * @param {object|null} relayManager  — RtmpRelayManager instance (or null if relay inactive)
  * @param {{ metrics?: object, settings?: { get: (key: string) => * } }} [opts] -
@@ -49,7 +48,6 @@ export { deleteAllImages, listImages, getImageByKey, updateImageSettings, delete
  * @returns {Promise<{ captionProcessor: Function, stop: Function }>}
  */
 export async function initDskControl(db, dskBus, relayManager, { metrics = null, settings = null } = {}) {
-  runMigrations(db);
   if (metrics) {
     const { setFfmpegAccountingSink } = await import('./ffmpeg-accounting.js');
     setFfmpegAccountingSink((entry) => metrics.ffmpeg(entry));
@@ -62,7 +60,7 @@ export async function initDskControl(db, dskBus, relayManager, { metrics = null,
 /**
  * Create all DSK Express routers.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {object} dskBus  — DskBus instance
  * @param {import('express').RequestHandler} auth  — JWT Bearer auth middleware
  * @param {object|null} relayManager

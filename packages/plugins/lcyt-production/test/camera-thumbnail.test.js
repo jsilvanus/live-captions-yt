@@ -4,14 +4,13 @@
  * packages/plugins/lcyt-agent/test/vision-frame-fetcher.test.js does.
  */
 
-import { test, describe, afterEach } from 'node:test';
+import { test, describe, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import { runMigrations } from '../src/db.js';
 import { parseCamera } from '../src/registry.js';
 import {
   captureCameraThumbnail,
@@ -22,15 +21,18 @@ import {
 const realFetch = global.fetch;
 afterEach(() => { global.fetch = realFetch; });
 
-function makeDb() {
-  const db = new Database(':memory:');
-  runMigrations(db);
+const openDbs = [];
+async function makeDb() {
+  const db = await initDb(':memory:');
+  openDbs.push(db);
   return db;
 }
 
-function insertCamera(db, overrides = {}) {
+after(async () => { for (const d of openDbs) await d.close(); });
+
+async function insertCamera(db, overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key)
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -42,12 +44,12 @@ function insertCamera(db, overrides = {}) {
     overrides.sort_order ?? 0,
     overrides.camera_key ?? null,
   );
-  return parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
+  return parseCamera(await db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
 }
 
-function insertMixer(db, overrides = {}) {
+async function insertMixer(db, overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_mixers (id, name, type, connection_config)
     VALUES (?, ?, ?, ?)
   `).run(id, overrides.name ?? 'Mixer 1', overrides.type ?? 'lcyt', JSON.stringify(overrides.connection_config ?? {}));
@@ -64,8 +66,8 @@ function makeTmpDir() {
 
 describe('captureCameraThumbnail — Path A (independent feed, camera_key)', () => {
   test('no camera_key and no apiKey -> 400', async () => {
-    const db = makeDb();
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, { thumbnailsDir: makeTmpDir() });
     assert.equal(result.ok, false);
@@ -74,8 +76,8 @@ describe('captureCameraThumbnail — Path A (independent feed, camera_key)', () 
 
   test('preview 404 -> 409 (not live)', async () => {
     global.fetch = async () => ({ ok: false, status: 404 });
-    const db = makeDb();
-    const camera = insertCamera(db, { camera_key: 'cam-key-1' });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { camera_key: 'cam-key-1' });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, {
       thumbnailsDir: makeTmpDir(), previewBaseUrl: 'http://x',
@@ -86,8 +88,8 @@ describe('captureCameraThumbnail — Path A (independent feed, camera_key)', () 
 
   test('preview non-ok non-404 -> 502', async () => {
     global.fetch = async () => ({ ok: false, status: 500 });
-    const db = makeDb();
-    const camera = insertCamera(db, { camera_key: 'cam-key-1' });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { camera_key: 'cam-key-1' });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, {
       thumbnailsDir: makeTmpDir(), previewBaseUrl: 'http://x',
@@ -98,8 +100,8 @@ describe('captureCameraThumbnail — Path A (independent feed, camera_key)', () 
 
   test('fetch throw -> 502', async () => {
     global.fetch = async () => { throw new Error('network down'); };
-    const db = makeDb();
-    const camera = insertCamera(db, { camera_key: 'cam-key-1' });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { camera_key: 'cam-key-1' });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, {
       thumbnailsDir: makeTmpDir(), previewBaseUrl: 'http://x',
@@ -111,8 +113,8 @@ describe('captureCameraThumbnail — Path A (independent feed, camera_key)', () 
 
   test('success: writes file, updates DB, returns sizeBytes', async () => {
     global.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => Buffer.from('jpeg-bytes') });
-    const db = makeDb();
-    const camera = insertCamera(db, { camera_key: 'cam-key-1' });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { camera_key: 'cam-key-1' });
     const registry = makeRegistryStub();
     const thumbnailsDir = makeTmpDir();
 
@@ -126,15 +128,15 @@ describe('captureCameraThumbnail — Path A (independent feed, camera_key)', () 
     const filepath = thumbnailPath(camera.id, thumbnailsDir);
     assert.equal(fs.readFileSync(filepath, 'utf8'), 'jpeg-bytes');
 
-    const row = db.prepare('SELECT thumbnail_captured_at FROM prod_cameras WHERE id = ?').get(camera.id);
+    const row = await db.prepare('SELECT thumbnail_captured_at FROM prod_cameras WHERE id = ?').get(camera.id);
     assert.equal(row.thumbnail_captured_at, result.thumbnailCapturedAt);
   });
 });
 
 describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key)', () => {
   test('no mixer_input -> 400', async () => {
-    const db = makeDb();
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: null });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: null });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, {
       apiKey: 'proj-key', thumbnailsDir: makeTmpDir(),
@@ -144,8 +146,8 @@ describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key
   });
 
   test('no mixer configured -> 400', async () => {
-    const db = makeDb();
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 1 });
+    const db = await makeDb();
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 1 });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, {
       apiKey: 'proj-key', thumbnailsDir: makeTmpDir(),
@@ -155,10 +157,10 @@ describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key
   });
 
   test('multiple mixers with no mixerId given -> 400 asking to disambiguate', async () => {
-    const db = makeDb();
-    insertMixer(db);
-    insertMixer(db);
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 1 });
+    const db = await makeDb();
+    await insertMixer(db);
+    await insertMixer(db);
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 1 });
     const registry = makeRegistryStub();
     const result = await captureCameraThumbnail(db, camera, registry, {
       apiKey: 'proj-key', thumbnailsDir: makeTmpDir(),
@@ -169,9 +171,9 @@ describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key
   });
 
   test('camera not currently the active mixer source -> 409', async () => {
-    const db = makeDb();
-    const mixerId = insertMixer(db);
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 2 });
+    const db = await makeDb();
+    const mixerId = await insertMixer(db);
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 2 });
     const registry = makeRegistryStub({ [mixerId]: 1 }); // active source is input 1, camera is input 2
     const result = await captureCameraThumbnail(db, camera, registry, {
       apiKey: 'proj-key', thumbnailsDir: makeTmpDir(),
@@ -186,9 +188,9 @@ describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key
       requestedUrl = url;
       return { ok: true, status: 200, arrayBuffer: async () => Buffer.from('program-frame') };
     };
-    const db = makeDb();
-    const mixerId = insertMixer(db);
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 2 });
+    const db = await makeDb();
+    const mixerId = await insertMixer(db);
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 2 });
     const registry = makeRegistryStub({ [mixerId]: 2 }); // camera 2 is live
     const thumbnailsDir = makeTmpDir();
 
@@ -204,10 +206,10 @@ describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key
 
   test('explicit mixerId is honored over auto-resolution', async () => {
     global.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => Buffer.from('x') });
-    const db = makeDb();
-    const mixerA = insertMixer(db);
-    const mixerB = insertMixer(db);
-    const camera = insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 3 });
+    const db = await makeDb();
+    const mixerA = await insertMixer(db);
+    const mixerB = await insertMixer(db);
+    const camera = await insertCamera(db, { control_type: 'amx', camera_key: null, mixer_input: 3 });
     const registry = makeRegistryStub({ [mixerA]: 999, [mixerB]: 3 });
 
     const result = await captureCameraThumbnail(db, camera, registry, {
@@ -218,7 +220,7 @@ describe('captureCameraThumbnail — Path B (program-feed capture, no camera_key
 });
 
 describe('deleteCameraThumbnailFile', () => {
-  test('removes an existing file and is a no-op when absent', () => {
+  test('removes an existing file and is a no-op when absent', async () => {
     const thumbnailsDir = makeTmpDir();
     const cameraId = randomUUID();
     const filepath = thumbnailPath(cameraId, thumbnailsDir);

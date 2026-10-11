@@ -37,7 +37,7 @@ const MIN_INTERVAL_MS = 1000;
 
 /**
  * @param {object} deps
- * @param {import('better-sqlite3').Database} deps.db
+ * @param {import('lcyt-backend/db').Db} deps.db
  * @param {ReturnType<import('./resolution-engine.js').createResolutionEngine>} deps.engine
  */
 export function createPollScheduler({ db, engine }) {
@@ -53,10 +53,10 @@ export function createPollScheduler({ db, engine }) {
   // session — the poll keeps ticking but the watched variable just stops
   // updating, with no signal to the operator (the UI's "polling" badge only
   // reflects the DB flag, not fetch success).
-  function fireAndLog(requestId) {
+  async function fireAndLog(requestId) {
     let target;
     try {
-      target = getConstantPollTarget(db, requestId);
+      target = await getConstantPollTarget(db, requestId);
     } catch (err) {
       logger.warn(`[poll-scheduler] ${requestId} lookup failed: ${err?.message ?? err}`);
       return;
@@ -82,14 +82,14 @@ export function createPollScheduler({ db, engine }) {
   function start(requestId, intervalMs) {
     stop(requestId);
     const delay = Math.max(MIN_INTERVAL_MS, Number(intervalMs) || 3000);
-    const t = setInterval(() => fireAndLog(requestId), delay);
+    const t = setInterval(() => { fireAndLog(requestId); }, delay);
     if (typeof t.unref === 'function') t.unref();
     timers.set(requestId, t);
     // Fire once immediately (mirrors the frontend prefetch tier's "refresh on
     // arrival" behavior) rather than waiting a full interval for the first
     // value. Registering the timer first means fireAndLog's self-heal (an
     // invalid/deleted requestId) stops it right away instead of one tick late.
-    fireAndLog(requestId);
+    return fireAndLog(requestId);
   }
 
   function isPolling(requestId) {
@@ -97,12 +97,12 @@ export function createPollScheduler({ db, engine }) {
   }
 
   /** On startup: (re)start every request persisted with constant_poll_enabled, across all projects. */
-  function restore() {
+  async function restore() {
     let rows = [];
     try {
-      rows = listConstantPollRequests(db);
+      rows = await listConstantPollRequests(db);
     } catch { /* table may not exist yet in some isolated contexts */ }
-    for (const r of rows) start(r.request_id, r.interval_ms);
+    for (const r of rows) await start(r.request_id, r.interval_ms);
   }
 
   function stopAll() {

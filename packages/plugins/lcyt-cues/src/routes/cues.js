@@ -138,23 +138,27 @@ function detectCycle(startName, allDefs) {
  * found; without it, ref nodes are treated as leaf-free (pre-existing
  * behaviour). `seen` guards against reference cycles.
  */
-function treeContainsTrackLeaf(node, resolveRef = null, seen = new Set()) {
+async function treeContainsTrackLeaf(node, resolveRef = null, seen = new Set()) {
   if (typeof node === 'string') {
     if (!resolveRef || seen.has(node)) return false;
     seen.add(node);
-    return treeContainsTrackLeaf(resolveRef(node), resolveRef, seen);
+    return treeContainsTrackLeaf(await resolveRef(node), resolveRef, seen);
   }
   if (!node || typeof node !== 'object') return false;
   if (node.type === 'ref' || node.ref) {
     const name = node.name || node.ref;
     if (!name || !resolveRef || seen.has(name)) return false;
     seen.add(name);
-    return treeContainsTrackLeaf(resolveRef(name), resolveRef, seen);
+    return treeContainsTrackLeaf(await resolveRef(name), resolveRef, seen);
   }
   const matchType = node.matchType || node.match_type || (node.type !== 'match' ? node.type : undefined);
   if (matchType === 'track') return true;
   const items = Array.isArray(node.children) ? node.children : Array.isArray(node.conditions) ? node.conditions : [];
-  return items.some(child => treeContainsTrackLeaf(child, resolveRef, seen));
+  // Sequential, not Promise.all: `seen` is shared and the first hit ends the walk.
+  for (const child of items) {
+    if (await treeContainsTrackLeaf(child, resolveRef, seen)) return true;
+  }
+  return false;
 }
 
 /**
@@ -163,9 +167,9 @@ function treeContainsTrackLeaf(node, resolveRef = null, seen = new Set()) {
  * arrival, so unlike every other match type (default 0), these default to a
  * non-zero cooldown unless the caller explicitly set one.
  */
-function defaultCooldownFor(matchType, conditionTree, resolveRef = null) {
+async function defaultCooldownFor(matchType, conditionTree, resolveRef = null) {
   if (matchType === 'track') return 1000;
-  if (matchType === 'composite' && treeContainsTrackLeaf(conditionTree, resolveRef)) return 1000;
+  if (matchType === 'composite' && await treeContainsTrackLeaf(conditionTree, resolveRef)) return 1000;
   return 0;
 }
 
@@ -201,7 +205,7 @@ function normalizeInlineCue(rawCue, index, apiKey) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('express').RequestHandler} auth — JWT Bearer auth middleware
  * @param {import('../cue-engine.js').CueEngine} engine
  * @returns {import('express').Router}
@@ -214,37 +218,37 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
    * composition root) stores device ids in `action.run` so renaming a camera
    * or mixer cannot break a saved rule, and shows labels again on read.
    */
-  function withRun(apiKey, action, direction) {
+  async function withRun(apiKey, action, direction) {
     if (!rewriteRun || !action || typeof action !== 'object' || typeof action.run !== 'string') return action;
-    return { ...action, run: rewriteRun(apiKey, action.run, direction) };
+    return { ...action, run: await rewriteRun(apiKey, action.run, direction) };
   }
 
   /**
    * A rule whose `action.run` moves devices needs the Setup tier to save
    * (plan_backend_actions.md). The guard comes from lcyt-actions via the
    * composition root so this plugin does not depend on it.
-   * @returns {boolean} true when the request was rejected
+   * @returns {Promise<boolean>} true when the request was rejected
    */
-  function rejectUnauthorizedRun(req, res, apiKey, action) {
+  async function rejectUnauthorizedRun(req, res, apiKey, action) {
     const run = action && typeof action === 'object' ? action.run : undefined;
     if (run !== undefined && typeof run !== 'string') {
       res.status(400).json({ error: 'action.run must be a string' });
       return true;
     }
-    const denied = authoringGuard?.(req, apiKey, run);
+    const denied = await authoringGuard?.(req, apiKey, run);
     if (denied) { res.status(denied.status).json({ error: denied.error }); return true; }
     return false;
   }
 
   /** Look up a named condition's tree by name, for `treeContainsTrackLeaf` ref resolution. */
-  function resolveNamedConditionTree(apiKey, name) {
-    return safeParseJSON(getNamedConditionByName(db, apiKey, name)?.condition_tree, null);
+  async function resolveNamedConditionTree(apiKey, name) {
+    return safeParseJSON((await getNamedConditionByName(db, apiKey, name))?.condition_tree, null);
   }
 
   // ── Inline sync ────────────────────────────────────────────────────────
 
   /** POST /cues/inline — replace the active inline cue snapshot for the session */
-  router.post('/inline', auth, (req, res) => {
+  router.post('/inline', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
@@ -268,27 +272,27 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   // ── Rules CRUD ────────────────────────────────────────────────────────────
 
   /** GET /cues/rules — list all rules for the authenticated session's API key */
-  router.get('/rules', auth, (req, res) => {
+  router.get('/rules', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const rules = listCueRules(db, apiKey);
+    const rules = await listCueRules(db, apiKey);
     // Parse action/condition_tree JSON for the response
-    const parsed = rules.map(r => ({
+    const parsed = await Promise.all(rules.map(async r => ({
       ...r,
-      action: withRun(apiKey, (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(), 'labels'),
+      action: await withRun(apiKey, (() => { try { return JSON.parse(r.action); } catch { logger.warn(`[cues] Malformed action JSON for rule ${r.id}`); return {}; } })(), 'labels'),
       condition_tree: safeParseJSON(r.condition_tree, null),
-    }));
+    })));
     res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=60');
     return res.json({ rules: parsed });
   });
 
   /** POST /cues/rules — create a new cue rule */
-  router.post('/rules', auth, (req, res) => {
+  router.post('/rules', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold, condition_tree } = req.body || {};
-    if (rejectUnauthorizedRun(req, res, apiKey, action)) return;
+    if (await rejectUnauthorizedRun(req, res, apiKey, action)) return;
     const resolvedMatchType = match_type || 'phrase';
     if (!name) {
       return res.status(400).json({ error: 'name is required' });
@@ -321,15 +325,15 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
     }
 
     const id = randomUUID();
-    insertCueRule(db, {
+    await insertCueRule(db, {
       id,
       api_key: apiKey,
       name,
       match_type: resolvedMatchType,
       pattern: pattern ?? '',
-      action: withRun(apiKey, action, 'ids') || {},
+      action: (await withRun(apiKey, action, 'ids')) || {},
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : 1,
-      cooldown_ms: cooldown_ms !== undefined && cooldown_ms !== null ? cooldown_ms : defaultCooldownFor(resolvedMatchType, condition_tree, name => resolveNamedConditionTree(apiKey, name)),
+      cooldown_ms: cooldown_ms !== undefined && cooldown_ms !== null ? cooldown_ms : await defaultCooldownFor(resolvedMatchType, condition_tree, name => resolveNamedConditionTree(apiKey, name)),
       fuzzy_threshold: fuzzy_threshold ?? defaultThresholdFor(resolvedMatchType),
       condition_tree: resolvedMatchType === 'composite' ? condition_tree : undefined,
     });
@@ -339,16 +343,16 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   });
 
   /** PUT /cues/rules/:id — update a cue rule */
-  router.put('/rules/:id', auth, (req, res) => {
+  router.put('/rules/:id', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
-    const rule = getCueRule(db, req.params.id);
+    const rule = await getCueRule(db, req.params.id);
     if (!rule) return res.status(404).json({ error: 'Rule not found' });
     if (rule.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
     const { name, match_type, pattern, action, enabled, cooldown_ms, fuzzy_threshold, condition_tree } = req.body || {};
-    if (rejectUnauthorizedRun(req, res, apiKey, action)) return;
+    if (await rejectUnauthorizedRun(req, res, apiKey, action)) return;
     const resolvedMatchType = match_type || rule.match_type || 'phrase';
 
     if (!VALID_MATCH_TYPES.includes(resolvedMatchType)) {
@@ -389,12 +393,12 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
     // clobber an existing custom cooldown on an unrelated field update.
     let resolvedCooldown = cooldown_ms;
     if (resolvedCooldown === undefined && match_type && match_type !== rule.match_type) {
-      const defaultCooldown = defaultCooldownFor(resolvedMatchType, condition_tree ?? safeParseJSON(rule.condition_tree, null), name => resolveNamedConditionTree(apiKey, name));
+      const defaultCooldown = await defaultCooldownFor(resolvedMatchType, condition_tree ?? safeParseJSON(rule.condition_tree, null), name => resolveNamedConditionTree(apiKey, name));
       if (defaultCooldown > 0) resolvedCooldown = defaultCooldown;
     }
 
-    updateCueRule(db, req.params.id, {
-      name, match_type, pattern, action: withRun(apiKey, action, 'ids'),
+    await updateCueRule(db, req.params.id, {
+      name, match_type, pattern, action: await withRun(apiKey, action, 'ids'),
       enabled: enabled !== undefined ? (enabled ? 1 : 0) : undefined,
       cooldown_ms: resolvedCooldown,
       fuzzy_threshold,
@@ -406,15 +410,15 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   });
 
   /** DELETE /cues/rules/:id — delete a cue rule */
-  router.delete('/rules/:id', auth, (req, res) => {
+  router.delete('/rules/:id', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
-    const rule = getCueRule(db, req.params.id);
+    const rule = await getCueRule(db, req.params.id);
     if (!rule) return res.status(404).json({ error: 'Rule not found' });
     if (rule.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
-    deleteCueRule(db, req.params.id);
+    await deleteCueRule(db, req.params.id);
     engine.invalidate(apiKey);
     return res.json({ ok: true });
   });
@@ -422,10 +426,10 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   // ── Named conditions CRUD (Phase 9) ────────────────────────────────────────
 
   /** GET /cues/defs — list named conditions for the authenticated session's API key */
-  router.get('/defs', auth, (req, res) => {
+  router.get('/defs', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const defs = listNamedConditions(db, apiKey).map(d => ({
+    const defs = (await listNamedConditions(db, apiKey)).map(d => ({
       ...d,
       condition_tree: safeParseJSON(d.condition_tree, null),
     }));
@@ -434,7 +438,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   });
 
   /** POST /cues/defs — create a new named condition */
-  router.post('/defs', auth, (req, res) => {
+  router.post('/defs', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
@@ -442,20 +446,20 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
-    if (getNamedConditionByName(db, apiKey, name)) {
+    if (await getNamedConditionByName(db, apiKey, name)) {
       return res.status(409).json({ error: `A named condition "${name}" already exists` });
     }
     const treeError = validateConditionNode(condition_tree, true);
     if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
 
-    const allDefs = new Map(listNamedConditions(db, apiKey).map(d => [d.name, safeParseJSON(d.condition_tree, null)]));
+    const allDefs = new Map((await listNamedConditions(db, apiKey)).map(d => [d.name, safeParseJSON(d.condition_tree, null)]));
     allDefs.set(name, condition_tree);
     if (detectCycle(name, allDefs)) {
       return res.status(400).json({ error: `Condition "${name}" would create a reference cycle` });
     }
 
     const id = randomUUID();
-    insertNamedCondition(db, {
+    await insertNamedCondition(db, {
       id,
       api_key: apiKey,
       name,
@@ -468,11 +472,11 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   });
 
   /** PUT /cues/defs/:id — update a named condition */
-  router.put('/defs/:id', auth, (req, res) => {
+  router.put('/defs/:id', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
-    const existing = getNamedCondition(db, req.params.id);
+    const existing = await getNamedCondition(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'Named condition not found' });
     if (existing.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
@@ -484,7 +488,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
       if (treeError) return res.status(400).json({ error: `condition_tree: ${treeError}` });
     }
     if (name && name !== existing.name) {
-      const dupe = getNamedConditionByName(db, apiKey, name);
+      const dupe = await getNamedConditionByName(db, apiKey, name);
       if (dupe && dupe.id !== existing.id) {
         return res.status(409).json({ error: `A named condition "${name}" already exists` });
       }
@@ -492,7 +496,7 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
 
     const treeForCycleCheck = condition_tree !== undefined ? condition_tree : safeParseJSON(existing.condition_tree, null);
     const allDefs = new Map(
-      listNamedConditions(db, apiKey)
+      (await listNamedConditions(db, apiKey))
         .filter(d => d.id !== existing.id)
         .map(d => [d.name, safeParseJSON(d.condition_tree, null)])
     );
@@ -501,21 +505,21 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
       return res.status(400).json({ error: `Condition "${resolvedName}" would create a reference cycle` });
     }
 
-    updateNamedCondition(db, req.params.id, { name, condition_tree, source });
+    await updateNamedCondition(db, req.params.id, { name, condition_tree, source });
     engine.invalidate(apiKey);
     return res.json({ ok: true });
   });
 
   /** DELETE /cues/defs/:id — delete a named condition */
-  router.delete('/defs/:id', auth, (req, res) => {
+  router.delete('/defs/:id', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
 
-    const existing = getNamedCondition(db, req.params.id);
+    const existing = await getNamedCondition(db, req.params.id);
     if (!existing) return res.status(404).json({ error: 'Named condition not found' });
     if (existing.api_key !== apiKey) return res.status(403).json({ error: 'Forbidden' });
 
-    deleteNamedCondition(db, req.params.id);
+    await deleteNamedCondition(db, req.params.id);
     engine.invalidate(apiKey);
     return res.json({ ok: true });
   });
@@ -523,11 +527,11 @@ export function createCueRouter(db, auth, engine, { authoringGuard = null, rewri
   // ── Events log ────────────────────────────────────────────────────────────
 
   /** GET /cues/events — list recent cue events (rundown) */
-  router.get('/events', auth, (req, res) => {
+  router.get('/events', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
-    const events = getRecentCueEvents(db, apiKey, limit);
+    const events = await getRecentCueEvents(db, apiKey, limit);
     // Parse action JSON for the response
     const parsed = events.map(e => ({
       ...e,

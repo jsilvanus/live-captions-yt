@@ -7,23 +7,6 @@
  * enable/disable decision.
  */
 
-/**
- * Ensure the radio_config table exists. Safe to call on every startup.
- * @param {import('better-sqlite3').Database} db
- */
-export function runRadioMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS radio_config (
-      api_key         TEXT PRIMARY KEY,
-      title           TEXT,
-      description     TEXT,
-      cover_image_url TEXT,
-      autoplay        INTEGER NOT NULL DEFAULT 0,
-      updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-}
-
 function formatConfigRow(row, radioEnabled) {
   return {
     title:         row?.title ?? null,
@@ -37,42 +20,43 @@ function formatConfigRow(row, radioEnabled) {
 /**
  * Get the Web Radio config for an API key, including the read-only
  * `radio_enabled` admin entitlement as `enabled`.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
- * @returns {{ title: string|null, description: string|null, coverImageUrl: string|null, autoplay: boolean, enabled: boolean }}
+ * @returns {Promise<{ title: string|null, description: string|null, coverImageUrl: string|null, autoplay: boolean, enabled: boolean }>}
  */
-export function getRadioConfig(db, apiKey) {
-  const row = db.prepare('SELECT * FROM radio_config WHERE api_key = ?').get(apiKey);
-  const keyRow = db.prepare('SELECT radio_enabled FROM api_keys WHERE key = ?').get(apiKey);
+export async function getRadioConfig(db, apiKey) {
+  const row = await db.radio_config.findUnique({ where: { api_key: apiKey } });
+  const keyRow = await db.api_keys.findUnique({ where: { key: apiKey }, select: { radio_enabled: true } });
   return formatConfigRow(row, keyRow?.radio_enabled ?? 0);
 }
 
 /**
  * Upsert the Web Radio config for an API key. Only provided fields are changed.
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {string} apiKey
  * @param {{ title?: string|null, description?: string|null, coverImageUrl?: string|null, autoplay?: boolean }} patch
- * @returns {{ ok: true, config: object }}
+ * @returns {Promise<{ ok: true, config: object }>}
  */
-export function setRadioConfig(db, apiKey, patch = {}) {
-  const existing = db.prepare('SELECT * FROM radio_config WHERE api_key = ?').get(apiKey);
+export async function setRadioConfig(db, apiKey, patch = {}) {
+  const existing = await db.radio_config.findUnique({ where: { api_key: apiKey } });
   const next = {
     title:         patch.title         !== undefined ? patch.title         : existing?.title ?? null,
     description:   patch.description   !== undefined ? patch.description   : existing?.description ?? null,
     coverImageUrl: patch.coverImageUrl !== undefined ? patch.coverImageUrl : existing?.cover_image_url ?? null,
     autoplay:      patch.autoplay      !== undefined ? Boolean(patch.autoplay) : existing?.autoplay === 1,
   };
+  const values = {
+    title: next.title,
+    description: next.description,
+    cover_image_url: next.coverImageUrl,
+    autoplay: next.autoplay ? 1 : 0,
+    updated_at: db.$util.sqlNow(),
+  };
+  await db.radio_config.upsert({
+    where: { api_key: apiKey },
+    create: { api_key: apiKey, ...values },
+    update: values,
+  });
 
-  db.prepare(`
-    INSERT INTO radio_config (api_key, title, description, cover_image_url, autoplay)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(api_key) DO UPDATE SET
-      title           = excluded.title,
-      description     = excluded.description,
-      cover_image_url = excluded.cover_image_url,
-      autoplay        = excluded.autoplay,
-      updated_at      = datetime('now')
-  `).run(apiKey, next.title, next.description, next.coverImageUrl, next.autoplay ? 1 : 0);
-
-  return { ok: true, config: getRadioConfig(db, apiKey) };
+  return { ok: true, config: await getRadioConfig(db, apiKey) };
 }

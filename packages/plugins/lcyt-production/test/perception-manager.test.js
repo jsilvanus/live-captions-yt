@@ -4,8 +4,9 @@
  * fffleet fleet (`FFFLEET_URL`).
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createPerceptionManager, isPerceptionDispatchAvailable } from '../src/perception-manager.js';
 
 const CAMERA = { id: 'cam-1', cameraKey: 'feed-abc' };
@@ -30,7 +31,7 @@ const mk = (fleet, extra = {}) => createPerceptionManager({
 });
 
 describe('isPerceptionDispatchAvailable', () => {
-  it('needs FFFLEET_URL (the orchestrator and worker daemon are gone)', () => {
+  it('needs FFFLEET_URL (the orchestrator and worker daemon are gone)', async () => {
     assert.equal(isPerceptionDispatchAvailable({}), false);
     assert.equal(isPerceptionDispatchAvailable({ ORCHESTRATOR_URL: 'http://o', WORKER_DAEMON_URL: 'http://w' }), false);
     assert.equal(isPerceptionDispatchAvailable({ FFFLEET_URL: 'http://fleet' }), true);
@@ -123,7 +124,7 @@ describe('createPerceptionManager with FFFLEET_URL', () => {
   }
   const env = { FFFLEET_URL: 'http://fleet', BACKEND_INTERNAL_TOKEN: 'tok' };
 
-  it('counts as available', () => {
+  it('counts as available', async () => {
     assert.equal(isPerceptionDispatchAvailable({ FFFLEET_URL: 'http://fleet' }), true);
   });
 
@@ -225,10 +226,13 @@ describe('createPerceptionManager — per-job token, persistence, re-adoption', 
     };
   }
 
+  const openDbs = [];
+  after(async () => { for (const d of openDbs) await d.close(); });
+
   async function newDb() {
-    const { default: Database } = await import('better-sqlite3');
-    const { runMigrations } = await import('../src/db.js');
-    const db = new Database(':memory:'); runMigrations(db); return db;
+    const db = await initDb(':memory:');
+    openDbs.push(db);
+    return db;
   }
 
   it('mints a token scoped to this job and verifyIngest checks it', async () => {
@@ -257,9 +261,9 @@ describe('createPerceptionManager — per-job token, persistence, re-adoption', 
     const mgr = createPerceptionManager({ ...base, env: { FFFLEET_URL: 'http://fleet' }, getFleetImpl: async () => fleet, db });
     const { jobId } = await mgr.start('key1', CAMERA);
     assert.equal(fleet.submitted[0].perception.jobId, jobId);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 1);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get()).n, 1);
     assert.equal(await mgr.stop('cam-1'), true);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 0);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get()).n, 0);
   });
 
   it('adopt() after a restart re-attaches with the same id: no duplicate job, no new id', async () => {
@@ -284,21 +288,21 @@ describe('createPerceptionManager — per-job token, persistence, re-adoption', 
     fleet.jobs.delete(jobId); // the fleet hands out a fresh follower when we re-attach
     await new Promise((r) => setImmediate(r));
     assert.equal(mgr.status('cam-1'), null);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 1);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get()).n, 1);
 
     await mgr.adopt();
     fleet.jobs.get(jobId).resolve({ state: 'done' });
     await new Promise((r) => setImmediate(r));
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 0);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get()).n, 0);
   });
 
   it("adopt() drops records left by the retired orchestrator/worker daemon (mode 'legacy')", async () => {
     const db = await newDb(); const fleet = fakeFleet();
-    db.prepare(`INSERT INTO prod_perception_jobs (job_key, api_key, job_id, mode, spec, started_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    await db.prepare(`INSERT INTO prod_perception_jobs (job_key, api_key, job_id, mode, spec, started_at) VALUES (?, ?, ?, ?, ?, ?)`)
       .run('cam-1', 'key1', 'old-job', 'legacy', '{}', new Date().toISOString());
     const mgr = createPerceptionManager({ ...base, env: { FFFLEET_URL: 'http://fleet' }, getFleetImpl: async () => fleet, db });
     assert.deepEqual(await mgr.adopt(), { adopted: 0, dropped: 1 });
     assert.equal(fleet.submitted.length, 0);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get().n, 0);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prod_perception_jobs').get()).n, 0);
   });
 });

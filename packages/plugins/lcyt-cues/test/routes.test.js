@@ -2,18 +2,16 @@ import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
 import { createServer } from 'node:http';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { createCueRouter } from '../src/routes/cues.js';
-import { runMigrations } from '../src/db.js';
 
 let server;
 let baseUrl;
 let db;
 let lastInlineSnapshot;
 
-before(() => new Promise((resolve) => {
-  db = new Database(':memory:');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -33,17 +31,17 @@ before(() => new Promise((resolve) => {
   app.use('/cues', createCueRouter(db, auth, engine));
 
   server = createServer(app);
-  server.listen(0, () => {
+  await new Promise((resolve) => server.listen(0, () => {
     const address = server.address();
     baseUrl = `http://127.0.0.1:${address.port}`;
     resolve();
-  });
-}));
+  }));
+});
 
-after(() => new Promise((resolve) => {
-  db?.close();
-  server?.close(resolve);
-}));
+after(async () => {
+  await new Promise((resolve) => (server ? server.close(resolve) : resolve()));
+  await db?.close();
+});
 
 async function post(path, body) {
   return fetch(`${baseUrl}${path}`, {

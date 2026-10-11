@@ -65,7 +65,7 @@ function isUnauthenticatedBridgeRoute(path) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('../bridge-manager.js').BridgeManager} bridgeManager
  * @param {string} [publicUrl]  Backend's public URL, used when generating .env files
  * @param {{ auth?: import('express').RequestHandler, deps?: { checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean } }} [opts]
@@ -102,24 +102,24 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   // ── SSE stream: bridge agent connects here ────────────────────────────────
 
   // GET /production/bridge/commands?token=xxx
-  router.get('/commands', (req, res) => {
+  router.get('/commands', async (req, res) => {
     const token = req.query.token;
-    const instance = bridgeManager.authenticate(token);
+    const instance = await bridgeManager.authenticate(token);
     if (!instance) {
       return res.status(401).json({ error: 'Invalid bridge token' });
     }
-    bridgeManager.connect(instance.id, res);
+    await bridgeManager.connect(instance.id, res).catch((err) => console.warn(`[bridge] connect status update failed: ${err.message}`));
     // connect() takes over the response — do not call res.json() after this
   });
 
   // POST /production/bridge/status — bridge posts heartbeats and command results
-  router.post('/status', (req, res) => {
+  router.post('/status', async (req, res) => {
     const token = req.headers['x-bridge-token'] ?? req.body?.token;
-    const instance = bridgeManager.authenticate(token);
+    const instance = await bridgeManager.authenticate(token);
     if (!instance) {
       return res.status(401).json({ error: 'Invalid bridge token' });
     }
-    bridgeManager.receiveStatus(instance.id, req.body ?? {});
+    await bridgeManager.receiveStatus(instance.id, req.body ?? {});
     res.json({ ok: true });
   });
 
@@ -132,23 +132,23 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   // connection, rather than waiting on the SSE 'connected' event first — it
   // doesn't need an instanceId to build this URL, which meaningfully
   // shortens the fail-closed window right after a (re)connect.
-  router.get('/security-rules/for-agent', (req, res) => {
+  router.get('/security-rules/for-agent', async (req, res) => {
     const token = req.query.token ?? req.headers['x-bridge-token'];
-    const instance = bridgeManager.authenticate(token);
+    const instance = await bridgeManager.authenticate(token);
     if (!instance) {
       return res.status(401).json({ error: 'Invalid bridge token' });
     }
     res.json({
-      ipRules:      listBridgeSecurityRules(db, instance.id, 'ip').map(serializeRule),
-      commandRules: listBridgeSecurityRules(db, instance.id, 'command').map(serializeRule),
+      ipRules:      (await listBridgeSecurityRules(db, instance.id, 'ip')).map(serializeRule),
+      commandRules: (await listBridgeSecurityRules(db, instance.id, 'command')).map(serializeRule),
     });
   });
 
   // ── Bridge instance CRUD ──────────────────────────────────────────────────
 
   // GET /production/bridge/instances — list all bridge instances
-  router.get('/instances', (_req, res) => {
-    const rows = db.prepare('SELECT * FROM prod_bridge_instances ORDER BY created_at').all();
+  router.get('/instances', async (_req, res) => {
+    const rows = await db.prod_bridge_instances.findMany({ orderBy: { created_at: 'asc' } });
     res.json(rows.map(r => ({
       id:        r.id,
       name:      r.name,
@@ -161,35 +161,28 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
 
   // POST /production/bridge/instances — create a bridge instance
   // Returns { id, name, envContent } where envContent is the pre-filled .env
-  router.post('/instances', requireSetup, (req, res) => {
+  router.post('/instances', requireSetup, async (req, res) => {
     const { name } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
     }
     const id    = randomUUID();
     const token = randomBytes(32).toString('hex');
-    db.prepare(`
-      INSERT INTO prod_bridge_instances (id, name, token)
-      VALUES (?, ?, ?)
-    `).run(id, name.trim(), token);
+    await db.prod_bridge_instances.create({ data: { id, name: name.trim(), token } });
 
     const envContent = buildEnvContent(token, publicUrl);
     res.status(201).json({ id, name: name.trim(), envContent });
   });
 
   // DELETE /production/bridge/instances/:id — delete a bridge instance
-  router.delete('/instances/:id', requireSetup, (req, res) => {
+  router.delete('/instances/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(id);
+    const existing = await db.prod_bridge_instances.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
 
     // Count cameras and mixers assigned to this bridge
-    const camCount = db.prepare(
-      'SELECT COUNT(*) AS n FROM prod_cameras WHERE bridge_instance_id = ?'
-    ).get(id).n;
-    const mixCount = db.prepare(
-      'SELECT COUNT(*) AS n FROM prod_mixers WHERE bridge_instance_id = ?'
-    ).get(id).n;
+    const camCount = await db.prod_cameras.count({ where: { bridge_instance_id: id } });
+    const mixCount = await db.prod_mixers.count({ where: { bridge_instance_id: id } });
 
     if (!req.query.force && (camCount > 0 || mixCount > 0)) {
       return res.status(409).json({
@@ -201,11 +194,11 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
     }
 
     // Null out assignments
-    db.prepare('UPDATE prod_cameras SET bridge_instance_id = NULL WHERE bridge_instance_id = ?').run(id);
-    db.prepare('UPDATE prod_mixers  SET bridge_instance_id = NULL WHERE bridge_instance_id = ?').run(id);
-    db.prepare('DELETE FROM prod_bridge_instances WHERE id = ?').run(id);
+    await db.prod_cameras.updateMany({ where: { bridge_instance_id: id }, data: { bridge_instance_id: null } });
+    await db.prod_mixers.updateMany({ where: { bridge_instance_id: id }, data: { bridge_instance_id: null } });
+    await db.prod_bridge_instances.deleteMany({ where: { id } });
 
-    bridgeManager.disconnect(id);
+    await bridgeManager.disconnect(id);
     res.status(204).end();
   });
 
@@ -235,8 +228,8 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   // Gated at 'setup' (admin/owner) despite being a GET — it re-discloses the
   // bridge instance's plaintext auth token, not mere configuration, so the
   // usual "any project member can read" policy doesn't apply here.
-  router.get('/instances/:id/env', requireSetup, (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(req.params.id);
+  router.get('/instances/:id/env', requireSetup, async (req, res) => {
+    const row = await db.prod_bridge_instances.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: 'Bridge instance not found' });
 
     const content = buildEnvContent(row.token, publicUrl);
@@ -250,30 +243,30 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   // ── Security rules: allow/deny lists for TCP commands and target IPs ─────
 
   // GET /production/bridge/instances/:id/security-rules[?kind=ip|command]
-  router.get('/instances/:id/security-rules', (req, res) => {
+  router.get('/instances/:id/security-rules', async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT id FROM prod_bridge_instances WHERE id = ?').get(id);
+    const existing = await db.prod_bridge_instances.findUnique({ where: { id }, select: { id: true } });
     if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
 
     const { kind } = req.query;
     if (kind && !VALID_RULE_KINDS.includes(kind)) {
       return res.status(400).json({ error: `kind must be one of: ${VALID_RULE_KINDS.join(', ')}` });
     }
-    res.json({ rules: listBridgeSecurityRules(db, id, kind || null).map(serializeRule) });
+    res.json({ rules: (await listBridgeSecurityRules(db, id, kind || null)).map(serializeRule) });
   });
 
   // POST /production/bridge/instances/:id/security-rules
   // Body: { ruleKind: 'ip'|'command', ruleType: 'allow'|'deny', pattern, description? }
-  router.post('/instances/:id/security-rules', requireSetup, (req, res) => {
+  router.post('/instances/:id/security-rules', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT id FROM prod_bridge_instances WHERE id = ?').get(id);
+    const existing = await db.prod_bridge_instances.findUnique({ where: { id }, select: { id: true } });
     if (!existing) return res.status(404).json({ error: 'Bridge instance not found' });
 
     const error = validateRuleBody(req.body);
     if (error) return res.status(400).json({ error });
 
     const { ruleKind, ruleType, pattern, description } = req.body;
-    const row = createBridgeSecurityRule(db, {
+    const row = await createBridgeSecurityRule(db, {
       id: randomUUID(), bridgeInstanceId: id, ruleKind, ruleType, pattern, description: description ?? null,
     });
     bridgeManager.broadcastRulesUpdated(id);
@@ -281,12 +274,12 @@ export function createBridgeRouter(db, bridgeManager, publicUrl = '', opts = {})
   });
 
   // DELETE /production/bridge/instances/:id/security-rules/:ruleId
-  router.delete('/instances/:id/security-rules/:ruleId', requireSetup, (req, res) => {
+  router.delete('/instances/:id/security-rules/:ruleId', requireSetup, async (req, res) => {
     const { id, ruleId } = req.params;
-    const rule = getBridgeSecurityRule(db, ruleId);
+    const rule = await getBridgeSecurityRule(db, ruleId);
     if (!rule || rule.bridge_instance_id !== id) return res.status(404).json({ error: 'Unknown rule' });
 
-    deleteBridgeSecurityRule(db, ruleId);
+    await deleteBridgeSecurityRule(db, ruleId);
     bridgeManager.broadcastRulesUpdated(id);
     res.json({ ok: true });
   });

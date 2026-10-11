@@ -1,16 +1,10 @@
-import { test, describe } from 'node:test';
+import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 
-let Database;
-try {
-  Database = (await import('better-sqlite3')).default;
-} catch {
-  console.log('# better-sqlite3 not available — skipping lcyt-platforms stats-poller tests');
-  process.exit(0);
-}
 
 const {
-  runMigrations, upsertCredential, upsertLink, listStats, getLink,
+  upsertCredential, upsertLink, listStats, getLink,
   STATS_LIVE_SNAPSHOT,
 } = await import('../src/db.js');
 const {
@@ -20,24 +14,25 @@ const { NetworkError } = await import('lcyt/errors');
 
 const iso = (ms) => new Date(ms).toISOString().replace(/Z$/, '');
 
-function createDb() {
-  const db = new Database(':memory:');
-  db.exec('CREATE TABLE api_keys (key TEXT PRIMARY KEY)');
-  db.exec('CREATE TABLE broadcasts (id TEXT PRIMARY KEY)');
-  runMigrations(db);
-  db.prepare('INSERT INTO api_keys (key) VALUES (?)').run('key1');
-  for (const id of ['b1', 'b2']) db.prepare('INSERT INTO broadcasts (id) VALUES (?)').run(id);
+const opened = [];
+after(async () => { for (const d of opened) await d.close(); });
+
+async function createDb() {
+  const db = await initDb(':memory:');
+  opened.push(db);
+  await db.api_keys.create({ data: { key: 'key1', owner: 'test' } });
+  for (const id of ['b1', 'b2']) await db.broadcasts.create({ data: { id, api_key: 'key1' } });
   return db;
 }
 
-function seedLink(db, { broadcastId = 'b1', status = 'live' } = {}) {
-  const cred = upsertCredential(db, 'key1', {
+async function seedLink(db, { broadcastId = 'b1', status = 'live' } = {}) {
+  const cred = await upsertCredential(db, 'key1', {
     platform: 'youtube',
     externalAccountId: `UC-${broadcastId}`,
     accessTokenEnc: 'enc', refreshTokenEnc: 'enc',
     expiresAt: iso(Date.now() + 3600_000),
   });
-  return upsertLink(db, {
+  return await upsertLink(db, {
     broadcastId, platform: 'youtube', credentialId: cred.id,
     externalBroadcastId: `yt-${broadcastId}`, lastStatus: status,
   });
@@ -66,11 +61,11 @@ const okAdapter = (viewers = 42) => ({
 
 describe('tick', () => {
   test('records a snapshot for each live link', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const { poller } = makePoller(db, { adapter: okAdapter(137) });
     await poller.tick();
-    const rows = listStats(db, 'b1', 'youtube', { kind: STATS_LIVE_SNAPSHOT });
+    const rows = await listStats(db, 'b1', 'youtube', { kind: STATS_LIVE_SNAPSHOT });
     assert.equal(rows.length, 1);
     assert.equal(rows[0].concurrent_viewers, 137);
   });
@@ -78,17 +73,17 @@ describe('tick', () => {
   test('ignores links that are not live', async () => {
     // The self-healing property: a broadcast that ends simply stops appearing,
     // with no deregistration step anywhere.
-    const db = createDb();
-    seedLink(db, { broadcastId: 'b1', status: 'complete' });
-    seedLink(db, { broadcastId: 'b2', status: 'live' });
+    const db = await createDb();
+    await seedLink(db, { broadcastId: 'b1', status: 'complete' });
+    await seedLink(db, { broadcastId: 'b2', status: 'live' });
     const { poller } = makePoller(db, { adapter: okAdapter() });
     await poller.tick();
-    assert.equal(listStats(db, 'b1', 'youtube').length, 0);
-    assert.equal(listStats(db, 'b2', 'youtube').length, 1);
+    assert.equal((await listStats(db, 'b1', 'youtube')).length, 0);
+    assert.equal((await listStats(db, 'b2', 'youtube')).length, 1);
   });
 
   test('does nothing when no link is live', async () => {
-    const db = createDb();
+    const db = await createDb();
     const { poller } = makePoller(db, {
       adapter: { platform: 'youtube', getLiveStats: async () => { throw new Error('must not be called'); } },
     });
@@ -96,8 +91,8 @@ describe('tick', () => {
   });
 
   test('publishes platform.stats_updated so the UI need not poll us in turn', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const { poller, events } = makePoller(db, { adapter: okAdapter(9) });
     await poller.tick();
     assert.equal(events.length, 1);
@@ -108,28 +103,28 @@ describe('tick', () => {
   });
 
   test('works without an event bus', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const { poller } = makePoller(db, { adapter: okAdapter(), eventBus: null });
     await poller.tick();
-    assert.equal(listStats(db, 'b1', 'youtube').length, 1);
+    assert.equal((await listStats(db, 'b1', 'youtube')).length, 1);
   });
 
   test('records a null viewer count without inventing a zero', async () => {
     // "Not live" and "nobody watching" are different facts.
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const { poller } = makePoller(db, { adapter: okAdapter(null) });
     await poller.tick();
-    assert.equal(listStats(db, 'b1', 'youtube')[0].concurrent_viewers, null);
+    assert.equal((await listStats(db, 'b1', 'youtube'))[0].concurrent_viewers, null);
   });
 });
 
 describe('failure handling', () => {
   test('one failing broadcast does not stop the others', async () => {
-    const db = createDb();
-    seedLink(db, { broadcastId: 'b1' });
-    seedLink(db, { broadcastId: 'b2' });
+    const db = await createDb();
+    await seedLink(db, { broadcastId: 'b1' });
+    await seedLink(db, { broadcastId: 'b2' });
     const adapter = {
       platform: 'youtube',
       getLiveStats: async (_t, id) => {
@@ -139,23 +134,23 @@ describe('failure handling', () => {
     };
     const { poller } = makePoller(db, { adapter });
     await poller.tick();
-    assert.equal(listStats(db, 'b1', 'youtube').length, 0);
-    assert.equal(listStats(db, 'b2', 'youtube').length, 1);
+    assert.equal((await listStats(db, 'b1', 'youtube')).length, 0);
+    assert.equal((await listStats(db, 'b2', 'youtube')).length, 1);
   });
 
   test('records the error on the link so a stale count is explainable', async () => {
-    const db = createDb();
-    const link = seedLink(db);
+    const db = await createDb();
+    const link = await seedLink(db);
     const adapter = { platform: 'youtube', getLiveStats: async () => { throw new NetworkError('upstream down', 503); } };
     const { poller } = makePoller(db, { adapter });
     await poller.tick();
-    assert.match(getLink(db, 'b1', 'youtube').last_sync_error, /upstream down/);
+    assert.match((await getLink(db, 'b1', 'youtube')).last_sync_error, /upstream down/);
     assert.equal(link.last_status, 'live', 'a failed poll must not change the link status');
   });
 
   test('clears a previous error after a successful poll', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     let fail = true;
     const adapter = {
       platform: 'youtube',
@@ -167,12 +162,12 @@ describe('failure handling', () => {
     const { poller } = makePoller(db, { adapter });
     await poller.tick();
     await poller.tick();
-    assert.equal(getLink(db, 'b1', 'youtube').last_sync_error, null);
+    assert.equal((await getLink(db, 'b1', 'youtube')).last_sync_error, null);
   });
 
   test('an unusable credential is skipped rather than retried tightly', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const err = new Error('reconnect required');
     err.name = 'CredentialUnusableError';
     const { poller } = makePoller(db, {
@@ -180,19 +175,19 @@ describe('failure handling', () => {
       getAccessToken: async () => { throw err; },
     });
     await poller.tick();
-    assert.equal(listStats(db, 'b1', 'youtube').length, 0);
-    assert.match(getLink(db, 'b1', 'youtube').last_sync_error, /reconnect required/);
+    assert.equal((await listStats(db, 'b1', 'youtube')).length, 0);
+    assert.match((await getLink(db, 'b1', 'youtube')).last_sync_error, /reconnect required/);
   });
 
   test('an unregistered platform is a no-op', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const poller = createStatsPoller({
       db, getAdapter: () => null, getAccessToken: async () => 't',
       getProjectForBroadcast: () => 'key1',
     });
     await poller.tick();
-    assert.equal(listStats(db, 'b1', 'youtube').length, 0);
+    assert.equal((await listStats(db, 'b1', 'youtube')).length, 0);
   });
 });
 
@@ -204,9 +199,9 @@ describe('quota back-off', () => {
   };
 
   test('stops the sweep and enters a cooldown', async () => {
-    const db = createDb();
-    seedLink(db, { broadcastId: 'b1' });
-    seedLink(db, { broadcastId: 'b2' });
+    const db = await createDb();
+    await seedLink(db, { broadcastId: 'b1' });
+    await seedLink(db, { broadcastId: 'b2' });
     let calls = 0;
     const adapter = {
       platform: 'youtube',
@@ -222,8 +217,8 @@ describe('quota back-off', () => {
   });
 
   test('skips subsequent ticks until the cooldown expires', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     let calls = 0;
     const adapter = { platform: 'youtube', getLiveStats: async () => { calls += 1; throw quotaError(); } };
     const { poller } = makePoller(db, { adapter });
@@ -234,8 +229,8 @@ describe('quota back-off', () => {
   });
 
   test('resumes once the cooldown has passed', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     let calls = 0;
     const adapter = {
       platform: 'youtube',
@@ -245,12 +240,12 @@ describe('quota back-off', () => {
     await poller.tick();
     await poller.tick(Date.now() + QUOTA_COOLDOWN_MS + 1000);
     assert.equal(calls, 2);
-    assert.equal(listStats(db, 'b1', 'youtube').length, 1);
+    assert.equal((await listStats(db, 'b1', 'youtube')).length, 1);
   });
 
   test('an ordinary 403 is not treated as quota', async () => {
-    const db = createDb();
-    seedLink(db);
+    const db = await createDb();
+    await seedLink(db);
     const adapter = {
       platform: 'youtube',
       getLiveStats: async () => { throw new NetworkError('forbidden', 403); },
@@ -262,16 +257,16 @@ describe('quota back-off', () => {
 });
 
 describe('interval handling', () => {
-  test('floors a too-small configured interval', () => {
-    const db = createDb();
+  test('floors a too-small configured interval', async () => {
+    const db = await createDb();
     const { poller } = makePoller(db, { adapter: okAdapter(), getIntervalMs: () => 10 });
     poller.start();
     assert.equal(poller.intervalMs, MIN_INTERVAL_MS);
     poller.stop();
   });
 
-  test('falls back to the default for a nonsense value', () => {
-    const db = createDb();
+  test('falls back to the default for a nonsense value', async () => {
+    const db = await createDb();
     for (const bad of [0, -5, NaN, undefined]) {
       const { poller } = makePoller(db, { adapter: okAdapter(), getIntervalMs: () => bad });
       poller.start();
@@ -280,9 +275,9 @@ describe('interval handling', () => {
     }
   });
 
-  test('start is idempotent but restarts on a changed interval', () => {
+  test('start is idempotent but restarts on a changed interval', async () => {
     // A live setInterval's delay cannot be changed in place.
-    const db = createDb();
+    const db = await createDb();
     let interval = 30_000;
     const { poller } = makePoller(db, { adapter: okAdapter(), getIntervalMs: () => interval });
     poller.start();
@@ -295,8 +290,8 @@ describe('interval handling', () => {
     assert.equal(poller.intervalMs, 0);
   });
 
-  test('stop is safe to call when not running', () => {
-    const db = createDb();
+  test('stop is safe to call when not running', async () => {
+    const db = await createDb();
     const { poller } = makePoller(db, { adapter: okAdapter() });
     assert.doesNotThrow(() => { poller.stop(); poller.stop(); });
   });

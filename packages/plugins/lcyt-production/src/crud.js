@@ -34,16 +34,16 @@ const CAMERA_KEY_RE = /^[A-Za-z0-9_-]+$/;
 // Cameras
 // ---------------------------------------------------------------------------
 
-export function listCameras(db) {
-  return db.prepare('SELECT * FROM prod_cameras ORDER BY sort_order, created_at').all().map(parseCamera);
+export async function listCameras(db) {
+  return (await db.prod_cameras.findMany({ orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] })).map(parseCamera);
 }
 
-export function getCameraById(db, id) {
-  const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
+export async function getCameraById(db, id) {
+  const row = await db.prod_cameras.findUnique({ where: { id } });
   return row ? parseCamera(row) : null;
 }
 
-export function createCamera(db, registry, fields = {}) {
+export async function createCamera(db, registry, fields = {}) {
   const {
     name, mixerInput = null, controlType = 'none', controlConfig = {},
     sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend', cameraKey = null,
@@ -68,16 +68,20 @@ export function createCamera(db, registry, fields = {}) {
     return { ok: false, error: 'cameraKey may only contain letters, digits, underscore, and hyphen' };
   }
   const id = randomUUID();
-  db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links, mixer_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, ownerApiKey, label, zone, JSON.stringify(overlapLinks), mixerId);
+  await db.prod_cameras.create({
+    data: {
+      id, name, mixer_input: mixerInput, control_type: controlType, control_config: JSON.stringify(controlConfig),
+      bridge_instance_id: bridgeInstanceId, sort_order: sortOrder, connection_source: connectionSource,
+      camera_key: cameraKey, owner_api_key: ownerApiKey, label, zone,
+      overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
+    },
+  });
   registry.reloadCamera(id).catch((err) => console.warn(`[production-control] reloadCamera after create: ${err.message}`));
-  return { ok: true, camera: getCameraById(db, id) };
+  return { ok: true, camera: await getCameraById(db, id) };
 }
 
-export function updateCamera(db, registry, id, patch = {}) {
-  const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
+export async function updateCamera(db, registry, id, patch = {}) {
+  const existing = await db.prod_cameras.findUnique({ where: { id } });
   if (!existing) return { ok: false, error: 'Camera not found', status: 404 };
 
   const name = patch.name ?? existing.name;
@@ -100,22 +104,23 @@ export function updateCamera(db, registry, id, patch = {}) {
     return { ok: false, error: 'cameraKey may only contain letters, digits, underscore, and hyphen' };
   }
 
-  db.prepare(`
-    UPDATE prod_cameras
-    SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
-        bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?,
-        label = ?, zone = ?, overlap_links = ?, mixer_id = ?
-    WHERE id = ?
-  `).run(name, mixerInput, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey, label, zone, JSON.stringify(overlapLinks), mixerId, id);
+  await db.prod_cameras.updateMany({
+    where: { id },
+    data: {
+      name, mixer_input: mixerInput, control_type: controlType, control_config: JSON.stringify(controlConfig),
+      bridge_instance_id: bridgeInstanceId, sort_order: sortOrder, connection_source: connectionSource,
+      camera_key: cameraKey, label, zone, overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
+    },
+  });
 
   registry.reloadCamera(id).catch((err) => console.warn(`[production-control] reloadCamera after update: ${err.message}`));
-  return { ok: true, camera: getCameraById(db, id) };
+  return { ok: true, camera: await getCameraById(db, id) };
 }
 
-export function deleteCamera(db, registry, id) {
-  const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
+export async function deleteCamera(db, registry, id) {
+  const existing = await db.prod_cameras.findUnique({ where: { id } });
   if (!existing) return { ok: false, error: 'Camera not found', status: 404 };
-  db.prepare('DELETE FROM prod_cameras WHERE id = ?').run(id);
+  await db.prod_cameras.deleteMany({ where: { id } });
   registry.removeCamera(id).catch(() => {});
   return { ok: true };
 }
@@ -124,21 +129,21 @@ export function deleteCamera(db, registry, id) {
 // Mixers
 // ---------------------------------------------------------------------------
 
-export function listMixers(db, registry) {
-  return db.prepare('SELECT * FROM prod_mixers ORDER BY created_at').all().map((row) => {
+export async function listMixers(db, registry) {
+  return (await db.prod_mixers.findMany({ orderBy: { created_at: 'asc' } })).map((row) => {
     const mixer = parseMixer(row);
     return { ...mixer, connected: registry.isMixerConnected(mixer.id), activeSource: registry.getActiveSource(mixer.id) };
   });
 }
 
-export function getMixerById(db, registry, id) {
-  const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+export async function getMixerById(db, registry, id) {
+  const row = await db.prod_mixers.findUnique({ where: { id } });
   if (!row) return null;
   const mixer = parseMixer(row);
   return { ...mixer, connected: registry.isMixerConnected(mixer.id), activeSource: registry.getActiveSource(mixer.id) };
 }
 
-export function createMixer(db, registry, fields = {}) {
+export async function createMixer(db, registry, fields = {}) {
   const {
     name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend', outputKey = null,
     // Optional (mirrors createCamera()'s ownerApiKey — plan_ingest_feeds.md's
@@ -152,16 +157,18 @@ export function createMixer(db, registry, fields = {}) {
   if (!name || typeof name !== 'string') return { ok: false, error: 'name is required' };
   if (!type || !MIXER_TYPES.includes(type)) return { ok: false, error: `type must be one of: ${MIXER_TYPES.join(', ')}` };
   const id = randomUUID();
-  db.prepare(`
-    INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key, owner_api_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey, ownerApiKey);
+  await db.prod_mixers.create({
+    data: {
+      id, name, type, connection_config: JSON.stringify(connectionConfig), bridge_instance_id: bridgeInstanceId,
+      connection_source: connectionSource, output_key: outputKey, owner_api_key: ownerApiKey,
+    },
+  });
   registry.reloadMixer(id).catch((err) => console.warn(`[production-control] reloadMixer after create: ${err.message}`));
-  return { ok: true, mixer: getMixerById(db, registry, id) };
+  return { ok: true, mixer: await getMixerById(db, registry, id) };
 }
 
-export function updateMixer(db, registry, id, patch = {}) {
-  const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+export async function updateMixer(db, registry, id, patch = {}) {
+  const existing = await db.prod_mixers.findUnique({ where: { id } });
   if (!existing) return { ok: false, error: 'Mixer not found', status: 404 };
 
   const name = patch.name ?? existing.name;
@@ -173,19 +180,22 @@ export function updateMixer(db, registry, id, patch = {}) {
 
   if (type && !MIXER_TYPES.includes(type)) return { ok: false, error: `type must be one of: ${MIXER_TYPES.join(', ')}` };
 
-  db.prepare(`
-    UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?, connection_source = ?, output_key = ?
-    WHERE id = ?
-  `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey, id);
+  await db.prod_mixers.updateMany({
+    where: { id },
+    data: {
+      name, type, connection_config: JSON.stringify(connectionConfig), bridge_instance_id: bridgeInstanceId,
+      connection_source: connectionSource, output_key: outputKey,
+    },
+  });
 
   registry.reloadMixer(id).catch((err) => console.warn(`[production-control] reloadMixer after update: ${err.message}`));
-  return { ok: true, mixer: getMixerById(db, registry, id) };
+  return { ok: true, mixer: await getMixerById(db, registry, id) };
 }
 
-export function deleteMixer(db, registry, id) {
-  const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+export async function deleteMixer(db, registry, id) {
+  const existing = await db.prod_mixers.findUnique({ where: { id } });
   if (!existing) return { ok: false, error: 'Mixer not found', status: 404 };
-  db.prepare('DELETE FROM prod_mixers WHERE id = ?').run(id);
+  await db.prod_mixers.deleteMany({ where: { id } });
   registry.removeMixer(id).catch(() => {});
   return { ok: true };
 }

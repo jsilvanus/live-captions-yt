@@ -18,7 +18,7 @@ import logger from 'lcyt/logger';
  * DELETE /stream/:slot        — stop ffmpeg for slot and remove its config
  * DELETE /stream              — stop all slots, drop nginx publisher, remove all configs
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @param {string} allowedRtmpDomains
@@ -51,15 +51,15 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   });
 
   // Middleware: check relay_allowed for this API key
-  function requireRelayAllowed(req, res, next) {
+  async function requireRelayAllowed(req, res, next) {
     const apiKey = req.session?.apiKey;
-    if (!apiKey || !isRelayAllowed(db, apiKey)) {
+    if (!apiKey || !(await isRelayAllowed(db, apiKey))) {
       return res.status(403).json({ error: 'RTMP relay not enabled for this API key' });
     }
     next();
   }
 
-  function validateBody(req, res) {
+  async function validateBody(req, res) {
     const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
@@ -88,7 +88,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         res.status(400).json({ error: 'sourceCameraId must be a string camera id' });
         return null;
       }
-      if (!resolveRelaySourceCameraKey(db, sourceCameraId, req.session.apiKey)) {
+      if (!(await resolveRelaySourceCameraKey(db, sourceCameraId, req.session.apiKey))) {
         // Same 400 whether the camera doesn't exist, has no camera_key, or
         // is owned by a different project — doesn't confirm a foreign
         // camera's existence to a caller who doesn't own it.
@@ -147,10 +147,10 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   }
 
   // POST /stream — create or replace a relay slot
-  router.post('/', requireRelayAllowed, (req, res) => {
-    const fields = validateBody(req, res);
+  router.post('/', requireRelayAllowed, async (req, res) => {
+    const fields = await validateBody(req, res);
     if (!fields) return;
-    const existing = getRelays(db, req.session.apiKey);
+    const existing = await getRelays(db, req.session.apiKey);
 
     let slot;
     if (req.body?.slot === undefined || req.body?.slot === null || req.body?.slot === '') {
@@ -163,7 +163,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
     }
 
     try {
-      const relay = upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
+      const relay = await upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
         targetName:    fields.targetName,
         captionMode:   fields.captionMode,
         recordOnStart: fields.recordOnStart,
@@ -182,18 +182,18 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   });
 
   // GET /stream — get all slots + running status per slot + relay active state
-  router.get('/', requireRelayAllowed, (req, res) => {
-    const relays = getRelays(db, req.session.apiKey);
+  router.get('/', requireRelayAllowed, async (req, res) => {
+    const relays = await getRelays(db, req.session.apiKey);
     const runningSlots = relayManager.runningSlots(req.session.apiKey);
-    const active = isRelayActive(db, req.session.apiKey);
+    const active = await isRelayActive(db, req.session.apiKey);
     const lastExit = runningSlots.length === 0 ? (relayManager.lastExit?.(req.session.apiKey) ?? null) : null;
     const stderrTail = runningSlots.length > 0 ? (relayManager.liveStderr?.(req.session.apiKey) ?? null) : null;
     return res.status(200).json({ relays, runningSlots, active, lastExit, stderrTail });
   });
 
   // GET /stream/history — per-stream usage history for this key
-  router.get('/history', requireRelayAllowed, (req, res) => {
-    const stats = getRtmpStreamStats(db, req.session.apiKey);
+  router.get('/history', requireRelayAllowed, async (req, res) => {
+    const stats = await getRtmpStreamStats(db, req.session.apiKey);
     return res.status(200).json({ streams: stats });
   });
 
@@ -211,15 +211,15 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       return res.status(400).json({ error: 'active must be a boolean' });
     }
     const apiKey = req.session.apiKey;
-    setRelayActive(db, apiKey, active);
+    await setRelayActive(db, apiKey, active);
 
     if (active) {
       // If nginx is currently publishing a stream, start fan-out immediately
       if (relayManager.isPublishing(apiKey)) {
-        const relays = getRelays(db, apiKey);
+        const relays = await getRelays(db, apiKey);
         if (relays.length > 0) {
           try {
-            const keyRow = getKey(db, apiKey);
+            const keyRow = await getKey(db, apiKey);
             const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
             await relayManager.startAll(apiKey, relays, { cea708DelayMs });
           } catch (err) {
@@ -241,18 +241,18 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   });
 
   // PUT /stream/:slot — update a specific slot
-  router.put('/:slot', requireRelayAllowed, (req, res) => {
+  router.put('/:slot', requireRelayAllowed, async (req, res) => {
     const slot = parseSlot(req.params.slot, res);
     if (slot === null) return;
 
-    const existing = getRelaySlot(db, req.session.apiKey, slot);
+    const existing = await getRelaySlot(db, req.session.apiKey, slot);
     if (!existing) {
       return res.status(404).json({ error: `Slot ${slot} not configured — use POST /stream to create it` });
     }
-    const fields = validateBody(req, res);
+    const fields = await validateBody(req, res);
     if (!fields) return;
     try {
-      const relay = upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
+      const relay = await upsertRelay(db, req.session.apiKey, slot, fields.targetUrl, {
         targetName:    fields.targetName,
         captionMode:   fields.captionMode,
         recordOnStart: fields.recordOnStart,
@@ -277,14 +277,14 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
     const apiKey = req.session.apiKey;
 
     // Remove from DB first so the restart picks up the updated target list.
-    const deleted = deleteRelaySlot(db, apiKey, slot);
+    const deleted = await deleteRelaySlot(db, apiKey, slot);
 
     if (relayManager.isRunning(apiKey)) {
-      const remaining = getRelays(db, apiKey);
+      const remaining = await getRelays(db, apiKey);
       if (remaining.length > 0) {
         // Restart the single ffmpeg process with the remaining tee targets.
         try {
-          const keyRow = getKey(db, apiKey);
+          const keyRow = await getKey(db, apiKey);
           const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
           await relayManager.start(apiKey, remaining, { cea708DelayMs });
         } catch (err) {
@@ -315,7 +315,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
     } catch (err) {
       logger.warn(`[stream] stop all / drop publisher failed: ${err.message}`);
     }
-    const count = deleteAllRelays(db, apiKey);
+    const count = await deleteAllRelays(db, apiKey);
     return res.status(200).json({ ok: true, deleted: count });
   });
 

@@ -10,11 +10,11 @@
 
 /**
  * @param {{
- *   db: import('better-sqlite3').Database,
+ *   db: object,  // Prisma client
  *   eventBus: { tap: (fn: (e: object) => void) => () => void },
  *   cropManager: { isRunning: Function, getStatus: Function, applyPosition: Function },
  *   attributor: { getTag: (apiKey: string) => { cameraId: string|null } },
- *   getCropConfig: (db: object, apiKey: string) => { enabled: boolean, autoFollow: boolean },
+ *   getCropConfig: (db: object, apiKey: string) => Promise<{ enabled: boolean, autoFollow: boolean }>,
  *   follow: { targetCenter: Function, xNormForCenter: Function, createFollowSmoother: Function },
  *   preferRoles?: string[], moveMs?: number, now?: () => number,
  * }} deps
@@ -31,7 +31,8 @@ export function createCropFollowController({
 
   async function handle(apiKey, data) {
     if (busy.has(apiKey)) return;
-    const cfg = getCropConfig(db, apiKey);
+    const cfg = await getCropConfig(db, apiKey);
+    if (busy.has(apiKey)) return;
     if (!cfg.enabled || !cfg.autoFollow || !cropManager.isRunning(apiKey)) return;
     const tag = attributor.getTag(apiKey);
     if (!tag?.cameraId || tag.cameraId !== data.cameraId) return; // only the camera that is on program

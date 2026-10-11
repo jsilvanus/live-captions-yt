@@ -476,7 +476,7 @@ model crop_source_map {
   mixer_id      String?
   mixer_input   Int?
   camera_id     String?
-  camera_preset Int?
+  camera_preset String?
   preset_id     String
   crop_presets  crop_presets @relation(fields: [preset_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 

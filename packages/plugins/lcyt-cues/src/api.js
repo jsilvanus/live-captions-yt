@@ -34,16 +34,13 @@ export {
 } from './db.js';
 
 /**
- * Run DB migrations and create the CueEngine instance.
+ * Create the CueEngine instance (the cue tables come from lcyt-backend's schema, no migrations).
  * Call once at backend startup before mounting any routes.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @returns {Promise<{ engine: import('./cue-engine.js').CueEngine }>}
  */
 export async function initCueEngine(db) {
-  const { runMigrations } = await import('./db.js');
-  runMigrations(db);
-
   const { CueEngine } = await import('./cue-engine.js');
   const engine = new CueEngine(db);
 

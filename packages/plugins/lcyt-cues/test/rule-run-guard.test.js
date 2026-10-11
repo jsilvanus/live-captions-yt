@@ -1,16 +1,14 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { createCueRouter } from '../src/routes/cues.js';
-import { runMigrations } from '../src/db.js';
 
 describe('cue rules — executable action.run authoring guard', () => {
   let server, baseUrl, db;
   const seen = [];
   before(async () => {
-    db = new Database(':memory:');
-    runMigrations(db);
+    db = await initDb(':memory:');
     const app = express();
     app.use(express.json());
     const auth = (req, _res, next) => { req.session = { apiKey: 'k' }; next(); };
@@ -23,7 +21,7 @@ describe('cue rules — executable action.run authoring guard', () => {
     await new Promise((r) => { server = app.listen(0, r); });
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
-  after(() => new Promise((r) => { db.close(); server.close(r); }));
+  after(async () => { await new Promise((r) => server.close(r)); await db.close(); });
   const send = (method, path, body) => fetch(`${baseUrl}${path}`, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
   it('asks the guard about action.run on create and update', async () => {

@@ -73,7 +73,7 @@ export async function createStorageAdapter(settings = null) {
  * Access control (feature flag checks) is enforced in the route handler
  * before writing to key_storage_config, not here.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('./adapters/types.js').StorageAdapter} fallback  Global adapter (mode 1 or 2)
  * @returns {{ resolveStorage: (apiKey: string) => Promise<import('./adapters/types.js').StorageAdapter>, invalidateCache: (apiKey: string) => void }}
  */

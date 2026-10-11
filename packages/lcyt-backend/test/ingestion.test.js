@@ -13,7 +13,6 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
-import { SQLITE_ONLY_PLUGIN, ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 import { createUser } from '../src/db/users.js';
 import { addMember } from '../src/db/project-members.js';
 import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
@@ -22,11 +21,11 @@ import { RtmpRelayManager } from 'lcyt-rtmp/src/rtmp-manager.js';
 
 const JWT_SECRET = 'test-ingestion-secret';
 
-async function initTestDb() { const db = await initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { return initDb(':memory:'); }
 
 let server, baseUrl, db, relayManager;
 
-before(() => SQLITE_ONLY_PLUGIN ? undefined : new Promise(async (resolve) => {
+before(() => new Promise(async (resolve) => {
   db = await initTestDb();
   relayManager = new RtmpRelayManager();
   // Real production mounting (server.js) uses scopedAuth('rtmp')/
@@ -36,7 +35,7 @@ before(() => SQLITE_ONLY_PLUGIN ? undefined : new Promise(async (resolve) => {
   const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'rtmp' });
   const app = express();
   app.use(express.json());
-  app.use('/ingestion', createIngestionRouter(db.$legacy, auth, relayManager, null, requireProjectRole(db, 'setup')));
+  app.use('/ingestion', createIngestionRouter(db, auth, relayManager, null, requireProjectRole(db, 'setup')));
   server = createServer(app);
   server.listen(0, () => {
     baseUrl = `http://localhost:${server.address().port}`;
@@ -44,8 +43,8 @@ before(() => SQLITE_ONLY_PLUGIN ? undefined : new Promise(async (resolve) => {
   });
 }));
 
-after(() => SQLITE_ONLY_PLUGIN ? undefined : new Promise((resolve) => {
-  db.close();
+after(() => new Promise(async (resolve) => {
+  await db.close();
   server.close(resolve);
 }));
 
@@ -96,7 +95,7 @@ async function rotate(apiKey, tok) {
   });
 }
 
-describe('GET /ingestion/config', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('GET /ingestion/config', () => {
   it('rejects missing auth', async () => {
     const res = await fetch(`${baseUrl}/ingestion/config`);
     assert.equal(res.status, 401);
@@ -163,7 +162,7 @@ describe('GET /ingestion/config', { skip: SQLITE_ONLY_PLUGIN }, () => {
   });
 });
 
-describe('PATCH /ingestion/config', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('PATCH /ingestion/config', () => {
   it('403s for a session token with no explicit project role (setup tier required)', async () => {
     const k = await createKey(db, { owner: 'NoRole' });
     const res = await patch(k.key, { video: { enabled: true } }, tokenFor(k.key));
@@ -236,7 +235,7 @@ describe('PATCH /ingestion/config', { skip: SQLITE_ONLY_PLUGIN }, () => {
   });
 });
 
-describe('POST /ingestion/config/rotate', { skip: SQLITE_ONLY_PLUGIN }, () => {
+describe('POST /ingestion/config/rotate', () => {
   it('rejects missing auth', async () => {
     const res = await fetch(`${baseUrl}/ingestion/config/rotate`, { method: 'POST' });
     assert.equal(res.status, 401);

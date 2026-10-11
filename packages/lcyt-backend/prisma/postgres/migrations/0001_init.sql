@@ -449,7 +449,7 @@ CREATE TABLE "crop_source_map" (
     "mixer_id" TEXT,
     "mixer_input" INTEGER,
     "camera_id" TEXT,
-    "camera_preset" INTEGER,
+    "camera_preset" TEXT,
     "preset_id" TEXT NOT NULL,
 
     CONSTRAINT "crop_source_map_pkey" PRIMARY KEY ("id")

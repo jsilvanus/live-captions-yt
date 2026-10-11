@@ -23,14 +23,9 @@ function makeTmpDir() {
 function makeDb() {
   let nextId = 1;
   return {
-    prepare: (sql) => {
-      if (sql.includes('INSERT INTO caption_files')) {
-        return { run: (..._args) => ({ lastInsertRowid: nextId++ }) };
-      }
-      if (sql.includes('UPDATE caption_files')) {
-        return { run: () => {} };
-      }
-      return { run: () => {}, get: () => null, all: () => [] };
+    caption_files: {
+      create: async () => ({ id: nextId++ }),
+      updateMany: async () => ({ count: 1 }),
     },
   };
 }

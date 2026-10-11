@@ -38,7 +38,7 @@ import {
   updateCaptionFileSize,
   updateCaptionFileMeta,
 } from 'lcyt-backend/db';
-import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
+import { getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
 import { shiftVttContent } from '../vtt.js';
 import logger from 'lcyt/logger';
 
@@ -170,7 +170,7 @@ const fileRateLimit = rateLimit({
  * PUT    /file/storage-config    — Set per-key S3 config (requires "custom-storage" feature)
  * DELETE /file/storage-config    — Remove per-key S3 config (revert to global default)
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth - Project-access Bearer middleware
  * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store - Only used by the token-based GET /:id download route (?token= direct links); every other route reads apiKey off req.session directly
  * @param {string} jwtSecret
@@ -189,9 +189,6 @@ const fileRateLimit = rateLimit({
  * @returns {Router}
  */
 export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache = () => {}, routeOptions = null) {
-  // Ensure the key_storage_config table exists (idempotent — safe to call on every startup)
-  if (db) runFilesDbMigrations(db);
-
   // Defensive fallback: if no resolver provided, use an adapter-less stub that returns 503
   const _resolve = resolveStorage ?? (() => Promise.reject(new Error('Storage not configured')));
   const hasLegacyRequireSetup = typeof routeOptions === 'function';

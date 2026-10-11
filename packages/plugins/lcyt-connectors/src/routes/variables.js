@@ -33,7 +33,7 @@ function resolveWriteTtl(value, bodyTtl) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth
  * @param {import('../variables-bus.js').VariablesBus} bus
  * @param {ReturnType<import('../resolution-engine.js').createResolutionEngine>} engine
@@ -43,15 +43,15 @@ function resolveWriteTtl(value, bodyTtl) {
 export function createVariablesRouter(db, auth, bus, engine, scheduler, jwtSecret) {
   const router = Router();
 
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     // Lazily revert any TTLs due by now, and push each revert to SSE consumers.
-    for (const row of materializeExpired(db, apiKey)) {
+    for (const row of await materializeExpired(db, apiKey)) {
       bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
     }
     const snapshot = {};
-    for (const row of listVariables(db, apiKey)) {
+    for (const row of await listVariables(db, apiKey)) {
       const { name, ...rest } = serializeVariableRow(row);
       snapshot[name] = rest;
     }
@@ -59,39 +59,39 @@ export function createVariablesRouter(db, auth, bus, engine, scheduler, jwtSecre
   });
 
 
-  router.post('/', auth, (req, res) => {
+  router.post('/', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const { name, value, defaultValue, ttl } = req.body || {};
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (name.startsWith('_')) return res.status(400).json({ error: 'variable names starting with "_" are reserved' });
-    if (getVariable(db, apiKey, name)) return res.status(409).json({ error: `Variable already exists: ${name}` });
+    if (await getVariable(db, apiKey, name)) return res.status(409).json({ error: `Variable already exists: ${name}` });
 
     const w = resolveWriteTtl(value, ttl);
-    const row = upsertManualVariable(db, apiKey, name, { value: w.value, defaultValue, ttl: w.ttl });
-    scheduler.reschedule(apiKey, name);
+    const row = await upsertManualVariable(db, apiKey, name, { value: w.value, defaultValue, ttl: w.ttl });
+    await scheduler.reschedule(apiKey, name);
     bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
     res.status(201).json({ variable: serializeVariableRow(row) });
   });
 
-  router.put('/:name', auth, (req, res) => {
+  router.put('/:name', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const { name } = req.params;
     if (name.startsWith('_')) return res.status(400).json({ error: 'variable names starting with "_" are reserved' });
     const { value, defaultValue, ttl, source } = req.body || {};
     const w = resolveWriteTtl(value, ttl);
-    const row = upsertManualVariable(db, apiKey, name, { value: w.value, defaultValue, ttl: w.ttl, source });
-    scheduler.reschedule(apiKey, name);
+    const row = await upsertManualVariable(db, apiKey, name, { value: w.value, defaultValue, ttl: w.ttl, source });
+    await scheduler.reschedule(apiKey, name);
     bus.emitVariableUpdated(apiKey, serializeVariableRow(row));
     res.json({ variable: serializeVariableRow(row) });
   });
 
-  router.delete('/:name', auth, (req, res) => {
+  router.delete('/:name', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     scheduler.cancel(apiKey, req.params.name);
-    deleteVariable(db, apiKey, req.params.name);
+    await deleteVariable(db, apiKey, req.params.name);
     res.json({ ok: true });
   });
 

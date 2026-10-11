@@ -26,7 +26,7 @@ import logger from 'lcyt/logger';
  *   relayManager.dropPublisher() → nginx sends on_publish_done → this route
  *   calls stopKey() again (idempotent, all procs already gone).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
  * @param {import('../crop-manager.js').CropManager} [cropManager]  Vertical-crop renderer lifecycle
  * @param {import('lcyt-music/src/music-manager.js').MusicManager} [musicManager]  Music detection manager
@@ -57,11 +57,11 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
     // Resolve the stream name to the project's api_key — this is a no-op
     // (returns `name` unchanged) unless the project has rotated its ingest
     // stream key via POST /ingestion/config/rotate.
-    const apiKey = resolveApiKeyFromIngestStreamKey(db, name);
+    const apiKey = await resolveApiKeyFromIngestStreamKey(db, name);
 
     // Handle on_publish: call=publish
     if (call === 'publish') {
-      if (!isRelayAllowed(db, apiKey)) {
+      if (!(await isRelayAllowed(db, apiKey))) {
         // nginx-rtmp: 4xx = deny the publish, 2xx = allow
         return res.status(403).send('relay not allowed');
       }
@@ -73,11 +73,11 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
 
       // Fan-out: start all configured relay slots in parallel,
       // but only if the user has activated the relay (relay_active toggle).
-      if (isRelayActive(db, apiKey)) {
-        const relays = getRelays(db, apiKey);
+      if (await isRelayActive(db, apiKey)) {
+        const relays = await getRelays(db, apiKey);
         if (relays.length > 0) {
           try {
-            const keyRow = getKey(db, apiKey);
+            const keyRow = await getKey(db, apiKey);
             const cea708DelayMs = keyRow?.cea708_delay_ms ?? 0;
             await relayManager.startAll(apiKey, relays, { cea708DelayMs });
           } catch (err) {
@@ -92,7 +92,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
       // (best-effort, parallel to the relay fan-out above).
       if (cropManager) {
         try {
-          const cropConfig = getCropConfig(db, apiKey);
+          const cropConfig = await getCropConfig(db, apiKey);
           if (cropConfig.enabled && !cropManager.isRunning(apiKey)) {
             cropManager.start(apiKey, cropConfig).catch(err => {
               logger.error(`[rtmp] Crop renderer start failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
@@ -109,7 +109,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
           // Defer getMusicConfig import to avoid hard dependency on lcyt-music
           // (the music plugin may not be installed in minimal deployments)
           const { getMusicConfig } = await import('lcyt-music');
-          const musicConfig = getMusicConfig(db, apiKey);
+          const musicConfig = await getMusicConfig(db, apiKey);
           if (musicConfig.enabled && musicConfig.autoStart && !musicManager.isRunning(apiKey)) {
             // Check ffmpeg availability before attempting to start
             if (!musicManager.ffmpegVersion) {

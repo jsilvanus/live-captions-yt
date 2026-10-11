@@ -1,12 +1,17 @@
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { EventBus } from 'lcyt/event-bus';
 import { initActions, createActionDef, createActionExecutor, currentCausation, parseWaitMs } from '../src/api.js';
 
-function setup(handlers = {}, extra = {}) {
-  const db = new Database(':memory:');
-  initActions(db);
+// One database for the whole file (a PostgreSQL schema per initDb is slow); setup() clears action_defs.
+let db;
+before(async () => { db = await initDb(':memory:'); });
+after(async () => { await db.close(); });
+
+async function setup(handlers = {}, extra = {}) {
+  await initActions(db);
+  await db.action_defs.deleteMany({});
   const eventBus = new EventBus();
   const events = [];
   eventBus.subscribe('k', ['action.*'], (e) => events.push(e));
@@ -36,8 +41,8 @@ describe('parseWaitMs', () => {
 });
 
 describe('rewriteDeviceRefs', () => {
-  it('rewrites hooked atoms only, keeps @refs, waits and other atoms verbatim', () => {
-    const { executor } = setup({
+  it('rewrites hooked atoms only, keeps @refs, waits and other atoms verbatim', async () => {
+    const { executor } = await setup({
       camera: {
         device: true, run: async () => ({ ok: true }),
         toIds: (k, v) => (v === 'pulpit.wide' ? 'cam-1.p1' : null),
@@ -45,22 +50,22 @@ describe('rewriteDeviceRefs', () => {
       },
     });
     const typed = 'camera:pulpit.wide | wait:2s | @intro | audio:start | camera:ghost.x';
-    const stored = executor.rewriteDeviceRefs('k', typed, 'ids');
+    const stored = await executor.rewriteDeviceRefs('k', typed, 'ids');
     assert.equal(stored, 'camera:cam-1.p1 | wait:2s | @intro | audio:start | camera:ghost.x');
-    assert.equal(executor.rewriteDeviceRefs('k', stored, 'labels'), typed);
-    assert.equal(executor.rewriteDeviceRefs('k', 'wait:1s', 'ids'), 'wait:1s');
-    assert.equal(executor.rewriteDeviceRefs('k', '', 'ids'), '');
+    assert.equal(await executor.rewriteDeviceRefs('k', stored, 'labels'), typed);
+    assert.equal(await executor.rewriteDeviceRefs('k', 'wait:1s', 'ids'), 'wait:1s');
+    assert.equal(await executor.rewriteDeviceRefs('k', '', 'ids'), '');
   });
 
-  it('a throwing hook leaves the atom as written', () => {
-    const { executor } = setup({ camera: { device: true, run: async () => ({ ok: true }), toIds: () => { throw new Error('x'); } } });
-    assert.equal(executor.rewriteDeviceRefs('k', 'camera:a.b', 'ids'), 'camera:a.b');
+  it('a throwing hook leaves the atom as written', async () => {
+    const { executor } = await setup({ camera: { device: true, run: async () => ({ ok: true }), toIds: () => { throw new Error('x'); } } });
+    assert.equal(await executor.rewriteDeviceRefs('k', 'camera:a.b', 'ids'), 'camera:a.b');
   });
 });
 
 describe('ActionExecutor', () => {
   let t;
-  beforeEach(() => { t = setup(); });
+  beforeEach(async () => { t = await setup(); });
 
   it('runs server atoms in order and returns client atoms', async () => {
     const r = await t.executor.run('k', { expr: 'camera:pulpit.wide | audio:start | wait:10ms | api:weather.now' }, { source: 'api' });
@@ -77,9 +82,9 @@ describe('ActionExecutor', () => {
   });
 
   it('expands @refs (nested) and warns on unknown and cyclic refs', async () => {
-    t.def('inner', 'camera:a.b');
-    t.def('outer', '@inner | api:x.y');
-    t.def('loop', '@loop | camera:c.d');
+    await t.def('inner', 'camera:a.b');
+    await t.def('outer', '@inner | api:x.y');
+    await t.def('loop', '@loop | camera:c.d');
     let r = await t.executor.run('k', { ref: 'outer' });
     assert.deepEqual(t.calls.map((c) => c[2]), ['a.b', 'x.y']);
     assert.equal(r.ok, true);
@@ -95,7 +100,7 @@ describe('ActionExecutor', () => {
   });
 
   it('names are scoped to the project', async () => {
-    t.def('mine', 'camera:a.b');
+    await t.def('mine', 'camera:a.b');
     assert.equal((await t.executor.run('other', { ref: 'mine' })).code, 'not_found');
   });
 
@@ -124,14 +129,14 @@ describe('ActionExecutor', () => {
   });
 
   it('bad wait value is a step error; a throwing handler is a step error', async () => {
-    const x = setup({ boom: async () => { throw new Error('kaboom'); } });
+    const x = await setup({ boom: async () => { throw new Error('kaboom'); } });
     const r = await x.executor.run('k', { expr: 'wait:soon | boom:1' });
     assert.equal(r.steps[0].status, 'error');
     assert.equal(r.steps[1].error, 'kaboom');
   });
 
   it('a hung handler times out', async () => {
-    const x = setup({ hang: () => new Promise(() => {}) }, { stepTimeoutMs: 20 });
+    const x = await setup({ hang: () => new Promise(() => {}) }, { stepTimeoutMs: 20 });
     const r = await x.executor.run('k', { expr: 'hang:1 | api:x.y' });
     assert.match(r.steps[0].error, /timed out/);
     assert.equal(r.steps[1].status, 'ok');
@@ -147,9 +152,8 @@ describe('ActionExecutor', () => {
 });
 
 describe('ActionExecutor — device cooldown, atom keys, causation', () => {
-  function make(extra = {}) {
-    const db = new Database(':memory:');
-    initActions(db);
+  async function make(extra = {}) {
+    await initActions(db);
     const calls = [];
     const clock = { t: 1000 };
     const executor = createActionExecutor({
@@ -164,7 +168,7 @@ describe('ActionExecutor — device cooldown, atom keys, causation', () => {
   }
 
   it('deviceCooldown skips a device commanded within the window, per device, but not other devices or plain runs', async () => {
-    const { executor, calls, clock } = make();
+    const { executor, calls, clock } = await make();
     await executor.run('k', { expr: 'camera:a.wide' });                        // manual run, always works
     const r = await executor.run('k', { expr: 'camera:a.close | camera:b.wide' }, { deviceCooldown: true });
     assert.deepEqual(r.steps.map((s) => [s.status, s.reason]), [['skipped', 'device_cooldown'], ['ok', undefined]]);
@@ -176,7 +180,7 @@ describe('ActionExecutor — device cooldown, atom keys, causation', () => {
   });
 
   it('handler keys ignore a [viewport] suffix and the handler sees the full key', async () => {
-    const { executor, calls } = make();
+    const { executor, calls } = await make();
     assert.equal(executor.isServerAtom('graphics[vertical-left]'), true);
     assert.equal(executor.isDeviceAtom('graphics[vertical-left]'), false);
     const r = await executor.run('k', { expr: 'graphics[vertical-left]:+logo | graphics:-banner' });
@@ -186,7 +190,7 @@ describe('ActionExecutor — device cooldown, atom keys, causation', () => {
 
   it('currentCausation is visible inside a step, including across awaits, and a nested run is one level deeper', async () => {
     const seen = [];
-    const { executor } = make({
+    const { executor } = await make({
       probe: async () => { await new Promise((r) => setImmediate(r)); seen.push(currentCausation()); return { ok: true }; },
     });
     assert.equal(currentCausation(), undefined);
@@ -195,7 +199,7 @@ describe('ActionExecutor — device cooldown, atom keys, causation', () => {
     assert.equal(seen[0].depth, 2);
     let depth;
     // same executor instance runs the nested call: build one with both handlers
-    const both = make({
+    const both = await make({
       probe2: async () => { depth = currentCausation().depth; return { ok: true }; },
       inner: async () => { await both.executor.run('k', { expr: 'probe2:1' }); return { ok: true }; },
     });

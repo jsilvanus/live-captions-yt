@@ -1,7 +1,8 @@
 /**
- * lcyt-platforms — DB migrations and CRUD helpers.
+ * lcyt-platforms — CRUD helpers on the Prisma client from lcyt-backend's initDb().
  *
- * Tables (see docs/plans/plan_broadcast_platform_sync.md § Schema):
+ * Tables (created by the backend schema; see docs/plans/plan_broadcast_platform_sync.md § Schema).
+ * Every function is async:
  *   platform_credentials      — per-project OAuth credentials, one row per connected account
  *   broadcast_platform_links  — an LCYT broadcast ↔ an external platform broadcast
  *   broadcast_platform_stats  — live snapshots + one post-broadcast summary per link
@@ -21,64 +22,8 @@
  */
 import { randomUUID } from 'node:crypto';
 
-/**
- * @param {import('better-sqlite3').Database} db
- */
-export function runMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS platform_credentials (
-      id                  TEXT PRIMARY KEY,
-      api_key             TEXT NOT NULL REFERENCES api_keys(key) ON DELETE CASCADE,
-      platform            TEXT NOT NULL,
-      external_account_id TEXT NOT NULL,
-      account_label       TEXT,
-      access_token_enc    TEXT NOT NULL,
-      refresh_token_enc   TEXT NOT NULL,
-      expires_at          TEXT NOT NULL,
-      scopes              TEXT,
-      connected_at        TEXT NOT NULL DEFAULT (datetime('now')),
-      revoked_at          TEXT,
-      UNIQUE (api_key, platform, external_account_id)
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_platform_credentials_key ON platform_credentials(api_key)');
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS broadcast_platform_links (
-      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
-      broadcast_id          TEXT NOT NULL REFERENCES broadcasts(id) ON DELETE CASCADE,
-      platform              TEXT NOT NULL,
-      credential_id         TEXT REFERENCES platform_credentials(id),
-      external_broadcast_id TEXT NOT NULL,
-      external_stream_id    TEXT,
-      external_video_ids    TEXT,
-      thumbnail_url         TEXT,
-      last_status           TEXT,
-      last_synced_at        TEXT,
-      last_sync_error       TEXT,
-      created_at            TEXT NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (broadcast_id, platform)
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_bpl_broadcast ON broadcast_platform_links(broadcast_id)');
-  // Live links are polled on a loop; the poller filters on status, not broadcast.
-  db.exec('CREATE INDEX IF NOT EXISTS idx_bpl_status ON broadcast_platform_links(last_status)');
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS broadcast_platform_stats (
-      id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-      broadcast_id            TEXT NOT NULL REFERENCES broadcasts(id) ON DELETE CASCADE,
-      platform                TEXT NOT NULL,
-      captured_at             TEXT NOT NULL DEFAULT (datetime('now')),
-      kind                    TEXT NOT NULL,
-      concurrent_viewers      INTEGER,
-      views                   INTEGER,
-      average_watch_time_s    INTEGER,
-      peak_concurrent_viewers INTEGER
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_bps_broadcast ON broadcast_platform_stats(broadcast_id, kind, captured_at)');
-}
+/** No-op kept for old callers: the tables come from the backend schema. */
+export async function runMigrations() {}
 
 // ---------------------------------------------------------------------------
 // Credentials
@@ -107,39 +52,36 @@ export function maskCredential(row) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
  * @param {{ platform?: string, includeRevoked?: boolean }} [opts]
  */
-export function listCredentials(db, apiKey, { platform, includeRevoked = false } = {}) {
-  const where = ['api_key = ?'];
-  const params = [apiKey];
-  if (platform) { where.push('platform = ?'); params.push(platform); }
-  if (!includeRevoked) where.push('revoked_at IS NULL');
-  return db.prepare(
-    `SELECT * FROM platform_credentials WHERE ${where.join(' AND ')} ORDER BY connected_at ASC`,
-  ).all(...params);
+export async function listCredentials(db, apiKey, { platform, includeRevoked = false } = {}) {
+  const where = { api_key: apiKey };
+  if (platform) where.platform = platform;
+  if (!includeRevoked) where.revoked_at = null;
+  return db.platform_credentials.findMany({ where, orderBy: { connected_at: 'asc' } });
 }
 
 /**
  * Fetch by id, scoped to a project so one project can never address another's
  * credential by guessing a uuid.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
  * @param {string} id
  */
-export function getCredential(db, apiKey, id) {
-  return db.prepare('SELECT * FROM platform_credentials WHERE id = ? AND api_key = ?').get(id, apiKey) || null;
+export async function getCredential(db, apiKey, id) {
+  return (await db.platform_credentials.findFirst({ where: { id, api_key: apiKey } })) || null;
 }
 
 /**
  * Unscoped lookup, for the poller — it walks links, which already carry a
  * project-scoped credential_id, so there is no api_key in hand at that point.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} id
  */
-export function getCredentialById(db, id) {
-  return db.prepare('SELECT * FROM platform_credentials WHERE id = ?').get(id) || null;
+export async function getCredentialById(db, id) {
+  return (await db.platform_credentials.findUnique({ where: { id } })) || null;
 }
 
 /**
@@ -150,13 +92,13 @@ export function getCredentialById(db, id) {
  * of guessing: exactly one live account resolves, zero and many are distinct
  * errors the route layer turns into different messages.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
  * @param {string} platform
- * @returns {{ ok: true, credential: object } | { ok: false, reason: 'none'|'ambiguous', candidates?: object[] }}
+ * @returns {Promise<{ ok: true, credential: object } | { ok: false, reason: 'none'|'ambiguous', candidates?: object[] }>}
  */
-export function getDefaultCredential(db, apiKey, platform) {
-  const rows = listCredentials(db, apiKey, { platform });
+export async function getDefaultCredential(db, apiKey, platform) {
+  const rows = await listCredentials(db, apiKey, { platform });
   if (rows.length === 0) return { ok: false, reason: 'none' };
   if (rows.length > 1) return { ok: false, reason: 'ambiguous', candidates: rows.map(maskCredential) };
   return { ok: true, credential: rows[0] };
@@ -169,66 +111,69 @@ export function getDefaultCredential(db, apiKey, platform) {
  * revocation — the operator re-consented, so the row is live again. Connecting
  * a different channel inserts alongside.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
  * @param {{ platform: string, externalAccountId: string, accountLabel?: string,
  *           accessTokenEnc: string, refreshTokenEnc: string, expiresAt: string,
  *           scopes?: string }} fields
- * @returns {object} the stored row
+ * @returns {Promise<object>} the stored row
  */
-export function upsertCredential(db, apiKey, fields) {
+export async function upsertCredential(db, apiKey, fields) {
   const {
     platform, externalAccountId, accountLabel = null,
     accessTokenEnc, refreshTokenEnc, expiresAt, scopes = null,
   } = fields;
 
-  const existing = db.prepare(
-    'SELECT id FROM platform_credentials WHERE api_key = ? AND platform = ? AND external_account_id = ?',
-  ).get(apiKey, platform, externalAccountId);
+  const existing = await db.platform_credentials.findFirst({
+    where: { api_key: apiKey, platform, external_account_id: externalAccountId },
+    select: { id: true },
+  });
 
   if (existing) {
-    db.prepare(`
-      UPDATE platform_credentials
-         SET account_label = ?, access_token_enc = ?, refresh_token_enc = ?,
-             expires_at = ?, scopes = ?, revoked_at = NULL,
-             connected_at = datetime('now')
-       WHERE id = ?
-    `).run(accountLabel, accessTokenEnc, refreshTokenEnc, expiresAt, scopes, existing.id);
+    await db.platform_credentials.updateMany({
+      where: { id: existing.id },
+      data: {
+        account_label: accountLabel, access_token_enc: accessTokenEnc, refresh_token_enc: refreshTokenEnc,
+        expires_at: expiresAt, scopes, revoked_at: null, connected_at: db.$util.sqlNow(),
+      },
+    });
     return getCredentialById(db, existing.id);
   }
 
   const id = randomUUID();
-  db.prepare(`
-    INSERT INTO platform_credentials
-      (id, api_key, platform, external_account_id, account_label,
-       access_token_enc, refresh_token_enc, expires_at, scopes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, apiKey, platform, externalAccountId, accountLabel,
-    accessTokenEnc, refreshTokenEnc, expiresAt, scopes);
+  await db.platform_credentials.create({
+    data: {
+      id, api_key: apiKey, platform, external_account_id: externalAccountId, account_label: accountLabel,
+      access_token_enc: accessTokenEnc, refresh_token_enc: refreshTokenEnc, expires_at: expiresAt, scopes,
+    },
+  });
   return getCredentialById(db, id);
 }
 
 /**
  * Persist a rotated access token after a refresh. The refresh token itself is
  * untouched — providers usually keep issuing the same one.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} id
  * @param {{ accessTokenEnc: string, expiresAt: string }} fields
  */
-export function updateCredentialTokens(db, id, { accessTokenEnc, expiresAt }) {
-  db.prepare('UPDATE platform_credentials SET access_token_enc = ?, expires_at = ? WHERE id = ?')
-    .run(accessTokenEnc, expiresAt, id);
+export async function updateCredentialTokens(db, id, { accessTokenEnc, expiresAt }) {
+  await db.platform_credentials.updateMany({
+    where: { id },
+    data: { access_token_enc: accessTokenEnc, expires_at: expiresAt },
+  });
 }
 
 /**
  * Soft-delete: the row is kept for audit and never hard-deleted, per the plan.
- * @returns {boolean} whether a live credential was actually revoked
+ * @returns {Promise<boolean>} whether a live credential was actually revoked
  */
-export function revokeCredential(db, apiKey, id) {
-  const info = db.prepare(
-    "UPDATE platform_credentials SET revoked_at = datetime('now') WHERE id = ? AND api_key = ? AND revoked_at IS NULL",
-  ).run(id, apiKey);
-  return info.changes > 0;
+export async function revokeCredential(db, apiKey, id) {
+  const info = await db.platform_credentials.updateMany({
+    where: { id, api_key: apiKey, revoked_at: null },
+    data: { revoked_at: db.$util.sqlNow() },
+  });
+  return info.count > 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -252,73 +197,72 @@ export function formatLink(row) {
   };
 }
 
-export function getLink(db, broadcastId, platform) {
-  return db.prepare('SELECT * FROM broadcast_platform_links WHERE broadcast_id = ? AND platform = ?')
-    .get(broadcastId, platform) || null;
+export async function getLink(db, broadcastId, platform) {
+  return (await db.broadcast_platform_links.findUnique({
+    where: { broadcast_id_platform: { broadcast_id: broadcastId, platform } },
+  })) || null;
 }
 
-export function listLinks(db, broadcastId) {
-  return db.prepare('SELECT * FROM broadcast_platform_links WHERE broadcast_id = ? ORDER BY platform')
-    .all(broadcastId);
+export async function listLinks(db, broadcastId) {
+  const rows = await db.broadcast_platform_links.findMany({ where: { broadcast_id: broadcastId } });
+  return rows.sort((a, b) => (a.platform < b.platform ? -1 : a.platform > b.platform ? 1 : 0));
 }
 
 /**
  * Create or update the single link for (broadcast, platform).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {{ broadcastId: string, platform: string, credentialId: string,
  *           externalBroadcastId: string, externalStreamId?: string|null,
  *           thumbnailUrl?: string|null, lastStatus?: string|null }} fields
  */
-export function upsertLink(db, fields) {
+export async function upsertLink(db, fields) {
   const {
     broadcastId, platform, credentialId, externalBroadcastId,
     externalStreamId = null, thumbnailUrl = null, lastStatus = null,
   } = fields;
-  const existing = getLink(db, broadcastId, platform);
+  const existing = await getLink(db, broadcastId, platform);
+  const ts = db.$util.sqlNow();
   if (existing) {
-    // COALESCE so a schedule-update that doesn't re-fetch the stream id or
-    // thumbnail doesn't blank out values an earlier call established.
-    db.prepare(`
-      UPDATE broadcast_platform_links
-         SET credential_id = ?, external_broadcast_id = ?,
-             external_stream_id = COALESCE(?, external_stream_id),
-             thumbnail_url = COALESCE(?, thumbnail_url),
-             last_status = COALESCE(?, last_status),
-             last_synced_at = datetime('now'),
-             last_sync_error = NULL
-       WHERE id = ?
-    `).run(credentialId, externalBroadcastId, externalStreamId, thumbnailUrl, lastStatus, existing.id);
+    // A schedule-update that doesn't re-fetch the stream id or thumbnail
+    // must not blank out values an earlier call established.
+    await db.broadcast_platform_links.updateMany({
+      where: { id: existing.id },
+      data: {
+        credential_id: credentialId,
+        external_broadcast_id: externalBroadcastId,
+        external_stream_id: externalStreamId ?? existing.external_stream_id,
+        thumbnail_url: thumbnailUrl ?? existing.thumbnail_url,
+        last_status: lastStatus ?? existing.last_status,
+        last_synced_at: ts,
+        last_sync_error: null,
+      },
+    });
     return getLink(db, broadcastId, platform);
   }
-  db.prepare(`
-    INSERT INTO broadcast_platform_links
-      (broadcast_id, platform, credential_id, external_broadcast_id,
-       external_stream_id, thumbnail_url, last_status, last_synced_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
-  `).run(broadcastId, platform, credentialId, externalBroadcastId,
-    externalStreamId, thumbnailUrl, lastStatus);
+  await db.broadcast_platform_links.create({
+    data: {
+      broadcast_id: broadcastId, platform, credential_id: credentialId,
+      external_broadcast_id: externalBroadcastId, external_stream_id: externalStreamId,
+      thumbnail_url: thumbnailUrl, last_status: lastStatus, last_synced_at: ts,
+    },
+  });
   return getLink(db, broadcastId, platform);
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {number} linkId
  * @param {{ lastStatus?: string, thumbnailUrl?: string, externalVideoIds?: string[], lastSyncError?: string|null }} patch
  */
-export function updateLink(db, linkId, patch = {}) {
-  const sets = [];
-  const params = [];
-  if (patch.lastStatus !== undefined) { sets.push('last_status = ?'); params.push(patch.lastStatus); }
-  if (patch.thumbnailUrl !== undefined) { sets.push('thumbnail_url = ?'); params.push(patch.thumbnailUrl); }
-  if (patch.externalVideoIds !== undefined) {
-    sets.push('external_video_ids = ?');
-    params.push(JSON.stringify(patch.externalVideoIds || []));
-  }
-  if (patch.lastSyncError !== undefined) { sets.push('last_sync_error = ?'); params.push(patch.lastSyncError); }
-  if (!sets.length) return;
-  sets.push("last_synced_at = datetime('now')");
-  params.push(linkId);
-  db.prepare(`UPDATE broadcast_platform_links SET ${sets.join(', ')} WHERE id = ?`).run(...params);
+export async function updateLink(db, linkId, patch = {}) {
+  const data = {};
+  if (patch.lastStatus !== undefined) data.last_status = patch.lastStatus;
+  if (patch.thumbnailUrl !== undefined) data.thumbnail_url = patch.thumbnailUrl;
+  if (patch.externalVideoIds !== undefined) data.external_video_ids = JSON.stringify(patch.externalVideoIds || []);
+  if (patch.lastSyncError !== undefined) data.last_sync_error = patch.lastSyncError;
+  if (!Object.keys(data).length) return;
+  data.last_synced_at = db.$util.sqlNow();
+  await db.broadcast_platform_links.updateMany({ where: { id: linkId }, data });
 }
 
 /**
@@ -326,10 +270,10 @@ export function updateLink(db, linkId, patch = {}) {
  * is currently live. Re-read every tick rather than cached, so a broadcast that
  * ends (or is deleted) drops out on its own without every mutation path having
  * to remember to deregister it.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  */
-export function listLiveLinks(db) {
-  return db.prepare("SELECT * FROM broadcast_platform_links WHERE last_status = 'live'").all();
+export async function listLiveLinks(db) {
+  return db.broadcast_platform_links.findMany({ where: { last_status: 'live' } });
 }
 
 // ---------------------------------------------------------------------------
@@ -353,45 +297,47 @@ export function formatStats(row) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {{ broadcastId: string, platform: string, kind: string,
  *           concurrentViewers?: number|null, views?: number|null,
  *           averageWatchTimeSec?: number|null, peakConcurrentViewers?: number|null }} fields
  */
-export function insertStats(db, fields) {
+export async function insertStats(db, fields) {
   const {
     broadcastId, platform, kind,
     concurrentViewers = null, views = null,
     averageWatchTimeSec = null, peakConcurrentViewers = null,
   } = fields;
-  db.prepare(`
-    INSERT INTO broadcast_platform_stats
-      (broadcast_id, platform, kind, concurrent_viewers, views, average_watch_time_s, peak_concurrent_viewers)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(broadcastId, platform, kind, concurrentViewers, views, averageWatchTimeSec, peakConcurrentViewers);
+  await db.broadcast_platform_stats.create({
+    data: {
+      broadcast_id: broadcastId, platform, kind,
+      concurrent_viewers: concurrentViewers, views,
+      average_watch_time_s: averageWatchTimeSec, peak_concurrent_viewers: peakConcurrentViewers,
+    },
+  });
 }
 
-export function getLatestStats(db, broadcastId, platform, kind) {
-  const where = ['broadcast_id = ?', 'platform = ?'];
-  const params = [broadcastId, platform];
-  if (kind) { where.push('kind = ?'); params.push(kind); }
-  return db.prepare(
-    `SELECT * FROM broadcast_platform_stats WHERE ${where.join(' AND ')} ORDER BY captured_at DESC, id DESC LIMIT 1`,
-  ).get(...params) || null;
+export async function getLatestStats(db, broadcastId, platform, kind) {
+  const where = { broadcast_id: broadcastId, platform };
+  if (kind) where.kind = kind;
+  return (await db.broadcast_platform_stats.findFirst({
+    where,
+    orderBy: [{ captured_at: 'desc' }, { id: 'desc' }],
+  })) || null;
 }
 
 /**
  * Full time series for one broadcast/platform — tier 3 ("historical trend")
  * needs no extra table, it is just this query.
  */
-export function listStats(db, broadcastId, platform, { kind, limit = 1000 } = {}) {
-  const where = ['broadcast_id = ?', 'platform = ?'];
-  const params = [broadcastId, platform];
-  if (kind) { where.push('kind = ?'); params.push(kind); }
-  params.push(limit);
-  return db.prepare(
-    `SELECT * FROM broadcast_platform_stats WHERE ${where.join(' AND ')} ORDER BY captured_at ASC, id ASC LIMIT ?`,
-  ).all(...params);
+export async function listStats(db, broadcastId, platform, { kind, limit = 1000 } = {}) {
+  const where = { broadcast_id: broadcastId, platform };
+  if (kind) where.kind = kind;
+  return db.broadcast_platform_stats.findMany({
+    where,
+    orderBy: [{ captured_at: 'asc' }, { id: 'asc' }],
+    take: limit,
+  });
 }
 
 /**
@@ -399,11 +345,10 @@ export function listStats(db, broadcastId, platform, { kind, limit = 1000 } = {}
  * post-broadcast summary reports when the provider's analytics API doesn't
  * supply its own peak figure (YouTube Analytics does not expose one directly).
  */
-export function peakConcurrentFromSnapshots(db, broadcastId, platform) {
-  const row = db.prepare(`
-    SELECT MAX(concurrent_viewers) AS peak
-      FROM broadcast_platform_stats
-     WHERE broadcast_id = ? AND platform = ? AND kind = ?
-  `).get(broadcastId, platform, STATS_LIVE_SNAPSHOT);
-  return row?.peak ?? null;
+export async function peakConcurrentFromSnapshots(db, broadcastId, platform) {
+  const agg = await db.broadcast_platform_stats.aggregate({
+    where: { broadcast_id: broadcastId, platform, kind: STATS_LIVE_SNAPSHOT },
+    _max: { concurrent_viewers: true },
+  });
+  return agg._max.concurrent_viewers ?? null;
 }

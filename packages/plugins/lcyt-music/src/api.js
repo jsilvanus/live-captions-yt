@@ -35,16 +35,16 @@ import { createMusicConfigRouter } from './routes/music-config.js';
 
 export { createSoundCaptionProcessor } from './sound-caption-processor.js';
 export {
-  runMigrations, insertMusicEvent, getRecentMusicEvents, getMusicEventsPage,
+  insertMusicEvent, getRecentMusicEvents, getMusicEventsPage,
   getMusicConfig, setMusicConfig,
 } from './db.js';
 export { MusicManager } from './music-manager.js';
 
 /**
- * Run DB migrations and construct the MusicManager for server-side
+ * Construct the MusicManager for server-side
  * (HLS) audio analysis.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('../../lcyt-backend/src/store.js').SessionStore} [store]
  *   Only required if server-side analysis routes will be mounted; Phase-1-only
  *   callers (caption metacode processing alone) may omit it.
@@ -55,9 +55,6 @@ export { MusicManager } from './music-manager.js';
  * @returns {Promise<{ musicManager: MusicManager|null }>}
  */
 export async function initMusicControl(db, store = null, { metrics = null, settings = null } = {}) {
-  const { runMigrations } = await import('./db.js');
-  runMigrations(db);
-
   if (metrics) {
     const { setFfmpegAccountingSink } = await import('./ffmpeg-accounting.js');
     setFfmpegAccountingSink((entry) => metrics.ffmpeg(entry));
@@ -73,7 +70,7 @@ export async function initMusicControl(db, store = null, { metrics = null, setti
 /**
  * Build the /music routers (analysis control + per-key config).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth
  * @param {MusicManager} musicManager
  * @returns {import('express').Router[]}

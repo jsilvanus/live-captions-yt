@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 /**
@@ -816,6 +816,9 @@ export function initSqliteSchema(dbPath) {
     }
   });
     backfillTx();
+
+  // Plugin-owned tables (generated from schema.prisma, idempotent).
+  db.exec(readFileSync(new URL('../../prisma/sqlite/schema.sql', import.meta.url), 'utf8'));
 
   return db;
 }

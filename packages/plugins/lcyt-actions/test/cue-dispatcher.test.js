@@ -133,10 +133,10 @@ describe('CueActionDispatcher — ambient causation and device cooldown', () => 
     const events = [];
     eventBus.subscribe('k', ['action.*'], (e) => events.push(e));
     const { createActionExecutor } = await import('../src/api.js');
-    const Database = (await import('better-sqlite3')).default;
+    const { initDb } = await import('lcyt-backend/db');
     const { initActions } = await import('../src/api.js');
-    const db = new Database(':memory:');
-    initActions(db);
+    const db = await initDb(':memory:');
+    await initActions(db);
     let n = 0;
     const executor = createActionExecutor({
       db, eventBus,
@@ -152,6 +152,7 @@ describe('CueActionDispatcher — ambient causation and device cooldown', () => 
     eventBus.publish('k', 'cue.fired', { label: 'x', source: 'auto', ruleId: 'r0', action: { run: 'loop:1', cooldownMs: 0 } });
     await new Promise((r) => setTimeout(r, 50));
     dispatcher.stop();
+    await db.close();
     assert.deepEqual(depths, [1, 2, 3]);
     assert.ok(events.some((e) => e.topic === 'action.skipped' && e.data.reason === 'loop_guard'));
   });

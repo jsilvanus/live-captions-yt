@@ -14,7 +14,7 @@ import { getAiConfig, setAiConfig, VALID_PROVIDERS } from './config.js';
 import { isServerEmbeddingAvailable } from './embeddings.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @param {import('express').RequestHandler} auth — JWT Bearer auth middleware
  * @returns {import('express').Router}
  */

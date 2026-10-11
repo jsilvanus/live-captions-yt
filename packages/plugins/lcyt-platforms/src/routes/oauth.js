@@ -19,7 +19,7 @@ import { listCredentials, upsertCredential, getCredential, revokeCredential, mas
 import { requireApiKey, requireAdapter, respondToPlatformError } from './helpers.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth
  * @param {object} deps
  * @param {() => string} deps.getJwtSecret
@@ -38,11 +38,11 @@ export function createOAuthRouter(db, auth, deps) {
 
   // ── List connected accounts ────────────────────────────────────────────
   // Several rows per platform is the normal case now, not an error.
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const { platform, includeRevoked } = req.query;
-    const rows = listCredentials(db, apiKey, {
+    const rows = await listCredentials(db, apiKey, {
       platform: platform || undefined,
       includeRevoked: includeRevoked === '1',
     });
@@ -55,7 +55,7 @@ export function createOAuthRouter(db, auth, deps) {
   });
 
   // ── Begin consent ──────────────────────────────────────────────────────
-  router.get('/:platform/oauth/start', auth, (req, res) => {
+  router.get('/:platform/oauth/start', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const adapter = resolveAdapter(req, res);
@@ -113,7 +113,7 @@ export function createOAuthRouter(db, auth, deps) {
       const identity = await adapter.getAccountIdentity(tokens.accessToken);
 
       const key = loadCredentialKey();
-      upsertCredential(db, claims.apiKey, {
+      await upsertCredential(db, claims.apiKey, {
         platform: adapter.platform,
         externalAccountId: identity.externalAccountId,
         accountLabel: identity.accountLabel,
@@ -146,7 +146,7 @@ export function createOAuthRouter(db, auth, deps) {
       // which account to drop is exactly the wrong thing to be clever about.
       return res.status(400).json({ error: 'credentialId is required' });
     }
-    const row = getCredential(db, apiKey, credentialId);
+    const row = await getCredential(db, apiKey, credentialId);
     if (!row || row.platform !== adapter.platform) {
       return res.status(404).json({ error: 'Platform credential not found' });
     }
@@ -159,7 +159,7 @@ export function createOAuthRouter(db, auth, deps) {
       if (refreshToken) remoteRevoked = await adapter.revokeToken(refreshToken);
     }
 
-    const revoked = revokeCredential(db, apiKey, credentialId);
+    const revoked = await revokeCredential(db, apiKey, credentialId);
 
     // The local revocation is what actually stops LCYT using the account, so
     // it always proceeds — but a failed remote revoke is reported rather than

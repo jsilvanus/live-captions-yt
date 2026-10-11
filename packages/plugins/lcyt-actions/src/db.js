@@ -1,5 +1,5 @@
 /**
- * Named Actions plugin — DB migrations and CRUD helpers.
+ * Named Actions plugin — DB helpers.
  *
  * A named action is a project-scoped, reusable composite of metacode "atoms"
  * (see docs/plans/plan_named_actions.md). The backend is pure storage: the
@@ -7,47 +7,48 @@
  * `audio:start | graphics:+banner | @other`); parsing/expansion/execution all
  * live client-side (`packages/lcyt-web/src/lib/metacode-actions.js`).
  *
- * @param {import('better-sqlite3').Database} db
+ * The action_defs table is part of lcyt-backend's schema. Every function takes the Prisma
+ * client returned by lcyt-backend's initDb() and returns a Promise.
  */
-export function runActionsMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS action_defs (
-      id          TEXT    PRIMARY KEY,
-      api_key     TEXT    NOT NULL,
-      name        TEXT    NOT NULL,
-      slug        TEXT    NOT NULL,            -- @-addressable; unique per api_key
-      definition  TEXT    NOT NULL DEFAULT '', -- raw composite expression string
-      description TEXT,
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (api_key, slug)
-    )
-  `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_action_defs_key ON action_defs(api_key)`);
+
+/**
+ * No-op: action_defs comes from lcyt-backend's schema. Kept so existing callers keep working.
+ * @param {object} [_db] Prisma client (unused)
+ */
+export async function runActionsMigrations(_db) {}
+
+/** @param {import('lcyt-backend/db').Db} db Prisma client @param {string} apiKey */
+export async function listActionDefs(db, apiKey) {
+  return db.action_defs.findMany({ where: { api_key: apiKey }, orderBy: [{ name: 'asc' }, { id: 'asc' }] });
 }
 
-export function listActionDefs(db, apiKey) {
-  return db.prepare('SELECT * FROM action_defs WHERE api_key = ? ORDER BY name').all(apiKey);
+/** @param {import('lcyt-backend/db').Db} db Prisma client */
+export async function getActionDefBySlug(db, apiKey, slug) {
+  return (await db.action_defs.findUnique({ where: { api_key_slug: { api_key: apiKey, slug } } })) ?? undefined;
 }
 
-export function getActionDefBySlug(db, apiKey, slug) {
-  return db.prepare('SELECT * FROM action_defs WHERE api_key = ? AND slug = ?').get(apiKey, slug);
+/** @param {import('lcyt-backend/db').Db} db Prisma client */
+export async function getActionDefById(db, id) {
+  return (await db.action_defs.findUnique({ where: { id } })) ?? undefined;
 }
 
-export function getActionDefById(db, id) {
-  return db.prepare('SELECT * FROM action_defs WHERE id = ?').get(id);
-}
-
-export function createActionDef(db, apiKey, { id, name, slug, definition, description }) {
-  db.prepare(`
-    INSERT INTO action_defs (id, api_key, name, slug, definition, description)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, apiKey, name, slug, definition ?? '', description ?? null);
+/** @param {import('lcyt-backend/db').Db} db Prisma client */
+export async function createActionDef(db, apiKey, { id, name, slug, definition, description }) {
+  const now = db.$util.sqlNow();
+  await db.action_defs.create({
+    data: {
+      id, api_key: apiKey, name, slug,
+      definition: definition ?? '',
+      description: description ?? null,
+      created_at: now, updated_at: now,
+    },
+  });
   return getActionDefById(db, id);
 }
 
-export function updateActionDef(db, id, fields) {
-  const existing = getActionDefById(db, id);
+/** @param {import('lcyt-backend/db').Db} db Prisma client */
+export async function updateActionDef(db, id, fields) {
+  const existing = await getActionDefById(db, id);
   if (!existing) return null;
   const next = {
     name: fields.name !== undefined ? fields.name : existing.name,
@@ -55,16 +56,19 @@ export function updateActionDef(db, id, fields) {
     definition: fields.definition !== undefined ? fields.definition : existing.definition,
     description: fields.description !== undefined ? fields.description : existing.description,
   };
-  db.prepare(`
-    UPDATE action_defs
-    SET name = ?, slug = ?, definition = ?, description = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `).run(next.name, next.slug, next.definition ?? '', next.description ?? null, id);
+  await db.action_defs.updateMany({
+    where: { id },
+    data: {
+      name: next.name, slug: next.slug, definition: next.definition ?? '',
+      description: next.description ?? null, updated_at: db.$util.sqlNow(),
+    },
+  });
   return getActionDefById(db, id);
 }
 
-export function deleteActionDef(db, id) {
-  return db.prepare('DELETE FROM action_defs WHERE id = ?').run(id).changes > 0;
+/** @param {import('lcyt-backend/db').Db} db Prisma client */
+export async function deleteActionDef(db, id) {
+  return (await db.action_defs.deleteMany({ where: { id } })).count > 0;
 }
 
 /** Shape an action_defs row for a JSON response. */

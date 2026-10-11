@@ -12,7 +12,7 @@
  * to the Agent rather than calling the embedding API directly.
  */
 
-import { getAiConfigRaw, runAiMigrations } from './ai-config.js';
+import { getAiConfigRaw } from './ai-config.js';
 import { computeEmbeddings, cosineSimilarity, isServerEmbeddingAvailable } from './embeddings.js';
 import { computeDeerEmbeddings } from './deer-embeddings.js';
 import { invokeModelCall } from './agentic-turn.js';
@@ -51,13 +51,13 @@ function parseAssistantJson(text) {
 
 export class AgentEngine {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {import('lcyt-backend/db').Db} db
    * @param {object} [opts]
    * @param {{ get: (key: string) => * }} [opts.settings] - lcyt-backend's
    *   SettingsService (plan_env_to_ui_settings.md), duck-typed.
    */
   constructor(db, opts = {}) {
-    /** @type {import('better-sqlite3').Database} */
+    /** @type {import('lcyt-backend/db').Db} */
     this._db = db;
     this._settings = opts.settings ?? null;
 
@@ -113,7 +113,7 @@ export class AgentEngine {
   /**
    * Get AI config for an API key (raw, includes real API key for internal use).
    * @param {string} apiKey
-   * @returns {object|null}
+   * @returns {Promise<object|null>}
    */
   getAiConfig(apiKey) {
     return getAiConfigRaw(this._db, apiKey);
@@ -143,7 +143,7 @@ export class AgentEngine {
     const opts = {};
     let usesServerDefault = true;
     if (apiKey) {
-      const cfg = getAiConfigRaw(this._db, apiKey);
+      const cfg = await getAiConfigRaw(this._db, apiKey);
       if (cfg) {
         if (cfg.embeddingProvider === 'none') {
           throw new Error('Embedding is disabled for this API key (provider: none)');
@@ -230,7 +230,7 @@ export class AgentEngine {
     const threshold = opts.confidenceThreshold ?? 0.7;
 
     // Get AI config for this key
-    const cfg = getAiConfigRaw(this._db, apiKey);
+    const cfg = await getAiConfigRaw(this._db, apiKey);
     if (!cfg || cfg.embeddingProvider === 'none') {
       return { matched: false, confidence: 0, reasoning: 'AI provider not configured' };
     }
@@ -323,7 +323,7 @@ export class AgentEngine {
     const h = opts.height || 1080;
     const EMPTY = { background: 'transparent', width: w, height: h, groups: [], layers: [] };
 
-    const cfg = getAiConfigRaw(this._db, apiKey);
+    const cfg = await getAiConfigRaw(this._db, apiKey);
     if (!cfg || cfg.embeddingProvider === 'none') return EMPTY;
 
     const apiSettings = this._resolveApiSettings(cfg);
@@ -377,7 +377,7 @@ export class AgentEngine {
    * @returns {Promise<object>} — modified template JSON
    */
   async editTemplate(apiKey, template, prompt, opts = {}) {
-    const cfg = getAiConfigRaw(this._db, apiKey);
+    const cfg = await getAiConfigRaw(this._db, apiKey);
     if (!cfg || cfg.embeddingProvider === 'none') return template;
 
     const apiSettings = this._resolveApiSettings(cfg);
@@ -425,7 +425,7 @@ export class AgentEngine {
    * @returns {Promise<Array<{ name: string, description: string, changes: object }>>}
    */
   async suggestStyles(apiKey, template, opts = {}) {
-    const cfg = getAiConfigRaw(this._db, apiKey);
+    const cfg = await getAiConfigRaw(this._db, apiKey);
     if (!cfg || cfg.embeddingProvider === 'none') return [];
 
     const apiSettings = this._resolveApiSettings(cfg);

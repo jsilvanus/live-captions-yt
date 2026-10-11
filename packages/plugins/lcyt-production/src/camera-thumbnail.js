@@ -120,7 +120,7 @@ async function writeThumbnailFile(cameraId, buffer, thumbnailsDir, presetId = nu
 /**
  * Capture a still-frame thumbnail for a camera and persist it.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {{ id: string, cameraKey: string|null, mixerInput: number|null }} camera  parsed camera row
  * @param {import('./registry.js').DeviceRegistry} registry
  * @param {{ apiKey?: string, mixerId?: string, presetId?: string, thumbnailsDir?: string, previewBaseUrl?: string }} [opts]
@@ -156,7 +156,7 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
 
     let mixerId = opts.mixerId ?? null;
     if (!mixerId) {
-      const mixers = db.prepare('SELECT id FROM prod_mixers').all();
+      const mixers = await db.prod_mixers.findMany({ select: { id: true } });
       if (mixers.length !== 1) {
         return {
           ok: false,
@@ -191,12 +191,13 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
   if (presetId) {
     // Per-preset reference image: the feed attributor matches the program
     // feed against these (camera-level image stays as the fallback).
-    db.prepare(
-      `INSERT INTO prod_camera_preset_thumbnails (camera_id, preset_id, captured_at) VALUES (?, ?, ?)
-       ON CONFLICT(camera_id, preset_id) DO UPDATE SET captured_at = excluded.captured_at`
-    ).run(camera.id, String(presetId), thumbnailCapturedAt);
+    await db.prod_camera_preset_thumbnails.upsert({
+      where: { camera_id_preset_id: { camera_id: camera.id, preset_id: String(presetId) } },
+      create: { camera_id: camera.id, preset_id: String(presetId), captured_at: thumbnailCapturedAt },
+      update: { captured_at: thumbnailCapturedAt },
+    });
   } else {
-    db.prepare('UPDATE prod_cameras SET thumbnail_captured_at = ? WHERE id = ?').run(thumbnailCapturedAt, camera.id);
+    await db.prod_cameras.updateMany({ where: { id: camera.id }, data: { thumbnail_captured_at: thumbnailCapturedAt } });
   }
 
   return { ok: true, thumbnailCapturedAt, sizeBytes: fetchResult.buffer.length };

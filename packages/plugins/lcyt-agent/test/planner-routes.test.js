@@ -5,11 +5,11 @@
 
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -39,19 +39,16 @@ function sessionAuth(req, res, next) {
   }
 }
 
-before(() => {
-  db = new Database(':memory:');
-  runAgentDbMigrations(db);
-  runAiMigrations(db);
-  runAiRolesMigrations(db);
-  runProviderRegistryMigrations(db);
-  providerId = createProvider(db, {
+before(async () => {
+  db = await initDb(':memory:');
+  await runAiRolesMigrations(db);
+  providerId = (await createProvider(db, {
     scope: 'site', kind: 'api', vendor: 'openai', name: 'Test provider', baseUrl: 'https://api.test', apiKeyRef: 'sk-test',
-  }).id;
+  })).id;
   token = jwt.sign({ sessionId: 's1', apiKey: 'key1' }, JWT_SECRET, { expiresIn: '1h' });
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 afterEach(() => { global.fetch = realFetch; if (server) { server.close(); server = null; } });
 
 function startApp() {
@@ -99,7 +96,7 @@ describe('POST /roles/planner/assist', () => {
   });
 
   it('503s when the configured provider is unresolvable', async () => {
-    setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId: 'no-such-provider', modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId: 'no-such-provider', modelName: 'gpt-4o-mini' });
     await startApp();
     const res = await fetch(`${baseUrl}/roles/planner/assist`, {
       method: 'POST', headers: { ...bearer(), 'Content-Type': 'application/json' }, body: JSON.stringify({ goal: 'x' }),
@@ -108,7 +105,7 @@ describe('POST /roles/planner/assist', () => {
   });
 
   it('generates from scratch when currentPlan is omitted', async () => {
-    setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockChat(() => '<!-- section: Welcome -->\nWelcome everyone.');
     await startApp();
     const res = await fetch(`${baseUrl}/roles/planner/assist`, {
@@ -122,7 +119,7 @@ describe('POST /roles/planner/assist', () => {
   });
 
   it('edits the existing plan when currentPlan is present', async () => {
-    setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     let sentUserPrompt = null;
     mockChat((body) => { sentUserPrompt = body.messages[1].content; return 'Edited rundown text'; });
     await startApp();
@@ -137,7 +134,7 @@ describe('POST /roles/planner/assist', () => {
   });
 
   it('an empty-string currentPlan is treated as generate-from-scratch, not edit', async () => {
-    setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'planner', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     let sentSystemPrompt = null;
     mockChat((body) => { sentSystemPrompt = body.messages[0].content; return 'Generated'; });
     await startApp();
@@ -149,7 +146,7 @@ describe('POST /roles/planner/assist', () => {
   });
 
   it('threads harnessConfig.systemPromptOverride into the system prompt', async () => {
-    setRoleConfig(db, 'key1', 'planner', {
+    await setRoleConfig(db, 'key1', 'planner', {
       enabled: true, providerId, modelName: 'gpt-4o-mini',
       harnessConfig: { systemPromptOverride: 'Always write in Finnish.' },
     });
@@ -164,7 +161,7 @@ describe('POST /roles/planner/assist', () => {
   });
 
   it('uses harnessConfig.defaultTemplateId when templateId is omitted from the request', async () => {
-    setRoleConfig(db, 'key1', 'planner', {
+    await setRoleConfig(db, 'key1', 'planner', {
       enabled: true, providerId, modelName: 'gpt-4o-mini',
       harnessConfig: { defaultTemplateId: 'church_service' },
     });

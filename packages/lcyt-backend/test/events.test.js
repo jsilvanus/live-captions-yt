@@ -30,7 +30,6 @@ import { createEventsRouter } from '../src/routes/events.js';
 import { createCaptionsRouter } from '../src/routes/captions.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createLiveRouter } from '../src/routes/live.js';
-import { ensureRtmpTables as runRtmpMigrations } from './helpers/rtmp-tables.js';
 
 const JWT_SECRET = 'test-events-secret';
 const SSE_SETTLE_MS = 80; // time to wait for SSE connection to be registered
@@ -43,7 +42,6 @@ let server, baseUrl, store, db;
 
 before(() => new Promise(async (resolve) => {
   db = await initDb(':memory:');
-  runRtmpMigrations(db); // POST /live checks rtmp_relays for the recordOnStart flag
   await createKey(db, { key: 'test-api-key', owner: 'Events Test' });
 
   store = new SessionStore({ cleanupInterval: 0 });

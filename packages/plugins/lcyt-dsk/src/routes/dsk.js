@@ -14,7 +14,7 @@ import { publicDisplaySettings } from './dsk-viewports.js';
  * GET /dsk/:slugOrKey/images  — list images available for this project (for pre-loading in the DSK page)
  * GET /dsk/:slugOrKey/events  — SSE stream; emits 'graphics' events when captions with <!-- graphics:... --> are received
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('../../../../lcyt-backend/src/dsk-bus.js').DskBus} dskBus
  * @returns {Router}
  */
@@ -26,16 +26,11 @@ export function createDskRouter(db, dskBus) {
   // api_keys table directly (same precedent as routes/dsk-rtmp.js). Returns
   // the row — callers must use row.key for all downstream DB access, since
   // data tables are keyed by api_key, never by slug.
-  function resolveKey(segment, res) {
-    let row = null;
-    try {
-      row = db.prepare('SELECT key, active, public_slug FROM api_keys WHERE public_slug = ?').get(segment)
-         ?? db.prepare('SELECT key, active, public_slug FROM api_keys WHERE key = ?').get(segment)
-         ?? null;
-    } catch {
-      // Pre-migration schema without public_slug — legacy apiKey lookup only
-      row = db.prepare('SELECT key, active FROM api_keys WHERE key = ?').get(segment) ?? null;
-    }
+  async function resolveKey(segment, res) {
+    const select = { key: true, active: true, public_slug: true };
+    const row = (await db.api_keys.findFirst({ where: { public_slug: segment }, select }))
+      ?? (await db.api_keys.findUnique({ where: { key: segment }, select }))
+      ?? null;
     if (!row || row.active !== 1) {
       res.status(404).json({ error: 'API key not found' });
       return null;
@@ -46,12 +41,12 @@ export function createDskRouter(db, dskBus) {
   // GET /dsk/:apikey/images — list images for pre-loading (public)
   // Includes settingsJson (per-viewport visibility/position/animation) so the
   // display page has everything it needs in a single fetch.
-  router.get('/:apikey/images', (req, res) => {
-    const row = resolveKey(req.params.apikey, res);
+  router.get('/:apikey/images', async (req, res) => {
+    const row = await resolveKey(req.params.apikey, res);
     if (!row) return;
     const apikey = row.key;
 
-    const rows = listImages(db, apikey);
+    const rows = await listImages(db, apikey);
     const images = rows.map(r => ({
       id:           r.id,
       shorthand:    r.shorthand,
@@ -68,11 +63,11 @@ export function createDskRouter(db, dskBus) {
   // Used by display pages to fetch viewport dimensions on load.
   // NOTE: this route must be declared before the /:apikey/events route so Express
   // doesn't interpret "viewports" as an apikey.
-  router.get('/:apikey/viewports/public', (req, res) => {
-    const row = resolveKey(req.params.apikey, res);
+  router.get('/:apikey/viewports/public', async (req, res) => {
+    const row = await resolveKey(req.params.apikey, res);
     if (!row) return;
     const apikey = row.key;
-    const rows = listViewports(db, apikey);
+    const rows = await listViewports(db, apikey);
     res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=300');
     res.json({
       // The project's public slug (when set) so authenticated pages can build
@@ -92,9 +87,9 @@ export function createDskRouter(db, dskBus) {
   });
 
   // GET /dsk/:apikey/events — SSE stream (public)
-  router.get('/:apikey/events', (req, res) => {
+  router.get('/:apikey/events', async (req, res) => {
     const { apikey } = req.params;
-    if (!resolveKey(apikey, res)) return;
+    if (!await resolveKey(apikey, res)) return;
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-store');

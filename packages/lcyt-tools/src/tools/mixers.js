@@ -20,7 +20,7 @@ export function createMixerTools(deps) {
       description: 'List configured video mixers, with live connection status and active source.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
-      handler: () => ({ ok: true, mixers: listMixers(db, registry) }),
+      handler: async () => ({ ok: true, mixers: await listMixers(db, registry) }),
     },
     {
       name: 'mixer.create',

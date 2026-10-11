@@ -2,9 +2,8 @@ import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { createRadioRouter } from '../src/routes/radio.js';
-import { runRadioMigrations } from '../src/db/radio.js';
 
 /**
  * Mock RadioManager for testing.
@@ -40,36 +39,15 @@ class MockRadioManager {
   }
 }
 
-/**
- * Set up a test database with the radio_config table and an api_keys table.
- */
-function setupTestDb() {
-  const db = new Database(':memory:');
-
-  // Create api_keys table with radio_enabled flag
-  db.exec(`
-    CREATE TABLE api_keys (
-      key TEXT PRIMARY KEY,
-      radio_enabled INTEGER NOT NULL DEFAULT 0,
-      embed_cors TEXT DEFAULT '*'
-    );
-  `);
-
-  // Run radio migrations
-  runRadioMigrations(db);
-
-  return db;
-}
-
 let db, server, baseUrl, radioManager;
 
 before(async () => {
-  db = setupTestDb();
+  db = await initDb(':memory:');
   radioManager = new MockRadioManager();
 
   // Create test keys
-  db.prepare('INSERT INTO api_keys (key, radio_enabled) VALUES (?, ?)').run('enabled-key', 1);
-  db.prepare('INSERT INTO api_keys (key, radio_enabled) VALUES (?, ?)').run('disabled-key', 0);
+  await db.prepare("INSERT INTO api_keys (key, owner, radio_enabled) VALUES (?, 'owner', ?)").run('enabled-key', 1);
+  await db.prepare("INSERT INTO api_keys (key, owner, radio_enabled) VALUES (?, 'owner', ?)").run('disabled-key', 0);
 
   const app = express();
   app.use('/radio', createRadioRouter(db, radioManager));
@@ -82,7 +60,7 @@ before(async () => {
   });
 });
 
-after(() => new Promise(r => server.close(() => { db.close(); r(); })));
+after(() => new Promise(r => server.close(async () => { await db.close(); r(); })));
 
 beforeEach(() => {
   radioManager._running.clear();
@@ -145,7 +123,7 @@ describe('GET /radio/:key/info — radio_enabled flag', () => {
 
   test('includes metadata fields regardless of enabled status', async () => {
     // Set metadata for the disabled key
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO radio_config (api_key, title, description, cover_image_url, autoplay)
       VALUES (?, ?, ?, ?, ?)
     `).run('disabled-key', 'Test Title', 'Test Description', 'https://example.com/cover.jpg', 1);

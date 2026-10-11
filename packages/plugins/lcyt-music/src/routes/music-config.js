@@ -12,20 +12,20 @@ import { Router } from 'express';
 import { getMusicConfig, setMusicConfig } from '../db.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth — session JWT Bearer auth middleware
  * @returns {import('express').Router}
  */
 export function createMusicConfigRouter(db, auth) {
   const router = Router();
 
-  router.get('/config', auth, (req, res) => {
+  router.get('/config', auth, async (req, res) => {
     const { apiKey } = req.session;
     res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
-    res.json(getMusicConfig(db, apiKey));
+    res.json(await getMusicConfig(db, apiKey));
   });
 
-  router.put('/config', auth, (req, res) => {
+  router.put('/config', auth, async (req, res) => {
     const { apiKey } = req.session;
     const {
       silenceThreshold, flatnessThreshold, zcrThreshold,
@@ -66,7 +66,7 @@ export function createMusicConfigRouter(db, auth) {
     }
 
     try {
-      const merged = setMusicConfig(db, apiKey, patch);
+      const merged = await setMusicConfig(db, apiKey, patch);
       res.json(merged);
     } catch (err) {
       res.status(500).json({ error: err.message });

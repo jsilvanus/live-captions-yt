@@ -15,7 +15,7 @@ import { Router } from 'express';
 import { listRoles, getRole, getRoleConfig, setRoleConfig } from '../ai-roles.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth — session JWT middleware
  * @param {{ checkProjectRole?: (tier: string, apiKey: string, userId: number) => boolean }} [deps]
  * @returns {import('express').Router}
@@ -41,28 +41,28 @@ export function createRolesRouter(db, auth, deps = {}) {
     next();
   }
 
-  router.get('/catalog', (req, res) => {
+  router.get('/catalog', async (req, res) => {
     res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=3600');
-    res.json({ ok: true, roles: listRoles(db) });
+    res.json({ ok: true, roles: await listRoles(db) });
   });
 
-  router.get('/:roleCode/config', auth, (req, res) => {
+  router.get('/:roleCode/config', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
-    if (!getRole(db, req.params.roleCode)) return res.status(404).json({ error: 'Unknown role' });
-    res.json({ ok: true, config: getRoleConfig(db, apiKey, req.params.roleCode) });
+    if (!await getRole(db, req.params.roleCode)) return res.status(404).json({ error: 'Unknown role' });
+    res.json({ ok: true, config: await getRoleConfig(db, apiKey, req.params.roleCode) });
   });
 
-  router.put('/:roleCode/config', auth, requireSetup, (req, res) => {
+  router.put('/:roleCode/config', auth, requireSetup, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
-    if (!getRole(db, req.params.roleCode)) return res.status(404).json({ error: 'Unknown role' });
+    if (!await getRole(db, req.params.roleCode)) return res.status(404).json({ error: 'Unknown role' });
 
     const { enabled, providerId, modelName, harnessConfig } = req.body || {};
     if (harnessConfig !== undefined && (typeof harnessConfig !== 'object' || harnessConfig === null || Array.isArray(harnessConfig))) {
       return res.status(400).json({ error: 'harnessConfig must be an object' });
     }
-    const config = setRoleConfig(db, apiKey, req.params.roleCode, { enabled, providerId, modelName, harnessConfig });
+    const config = await setRoleConfig(db, apiKey, req.params.roleCode, { enabled, providerId, modelName, harnessConfig });
     res.json({ ok: true, config });
   });
 
