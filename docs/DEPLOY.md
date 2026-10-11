@@ -338,7 +338,7 @@ directly from the Node.js backend.
 
 - Local is the default and needs no S3 settings or AWS SDK calls. With `s3` the backend refuses to start without `S3_BUCKET`; there is no silent fallback to disk.
 - The bucket should be private: the backend proxies files, so no CORS or public bucket policy is needed. Use `S3_ENDPOINT` for versitygw, MinIO, R2 or Hetzner (path-style addressing is used automatically). The clients send checksums only when a request requires them, which S3-compatible stores need.
-- Still local in S3 mode: MediaMTX writes recordings to `VIDEOS_STORAGE_DIR` first and the backend uploads them (size-verified) when the recording ends, so keep that directory on a scratch volume. HLS subtitle segments (`HLS_SUBS_ROOT`) are short-lived and stay local; with several backend instances route a session's viewers to the same instance. The SQLite database is not a file store and is not moved.
+- Still local in S3 mode: MediaMTX writes recordings to `VIDEOS_STORAGE_DIR` first and the backend uploads them (size-verified) when the recording ends, so keep that directory on a scratch volume. HLS subtitle segments, playlists and the language list go to the object store too (`hls-subs/` prefix), so viewers can be served by any backend instance; with local storage (`HLS_SUBS_ROOT`) use one instance. The video HLS output from MediaMTX is still per instance. The SQLite database is not a file store and is not moved.
 - Deleting a project permanently (`DELETE /keys/:key?permanent=true`) removes its files from whichever store is configured.
 - Switch an existing install with the migration tool (stop uploads first, it is safe to re-run; the source is kept unless `--delete-source`):
 

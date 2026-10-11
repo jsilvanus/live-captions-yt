@@ -91,7 +91,7 @@ export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follo
  *   stop: () => Promise<void>
  * }>}
  */
-export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null, settings = null } = {}) {
+export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null, settings = null, hlsSubsStore = null } = {}) {
   runMigrations(db);
 
   const ffmpegCaps = (settings ? settings.get('media.rtmp_relay_active') : process.env.RTMP_RELAY_ACTIVE === '1')
@@ -170,10 +170,13 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
 
   const radioManager   = new RadioManager({ mediamtxClient, nginxManager, settings });
   const hlsManager     = new HlsManager({ mediamtxClient, settings });
+  // hlsSubsStore (shared object store) lets several backend instances serve the
+  // same subtitle track; without it segments stay on local disk.
   const hlsSubsManager = new HlsSubsManager(settings ? {
     segmentDuration: settings.get('media.hls_subs_segment_duration'),
     windowSize: settings.get('media.hls_subs_window_size'),
-  } : undefined);
+    store: hlsSubsStore,
+  } : { store: hlsSubsStore });
   const previewManager = new PreviewManager({ mediamtxClient, webrtcBase: settings ? settings.get('mediamtx.webrtc_base_url') : undefined });
   const sttManager     = new SttManager(store, db, settings);
   const cropManager    = new CropManager({ ffmpegCaps, mediamtxClient, settings });

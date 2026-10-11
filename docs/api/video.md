@@ -259,6 +259,7 @@ All modern browsers with the native `<video>` controls will show the CC button a
 - WebVTT files are written to `${HLS_SUBS_ROOT}/<key>/<lang>/seg<N>.vtt`.
 - Old segment files are automatically evicted from the rolling playlist window (controlled by `HLS_SUBS_WINDOW_SIZE`). The files remain on disk until `stopSubs()` is called or the server restarts.
 - The `HLS_SUBS_ROOT` directory is **cleared on server startup** to remove files left over from a previous run.
+- **Several backend instances:** with `FILE_STORAGE=s3` the segments, the per-language `playlist.m3u8` and a small `meta.json` (language list) are written to the object store under `hls-subs/<key>/`, and every instance serves them from there, so viewers can hit any instance. The instance receiving the captions still collects the cues. Startup then only removes objects older than `HLS_SUBS_STALE_MS` (default 6 h) instead of clearing everything; add a bucket lifecycle rule for leftovers after a crash. With local storage nothing changes: files stay in `HLS_SUBS_ROOT` and the playlist is in memory, so use one instance. The video HLS output itself (MediaMTX) is still per instance.
 - Subtitle tracking for a viewer key is automatically stopped after approximately `SESSION_TTL` ms (default 2 hours) of inactivity (no captions received).
 
 ---
