@@ -4,7 +4,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { cardIdsForEnabledFeatures, FEATURE_TO_CARD_IDS } from '../src/lib/workflowFeatureMap.js';
+import { cardReasons, cardIdsForEnabledFeatures, FEATURE_TO_CARD_IDS } from '../src/lib/workflowFeatureMap.js';
 
 describe('cardIdsForEnabledFeatures()', () => {
   it('returns an empty set for no features', () => {
@@ -62,5 +62,13 @@ describe('FEATURE_TO_CARD_IDS card ids', () => {
       for (const id of ids) if (!src.includes(`id="${id}"`)) unknown.add(id);
     }
     assert.deepEqual([...unknown], []);
+  });
+});
+
+describe('cardReasons()', () => {
+  it('lists every enabled feature that brings a card in', () => {
+    const r = cardReasons([{ code: 'captions', enabled: true }, { code: 'cea-captions', enabled: true }, { code: 'stt-server', enabled: false }]);
+    assert.deepEqual(r.get('caption-targets'), ['captions', 'cea-captions']);
+    assert.equal(r.has('stt'), false);
   });
 });

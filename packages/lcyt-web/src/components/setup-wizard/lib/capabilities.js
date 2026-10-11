@@ -116,6 +116,25 @@ export const PREREQUISITES = [
     when: (i, a) => has(i, 'graphics') && a.graphicsOnVideo === true },
 ];
 
+/**
+ * Merge a newly derived feature set into the current selection without losing
+ * features the user (or the project) already had: whatever the previous intent
+ * answers derived is removed, whatever the new answers derive is added, and
+ * everything else is kept. Dependencies of kept features stay valid.
+ *
+ * @param {Set<string>} current
+ * @param {Set<string>} previousDerived
+ * @param {Set<string>} nextDerived
+ * @returns {Set<string>}
+ */
+export function mergeDerivedFeatures(current, previousDerived, nextDerived) {
+  const merged = new Set(current);
+  for (const code of previousDerived) merged.delete(code);
+  for (const code of nextDerived) merged.add(code);
+  applyDeps(merged);
+  return merged;
+}
+
 /** Questions currently visible for the chosen intents and answers. */
 export function visibleQuestions(intents, answers = {}) {
   const set = intents instanceof Set ? intents : new Set(intents);
@@ -147,9 +166,33 @@ export function resolveIntent(intents, answers = {}) {
   return {
     features,
     autoEnabled,
-    steps: computeSteps(features),
+    steps: computeSteps(features, set),
     hubCards: cardIdsForEnabledFeatures([...features].map(code => ({ code, enabled: true }))),
     prerequisites,
     questions: visibleQuestions(set, answers),
   };
+}
+
+/**
+ * Plain-language lines describing the production flow the enabled features make.
+ * @param {Set<string>} features
+ * @returns {string[]}
+ */
+export function describeFlow(features) {
+  const f = c => features.has(c);
+  const lines = [];
+  if (f('ingest')) lines.push('Live video comes into LCYT.');
+  if (f('device-control')) lines.push('LCYT controls your production equipment and/or dedicated operator devices.');
+  if (f('stt-server')) lines.push('Audio from the live stream is transcribed on the server.');
+  if (f('captions')) lines.push('Captions are delivered to your caption targets.');
+  if (f('translations')) lines.push('Captions are also translated.');
+  if (f('graphics-server')) lines.push('Graphics are rendered and composited onto the live video.');
+  else if (f('graphics-client')) lines.push('Graphics are shown on a separate display.');
+  if (f('restream')) lines.push('The video is relayed to your destinations.');
+  if (f('hls-stream')) lines.push('An HLS video stream is published.');
+  if (f('radio')) lines.push('An audio-only stream is published.');
+  if (f('crop')) lines.push('A vertical crop of the video is produced.');
+  if (f('preview')) lines.push('A live preview thumbnail is generated.');
+  if (f('file-saving')) lines.push('Caption files are saved.');
+  return lines;
 }

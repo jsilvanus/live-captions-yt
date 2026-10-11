@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveIntent, visibleQuestions, QUESTIONS, FEATURE_RULES, PREREQUISITES, INTENTS } from '../src/components/setup-wizard/lib/capabilities.js';
+import { mergeDerivedFeatures, describeFlow, resolveIntent, visibleQuestions, QUESTIONS, FEATURE_RULES, PREREQUISITES, INTENTS } from '../src/components/setup-wizard/lib/capabilities.js';
 import { ALL_FEATURE_CODES } from '../src/components/setup-wizard/lib/constants.js';
 import { KNOWN_FEATURE_CODES } from '../../lcyt-backend/src/db/project-features.js';
 
@@ -10,7 +10,7 @@ describe('resolveIntent()', () => {
   it('no intents → no features, only features/review steps', () => {
     const r = resolveIntent([], {});
     assert.deepEqual(sorted(r.features), []);
-    assert.deepEqual(r.steps.map(s => s.id), ['features', 'review']);
+    assert.deepEqual(r.steps.map(s => s.id), ['intent', 'features', 'review']);
   });
 
   it('captions + own text → captions only, with a caption-target prerequisite', () => {
@@ -94,6 +94,32 @@ describe('resolveIntent()', () => {
   it('prerequisites only appear for features that ended up enabled', () => {
     const r = resolveIntent(['captions'], { captionSource: 'transcribe', sttLocation: 'server' });
     for (const p of r.prerequisites) assert.ok(r.features.has(p.feature), p.id);
+  });
+});
+
+describe('steps with intents', () => {
+  it('questions step appears once an intent is chosen', () => {
+    const r = resolveIntent(['captions'], { captionSource: 'own' });
+    assert.deepEqual(r.steps.map(s => s.id), ['intent', 'questions', 'features', 'targets', 'review']);
+  });
+});
+
+describe('mergeDerivedFeatures()', () => {
+  it('keeps pre-existing features (and what they depend on), swaps only the derived ones', () => {
+    const merged = mergeDerivedFeatures(new Set(['captions', 'stats', 'ingest', 'radio']), new Set(['captions', 'ingest']), new Set(['captions', 'translations']));
+    assert.deepEqual(sorted(merged), ['captions', 'ingest', 'radio', 'stats', 'translations']);
+  });
+
+  it('adds dependencies of newly derived features', () => {
+    const merged = mergeDerivedFeatures(new Set(), new Set(), new Set(['stt-server']));
+    assert.deepEqual(sorted(merged), ['ingest', 'stt-server']);
+  });
+});
+
+describe('describeFlow()', () => {
+  it('is empty for no features and mentions graphics rendering when graphics-server is on', () => {
+    assert.deepEqual(describeFlow(new Set()), []);
+    assert.ok(describeFlow(new Set(['graphics-server', 'graphics-client'])).some(l => l.includes('composited')));
   });
 });
 

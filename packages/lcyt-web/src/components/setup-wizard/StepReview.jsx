@@ -1,5 +1,7 @@
 import { FEATURE_LABELS } from './lib/constants.js';
 import { ReviewSummary } from '../panels/ReviewSummary.jsx';
+import { resolveIntent, describeFlow } from './lib/capabilities.js';
+import { PREREQUISITE_TEXT, PREREQUISITE_GROUPS } from './lib/wizardText.js';
 
 /**
  * StepReview — summary view of all selected features and config steps.
@@ -11,8 +13,11 @@ import { ReviewSummary } from '../panels/ReviewSummary.jsx';
  *   configs: Record<string, object>
  *   onEditStep: (idx: number) => void
  */
-export function StepReview({ steps, selectedFeatures, localSettings, configs, onEditStep }) {
-  const configSteps = steps.filter(s => s.id !== 'features' && s.id !== 'review');
+export function StepReview({ steps, selectedFeatures, intents, answers, localSettings, configs, onEditStep }) {
+  const configSteps = steps.filter(s => !['intent', 'questions', 'features', 'review'].includes(s.id));
+  const hasIntents = !!intents && intents.size > 0;
+  const prerequisites = hasIntents ? resolveIntent(intents, answers || {}).prerequisites : [];
+  const flow = describeFlow(selectedFeatures);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -40,6 +45,43 @@ export function StepReview({ steps, selectedFeatures, localSettings, configs, on
           )}
         </div>
       </div>
+
+      {/* Production flow */}
+      {hasIntents && flow.length > 0 && (
+        <div data-testid="review-flow">
+          <h3 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 600 }}>Your production flow</h3>
+          <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {flow.map(line => <li key={line}>{line}</li>)}
+          </ol>
+        </div>
+      )}
+
+      {/* What turning features on does not do: prerequisites */}
+      {prerequisites.length > 0 && (
+        <div data-testid="review-prerequisites">
+          <h3 style={{ margin: '0 0 6px', fontSize: 14, fontWeight: 600 }}>What else you need</h3>
+          <p style={{ margin: '0 0 10px', fontSize: 12, color: 'var(--color-text-muted)' }}>
+            Enabling a feature does not set up the equipment or accounts behind it.
+          </p>
+          {PREREQUISITE_GROUPS.map(g => {
+            const items = prerequisites.filter(p => p.kind === g.kind);
+            if (items.length === 0) return null;
+            return (
+              <div key={g.kind} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600 }}>{g.title}</div>
+                <ul style={{ margin: '4px 0 0', paddingLeft: 20, fontSize: 13 }}>
+                  {items.map(p => (
+                    <li key={p.id}>
+                      {PREREQUISITE_TEXT[p.id] || p.id}{' '}
+                      <a href={p.link}>Open</a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* Config step cards */}
       {configSteps.length > 0 && (

@@ -43,3 +43,21 @@ export function cardIdsForEnabledFeatures(features) {
   }
   return ids;
 }
+
+/**
+ * Why each card shows under the Workflow filter: card id -> feature codes
+ * (of the enabled features) that bring it in.
+ * @param {{code: string, enabled: boolean}[]} features
+ * @returns {Map<string, string[]>}
+ */
+export function cardReasons(features) {
+  const reasons = new Map();
+  for (const f of features) {
+    if (!f.enabled) continue;
+    for (const cardId of FEATURE_TO_CARD_IDS[f.code] || []) {
+      if (!reasons.has(cardId)) reasons.set(cardId, []);
+      reasons.get(cardId).push(f.code);
+    }
+  }
+  return reasons;
+}
