@@ -105,7 +105,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   const baseUrl = 'http://127.0.0.1:' + port;
 
   // Create a bridge instance via API
-  const createRes = await fetch(`${baseUrl}/api/production/bridge/instances`, {
+  const createRes = await fetch(`${baseUrl}/api/v1/production/bridge/instances`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'test-bridge' }),
