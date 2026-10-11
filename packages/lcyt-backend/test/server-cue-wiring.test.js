@@ -15,6 +15,7 @@ import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 
+process.on('unhandledRejection', (e) => { console.error('[DIAG unhandledRejection]', e?.stack ?? e); });
 process.env.DB_PATH = ':memory:';
 process.env.JWT_SECRET = 'test-server-cue-wiring-secret';
 process.env.PORT = '0';
