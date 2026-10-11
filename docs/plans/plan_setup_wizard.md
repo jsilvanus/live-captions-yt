@@ -607,3 +607,9 @@ dependency logic, save flow) is unaffected by the route change.
 | `navConfig.js` â€” Setup nav item in NAV_BOTTOM | âœ… done |
 | CCModal/SettingsModal migration to use panels | âœ… done â€” `CCModal.jsx` imports `TargetsPanel`, `TranslationPanel`, `ServicePanel`, `DetailsPanel`; `SettingsModal.jsx` imports `RelayPanel` (confirmed by import grep, 2026-07-20) |
 
+
+### Broadcast, AI and integrations (2026-10-11)
+
+New backend flags `broadcast-platforms` (needs `captions`), `mcp-access` and `ai-agent` (binary-only: operator-granted, also a user entitlement). Site policies are seeded (`self_service`, `self_service`, `denied`). `backfillCapabilityFeatures` (`db/project-features.js`, run in `server.js` after the plugin migrations) enables the flag and the owner's entitlement for projects that already use the capability (live platform connection, live MCP token, enabled AI role or embedding provider); it never overrides an explicit disable. The flags do not gate routes yet (`FEATURE_GATE_ENFORCE` paths unchanged).
+
+Wizard intents `broadcast`, `ai`, `integrations` and the icon question (under `captions`) are in `setup-wizard/lib/capabilities.js`. Icons and API connectors have no flag: `TOPIC_RULES` adds only their Hub cards and prerequisites (`feature: null`). `hls-stream` is offered as "own viewer stream, no platform" and gets a Hub card (`viewer-stream`, with `preview`). Cards still without a mapping: `crop`, `embed`; `mic-lock`, `stats`, `collaboration` have nothing to set up.

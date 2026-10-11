@@ -47,3 +47,18 @@ describe('loadCardStatuses()', () => {
     assert.equal(CARD_STATUS_CHECKS.viewports.path('a b'), '/dsk/a%20b/viewports');
   });
 });
+
+describe('broadcast-platforms status', () => {
+  const base = { backendUrl: 'http://x', token: 't', apiKey: 'k', cardIds: ['broadcast-platforms'] };
+  const reply = body => async () => ({ ok: true, json: async () => body });
+
+  it('counts only connections that are not revoked', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: reply({ credentials: [{ revokedAt: '2026-01-01' }, { revokedAt: null }] }) });
+    assert.deepEqual(r.get('broadcast-platforms'), { status: 'configured', count: 1 });
+  });
+
+  it('is empty when every connection was revoked', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: reply({ credentials: [{ revokedAt: 'x' }] }) });
+    assert.deepEqual(r.get('broadcast-platforms'), { status: 'empty', count: 0 });
+  });
+});

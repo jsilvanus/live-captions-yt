@@ -461,11 +461,26 @@ export default {
         title: 'Operatörsenheter',
         desc: 'Dedikerade surfplattor eller paneler som loggar in med PIN-kod i stället för ett användarkonto.',
       },
+      broadcast: {
+        title: 'Publicering till plattform',
+        desc: 'Anslut YouTube eller publicera en egen tittarström utan plattform.',
+      },
+      ai: {
+        title: 'AI och assistenter',
+        desc: 'AI-roller som reagerar på gudstjänsten och externa assistenter (MCP) som kan använda LCYT.',
+      },
+      integrations: {
+        title: 'Data från andra system',
+        desc: 'Hämta värden, som dagens tema eller texter, från ett annat system till textning och grafik.',
+      },
     },
     concept: {
       video: 'Ingest är video som kommer in i LCYT. Relä skickar vidare den till mål. HLS-utgång låter tittare se den i en webbläsare. En namngiven kameramatning är en inkommande källa som kanske inte har någon styrkanal alls.',
       graphics: 'Grafik är visuella element som en namnskylt, logotyp, text, bild eller bibelvers. En vy (viewport) är en vy över en uppsättning grafik: en vy för sändningen och en annan för en projektor kan placera samma grafik olika.',
       devices: 'Enhetsroller är PIN-baserade identiteter för dedikerade produktionsklienter (kamera, mikrofon, mixer eller egen). De är skilda från fysiska enheter och från projektroller.',
+      broadcast: 'Med en YouTube-anslutning kan LCYT skapa och schemalägga sändningar, ställa in miniatyrbilder och läsa tittarsiffror. En egen tittarström är en HLS-videoström som LCYT tillhandahåller själv, så att tittarna kan se den i en webbläsare eller som inbäddning utan plattformskonto.',
+      ai: 'AI-roller är hjälpare som lyssnar på gudstjänsten och föreslår till exempel cues eller grafik. De kräver en språkmodell och beviljas av operatören eftersom de kostar pengar. Via MCP kan en extern assistent (till exempel Claude eller ChatGPT) använda LCYT med en token som du skapar.',
+      integrations: 'En API-koppling hämtar värden från ett annat system, till exempel dagens tema och evangelium från en kyrkokalendertjänst, så att de kan användas som variabler i textning och grafik.',
     },
     q: {
       captionSource: {
@@ -547,6 +562,37 @@ export default {
         label: 'Ska någon styra från en dedikerad surfplatta eller panel?',
         help: 'Enhetsroller låter en surfplatta logga in med projektets enhetskod och en PIN-kod, med begränsade rättigheter. De är inte samma sak som projektroller (ägare, redaktör, …).',
       },
+      publishYoutube: {
+        label: 'Ska du publicera videon på YouTube?',
+        help: 'Textning kan redan gå till YouTube via ett textningsmål. Det här gäller att LCYT också hanterar själva sändningen.',
+      },
+      scheduleBroadcasts: {
+        label: 'Ska LCYT skapa och schemalägga YouTube-sändningarna?',
+        help: 'Kräver en ansluten YouTube-kanal (Google-inloggning). Ger också miniatyrbilder.',
+      },
+      viewerStats: {
+        label: 'Vill du ha tittarsiffror i realtid från plattformen?',
+      },
+      publishViewerStream: {
+        label: 'Vill du ha en egen tittarström utan plattform?',
+        help: 'LCYT publicerar en HLS-videoström som tittarna ser i en webbläsare eller som bäddas in på din webbplats. Livevideon måste nå LCYT.',
+      },
+      aiRoles: {
+        label: 'Vill du att AI ska reagera på gudstjänsten?',
+        help: 'AI-roller kan föreslå cues och grafik utifrån det som sägs. Kräver en språkmodell; operatören beviljar åtkomst.',
+      },
+      outsideAssistant: {
+        label: 'Vill du att en extern AI-assistent ska använda LCYT?',
+        help: 'Till exempel Claude eller ChatGPT som ansluter via MCP med en token du skapar.',
+      },
+      externalData: {
+        label: 'Vill du hämta data från ett annat system?',
+        help: 'Till exempel dagens tema och evangelium från en kyrkokalendertjänst.',
+      },
+      brandedViewer: {
+        label: 'Vill du ha en egen ikon på tittarsidan?',
+        help: 'PNG eller SVG, upp till 200 kB.',
+      },
     },
     yes: 'Ja',
     no: 'Nej',
@@ -563,6 +609,12 @@ export default {
       'device-roles': 'Skapa en enhetsroll och PIN-kod för varje dedikerad enhet.',
       viewport: 'Skapa en vy för varje plats där grafik ska visas.',
       'dsk-video-path': 'Grafik på videon kräver att direktsändningen går via LCYT.',
+      'platform-connection': 'Anslut din YouTube-kanal (Google-inloggning).',
+      'viewer-stream-video': 'Din livevideo måste nå LCYT, annars har tittarströmmen inget att visa.',
+      'ai-role-model': 'Välj en språkmodell för varje AI-roll.',
+      'mcp-token': 'Skapa en åtkomsttoken för assistenten (den visas bara en gång).',
+      connector: 'Lägg till en API-koppling för det andra systemet.',
+      'viewer-icon': 'Ladda upp en ikon (PNG eller SVG, upp till 200 kB).',
     },
     prereqGroup: {
       configuration: 'Återstår att konfigurera',
@@ -583,6 +635,9 @@ export default {
       crop: 'Ett stående utsnitt av videon skapas.',
       preview: 'En live förhandsvisningsbild skapas.',
       'file-saving': 'Textningsfiler sparas.',
+      'broadcast-platforms': 'YouTube-sändningar skapas och schemaläggs från LCYT.',
+      'ai-agent': 'AI-roller reagerar på det som händer i gudstjänsten.',
+      'mcp-access': 'En extern assistent kan använda LCYT.',
     },
     review: {
       selectedFeatures: 'Valda funktioner',
@@ -620,6 +675,9 @@ export default {
       'files-custom-bucket': 'Filer: egen bucket',
       'files-webdav': 'Filer: WebDAV',
       'files-browser-local': 'Filer: den här datorn',
+      'broadcast-platforms': 'Sändningsplattformar',
+      'ai-agent': 'AI-agent',
+      'mcp-access': 'MCP-åtkomst',
     },
     hub: {
       title: 'Inställningar',
@@ -648,6 +706,10 @@ export default {
         mixers: 'Mixrar',
         encoders: 'Kodare',
         bridges: 'Bryggor',
+        'viewer-stream': 'Tittarström',
+        'broadcast-platforms': 'Sändningsplattformar',
+        'ai-roles': 'AI-rollernas modeller',
+        'mcp-access': 'MCP-åtkomst',
       },
     },
   },

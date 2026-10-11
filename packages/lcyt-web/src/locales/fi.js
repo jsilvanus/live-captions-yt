@@ -457,11 +457,26 @@ export default {
         title: 'Operaattorilaitteet',
         desc: 'Omistetut tabletit tai paneelit, jotka kirjautuvat PIN-koodilla käyttäjätilin sijaan.',
       },
+      broadcast: {
+        title: 'Julkaisu alustalle',
+        desc: 'Yhdistä YouTube tai julkaise oma katselijavirta ilman alustaa.',
+      },
+      ai: {
+        title: 'Tekoäly ja avustajat',
+        desc: 'Tekoälyroolit, jotka reagoivat jumalanpalvelukseen, ja ulkoiset avustajat (MCP), jotka voivat käyttää LCYT:tä.',
+      },
+      integrations: {
+        title: 'Tiedot muista järjestelmistä',
+        desc: 'Hae arvoja, kuten päivän teema tai lukukappaleet, toisesta järjestelmästä tekstityksiin ja grafiikkaan.',
+      },
     },
     concept: {
       video: 'Sisäänotto (ingest) on LCYT:hen saapuva video. Välitys lähettää sen eteenpäin kohteisiin. HLS-ulostulo mahdollistaa katselun selaimessa. Nimetty kamerasyöte on saapuva lähde, jolla ei välttämättä ole lainkaan ohjauskanavaa.',
       graphics: 'Grafiikka on visuaalisia elementtejä, kuten alatunniste, logo, teksti, kuva tai raamatunjae. Näkymä (viewport) on näkymä grafiikkajoukkoon: yksi näkymä lähetykselle ja toinen videotykille voivat sijoittaa saman grafiikan eri tavoin.',
       devices: 'Laiteroolit ovat PIN-pohjaisia tunnistautumisia omistetuille tuotantolaitteille (kamera, mikrofoni, mikseri tai oma). Ne ovat eri asia kuin fyysiset laitteet ja projektin roolit.',
+      broadcast: 'YouTube-yhteyden avulla LCYT voi luoda ja ajastaa lähetyksiä, asettaa pikkukuvia ja lukea katsojamääriä. Oma katselijavirta on HLS-videovirta, jota LCYT tarjoaa itse, joten katsojat voivat seurata sitä selaimessa tai upotteena ilman alustatiliä.',
+      ai: 'Tekoälyroolit ovat apulaisia, jotka kuuntelevat jumalanpalvelusta ja ehdottavat esimerkiksi vihjeitä tai grafiikkaa. Ne tarvitsevat kielimallin, ja palvelun ylläpitäjä myöntää ne, koska ne maksavat. MCP:n kautta ulkoinen avustaja (esimerkiksi Claude tai ChatGPT) voi käyttää LCYT:tä luomallasi tunnuksella.',
+      integrations: 'API-liittymä hakee arvoja toisesta järjestelmästä, esimerkiksi päivän teeman ja evankeliumin kirkkokalenteripalvelusta, jotta niitä voi käyttää muuttujina tekstityksissä ja grafiikassa.',
     },
     q: {
       captionSource: {
@@ -543,6 +558,37 @@ export default {
         label: 'Käyttääkö joku omistettua tablettia tai paneelia?',
         help: 'Laiteroolien avulla tabletti kirjautuu projektin laitekoodilla ja PIN-koodilla rajatuin oikeuksin. Ne eivät ole samaa kuin projektin roolit (omistaja, muokkaaja, …).',
       },
+      publishYoutube: {
+        label: 'Julkaisetko videon YouTubessa?',
+        help: 'Tekstitys voi jo mennä YouTubeen tekstityskohteen kautta. Tässä kyse on siitä, että LCYT hallinnoi myös itse lähetystä.',
+      },
+      scheduleBroadcasts: {
+        label: 'Luoko ja ajastaako LCYT YouTube-lähetykset?',
+        help: 'Vaatii yhdistetyn YouTube-kanavan (Google-kirjautuminen). Antaa myös pikkukuvat.',
+      },
+      viewerStats: {
+        label: 'Haluatko alustan katsojamäärät reaaliajassa?',
+      },
+      publishViewerStream: {
+        label: 'Haluatko oman katselijavirran ilman alustaa?',
+        help: 'LCYT julkaisee HLS-videovirran, jota katsojat seuraavat selaimessa tai joka upotetaan sivustollesi. Live-videon pitää tulla LCYT:lle.',
+      },
+      aiRoles: {
+        label: 'Haluatko tekoälyn reagoivan jumalanpalvelukseen?',
+        help: 'Tekoälyroolit voivat ehdottaa vihjeitä ja grafiikkaa sanotun perusteella. Vaatii kielimallin; ylläpitäjä myöntää käyttöoikeuden.',
+      },
+      outsideAssistant: {
+        label: 'Haluatko ulkoisen tekoälyavustajan käyttävän LCYT:tä?',
+        help: 'Esimerkiksi Claude tai ChatGPT yhdistää MCP:n kautta luomallasi tunnuksella.',
+      },
+      externalData: {
+        label: 'Haluatko hakea tietoja toisesta järjestelmästä?',
+        help: 'Esimerkiksi päivän teema ja evankeliumi kirkkokalenteripalvelusta.',
+      },
+      brandedViewer: {
+        label: 'Haluatko oman kuvakkeen katselusivulle?',
+        help: 'PNG tai SVG, enintään 200 kt.',
+      },
     },
     yes: 'Kyllä',
     no: 'Ei',
@@ -559,6 +605,12 @@ export default {
       'device-roles': 'Luo laiteroolit ja PIN-koodit jokaiselle omistetulle laitteelle.',
       viewport: 'Luo näkymä jokaiseen paikkaan, jossa grafiikan pitää näkyä.',
       'dsk-video-path': 'Videon päälle tuleva grafiikka vaatii, että suora lähetys kulkee LCYT:n kautta.',
+      'platform-connection': 'Yhdistä YouTube-kanavasi (Google-kirjautuminen).',
+      'viewer-stream-video': 'Live-videon pitää tulla LCYT:lle, muuten katselijavirrassa ei ole mitään näytettävää.',
+      'ai-role-model': 'Valitse kielimalli jokaiselle tekoälyroolille.',
+      'mcp-token': 'Luo avustajalle käyttötunnus (se näytetään vain kerran).',
+      connector: 'Lisää API-liittymä toista järjestelmää varten.',
+      'viewer-icon': 'Lataa kuvake (PNG tai SVG, enintään 200 kt).',
     },
     prereqGroup: {
       configuration: 'Vielä määritettävä',
@@ -579,6 +631,9 @@ export default {
       crop: 'Videosta tuotetaan pystyrajaus.',
       preview: 'Suora esikatselukuva luodaan.',
       'file-saving': 'Tekstitystiedostot tallennetaan.',
+      'broadcast-platforms': 'YouTube-lähetykset luodaan ja ajastetaan LCYT:stä.',
+      'ai-agent': 'Tekoälyroolit reagoivat jumalanpalveluksen tapahtumiin.',
+      'mcp-access': 'Ulkoinen avustaja voi käyttää LCYT:tä.',
     },
     review: {
       selectedFeatures: 'Valitut ominaisuudet',
@@ -616,6 +671,9 @@ export default {
       'files-custom-bucket': 'Tiedostot: oma bucket',
       'files-webdav': 'Tiedostot: WebDAV',
       'files-browser-local': 'Tiedostot: tämä tietokone',
+      'broadcast-platforms': 'Lähetysalustat',
+      'ai-agent': 'Tekoälyagentti',
+      'mcp-access': 'MCP-käyttö',
     },
     hub: {
       title: 'Asetukset',
@@ -644,6 +702,10 @@ export default {
         mixers: 'Mikserit',
         encoders: 'Enkooderit',
         bridges: 'Sillat',
+        'viewer-stream': 'Katselijavirta',
+        'broadcast-platforms': 'Lähetysalustat',
+        'ai-roles': 'Tekoälyroolien mallit',
+        'mcp-access': 'MCP-käyttö',
       },
     },
   },

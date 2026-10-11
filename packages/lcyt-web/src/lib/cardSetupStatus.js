@@ -20,6 +20,10 @@ export const CARD_STATUS_CHECKS = {
   encoders: { path: () => '/production/encoders', count: j => list(j) },
   bridges:  { path: () => '/production/bridge/instances', count: j => list(j) },
   egress:   { path: () => '/stream', count: j => list(j, 'relays') },
+  'broadcast-platforms': {
+    path: () => '/platforms',
+    count: j => (Array.isArray(j?.credentials) ? j.credentials.filter(c => !c.revokedAt).length : null),
+  },
   viewports: { path: apiKey => `/dsk/${encodeURIComponent(apiKey)}/viewports`, count: j => list(j, 'viewports') },
 };
 

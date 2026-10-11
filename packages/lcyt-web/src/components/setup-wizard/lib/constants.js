@@ -15,6 +15,7 @@ export const ALL_FEATURE_CODES = [
   'collaboration', 'device-control', 'planning',
   'crop', 'files-local', 'files-managed-bucket', 'files-custom-bucket',
   'files-webdav', 'files-browser-local',
+  'broadcast-platforms', 'ai-agent', 'mcp-access',
 ];
 
 /**
@@ -51,6 +52,9 @@ export const FEATURE_LABELS = {
   'files-custom-bucket':  'Files: own bucket',
   'files-webdav':         'Files: WebDAV',
   'files-browser-local':  'Files: this computer',
+  'broadcast-platforms':  'Broadcast platforms',
+  'ai-agent':             'AI agent',
+  'mcp-access':           'MCP access',
 };
 
 export const DEPS = {
@@ -60,6 +64,7 @@ export const DEPS = {
   'hls-stream':      ['ingest'],
   'preview':         ['ingest'],
   'crop':            ['ingest'],
+  'broadcast-platforms': ['captions'],
   'files-local':          ['file-saving'],
   'files-managed-bucket': ['file-saving'],
   'files-custom-bucket':  ['file-saving'],

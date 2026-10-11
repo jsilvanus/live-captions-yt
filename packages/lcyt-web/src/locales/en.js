@@ -504,11 +504,26 @@ export default {
         title: 'Operator devices',
         desc: 'Dedicated tablets or panels that sign in with a PIN instead of a user account.',
       },
+      broadcast: {
+        title: 'Publish to a platform',
+        desc: 'Connect YouTube, or publish your own viewer stream without any platform.',
+      },
+      ai: {
+        title: 'AI and assistants',
+        desc: 'AI roles that react to the service, and outside assistants (MCP) that can use LCYT.',
+      },
+      integrations: {
+        title: 'Data from other systems',
+        desc: 'Pull values, such as the day\'s theme or readings, from another system into captions and graphics.',
+      },
     },
     concept: {
       video: 'Ingest is video coming into LCYT. Relay forwards it to destinations. HLS output lets viewers watch it in a browser. A named camera feed is an incoming source that may have no control channel at all.',
       graphics: 'Graphics are visual elements such as a lower third, logo, text, image or Bible verse. A viewport is a view onto a set of graphics: one viewport for the live transmission and another for a projector can place the same graphic differently.',
       devices: 'Device roles are PIN-based identities for dedicated production clients (camera, microphone, mixer or custom). They are separate from physical devices and from project roles.',
+      broadcast: 'Connecting YouTube lets LCYT create and schedule broadcasts, set thumbnails and read viewer numbers. Your own viewer stream is an HLS video stream that LCYT serves itself, so viewers can watch in a browser or an embed without any platform account.',
+      ai: 'AI roles are helpers that listen to the service and propose things, such as cues or graphics. They need a language model and are granted by the operator because they cost money. MCP lets an outside assistant (for example Claude or ChatGPT) use LCYT with a token you create.',
+      integrations: 'An API connector fetches values from another system, for example the day\'s theme and Gospel from a church calendar service, so they can be used as variables in captions and graphics.',
     },
     q: {
       captionSource: {
@@ -590,6 +605,37 @@ export default {
         label: 'Will anyone operate from a dedicated tablet or panel?',
         help: 'Device roles let a tablet sign in with a project device code and a PIN, with limited permissions. They are not the same as project roles (owner, editor, …).',
       },
+      publishYoutube: {
+        label: 'Will you publish the video on YouTube?',
+        help: 'Captions can already go to YouTube through a caption target. This is about LCYT also managing the broadcast itself.',
+      },
+      scheduleBroadcasts: {
+        label: 'Should LCYT create and schedule the YouTube broadcasts?',
+        help: 'Needs a connected YouTube channel (Google sign-in). Also gives thumbnails.',
+      },
+      viewerStats: {
+        label: 'Do you want live viewer numbers from the platform?',
+      },
+      publishViewerStream: {
+        label: 'Do you want your own viewer stream, without any platform?',
+        help: 'LCYT publishes an HLS video stream that viewers watch in a browser or embed on your site. The live video must reach LCYT.',
+      },
+      aiRoles: {
+        label: 'Do you want AI to react to the service?',
+        help: 'AI roles can propose cues and graphics from what is being said. Needs a language model; the operator grants access.',
+      },
+      outsideAssistant: {
+        label: 'Do you want an outside AI assistant to use LCYT?',
+        help: 'For example Claude or ChatGPT connecting over MCP with a token you create.',
+      },
+      externalData: {
+        label: 'Do you want to pull data from another system?',
+        help: 'For example the day\'s theme and Gospel from a church calendar service.',
+      },
+      brandedViewer: {
+        label: 'Do you want your own icon on the viewer page?',
+        help: 'PNG or SVG, up to 200 KB.',
+      },
     },
     yes: 'Yes',
     no: 'No',
@@ -606,6 +652,12 @@ export default {
       'device-roles': 'Create a device role and PIN for each dedicated device.',
       viewport: 'Create a viewport for each place graphics should appear.',
       'dsk-video-path': 'Graphics on the video need the live stream to pass through LCYT.',
+      'platform-connection': 'Connect your YouTube channel (Google sign-in).',
+      'viewer-stream-video': 'Your live video must reach LCYT, otherwise the viewer stream has nothing to show.',
+      'ai-role-model': 'Choose a language model for each AI role.',
+      'mcp-token': 'Create an access token for the assistant (it is shown only once).',
+      connector: 'Add an API connector for the other system.',
+      'viewer-icon': 'Upload an icon (PNG or SVG, up to 200 KB).',
     },
     prereqGroup: {
       configuration: 'Still to configure',
@@ -626,6 +678,9 @@ export default {
       crop: 'A vertical crop of the video is produced.',
       preview: 'A live preview thumbnail is generated.',
       'file-saving': 'Caption files are saved.',
+      'broadcast-platforms': 'YouTube broadcasts are created and scheduled from LCYT.',
+      'ai-agent': 'AI roles react to what is happening in the service.',
+      'mcp-access': 'An outside assistant can use LCYT.',
     },
     review: {
       selectedFeatures: 'Selected features',
@@ -663,6 +718,9 @@ export default {
       'files-custom-bucket': 'Files: own bucket',
       'files-webdav': 'Files: WebDAV',
       'files-browser-local': 'Files: this computer',
+      'broadcast-platforms': 'Broadcast platforms',
+      'ai-agent': 'AI agent',
+      'mcp-access': 'MCP access',
     },
     hub: {
       title: 'Setup',
@@ -691,6 +749,10 @@ export default {
         mixers: 'Mixers',
         encoders: 'Encoders',
         bridges: 'Bridges',
+        'viewer-stream': 'Viewer stream',
+        'broadcast-platforms': 'Broadcast platforms',
+        'ai-roles': 'AI role models',
+        'mcp-access': 'MCP access',
       },
     },
   },

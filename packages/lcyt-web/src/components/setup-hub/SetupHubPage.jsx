@@ -8,6 +8,7 @@ import { EncoderSection } from './EncoderSection.jsx';
 import { BridgeSection } from './BridgeSection.jsx';
 import { EgressSection } from './EgressSection.jsx';
 import { IngestionSection } from './IngestionSection.jsx';
+import { ViewerStreamSection } from './ViewerStreamSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
 import { CaptionTargetsSection } from './CaptionTargetsSection.jsx';
@@ -148,6 +149,7 @@ export function SetupHubPage() {
             {isVisible('egress') && <EgressSection />}
             {isVisible('ingestion') && <IngestionSection />}
             {isVisible('radio') && <WebRadioSection />}
+            {isVisible('viewer-stream') && <ViewerStreamSection />}
             {isVisible('viewports') && <ViewportsSection />}
 
             {/* ── Captions & language ── */}
