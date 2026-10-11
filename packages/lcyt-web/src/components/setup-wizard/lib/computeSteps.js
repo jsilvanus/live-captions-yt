@@ -18,18 +18,18 @@ export function computeSteps(selectedFeatures, intents) {
 
   if (!intents) {
     return [
-      { id: 'features', title: 'Select Features' },
+      { id: 'features', title: 'Select Features', titleKey: 'step.features' },
       ...configSteps,
-      { id: 'review',   title: 'Review' },
+      { id: 'review',   title: 'Review', titleKey: 'step.review' },
     ];
   }
 
   return [
-    { id: 'intent', title: 'What are you producing?' },
-    ...(intents.size > 0 ? [{ id: 'questions', title: 'Tell us about your production' }] : []),
-    { id: 'features', title: 'Fine-tune features' },
+    { id: 'intent', title: 'What are you producing?', titleKey: 'step.intent' },
+    ...(intents.size > 0 ? [{ id: 'questions', title: 'Tell us about your production', titleKey: 'step.questions' }] : []),
+    { id: 'features', title: 'Fine-tune features', titleKey: 'step.featuresFineTune' },
     ...configSteps,
-    { id: 'review',   title: 'Review' },
+    { id: 'review',   title: 'Review', titleKey: 'step.review' },
   ];
 }
 

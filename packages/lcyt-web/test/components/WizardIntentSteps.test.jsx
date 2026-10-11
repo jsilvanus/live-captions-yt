@@ -69,3 +69,14 @@ describe('StepReview with intents', () => {
     expect(screen.queryByTestId('review-prerequisites')).toBeNull();
   });
 });
+
+describe('translated setup steps', () => {
+  it('renders in Finnish inside a LangProvider with lang=fi', async () => {
+    const { LangProvider } = await import('../../src/contexts/LangContext.jsx');
+    localStorage.setItem('lcyt:lang', 'fi');
+    render(<LangProvider><IntentStep intents={new Set()} onChange={() => {}} /></LangProvider>);
+    expect(screen.getByTestId('intent-captions')).toHaveTextContent('Tekstitys');
+    expect(screen.getByTestId('intent-devices')).toHaveTextContent('Operaattorilaitteet');
+    localStorage.removeItem('lcyt:lang');
+  });
+});

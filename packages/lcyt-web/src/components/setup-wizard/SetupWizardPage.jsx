@@ -6,6 +6,8 @@ import { StepFeatureSelection } from './StepFeatureSelection.jsx';
 import { StepReview } from './StepReview.jsx';
 import { IntentStep } from './IntentStep.jsx';
 import { QuestionsStep } from './QuestionsStep.jsx';
+import { useSetupT } from '../../lib/useSetupT.js';
+import { stepTitle } from './WizardProgress.jsx';
 import { TargetsPanel } from '../panels/TargetsPanel.jsx';
 import { TranslationPanel } from '../panels/TranslationPanel.jsx';
 import { RelayPanel } from '../panels/RelayPanel.jsx';
@@ -27,6 +29,7 @@ export function SetupWizardPage() {
   const backendUrl = userBackendUrl || session?.backendUrl || '';
 
   const state = useWizardState(backendUrl, token, apiKey);
+  const t = useSetupT();
 
   const {
     intents, answers, setIntentAnswers,
@@ -41,7 +44,7 @@ export function SetupWizardPage() {
   if (!initialized) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>Loading…</span>
+        <span style={{ color: 'var(--color-text-muted)', fontSize: 14 }}>{t('loading')}</span>
       </div>
     );
   }
@@ -138,13 +141,13 @@ export function SetupWizardPage() {
         );
 
       default:
-        return <p style={{ color: 'var(--color-text-muted)' }}>Unknown step: {currentStep.id}</p>;
+        return <p style={{ color: 'var(--color-text-muted)' }}>{t('unknownStep', { id: currentStep.id })}</p>;
     }
   }
 
   return (
     <WizardShell
-      title={currentStep?.title || ''}
+      title={stepTitle(t, currentStep)}
       steps={steps}
       stepIndex={stepIndex}
       isConfigStep={isConfigStep}

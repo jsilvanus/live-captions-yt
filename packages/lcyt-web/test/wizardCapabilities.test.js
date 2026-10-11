@@ -117,9 +117,9 @@ describe('mergeDerivedFeatures()', () => {
 });
 
 describe('describeFlow()', () => {
-  it('is empty for no features and mentions graphics rendering when graphics-server is on', () => {
+  it('is empty for no features and returns flow ids (graphics-server wins over graphics-client)', () => {
     assert.deepEqual(describeFlow(new Set()), []);
-    assert.ok(describeFlow(new Set(['graphics-server', 'graphics-client'])).some(l => l.includes('composited')));
+    assert.deepEqual(describeFlow(new Set(['graphics-server', 'graphics-client'])), ['graphics-server']);
   });
 });
 

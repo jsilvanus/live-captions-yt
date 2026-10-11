@@ -73,10 +73,10 @@ export const DEPS = {
  * active feature set.
  */
 export const CONFIG_STEP_TEMPLATES = [
-  { id: 'targets',      title: 'Caption Targets',  featureCode: 'captions' },
-  { id: 'translation',  title: 'Translation',      featureCode: 'translations' },
-  { id: 'relay',        title: 'RTMP Relay Slots', featureCode: 'ingest' },
-  { id: 'cea-captions', title: 'CEA Captions',     featureCode: 'cea-captions' },
-  { id: 'embed',        title: 'Embed Widgets',    featureCode: 'embed' },
-  { id: 'stt-server',   title: 'Server STT',       featureCode: 'stt-server' },
+  { id: 'targets',      title: 'Caption Targets',  featureCode: 'captions', titleKey: 'step.targets' },
+  { id: 'translation',  title: 'Translation',      featureCode: 'translations', titleKey: 'step.translation' },
+  { id: 'relay',        title: 'RTMP Relay Slots', featureCode: 'ingest', titleKey: 'step.relay' },
+  { id: 'cea-captions', title: 'CEA Captions',     featureCode: 'cea-captions', titleKey: 'step.cea-captions' },
+  { id: 'embed',        title: 'Embed Widgets',    featureCode: 'embed', titleKey: 'step.embed' },
+  { id: 'stt-server',   title: 'Server STT',       featureCode: 'stt-server', titleKey: 'step.stt-server' },
 ];

@@ -23,6 +23,8 @@ import { applyDeps } from './applyDeps.js';
 import { computeSteps } from './computeSteps.js';
 import { cardIdsForEnabledFeatures } from '../../../lib/workflowFeatureMap.js';
 
+export const PREREQUISITE_KINDS = ['configuration', 'operational', 'optional'];
+
 export const INTENTS = ['captions', 'video', 'production', 'graphics', 'devices'];
 
 /**
@@ -174,25 +176,20 @@ export function resolveIntent(intents, answers = {}) {
 }
 
 /**
- * Plain-language lines describing the production flow the enabled features make.
+ * Ids of the production-flow lines (`setupWizard.flow.<id>` in the locales) the enabled features make.
  * @param {Set<string>} features
  * @returns {string[]}
  */
 export function describeFlow(features) {
   const f = c => features.has(c);
-  const lines = [];
-  if (f('ingest')) lines.push('Live video comes into LCYT.');
-  if (f('device-control')) lines.push('LCYT controls your production equipment and/or dedicated operator devices.');
-  if (f('stt-server')) lines.push('Audio from the live stream is transcribed on the server.');
-  if (f('captions')) lines.push('Captions are delivered to your caption targets.');
-  if (f('translations')) lines.push('Captions are also translated.');
-  if (f('graphics-server')) lines.push('Graphics are rendered and composited onto the live video.');
-  else if (f('graphics-client')) lines.push('Graphics are shown on a separate display.');
-  if (f('restream')) lines.push('The video is relayed to your destinations.');
-  if (f('hls-stream')) lines.push('An HLS video stream is published.');
-  if (f('radio')) lines.push('An audio-only stream is published.');
-  if (f('crop')) lines.push('A vertical crop of the video is produced.');
-  if (f('preview')) lines.push('A live preview thumbnail is generated.');
-  if (f('file-saving')) lines.push('Caption files are saved.');
-  return lines;
+  const ids = [];
+  if (f('ingest')) ids.push('ingest');
+  if (f('device-control')) ids.push('device-control');
+  if (f('stt-server')) ids.push('stt-server');
+  if (f('captions')) ids.push('captions');
+  if (f('translations')) ids.push('translations');
+  if (f('graphics-server')) ids.push('graphics-server');
+  else if (f('graphics-client')) ids.push('graphics-client');
+  for (const c of ['restream', 'hls-stream', 'radio', 'crop', 'preview', 'file-saving']) if (f(c)) ids.push(c);
+  return ids;
 }

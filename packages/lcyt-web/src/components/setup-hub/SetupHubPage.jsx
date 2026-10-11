@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SetupCard } from './SetupCard.jsx';
 import { PlatformsSection } from './PlatformsSection.jsx';
 import { WorkflowsIcon } from './icons.jsx';
@@ -24,15 +24,13 @@ import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useProjectFeatures } from '../../hooks/useProjectFeatures.js';
 import { useProjectRequired } from '../../hooks/useProjectRequired.js';
 import { cardIdsForEnabledFeatures, cardReasons } from '../../lib/workflowFeatureMap.js';
-import { FEATURE_LABELS } from '../setup-wizard/lib/constants.js';
+import { useSetupT } from '../../lib/useSetupT.js';
+import { hasSetupText } from '../../lib/setupText.js';
+import { loadCardStatuses } from '../../lib/cardSetupStatus.js';
 import { GuidedActionProvider } from '../../hooks/useGuidedAction.jsx';
 import { RoleAssistantPanel } from '../agent/RoleAssistantPanel.jsx';
 
-const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'favorites', label: 'Favorites' },
-  { id: 'workflow', label: 'Workflow' },
-];
+const FILTERS = ['all', 'favorites', 'workflow'];
 
 /**
  * SetupHubPage — `/setup`. Persistent device/service catalog superseding the
@@ -69,6 +67,19 @@ export function SetupHubPage() {
   const backendUrl = userBackendUrl || session?.backendUrl || '';
   const { features } = useProjectFeatures(backendUrl, userToken, apiKey);
   const workflowCardIds = cardIdsForEnabledFeatures(features);
+  const t = useSetupT();
+
+  // Configured vs enabled: for the Workflow filter, check whether anything is actually set up.
+  const [cardStatus, setCardStatus] = useState(new Map());
+  const workflowKey = [...workflowCardIds].sort().join(',');
+  const sessionToken = session?.getSessionToken?.();
+  useEffect(() => {
+    if (filter !== 'workflow' || !workflowKey || !session?.connected || !sessionToken) return undefined;
+    let cancelled = false;
+    loadCardStatuses({ backendUrl: session.backendUrl, token: sessionToken, apiKey, cardIds: workflowKey.split(',') })
+      .then(m => { if (!cancelled) setCardStatus(m); });
+    return () => { cancelled = true; };
+  }, [filter, workflowKey, session?.connected, session?.backendUrl, sessionToken, apiKey]);
 
   function isVisible(id) {
     if (filter === 'favorites') return favorites.has(id);
@@ -81,33 +92,49 @@ export function SetupHubPage() {
       <div className="setup-hub-page-layout">
         <div className="setup-hub-page">
           <div className="setup-hub-page__header">
-            <h1 className="setup-hub-page__title">Setup</h1>
+            <h1 className="setup-hub-page__title">{t('hub.title')}</h1>
           </div>
           <p className="setup-hub-page__desc">
-            Everything for this project's devices, services, and integrations in one place.
+            {t('hub.desc')}
           </p>
 
           <div className="setup-hub-page__pills">
             {FILTERS.map(f => (
               <button
-                key={f.id}
+                key={f}
                 type="button"
-                className={`setup-hub-page__pill${filter === f.id ? ' setup-hub-page__pill--active' : ''}`}
-                onClick={() => setFilter(f.id)}
+                className={`setup-hub-page__pill${filter === f ? ' setup-hub-page__pill--active' : ''}`}
+                onClick={() => setFilter(f)}
               >
-                {f.label}
+                {t(`hub.filter.${f}`)}
               </button>
             ))}
           </div>
 
           {filter === 'workflow' && workflowCardIds.size > 0 && (
-            <ul className="setup-hub-page__desc" data-testid="workflow-reasons" style={{ margin: '0 0 12px', paddingLeft: 18 }}>
-              {[...cardReasons(features)].map(([cardId, codes]) => (
-                <li key={cardId}>
-                  <a href={`/setup/${cardId}`}>{cardId}</a>: needed for {codes.map(c => FEATURE_LABELS[c] || c).join(', ')}
-                </li>
-              ))}
-            </ul>
+            <div className="setup-hub-page__desc" data-testid="workflow-reasons" style={{ margin: '0 0 12px' }}>
+              {(() => {
+                const checked = [...cardStatus.values()].filter(v => v.status !== 'unknown');
+                const done = checked.filter(v => v.status === 'configured').length;
+                return checked.length > 0 ? <p style={{ margin: '0 0 6px' }}>{t('hub.progress', { done, total: checked.length })}</p> : null;
+              })()}
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {[...cardReasons(features)].map(([cardId, codes]) => {
+                  const st = cardStatus.get(cardId);
+                  return (
+                    <li key={cardId}>
+                      <a href={`/setup/${cardId}`}>{hasSetupText(`hub.card.${cardId}`) ? t(`hub.card.${cardId}`) : cardId}</a>
+                      : {t('hub.neededFor', { features: codes.map(c => t(`feature.${c}`)).join(', ') })}
+                      {st && st.status !== 'unknown' && (
+                        <strong data-testid={`status-${cardId}`} style={{ marginLeft: 8 }}>
+                          {st.status === 'configured' ? '✓ ' + t('hub.status.configured', { count: st.count }) : '○ ' + t('hub.status.empty')}
+                        </strong>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           )}
 
           <div className="setup-hub-page__grid">
