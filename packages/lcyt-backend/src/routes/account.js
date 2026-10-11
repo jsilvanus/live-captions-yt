@@ -20,10 +20,10 @@ import { createProjectObservabilityRouter } from './project-observability.js';
  * @param {{ loginEnabled?: boolean, settings?: import('../settings/service.js').SettingsService }} [opts]
  * @returns {Router}
  */
-export function createAccountRouters(db, jwtSecret, { loginEnabled = true, settings = null } = {}) {
+export function createAccountRouters(db, jwtSecret, { loginEnabled = true, settings = null, mediaStores = null, resolveStorage = null } = {}) {
   const router = Router();
   router.use('/auth', createAuthRouter(db, jwtSecret, { loginEnabled }));
-  router.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret, settings }));
+  router.use('/keys', createKeysRouter(db, { loginEnabled, jwtSecret, settings, mediaStores, resolveStorage }));
   // Sub-key routes — routers use mergeParams:true so :key propagates correctly
   router.use('/keys/:key/features', createProjectFeaturesRouter(db, { loginEnabled, jwtSecret }));
   router.use('/keys/:key/members',  createProjectMembersRouter(db, { loginEnabled, jwtSecret }));

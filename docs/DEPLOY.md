@@ -322,6 +322,37 @@ directly from the Node.js backend.
 | `S3_ACCESS_KEY_ID` | _(unset)_ | Static credentials (falls back to AWS credential chain) |
 | `S3_SECRET_ACCESS_KEY` | _(unset)_ | Static credentials secret |
 
+#### Choose storage: local or S3
+
+`FILE_STORAGE` is one install-time switch for **every** stored file, not only caption files:
+
+| What | Local (`FILE_STORAGE=local`) | S3 (`FILE_STORAGE=s3`), key prefix under `S3_BUCKET` |
+|------|------------------------------|------------------------------------------------------|
+| Caption files | `FILES_DIR` | `S3_PREFIX` (default `captions/`) |
+| DSK graphics | `GRAPHICS_DIR` | `graphics/` |
+| Icons | `ICONS_DIR` | `icons/` |
+| DSK template thumbnails | `DSK_THUMBNAILS_DIR` | `thumbnails/dsk/` |
+| Camera thumbnails | `CAMERA_THUMBNAILS_DIR` | `thumbnails/camera/` |
+| Recordings (VOD) | `VIDEOS_STORAGE_DIR` | `recordings/` |
+| Database backups | `BACKUP_DIR` | `backups/<date>/lcyt-backend.db` |
+
+- Local is the default and needs no S3 settings or AWS SDK calls. With `s3` the backend refuses to start without `S3_BUCKET`; there is no silent fallback to disk.
+- The bucket should be private: the backend proxies files, so no CORS or public bucket policy is needed. Use `S3_ENDPOINT` for versitygw, MinIO, R2 or Hetzner (path-style addressing is used automatically). The clients send checksums only when a request requires them, which S3-compatible stores need.
+- Still local in S3 mode: MediaMTX writes recordings to `VIDEOS_STORAGE_DIR` first and the backend uploads them (size-verified) when the recording ends, so keep that directory on a scratch volume. HLS subtitle segments (`HLS_SUBS_ROOT`) are short-lived and stay local; with several backend instances route a session's viewers to the same instance. The SQLite database is not a file store and is not moved.
+- Deleting a project permanently (`DELETE /keys/:key?permanent=true`) removes its files from whichever store is configured.
+- Switch an existing install with the migration tool (stop uploads first, it is safe to re-run; the source is kept unless `--delete-source`):
+
+```bash
+# preview
+npm run files:migrate -w packages/lcyt-backend -- --to s3 --dry-run
+# move everything, then set FILE_STORAGE=s3 and restart
+npm run files:migrate -w packages/lcyt-backend -- --to s3
+# back again, optionally limited to some areas
+npm run files:migrate -w packages/lcyt-backend -- --to local --area graphics,icons
+```
+
+Areas: `graphics,icons,dskThumbnails,cameraThumbnails,recordings,captions,backups`. The tool reads the same environment as the backend and needs `S3_BUCKET` (and the credentials) in both directions. A row (recording, caption file) is switched only after its files are verified by size; missing source files are reported, not fatal; the exit code is 2 when anything failed.
+
 ### Database backups
 
 | Variable | Default | Description |
@@ -529,5 +560,5 @@ BACKUP_DAYS=30        # keep 30 days of backups
 BACKUP_DIR=/backups   # volume-mount this directory
 ```
 
-Backups are written once per day to `$BACKUP_DIR/<YYYY-MM-DD>/lcyt-backend.db`.
+Backups are written once per day to `$BACKUP_DIR/<YYYY-MM-DD>/lcyt-backend.db`. With `FILE_STORAGE=s3` they go to `backups/<YYYY-MM-DD>/lcyt-backend.db` in the bucket instead (uploaded from a temporary copy, size-checked) and old dates are removed by the same retention rule.
 

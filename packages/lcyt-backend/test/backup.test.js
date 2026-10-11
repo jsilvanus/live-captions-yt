@@ -5,6 +5,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseBackupDays, runBackup, cleanOldBackups } from '../src/backup.js';
 import { initDb } from '../src/db.js';
+import { createLocalObjectStore, createS3ObjectStore } from 'lcyt-files';
+import { startMockS3Server } from '../../plugins/lcyt-files/test/helpers/mock-s3-server.js';
 
 // ---------------------------------------------------------------------------
 // parseBackupDays
@@ -119,4 +121,66 @@ describe('cleanOldBackups', () => {
     assert.ok(existsSync(odd), 'Non-date directory should be left untouched');
     await rm(odd, { recursive: true, force: true });
   });
+});
+
+// ---------------------------------------------------------------------------
+// Object-store targets (local store and S3)
+// ---------------------------------------------------------------------------
+
+function defineStoreBackupSuite(label, setup) {
+  describe(`backup to an object store (${label})`, () => {
+    let store;
+    let cleanup;
+    let db;
+
+    before(async () => {
+      ({ store, cleanup } = await setup());
+      db = initDb(':memory:');
+    });
+
+    after(async () => {
+      db.close();
+      await cleanup();
+    });
+
+    it('uploads <date>/lcyt-backend.db', async () => {
+      const key = await runBackup(db, store);
+      const today = new Date().toISOString().slice(0, 10);
+      assert.strictEqual(key, `${today}/lcyt-backend.db`);
+      const meta = await store.stat(key);
+      assert.ok(meta.size > 0);
+    });
+
+    it('removes dated prefixes older than the retention window and keeps newer ones', async () => {
+      await store.put('2000-01-01/lcyt-backend.db', 'old');
+      await store.put('2000-01-02/lcyt-backend.db', 'old');
+      const removed = await cleanOldBackups(store, 7);
+      assert.strictEqual(removed, 2);
+      assert.strictEqual(await store.exists('2000-01-01/lcyt-backend.db'), false);
+      const today = new Date().toISOString().slice(0, 10);
+      assert.strictEqual(await store.exists(`${today}/lcyt-backend.db`), true);
+    });
+
+    it('returns 0 when retention is disabled', async () => {
+      assert.strictEqual(await cleanOldBackups(store, 0), 0);
+    });
+  });
+}
+
+defineStoreBackupSuite('local', async () => {
+  const dir = join(tmpdir(), `lcyt-backup-store-${Date.now()}`);
+  await mkdir(dir, { recursive: true });
+  return { store: createLocalObjectStore({ baseDir: dir }), cleanup: () => rm(dir, { recursive: true, force: true }) };
+});
+
+defineStoreBackupSuite('s3', async () => {
+  const mock = await startMockS3Server();
+  const store = await createS3ObjectStore({
+    bucket: 'backup-bucket',
+    prefix: 'backups',
+    region: 'auto',
+    endpoint: `http://127.0.0.1:${mock.port}`,
+    credentials: { accessKeyId: 'x', secretAccessKey: 'y' },
+  });
+  return { store, cleanup: () => mock.stop() };
 });

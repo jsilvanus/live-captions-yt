@@ -835,7 +835,7 @@ apiRouter.use(createSessionRouters(db, store, jwtSecret, auth, {
   recordingsStore: mediaStores.recordingsStore,
   settings,
 }));
-apiRouter.use(createAccountRouters(db, jwtSecret, { loginEnabled, settings }));
+apiRouter.use(createAccountRouters(db, jwtSecret, { loginEnabled, settings, mediaStores, resolveStorage }));
 apiRouter.use('/orgs', createOrganizationsRouter(db, userAuth, { loginEnabled }));
 apiRouter.use('/admin', createAdminRouter(db, jwtSecret));
 // Admin metrics: rollup time series + "right now" live panel
@@ -1103,4 +1103,4 @@ if (process.env.STATIC_DIR) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, settings, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics };
+export { app, db, store, settings, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };

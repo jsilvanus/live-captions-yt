@@ -147,7 +147,7 @@ describe('videos router', () => {
         credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
       });
 
-      await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore });
+      await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore, settleMs: 0 });
 
       const storageKey = getVideo(db, 'demo-key', videoId).storageKey;
       assert.ok(mockS3.objects.has(`demo-bucket/recordings/${storageKey}/playlist.m3u8`));
@@ -178,13 +178,31 @@ describe('videos router', () => {
         putFile: async () => { throw new Error('simulated upload failure'); },
       };
 
-      await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore: brokenStore });
+      await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore: brokenStore, settleMs: 0 });
 
       const updated = getVideo(db, 'demo-key', videoId);
       assert.equal(updated.storageType, 'local');
     } finally {
       // no-op
     }
+  });
+
+  it('syncVideoRecordingToStorage removes a half-uploaded copy when the upload fails', async () => {
+    const result = startVideoRecording(db, 'demo-key', { title: 'S3 partial', storageType: 's3' });
+    const videoId = result.video.id;
+    const removed = [];
+    let calls = 0;
+    const flakyStore = {
+      type: 's3',
+      putFile: async (key) => {
+        if (++calls > 1) throw new Error('second file fails');
+        return { size: 0 };
+      },
+      deletePrefix: async (prefix) => { removed.push(prefix); },
+    };
+    await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore: flakyStore, settleMs: 0, maxConcurrency: 1 });
+    assert.equal(getVideo(db, 'demo-key', videoId).storageType, 'local');
+    assert.deepEqual(removed, [getVideo(db, 'demo-key', videoId).storageKey]);
   });
 
   it('syncVideoRecordingToStorage is a no-op for local-storage recordings', async () => {
