@@ -1,6 +1,8 @@
 ﻿# Database Layer
 
-LCYT uses **SQLite** for both the Node.js and Python backends. SQLite is the right choice for the current single-server deployment: it requires no external service, the DB file is trivially backed up, and `better-sqlite3`'s synchronous model removes async complexity from the Express request path.
+> **Status (2026-10-11):** SQLite is still the default and the only database for the Python backend. The Node.js backend can run on PostgreSQL through Prisma when `DATABASE_URL` starts with `postgresql://` (`packages/lcyt-backend/src/db-compat.js`; otherwise `DB_PATH` selects the SQLite file). Prisma phases 1 and 2 (abstraction layer, Postgres compose stack, SQLite/Postgres test matrix) are merged; phase 3 (pooling, replicas, multi-instance) is open. Not every code path has been verified on PostgreSQL. Plan and phase detail: [plans/plan_postgres_migration.md](plans/plan_postgres_migration.md); Prisma schema and workflow: `packages/lcyt-backend/prisma/README.md`.
+
+LCYT uses **SQLite** for the Python backend and, by default, for the Node.js backend. SQLite is the right choice for the current single-server deployment: it requires no external service, the DB file is trivially backed up, and `better-sqlite3`'s synchronous model removes async complexity from the Express request path.
 
 ---
 

@@ -41,3 +41,9 @@ tmp/
 *.bak2
 # Agent worktree isolation dirs (transient runtime artifacts)
 .claude/worktrees/
+
+# Local test/log artefacts
+/logs/
+/test-logs/
+/test-output.txt
+/test-results.txt

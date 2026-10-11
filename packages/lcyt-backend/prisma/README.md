@@ -6,13 +6,11 @@ This directory contains the Prisma ORM schema and migrations for LCYT Backend.
 
 LCYT Backend is transitioning from raw `better-sqlite3` SQL queries to **Prisma ORM**, allowing seamless support for both SQLite and PostgreSQL without code changes.
 
-### Current Status (Phase 1)
+### Current Status (2026-10-11)
 
-- ✅ Prisma schema created (`schema.prisma`)
-- ✅ Database abstraction layer (`src/db-factory.js`)
-- 🟡 Gradual migration of route handlers (in progress)
-- ⏳ Phase 2: PostgreSQL compose stack (future)
-- ⏳ Phase 3: Production deployment (future)
+- Phase 1 (Prisma schema, `src/db-factory.js` / `src/db-compat.js` abstraction): merged.
+- Phase 2 (PostgreSQL compose stack, SQLite/Postgres test matrix): merged (#337).
+- Phase 3 (connection pooling, replicas, multi-instance): open, see `docs/plans/plan_postgres_migration.md`.
 
 ## Setup
 
@@ -248,5 +246,5 @@ npx prisma db pull
 - [Prisma Documentation](https://www.prisma.io/docs/)
 - [Prisma SQLite Guide](https://www.prisma.io/docs/reference/database-reference/connection-urls#sqlite)
 - [Prisma PostgreSQL Guide](https://www.prisma.io/docs/reference/database-reference/connection-urls#postgresql)
-- [LCYT DATABASE_ARCHITECTURE.md](../../../../DATABASE_ARCHITECTURE.md)
+- [LCYT docs/DB.md](../../../../docs/DB.md)
 - [LCYT plan_postgres_migration.md](../../../../docs/plans/plan_postgres_migration.md)

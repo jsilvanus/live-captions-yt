@@ -349,5 +349,5 @@ CREATE INDEX idx_event_log_timestamp_range ON event_log
 
 ---
 
-See also: [DATABASE_ARCHITECTURE.md](DATABASE_ARCHITECTURE.md), [docs/plans/plan_postgres_migration.md](docs/plans/plan_postgres_migration.md)
+See also: [DB.md](DB.md), [docs/plans/plan_postgres_migration.md](plans/plan_postgres_migration.md)
 
