@@ -23,13 +23,13 @@ const ADMIN_KEY   = process.env.LCYT_ADMIN_KEY ?? "";
 
 async function backendGet(path, headers) {
   if (!BACKEND_URL) return JSON.stringify({ error: "LCYT_BACKEND_URL is not configured" });
-  const res = await fetch(`${BACKEND_URL}${path}`, { headers });
+  const res = await fetch(`${BACKEND_URL}/api/v1${path}`, { headers });
   return res.text();
 }
 
 async function backendPost(path, headers, body) {
   if (!BACKEND_URL) return JSON.stringify({ error: "LCYT_BACKEND_URL is not configured" });
-  const res = await fetch(`${BACKEND_URL}${path}`, {
+  const res = await fetch(`${BACKEND_URL}/api/v1${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
     body: body != null ? JSON.stringify(body) : undefined,

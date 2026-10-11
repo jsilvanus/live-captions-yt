@@ -83,7 +83,7 @@ def session_token(client, mock_sender, monkeypatch):
     monkeypatch.setattr(
         "lcyt_backend.routes.live.import_sender", lambda: mock_sender
     )
-    resp = client.post("/live/", json={
+    resp = client.post("/api/v1/live/", json={
         "apiKey": "test-key",
         "streamKey": "test-stream-key",
         "domain": "localhost",
