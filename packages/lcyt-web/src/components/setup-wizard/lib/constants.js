@@ -1,5 +1,11 @@
 export const DRAFT_KEY = 'lcyt.wizard.draft';
 
+/**
+ * Draft format version. Drafts without a version (written before intents and
+ * answers existed) are still valid: they simply have no intents/answers.
+ */
+export const DRAFT_VERSION = 2;
+
 export const MAX_RELAY_SLOTS = 8;
 
 export const ALL_FEATURE_CODES = [

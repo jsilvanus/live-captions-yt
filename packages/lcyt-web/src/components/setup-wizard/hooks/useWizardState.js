@@ -4,7 +4,8 @@ import { computeSteps } from '../lib/computeSteps.js';
 import { applyDeps } from '../lib/applyDeps.js';
 import { readLocalSettings } from '../lib/readLocalSettings.js';
 import { saveWizard } from '../lib/saveWizard.js';
-import { DRAFT_KEY } from '../lib/constants.js';
+import { DRAFT_KEY, DRAFT_VERSION } from '../lib/constants.js';
+import { resolveIntent } from '../lib/capabilities.js';
 import { markOnboarded } from '../../../lib/onboarding.js';
 
 /**
@@ -16,6 +17,10 @@ export function useWizardState(backendUrl, token, apiKey) {
 
   const [selectedFeatures, setSelectedFeaturesRaw] = useState(() => new Set(['captions']));
   const [configs, setConfigs] = useState({});
+  // Production-level answers (phase 1 of the wizard refactor); features derive from these
+  // via resolveIntent() when setIntentAnswers() is used. The classic feature step still works.
+  const [intents, setIntentsRaw] = useState(() => new Set());
+  const [answers, setAnswersRaw] = useState({});
   const [localSettings, setLocalSettings] = useState(() => readLocalSettings());
   const [stepIndex, setStepIndex] = useState(0);
   const [depNotices, setDepNotices] = useState([]);
@@ -47,6 +52,8 @@ export function useWizardState(backendUrl, token, apiKey) {
       setConfigs(draft.configs || {});
       setLocalSettings(draft.localSettings || readLocalSettings());
       setStepIndex(draft.stepIndex || 0);
+      setIntentsRaw(new Set(Array.isArray(draft.intents) ? draft.intents : []));
+      setAnswersRaw(draft.answers && typeof draft.answers === 'object' ? draft.answers : {});
     } else {
       // Seed from backend features
       const backendSet = new Set(features.filter(f => f.enabled).map(f => f.code));
@@ -76,13 +83,16 @@ export function useWizardState(backendUrl, token, apiKey) {
     if (!initialized) return;
     try {
       localStorage.setItem(DRAFT_KEY, JSON.stringify({
+        version: DRAFT_VERSION,
+        intents: [...intents],
+        answers,
         selectedFeatures: [...selectedFeatures],
         configs,
         localSettings,
         stepIndex,
       }));
     } catch {}
-  }, [selectedFeatures, configs, localSettings, stepIndex, initialized]);
+  }, [selectedFeatures, configs, localSettings, stepIndex, intents, answers, initialized]);
 
   // ── Actions ──────────────────────────────────────────────────
 
@@ -96,6 +106,21 @@ export function useWizardState(backendUrl, token, apiKey) {
     setSelectedFeaturesRaw(set);
     if (auto.length > 0) setDepNotices(auto);
     else setDepNotices([]);
+  }, []);
+
+  /**
+   * Set the production intents/answers and derive the feature selection from them.
+   * Replaces the current feature selection (the intent flow owns it); returns the
+   * resolved capabilities so the UI can show steps, Hub cards and prerequisites.
+   */
+  const setIntentAnswers = useCallback((nextIntents, nextAnswers) => {
+    const intentSet = nextIntents instanceof Set ? new Set(nextIntents) : new Set(nextIntents);
+    const resolved = resolveIntent(intentSet, nextAnswers);
+    setIntentsRaw(intentSet);
+    setAnswersRaw(nextAnswers);
+    setSelectedFeaturesRaw(new Set(resolved.features));
+    setDepNotices(resolved.autoEnabled);
+    return resolved;
   }, []);
 
   const handleNext = useCallback(() => {
@@ -156,6 +181,9 @@ export function useWizardState(backendUrl, token, apiKey) {
   })();
 
   return {
+    intents,
+    answers,
+    setIntentAnswers,
     selectedFeatures,
     configs,
     localSettings,
