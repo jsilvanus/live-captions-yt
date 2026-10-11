@@ -14,7 +14,8 @@
 export const FEATURE_TO_CARD_IDS = {
   captions:         ['caption-targets'],
   'viewer-target':  ['caption-targets'],
-  'restream': ['caption-targets'],
+  'restream':       ['egress'],
+  'cea-captions':   ['caption-targets'],
   translations:     ['languages'],
   'file-saving':          ['storage'],
   'files-local':          ['storage'],
@@ -24,7 +25,7 @@ export const FEATURE_TO_CARD_IDS = {
   'files-browser-local':  ['storage'],
   'graphics-server': ['viewports'],
   'graphics-client': ['viewports'],
-  ingest: ['egress'],
+  ingest: ['egress', 'ingestion'],
   radio:  ['radio'],
   'stt-server': ['stt'],
   'device-control': ['cameras', 'mixers', 'encoders', 'bridges'],
