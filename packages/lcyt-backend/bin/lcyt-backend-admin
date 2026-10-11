@@ -146,14 +146,14 @@ function printUser(u) {
 // User resolution helper
 // ---------------------------------------------------------------------------
 
-function resolveUser(db, ref) {
+async function resolveUser(db, ref) {
   if (!ref) {
     console.error('Error: user email or id required');
     process.exit(1);
   }
   const user = /^\d+$/.test(ref)
-    ? getUserById(db, Number(ref))
-    : getUserByEmail(db, ref);
+    ? await getUserById(db, Number(ref))
+    : await getUserByEmail(db, ref);
   if (!user) {
     console.error(`User not found: ${ref}`);
     process.exit(1);
@@ -165,8 +165,8 @@ function resolveUser(db, ref) {
 // User commands
 // ---------------------------------------------------------------------------
 
-function cmdUsersList(db) {
-  const users = getAllUsers(db);
+async function cmdUsersList(db) {
+  const users = await getAllUsers(db);
   if (users.length === 0) {
     console.log('No users found.');
     return;
@@ -174,10 +174,10 @@ function cmdUsersList(db) {
   printUserTable(users);
 }
 
-function cmdUsersInfo(db, positional) {
-  const user = resolveUser(db, positional[2]);
+async function cmdUsersInfo(db, positional) {
+  const user = await resolveUser(db, positional[2]);
   printUser(user);
-  const keys = getKeysByUserId(db, user.id);
+  const keys = await getKeysByUserId(db, user.id);
   if (keys.length === 0) {
     console.log('\n  (no projects)');
   } else {
@@ -197,30 +197,30 @@ async function cmdUsersAdd(db, flags) {
     console.error('Error: --password is required and must be at least 8 characters');
     process.exit(1);
   }
-  if (getUserByEmail(db, email)) {
+  if (await getUserByEmail(db, email)) {
     console.error(`Error: a user with email '${email}' already exists`);
     process.exit(1);
   }
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = createUser(db, { email, passwordHash, name: name || null });
+  const user = await createUser(db, { email, passwordHash, name: name || null });
   console.log('Created user:');
-  printUser(getUserById(db, user.id));
+  printUser(await getUserById(db, user.id));
 }
 
 async function cmdUsersSetPassword(db, positional, flags) {
-  const user = resolveUser(db, positional[2]);
+  const user = await resolveUser(db, positional[2]);
   const password = flags.password;
   if (!password || password.length < 8) {
     console.error('Error: --password is required and must be at least 8 characters');
     process.exit(1);
   }
   const hash = await bcrypt.hash(password, 10);
-  updateUserPassword(db, user.id, hash);
+  await updateUserPassword(db, user.id, hash);
   console.log(`Password updated for user ${user.id} (${user.email})`);
 }
 
-function cmdUsersUpdate(db, positional, flags) {
-  const user = resolveUser(db, positional[2]);
+async function cmdUsersUpdate(db, positional, flags) {
+  const user = await resolveUser(db, positional[2]);
   const updates = {};
   if ('name' in flags) updates.name = flags.name || null;
   if ('active' in flags) updates.active = flags.active === true || flags.active === 'true';
@@ -228,25 +228,25 @@ function cmdUsersUpdate(db, positional, flags) {
     console.error('Error: nothing to update. Use --name or --active');
     process.exit(1);
   }
-  updateUser(db, user.id, updates);
+  await updateUser(db, user.id, updates);
   console.log('Updated user:');
-  printUser(getUserById(db, user.id));
+  printUser(await getUserById(db, user.id));
 }
 
-function cmdUsersDeactivate(db, positional) {
-  const user = resolveUser(db, positional[2]);
+async function cmdUsersDeactivate(db, positional) {
+  const user = await resolveUser(db, positional[2]);
   db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(user.id);
   console.log(`Deactivated user ${user.id} (${user.email})`);
 }
 
-function cmdUsersActivate(db, positional) {
-  const user = resolveUser(db, positional[2]);
+async function cmdUsersActivate(db, positional) {
+  const user = await resolveUser(db, positional[2]);
   db.prepare('UPDATE users SET active = 1 WHERE id = ?').run(user.id);
   console.log(`Activated user ${user.id} (${user.email})`);
 }
 
-function cmdUsersDelete(db, positional, flags) {
-  const user = resolveUser(db, positional[2]);
+async function cmdUsersDelete(db, positional, flags) {
+  const user = await resolveUser(db, positional[2]);
   const keyCount = db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE user_id = ? AND active = 1').get(user.id)?.n ?? 0;
   if (keyCount > 0 && !flags.force) {
     console.error(`Error: user has ${keyCount} active project(s). Revoke them first, or use --force.`);
@@ -259,21 +259,21 @@ function cmdUsersDelete(db, positional, flags) {
   console.log(`Deleted user ${user.id} (${user.email}).${keyCount > 0 ? ' Their projects have been unlinked.' : ''}`);
 }
 
-function cmdUsersGrantAdmin(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  setUserAdmin(db, user.id, true);
+async function cmdUsersGrantAdmin(db, positional) {
+  const user = await resolveUser(db, positional[2]);
+  await setUserAdmin(db, user.id, true);
   console.log(`Granted admin rights to user ${user.id} (${user.email})`);
 }
 
-function cmdUsersRevokeAdmin(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  setUserAdmin(db, user.id, false);
+async function cmdUsersRevokeAdmin(db, positional) {
+  const user = await resolveUser(db, positional[2]);
+  await setUserAdmin(db, user.id, false);
   console.log(`Revoked admin rights from user ${user.id} (${user.email})`);
 }
 
-function cmdUsersFeaturesList(db, positional) {
-  const user = resolveUser(db, positional[2]);
-  const rows = getUserFeatures(db, user.id);
+async function cmdUsersFeaturesList(db, positional) {
+  const user = await resolveUser(db, positional[2]);
+  const rows = await getUserFeatures(db, user.id);
   if (rows.length === 0) {
     console.log('No features set for this user.');
     return;
@@ -286,27 +286,27 @@ function cmdUsersFeaturesList(db, positional) {
   }
 }
 
-function cmdUsersFeaturesGrant(db, positional) {
+async function cmdUsersFeaturesGrant(db, positional) {
   const ref = positional[2];
   const code = positional[3];
   if (!ref || !code) {
     console.error('Error: user email/id and feature-code arguments required');
     process.exit(1);
   }
-  const user = resolveUser(db, ref);
-  setUserFeature(db, user.id, code, true);
+  const user = await resolveUser(db, ref);
+  await setUserFeature(db, user.id, code, true);
   console.log(`Granted feature '${code}' to user ${user.id} (${user.email})`);
 }
 
-function cmdUsersFeaturesRevoke(db, positional) {
+async function cmdUsersFeaturesRevoke(db, positional) {
   const ref = positional[2];
   const code = positional[3];
   if (!ref || !code) {
     console.error('Error: user email/id and feature-code arguments required');
     process.exit(1);
   }
-  const user = resolveUser(db, ref);
-  setUserFeature(db, user.id, code, false);
+  const user = await resolveUser(db, ref);
+  await setUserFeature(db, user.id, code, false);
   console.log(`Revoked feature '${code}' from user ${user.id} (${user.email})`);
 }
 
@@ -314,8 +314,8 @@ function cmdUsersFeaturesRevoke(db, positional) {
 // Project commands
 // ---------------------------------------------------------------------------
 
-function cmdProjectsList(db) {
-  const keys = getAllKeys(db);
+async function cmdProjectsList(db) {
+  const keys = await getAllKeys(db);
   if (keys.length === 0) {
     console.log('No projects found.');
     return;
@@ -323,16 +323,16 @@ function cmdProjectsList(db) {
   printProjectTable(keys);
 }
 
-function cmdProjectsInfo(db, positional) {
+async function cmdProjectsInfo(db, positional) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  printProject(getKey(db, key));
+  printProject(await getKey(db, key));
 }
 
-function cmdProjectsAdd(db, flags) {
+async function cmdProjectsAdd(db, flags) {
   const { owner, key, expires, email } = flags;
   if (!owner) {
     console.error('Error: --owner is required');
@@ -342,7 +342,7 @@ function cmdProjectsAdd(db, flags) {
   // Resolve --user-email to a user_id if provided
   let userId = undefined;
   if (flags['user-email']) {
-    const user = getUserByEmail(db, flags['user-email']);
+    const user = await getUserByEmail(db, flags['user-email']);
     if (!user) {
       console.error(`Error: no user found with email '${flags['user-email']}'`);
       process.exit(1);
@@ -350,13 +350,13 @@ function cmdProjectsAdd(db, flags) {
     userId = user.id;
   } else if (flags['user-id']) {
     userId = Number(flags['user-id']);
-    if (!getUserById(db, userId)) {
+    if (!await getUserById(db, userId)) {
       console.error(`Error: no user found with id ${userId}`);
       process.exit(1);
     }
   }
 
-  const created = createKey(db, {
+  const created = await createKey(db, {
     key: key || undefined,
     owner,
     email: email || undefined,
@@ -376,13 +376,13 @@ function cmdProjectsAdd(db, flags) {
   printProject(created);
 }
 
-function cmdProjectsUpdate(db, positional, flags) {
+async function cmdProjectsUpdate(db, positional, flags) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  if (!getKey(db, key)) {
+  if (!await getKey(db, key)) {
     console.error('Project not found.');
     process.exit(1);
   }
@@ -405,18 +405,18 @@ function cmdProjectsUpdate(db, positional, flags) {
     process.exit(1);
   }
 
-  updateKey(db, key, updates);
+  await updateKey(db, key, updates);
   console.log('Updated:');
-  printProject(getKey(db, key));
+  printProject(await getKey(db, key));
 }
 
-function cmdProjectsRevoke(db, positional) {
+async function cmdProjectsRevoke(db, positional) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  const ok = revokeKey(db, key);
+  const ok = await revokeKey(db, key);
   if (!ok) {
     console.error('Project not found.');
     process.exit(1);
@@ -424,13 +424,13 @@ function cmdProjectsRevoke(db, positional) {
   console.log(`Revoked: ${key}`);
 }
 
-function cmdProjectsActivate(db, positional) {
+async function cmdProjectsActivate(db, positional) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  if (!getKey(db, key)) {
+  if (!await getKey(db, key)) {
     console.error('Project not found.');
     process.exit(1);
   }
@@ -438,13 +438,13 @@ function cmdProjectsActivate(db, positional) {
   console.log(`Activated: ${key}`);
 }
 
-function cmdProjectsDelete(db, positional) {
+async function cmdProjectsDelete(db, positional) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  const ok = deleteKey(db, key);
+  const ok = await deleteKey(db, key);
   if (!ok) {
     console.error('Project not found.');
     process.exit(1);
@@ -452,7 +452,7 @@ function cmdProjectsDelete(db, positional) {
   console.log(`Deleted: ${key}`);
 }
 
-function cmdProjectsRenew(db, positional, flags) {
+async function cmdProjectsRenew(db, positional, flags) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
@@ -463,23 +463,23 @@ function cmdProjectsRenew(db, positional, flags) {
     console.error('Error: --expires is required');
     process.exit(1);
   }
-  const ok = renewKey(db, key, expires);
+  const ok = await renewKey(db, key, expires);
   if (!ok) {
     console.error('Project not found.');
     process.exit(1);
   }
   console.log('Renewed:');
-  printProject(getKey(db, key));
+  printProject(await getKey(db, key));
 }
 
-function cmdProjectsClean(db, flags) {
+async function cmdProjectsClean(db, flags) {
   const days = flags.days !== undefined ? Number(flags.days) : 30;
   if (!Number.isFinite(days) || days < 0) {
     console.error('Error: --days must be a non-negative number');
     process.exit(1);
   }
   const dryRun = flags['dry-run'] === true;
-  const { count } = cleanRevokedKeys(db, days, dryRun);
+  const { count } = await cleanRevokedKeys(db, days, dryRun);
   if (count === 0) {
     console.log(`No revoked projects older than ${days} day(s) found.`);
   } else if (dryRun) {
@@ -493,17 +493,17 @@ function cmdProjectsClean(db, flags) {
 // Project feature commands
 // ---------------------------------------------------------------------------
 
-function cmdProjectsFeaturesList(db, positional) {
+async function cmdProjectsFeaturesList(db, positional) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  if (!getKey(db, key)) {
+  if (!await getKey(db, key)) {
     console.error('Project not found.');
     process.exit(1);
   }
-  const rows = getProjectFeatures(db, key);
+  const rows = await getProjectFeatures(db, key);
   if (rows.length === 0) {
     console.log('No features set for this project.');
     return;
@@ -516,7 +516,7 @@ function cmdProjectsFeaturesList(db, positional) {
   }
 }
 
-function cmdProjectsFeaturesSet(db, positional) {
+async function cmdProjectsFeaturesSet(db, positional) {
   const key = positional[2];
   const code = positional[3];
   const val = positional[4];
@@ -524,22 +524,22 @@ function cmdProjectsFeaturesSet(db, positional) {
     console.error('Error: key and feature-code arguments required');
     process.exit(1);
   }
-  if (!getKey(db, key)) {
+  if (!await getKey(db, key)) {
     console.error('Project not found.');
     process.exit(1);
   }
   const enabled = val === undefined || val === 'true' || val === '1';
-  setProjectFeature(db, key, code, enabled);
+  await setProjectFeature(db, key, code, enabled);
   console.log(`Feature '${code}' ${enabled ? 'enabled' : 'disabled'} for project ${key}`);
 }
 
-function cmdProjectsFeaturesBatch(db, positional, flags) {
+async function cmdProjectsFeaturesBatch(db, positional, flags) {
   const key = positional[2];
   if (!key) {
     console.error('Error: key argument required');
     process.exit(1);
   }
-  if (!getKey(db, key)) {
+  if (!await getKey(db, key)) {
     console.error('Project not found.');
     process.exit(1);
   }
@@ -556,9 +556,9 @@ function cmdProjectsFeaturesBatch(db, positional, flags) {
     process.exit(1);
   }
   const resolved = applyFeatureDeps(features);
-  setProjectFeatures(db, key, resolved, 'admin');
+  await setProjectFeatures(db, key, resolved, 'admin');
   console.log(`Features updated for project ${key}`);
-  cmdProjectsFeaturesList(db, positional);
+  await cmdProjectsFeaturesList(db, positional);
 }
 
 // ---------------------------------------------------------------------------
@@ -638,7 +638,7 @@ if (flags.help || positional.length === 0) {
 }
 
 const dbPath = flags.db || undefined;
-const db = initDb(dbPath);
+const db = await initDb(dbPath);
 
 const command = positional[0];
 
@@ -648,13 +648,13 @@ if (command === 'users') {
     const featureSub = positional[2];
     switch (featureSub) {
       case 'list':
-        cmdUsersFeaturesList(db, positional.slice(1));
+        await cmdUsersFeaturesList(db, positional.slice(1));
         break;
       case 'grant':
-        cmdUsersFeaturesGrant(db, positional.slice(1));
+        await cmdUsersFeaturesGrant(db, positional.slice(1));
         break;
       case 'revoke':
-        cmdUsersFeaturesRevoke(db, positional.slice(1));
+        await cmdUsersFeaturesRevoke(db, positional.slice(1));
         break;
       default:
         console.error(`Unknown users features subcommand: ${featureSub || '(none)'}`);
@@ -664,10 +664,10 @@ if (command === 'users') {
   } else {
     switch (sub) {
       case 'list':
-        cmdUsersList(db);
+        await cmdUsersList(db);
         break;
       case 'info':
-        cmdUsersInfo(db, positional);
+        await cmdUsersInfo(db, positional);
         break;
       case 'add':
         await cmdUsersAdd(db, flags);
@@ -676,22 +676,22 @@ if (command === 'users') {
         await cmdUsersSetPassword(db, positional, flags);
         break;
       case 'update':
-        cmdUsersUpdate(db, positional, flags);
+        await cmdUsersUpdate(db, positional, flags);
         break;
       case 'deactivate':
-        cmdUsersDeactivate(db, positional);
+        await cmdUsersDeactivate(db, positional);
         break;
       case 'activate':
-        cmdUsersActivate(db, positional);
+        await cmdUsersActivate(db, positional);
         break;
       case 'delete':
-        cmdUsersDelete(db, positional, flags);
+        await cmdUsersDelete(db, positional, flags);
         break;
       case 'grant-admin':
-        cmdUsersGrantAdmin(db, positional);
+        await cmdUsersGrantAdmin(db, positional);
         break;
       case 'revoke-admin':
-        cmdUsersRevokeAdmin(db, positional);
+        await cmdUsersRevokeAdmin(db, positional);
         break;
       default:
         console.error(`Unknown users subcommand: ${sub || '(none)'}`);
@@ -705,13 +705,13 @@ if (command === 'users') {
     const featureSub = positional[2];
     switch (featureSub) {
       case 'list':
-        cmdProjectsFeaturesList(db, positional.slice(1));
+        await cmdProjectsFeaturesList(db, positional.slice(1));
         break;
       case 'set':
-        cmdProjectsFeaturesSet(db, positional.slice(1));
+        await cmdProjectsFeaturesSet(db, positional.slice(1));
         break;
       case 'batch':
-        cmdProjectsFeaturesBatch(db, positional.slice(1), flags);
+        await cmdProjectsFeaturesBatch(db, positional.slice(1), flags);
         break;
       default:
         console.error(`Unknown projects features subcommand: ${featureSub || '(none)'}`);
@@ -721,31 +721,31 @@ if (command === 'users') {
   } else {
     switch (sub) {
       case 'list':
-        cmdProjectsList(db);
+        await cmdProjectsList(db);
         break;
       case 'info':
-        cmdProjectsInfo(db, positional);
+        await cmdProjectsInfo(db, positional);
         break;
       case 'add':
-        cmdProjectsAdd(db, flags);
+        await cmdProjectsAdd(db, flags);
         break;
       case 'update':
-        cmdProjectsUpdate(db, positional, flags);
+        await cmdProjectsUpdate(db, positional, flags);
         break;
       case 'revoke':
-        cmdProjectsRevoke(db, positional);
+        await cmdProjectsRevoke(db, positional);
         break;
       case 'activate':
-        cmdProjectsActivate(db, positional);
+        await cmdProjectsActivate(db, positional);
         break;
       case 'delete':
-        cmdProjectsDelete(db, positional);
+        await cmdProjectsDelete(db, positional);
         break;
       case 'renew':
-        cmdProjectsRenew(db, positional, flags);
+        await cmdProjectsRenew(db, positional, flags);
         break;
       case 'clean':
-        cmdProjectsClean(db, flags);
+        await cmdProjectsClean(db, flags);
         break;
       default:
         console.error(`Unknown projects subcommand: ${sub || '(none)'}`);

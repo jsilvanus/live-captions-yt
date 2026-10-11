@@ -40,7 +40,7 @@ import {
 const DB_PATH = process.env.DB_PATH || null;
 const REQUIRE_API_KEY = process.env.MCP_REQUIRE_API_KEY === "1";
 
-const db = DB_PATH ? initDb(DB_PATH) : null;
+const db = DB_PATH ? await initDb(DB_PATH) : null;
 
 // ── Backend helpers ───────────────────────────────────────────────────────────
 
@@ -348,7 +348,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
     try {
       const SESSION_TTL_MS = Number(process.env.MCP_SESSION_TTL_MS) || 2 * 60 * 60 * 1000; // 2h
       const cutoff = Date.now() - SESSION_TTL_MS;
-      const rows = listSessions(dbInstance);
+      const rows = await listSessions(dbInstance);
       let rehydrated = 0;
       let pruned = 0;
       for (const r of rows) {
@@ -359,7 +359,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
         // Prune stale sessions from DB
         const lastActivity = r.lastActivity ? Date.parse(r.lastActivity) : 0;
         if (!lastActivity || lastActivity < cutoff) {
-          try { deleteSession(dbInstance, r.sessionId); } catch {}
+          try { await deleteSession(dbInstance, r.sessionId); } catch {}
           pruned++;
           continue;
         }
@@ -449,7 +449,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
         // Persist session metadata when DB is available so it can be rehydrated
         if (dbInstance) {
           try {
-            saveSession(dbInstance, {
+            await saveSession(dbInstance, {
               sessionId: sid,
               streamKey: args.stream_key,
               sequence: sender.sequence || 0,
@@ -469,7 +469,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
         const result = await sender.send(args.text, timestamp);
         // Persist updated sequence/lastActivity
         if (dbInstance) {
-          try { saveSession(dbInstance, { sessionId: args.session_id, sequence: result.sequence, lastActivity: new Date().toISOString() }); } catch {}
+          try { await saveSession(dbInstance, { sessionId: args.session_id, sequence: result.sequence, lastActivity: new Date().toISOString() }); } catch {}
         }
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: true, sequence: result.sequence }) }],
@@ -484,7 +484,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
         }));
         const result = await sender.sendBatch(captions);
         if (dbInstance) {
-          try { saveSession(dbInstance, { sessionId: args.session_id, sequence: result.sequence, lastActivity: new Date().toISOString() }); } catch {}
+          try { await saveSession(dbInstance, { sessionId: args.session_id, sequence: result.sequence, lastActivity: new Date().toISOString() }); } catch {}
         }
         return {
           content: [
@@ -528,7 +528,7 @@ async function createHandlers(SenderClass = YoutubeLiveCaptionSender, dbInstance
         sessionMeta.delete(args.session_id);
         await sender.end();
         if (dbInstance) {
-          try { deleteSession(dbInstance, args.session_id); } catch (err) { console.error(`[lcyt-mcp-http] Failed to delete persisted session ${args.session_id}: ${err.message}`); }
+          try { await deleteSession(dbInstance, args.session_id); } catch (err) { console.error(`[lcyt-mcp-http] Failed to delete persisted session ${args.session_id}: ${err.message}`); }
         }
         return { content: [{ type: "text", text: JSON.stringify({ ok: true }) }] };
       }
@@ -623,7 +623,7 @@ function createMcpServer(apiKey = null) {
           isError: true,
         };
       }
-      anonymizeKey(db, apiKey);
+      await anonymizeKey(db, apiKey);
       return {
         content: [{ type: "text", text: JSON.stringify({ ok: true, message: "Your data has been erased. The API key is now revoked." }) }],
       };
@@ -631,10 +631,10 @@ function createMcpServer(apiKey = null) {
 
     // Pre-call: usage limit check for send operations
     if (db && apiKey && (name === "send_caption" || name === "send_batch")) {
-      const usage = checkAndIncrementUsage(db, apiKey);
+      const usage = await checkAndIncrementUsage(db, apiKey);
       if (!usage.allowed) {
         console.error(`[lcyt-mcp-http] Usage limit hit for key ${apiKey.slice(0, 8)}...: ${usage.reason}`);
-        writeAuthEvent(db, { apiKey, eventType: usage.reason, domain: "mcp" });
+        await writeAuthEvent(db, { apiKey, eventType: usage.reason, domain: "mcp" });
         return {
           content: [{ type: "text", text: JSON.stringify({ ok: false, error: usage.reason }) }],
           isError: true,
@@ -651,14 +651,14 @@ function createMcpServer(apiKey = null) {
         const stat = mcpStats.get(args.session_id);
         if (stat) {
           stat.captionsFailed++;
-          writeCaptionError(db, {
+          await writeCaptionError(db, {
             apiKey: stat.apiKey,
             sessionId: args.session_id,
             errorCode: err.statusCode ?? 502,
             errorMsg: err.message ?? "Failed to send captions",
             batchSize: name === "send_batch" ? (args.captions?.length ?? 1) : 1,
           });
-          incrementDomainHourlyCaptions(db, "mcp", { failed: 1 });
+          await incrementDomainHourlyCaptions(db, "mcp", { failed: 1 });
         }
       }
       throw err;
@@ -669,15 +669,15 @@ function createMcpServer(apiKey = null) {
       if (name === "start") {
         const sid = JSON.parse(result.content[0].text).session_id;
         mcpStats.set(sid, { apiKey, startedAt: Date.now(), captionsSent: 0, captionsFailed: 0, lastSequence: 0 });
-        writeAuthEvent(db, { apiKey, eventType: "login", domain: "mcp" });
-        incrementDomainHourlySessionStart(db, "mcp", mcpStats.size);
+        await writeAuthEvent(db, { apiKey, eventType: "login", domain: "mcp" });
+        await incrementDomainHourlySessionStart(db, "mcp", mcpStats.size);
 
       } else if (name === "send_caption") {
         const stat = mcpStats.get(args.session_id);
         if (stat) {
           stat.captionsSent++;
           stat.lastSequence = JSON.parse(result.content[0].text).sequence ?? stat.lastSequence;
-          incrementDomainHourlyCaptions(db, "mcp", { sent: 1 });
+          await incrementDomainHourlyCaptions(db, "mcp", { sent: 1 });
         }
 
       } else if (name === "send_batch") {
@@ -685,14 +685,14 @@ function createMcpServer(apiKey = null) {
         if (stat) {
           stat.captionsSent++;
           stat.lastSequence = JSON.parse(result.content[0].text).sequence ?? stat.lastSequence;
-          incrementDomainHourlyCaptions(db, "mcp", { sent: 1, batches: 1 });
+          await incrementDomainHourlyCaptions(db, "mcp", { sent: 1, batches: 1 });
         }
 
       } else if (name === "stop") {
         const stat = mcpStats.get(args.session_id);
         if (stat) {
           const durationMs = Date.now() - stat.startedAt;
-          writeSessionStat(db, {
+          await writeSessionStat(db, {
             sessionId: args.session_id,
             apiKey: stat.apiKey,
             domain: "mcp",
@@ -704,7 +704,7 @@ function createMcpServer(apiKey = null) {
             finalSequence: stat.lastSequence,
             endedBy: "client",
           });
-          incrementDomainHourlySessionEnd(db, "mcp", durationMs);
+          await incrementDomainHourlySessionEnd(db, "mcp", durationMs);
           mcpStats.delete(args.session_id);
         }
       }
@@ -728,7 +728,7 @@ const transports = new Map();
  * Validates the optional X-Api-Key header for a new session.
  * @returns {{ ok: true, apiKey: string | null } | { ok: false }}
  */
-function authenticate(req, res) {
+async function authenticate(req, res) {
   let apiKey = null;
 
   const provided = db ? req.headers["x-api-key"] : null;
@@ -737,12 +737,12 @@ function authenticate(req, res) {
     // Credential voluntarily provided — validate regardless of REQUIRE_API_KEY.
     // A personal MCP token (mcp_tokens, plan/mcp) resolves to its owning
     // api_key by hash; anything else is checked as a raw api_keys.key.
-    const mcpToken = verifyMcpToken(db, provided);
+    const mcpToken = await verifyMcpToken(db, provided);
     const candidateKey = mcpToken ? mcpToken.apiKey : provided;
-    const result = validateApiKey(db, candidateKey);
+    const result = await validateApiKey(db, candidateKey);
     if (!result.valid) {
       console.error(`[lcyt-mcp-http] 403 — credential ${provided.slice(0, 8)}... rejected: ${result.reason}`);
-      writeAuthEvent(db, { apiKey: candidateKey, eventType: result.reason, domain: "mcp" });
+      await writeAuthEvent(db, { apiKey: candidateKey, eventType: result.reason, domain: "mcp" });
       res.status(403).json({ error: result.reason });
       return { ok: false };
     }
@@ -768,7 +768,7 @@ app.post("/mcp", async (req, res) => {
   if (sessionId && transports.has(sessionId)) {
     transport = transports.get(sessionId);
   } else if (!sessionId && isInitializeRequest(req.body)) {
-    const auth = authenticate(req, res);
+    const auth = await authenticate(req, res);
     if (!auth.ok) return;
 
     transport = new StreamableHTTPServerTransport({

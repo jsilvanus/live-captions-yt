@@ -48,15 +48,15 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
     }
 
     // Enforce per-key usage limits (no-op for keys with null limits)
-    const usage = checkAndIncrementUsage(db, session.apiKey);
+    const usage = await checkAndIncrementUsage(db, session.apiKey);
     if (!usage.allowed) {
-      writeAuthEvent(db, { apiKey: session.apiKey, eventType: usage.reason, domain: session.domain });
+      await writeAuthEvent(db, { apiKey: session.apiKey, eventType: usage.reason, domain: session.domain });
       return res.status(429).json({ error: usage.reason });
     }
 
     // Check if backend file saving is enabled for this key
     let backendFileEnabled = false;
-    try { backendFileEnabled = isBackendFileEnabled(db, session.apiKey); } catch {}
+    try { backendFileEnabled = await isBackendFileEnabled(db, session.apiKey); } catch {}
 
     // Ensure session has a file handle map
     if (!session._fileHandles) session._fileHandles = new Map();
@@ -153,7 +153,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
 
         // Persist per-API-key sequence so it survives session expiry
         if (db) {
-          try { updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
+          try { await updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
         }
         store.touch(sessionId);
 
@@ -172,7 +172,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
 
         if (result.statusCode >= 200 && result.statusCode < 300) {
           session.captionsSent++;
-          incrementDomainHourlyCaptions(db, session.domain, { sent: 1, batches: isBatch ? 1 : 0 });
+          await incrementDomainHourlyCaptions(db, session.domain, { sent: 1, batches: isBatch ? 1 : 0 });
           session.emitter.emit('caption_result', {
             requestId,
             sequence: result.sequence,
@@ -182,8 +182,8 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           });
         } else {
           session.captionsFailed++;
-          incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
-          writeCaptionError(db, {
+          await incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
+          await writeCaptionError(db, {
             apiKey: session.apiKey,
             sessionId,
             errorCode: result.statusCode,
@@ -199,8 +199,8 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         }
       } catch (err) {
         session.captionsFailed++;
-        incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
-        writeCaptionError(db, {
+        await incrementDomainHourlyCaptions(db, session.domain, { failed: 1 });
+        await writeCaptionError(db, {
           apiKey: session.apiKey,
           sessionId,
           errorCode: err.statusCode || 502,

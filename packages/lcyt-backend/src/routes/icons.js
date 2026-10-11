@@ -152,7 +152,7 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
         return res.status(500).json({ error: 'Failed to save icon' });
       }
 
-      const id = registerIcon(db, {
+      const id = await registerIcon(db, {
         apiKey,
         filename: basename(filename).slice(0, 255),
         diskFilename,
@@ -171,8 +171,8 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
   );
 
   // ── GET /icons — list icons for the authenticated key ──────────────────────
-  router.get('/', iconRateLimit, auth, (req, res) => {
-    const icons = listIcons(db, req.session.apiKey).map(row => ({
+  router.get('/', iconRateLimit, auth, async (req, res) => {
+    const icons = (await listIcons(db, req.session.apiKey)).map(row => ({
       id: row.id,
       filename: row.filename,
       mimeType: row.mime_type,
@@ -187,7 +187,7 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
     const id = parseInt(req.params.id, 10);
     if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
 
-    const row = getIcon(db, id);
+    const row = await getIcon(db, id);
     if (!row) return res.status(404).json({ error: 'Icon not found' });
 
     const safeKey = iconKeySegment(row.api_key);
@@ -214,17 +214,17 @@ export function createIconRouter(db, auth, baseDir, requireSetup = (req, res, ne
   });
 
   // ── DELETE /icons/:id — delete icon (auth required) ────────────────────────
-  router.delete('/:id', iconRateLimit, auth, requireSetup, (req, res) => {
+  router.delete('/:id', iconRateLimit, auth, requireSetup, async (req, res) => {
     const apiKey = req.session.apiKey;
     const id = parseInt(req.params.id, 10);
     if (isNaN(id) || id < 1) return res.status(400).json({ error: 'Invalid icon id' });
 
-    const row = getIcon(db, id);
+    const row = await getIcon(db, id);
     if (!row || row.api_key !== apiKey) {
       return res.status(404).json({ error: 'Icon not found' });
     }
 
-    const deleted = deleteIcon(db, id, apiKey);
+    const deleted = await deleteIcon(db, id, apiKey);
     if (!deleted) return res.status(404).json({ error: 'Icon not found' });
 
     // Best-effort disk cleanup

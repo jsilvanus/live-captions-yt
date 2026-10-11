@@ -94,11 +94,11 @@ export function createPerceptionRouter(aggregator, resolver, opts = {}) {
   });
 
   // GET /overview — cameras, shared-feed job and feed attribution in one read (camera status panel)
-  sharedRouter.get('/overview', (req, res) => {
+  sharedRouter.get('/overview', async (req, res) => {
     if (!overview) return res.status(503).json({ error: 'Perception overview not configured' });
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No apiKey in session' });
-    res.json({ ok: true, ...overview(apiKey) });
+    res.json({ ok: true, ...(await overview(apiKey)) });
   });
 
   // POST /shared/auto { enabled } — run the shared-feed job automatically while the program feed is live

@@ -41,7 +41,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
   const adminMiddleware = createAdminMiddleware(db, jwtSecret);
 
   // POST /keys — Create API key (admin) OR user project OR free-tier sign-up (?freetier)
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     // ── free-tier path ────────────────────────────────────────────────────────
     if ('freetier' in req.query) {
       const freeApikeyActive = settings ? settings.get('app.free_apikey_active') : process.env.FREE_APIKEY_ACTIVE === '1';
@@ -59,7 +59,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
       }
 
       const normalizedEmail = email.trim().toLowerCase();
-      if (getKeyByEmail(db, normalizedEmail)) {
+      if (await getKeyByEmail(db, normalizedEmail)) {
         return res.status(409).json({ error: 'A key already exists for this email' });
       }
 
@@ -69,7 +69,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
         return d.toISOString().replace('T', ' ').slice(0, 19);
       })();
 
-      const newKey = createKey(db, {
+      const newKey = await createKey(db, {
         owner: name.trim(),
         email: normalizedEmail,
         expiresAt,
@@ -83,11 +83,11 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
     // ── user path (loginEnabled + Bearer token, no X-Admin-Key) ──────────────
     const hasAdminKey = !!req.headers['x-admin-key'];
     if (loginEnabled && !hasAdminKey) {
-      return _userCreateKey(db, jwtSecret, req, res);
+      return await _userCreateKey(db, jwtSecret, req, res);
     }
 
     // ── admin path ────────────────────────────────────────────────────────────
-    return adminMiddleware(req, res, () => {
+    return adminMiddleware(req, res, async () => {
       const { owner, key, expires, daily_limit, lifetime_limit, orgId } = req.body || {};
 
       if (!owner) {
@@ -102,7 +102,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
         }
       }
 
-      const newKey = createKey(db, {
+      const newKey = await createKey(db, {
         key,
         owner,
         expiresAt: expires || null,
@@ -115,20 +115,20 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
   });
 
   // GET /keys — List API keys (admin or user-scoped)
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const hasAdminKey = !!req.headers['x-admin-key'];
     if (loginEnabled && !hasAdminKey) {
-      return _userListKeys(db, jwtSecret, req, res);
+      return await _userListKeys(db, jwtSecret, req, res);
     }
-    return adminMiddleware(req, res, () => {
-      const keys = getAllKeys(db);
+    return adminMiddleware(req, res, async () => {
+      const keys = await getAllKeys(db);
       return res.status(200).json({ keys: keys.map(formatKey) });
     });
   });
 
   // GET /keys/:key — Get details for a specific key (admin only)
-  router.get('/:key', adminMiddleware, (req, res) => {
-    const row = getKey(db, req.params.key);
+  router.get('/:key', adminMiddleware, async (req, res) => {
+    const row = await getKey(db, req.params.key);
     if (!row) {
       return res.status(404).json({ error: 'API key not found' });
     }
@@ -136,13 +136,13 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
   });
 
   // PATCH /keys/:key — Update key (admin or user for own keys)
-  router.patch('/:key', (req, res) => {
+  router.patch('/:key', async (req, res) => {
     const hasAdminKey = !!req.headers['x-admin-key'];
     if (loginEnabled && !hasAdminKey) {
-      return _userUpdateKey(db, jwtSecret, req, res);
+      return await _userUpdateKey(db, jwtSecret, req, res);
     }
-    return adminMiddleware(req, res, () => {
-      const existing = getKey(db, req.params.key);
+    return adminMiddleware(req, res, async () => {
+      const existing = await getKey(db, req.params.key);
       if (!existing) {
         return res.status(404).json({ error: 'API key not found' });
       }
@@ -170,9 +170,9 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
         }
       }
 
-      updateKey(db, req.params.key, updates);
+      await updateKey(db, req.params.key, updates);
 
-      const updated = getKey(db, req.params.key);
+      const updated = await getKey(db, req.params.key);
       return res.status(200).json(formatKey(updated));
     });
   });
@@ -182,13 +182,13 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
   // project owner/admin OR an org owner/admin's unconditional override on a
   // team-visible project — deliberately broader than PATCH /keys/:key's own
   // project-creator-only gate above (which governs rename/org-move, not this).
-  router.patch('/:key/visibility', (req, res) => {
+  router.patch('/:key/visibility', async (req, res) => {
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
-    const existing = getKey(db, req.params.key);
+    const existing = await getKey(db, req.params.key);
     if (!existing) return res.status(404).json({ error: 'API key not found' });
-    if (!hasProjectRole(db, 'setup', req.params.key, user.userId)) {
+    if (!await hasProjectRole(db, 'setup', req.params.key, user.userId)) {
       return res.status(403).json({ error: 'Explicit project admin/owner access required' });
     }
 
@@ -205,19 +205,19 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
       return res.status(400).json({ error: 'restricted and/or orgBaselineRole is required' });
     }
 
-    updateKey(db, req.params.key, updates);
-    const updated = getKey(db, req.params.key);
+    await updateKey(db, req.params.key, updates);
+    const updated = await getKey(db, req.params.key);
     return res.status(200).json(formatKey(updated));
   });
 
   // DELETE /keys/:key — Revoke or permanently delete (admin or user for own keys)
-  router.delete('/:key', (req, res) => {
+  router.delete('/:key', async (req, res) => {
     const hasAdminKey = !!req.headers['x-admin-key'];
     if (loginEnabled && !hasAdminKey) {
-      return _userDeleteKey(db, jwtSecret, req, res);
+      return await _userDeleteKey(db, jwtSecret, req, res);
     }
     return adminMiddleware(req, res, async () => {
-      const existing = getKey(db, req.params.key);
+      const existing = await getKey(db, req.params.key);
       if (!existing) {
         return res.status(404).json({ error: 'API key not found' });
       }
@@ -226,10 +226,10 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
         const imageRows = deleteAllImages(db, req.params.key);
         // Files live in the local or S3 object stores; remove them before the rows naming them go.
         await purgeKeyFiles(db, req.params.key, { mediaStores, resolveStorage, imageRows });
-        deleteKey(db, req.params.key);
+        await deleteKey(db, req.params.key);
         return res.status(200).json({ key: req.params.key, deleted: true });
       } else {
-        revokeKey(db, req.params.key);
+        await revokeKey(db, req.params.key);
         return res.status(200).json({ key: req.params.key, revoked: true });
       }
     });
@@ -240,25 +240,25 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
 
 // ── User-scoped handlers ──────────────────────────────────────────────────────
 
-function _userListKeys(db, jwtSecret, req, res) {
+async function _userListKeys(db, jwtSecret, req, res) {
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   // plan_project_roles.md / CONSIDER.md: not just directly-owned projects —
   // also anything reachable via an explicit project_members row or the
   // org-baseline/org-admin-override resolver, each with its real effective
   // access level (not a blanket 'owner').
-  const accessible = getAccessibleProjectsForUser(db, user.userId);
+  const accessible = await getAccessibleProjectsForUser(db, user.userId);
   return res.status(200).json({
-    keys: accessible.map(({ row, myAccessLevel }) => {
+    keys: await Promise.all(accessible.map(async ({ row, myAccessLevel }) => {
       const base = formatKey(row);
-      const features = [...getEnabledFeatureSet(db, row.key)].sort();
-      const memberCount = getMemberCount(db, row.key);
+      const features = [...await getEnabledFeatureSet(db, row.key)].sort();
+      const memberCount = await getMemberCount(db, row.key);
       return { ...base, features, memberCount, myAccessLevel };
-    }),
+    })),
   });
 }
 
-function _userCreateKey(db, jwtSecret, req, res) {
+async function _userCreateKey(db, jwtSecret, req, res) {
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
   const { name, features: requestedFeatures, orgId } = req.body || {};
@@ -272,30 +272,30 @@ function _userCreateKey(db, jwtSecret, req, res) {
     if (!Number.isFinite(resolvedOrgId)) {
       return res.status(400).json({ error: 'orgId must be a number' });
     }
-    const membership = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(resolvedOrgId, user.userId);
+    const membership = await db.org_members.findFirst({ where: { org_id: resolvedOrgId, user_id: user.userId }, select: { role: true } });
     if (!membership || !['owner', 'admin'].includes(membership.role)) {
       return res.status(403).json({ error: 'owner or admin role required for this team' });
     }
   }
 
-  const newKey = createKey(db, {
+  const newKey = await createKey(db, {
     owner: name.trim(),
     user_id: user.userId,
     org_id: resolvedOrgId,
   });
   // Provision default features + any requested extras (validated against user entitlements)
   const extra = Array.isArray(requestedFeatures) ? requestedFeatures.filter(f => typeof f === 'string') : [];
-  provisionDefaultProjectFeatures(db, newKey.key, extra, resolvedOrgId);
+  await provisionDefaultProjectFeatures(db, newKey.key, extra, resolvedOrgId);
   // Add creating user as owner
-  addMember(db, newKey.key, user.userId, 'owner');
-  const features = [...getEnabledFeatureSet(db, newKey.key)].sort();
+  await addMember(db, newKey.key, user.userId, 'owner');
+  const features = [...await getEnabledFeatureSet(db, newKey.key)].sort();
   return res.status(201).json({ ...formatKey(newKey), features, memberCount: 1, myAccessLevel: 'owner', orgId: resolvedOrgId });
 }
 
-function _userUpdateKey(db, jwtSecret, req, res) {
+async function _userUpdateKey(db, jwtSecret, req, res) {
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  const existing = getKey(db, req.params.key);
+  const existing = await getKey(db, req.params.key);
   if (!existing) return res.status(404).json({ error: 'API key not found' });
   if (existing.user_id !== user.userId) return res.status(403).json({ error: 'Forbidden' });
   const { name, orgId } = req.body || {};
@@ -310,24 +310,24 @@ function _userUpdateKey(db, jwtSecret, req, res) {
     } else {
       resolvedOrgId = Number(orgId);
       if (!Number.isFinite(resolvedOrgId)) return res.status(400).json({ error: 'orgId must be a number' });
-      const membership = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(resolvedOrgId, user.userId);
+      const membership = await db.org_members.findFirst({ where: { org_id: resolvedOrgId, user_id: user.userId }, select: { role: true } });
       if (!membership || !['owner', 'admin'].includes(membership.role)) {
         return res.status(403).json({ error: 'owner or admin role required for this team' });
       }
     }
   }
 
-  updateKey(db, req.params.key, { owner: name?.trim(), org_id: resolvedOrgId });
-  const updated = getKey(db, req.params.key);
+  await updateKey(db, req.params.key, { owner: name?.trim(), org_id: resolvedOrgId });
+  const updated = await getKey(db, req.params.key);
   return res.status(200).json({ ...formatKey(updated), orgId: updated.org_id ?? null });
 }
 
-function _userDeleteKey(db, jwtSecret, req, res) {
+async function _userDeleteKey(db, jwtSecret, req, res) {
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
-  const existing = getKey(db, req.params.key);
+  const existing = await getKey(db, req.params.key);
   if (!existing) return res.status(404).json({ error: 'API key not found' });
   if (existing.user_id !== user.userId) return res.status(403).json({ error: 'Forbidden' });
-  revokeKey(db, req.params.key);
+  await revokeKey(db, req.params.key);
   return res.status(200).json({ key: req.params.key, revoked: true });
 }

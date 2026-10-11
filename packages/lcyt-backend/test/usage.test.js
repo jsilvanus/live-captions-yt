@@ -13,9 +13,9 @@ let server, baseUrl, db;
 
 const ADMIN_KEY = 'test-usage-admin-key';
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  createKey(db, { key: 'usage-key', owner: 'Usage User' });
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
+  await createKey(db, { key: 'usage-key', owner: 'Usage User' });
 
   const app = express();
   app.use('/usage', createUsageRouter(db));
@@ -28,8 +28,7 @@ before(() => new Promise((resolve) => {
 }));
 
 after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
 beforeEach(() => {
@@ -180,7 +179,7 @@ describe('GET /usage — data and granularity', () => {
   it('returns day-granularity data by default', async () => {
     const today = new Date().toISOString().slice(0, 10);
     // Insert a caption count for a known domain
-    incrementDomainHourlyCaptions(db, 'https://usage-test.example.com', { sent: 5 });
+    await incrementDomainHourlyCaptions(db, 'https://usage-test.example.com', { sent: 5 });
 
     const res = await fetch(`${baseUrl}/usage?from=${today}&to=${today}&domain=https://usage-test.example.com`, {
       headers: { 'X-Admin-Key': ADMIN_KEY }

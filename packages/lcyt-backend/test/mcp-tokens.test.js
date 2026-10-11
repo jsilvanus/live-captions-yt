@@ -22,16 +22,16 @@ const JWT_SECRET = 'test-mcp-tokens-secret';
 
 let server, baseUrl, db, apiKey, otherKey, userToken;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   const userAuth = createUserAuthMiddleware(JWT_SECRET);
   const app = express();
   app.use(express.json());
   app.use('/external-tokens', createMcpTokensRouter(db, userAuth));
   app.use('/mcp-tokens', createMcpTokensRouter(db, userAuth));
 
-  apiKey = createKey(db, { owner: 'McpUser' }).key;
-  otherKey = createKey(db, { owner: 'OtherUser' }).key;
+  apiKey = (await createKey(db, { owner: 'McpUser' })).key;
+  otherKey = (await createKey(db, { owner: 'OtherUser' })).key;
   userToken = jwt.sign({ type: 'user', userId: 1, email: 'mcp@example.com' }, JWT_SECRET, { expiresIn: '1h' });
   // Minting/revoking a token is a Setup-tier action (see routes/mcp-tokens.js's
   // requireExplicitAdmin) — userId 1 needs an explicit owner/admin
@@ -40,9 +40,9 @@ before(() => new Promise((resolve) => {
   // addMember() FK-references users(id), so it needs a real row too (the
   // JWT alone was always enough for createUserAuthMiddleware, which never
   // checks the users table).
-  db.prepare("INSERT INTO users (id, email, password_hash) VALUES (1, 'mcp@example.com', 'x')").run();
-  addMember(db, apiKey, 1, 'owner');
-  addMember(db, otherKey, 1, 'owner');
+  await db.prepare("INSERT INTO users (id, email, password_hash) VALUES (1, 'mcp@example.com', 'x')").run();
+  await addMember(db, apiKey, 1, 'owner');
+  await addMember(db, otherKey, 1, 'owner');
 
   server = createServer(app);
   server.listen(0, () => {
@@ -61,69 +61,69 @@ function headers(key = apiKey) {
 }
 
 describe('mcp-tokens db helpers', () => {
-  it('createMcpToken returns a raw lcytmcp_ token and stores only a hash', () => {
-    const { id, token: raw } = createMcpToken(db, apiKey, { label: 'Helper test' });
+  it('createMcpToken returns a raw lcytmcp_ token and stores only a hash', async () => {
+    const { id, token: raw } = await createMcpToken(db, apiKey, { label: 'Helper test' });
     assert.ok(id > 0);
     assert.match(raw, /^lcytmcp_[0-9a-f]{64}$/);
-    const row = db.prepare('SELECT * FROM mcp_tokens WHERE id = ?').get(id);
+    const row = await db.prepare('SELECT * FROM mcp_tokens WHERE id = ?').get(id);
     assert.notEqual(row.token_hash, raw);
     assert.equal(row.token_hash.length, 64); // sha256 hex
     assert.equal(row.active, 1);
   });
 
-  it('verifyMcpToken resolves the raw token to its api_key and stamps last_used_at', () => {
-    const { token: raw } = createMcpToken(db, apiKey, { label: 'Verify test' });
-    const hit = verifyMcpToken(db, raw);
+  it('verifyMcpToken resolves the raw token to its api_key and stamps last_used_at', async () => {
+    const { token: raw } = await createMcpToken(db, apiKey, { label: 'Verify test' });
+    const hit = await verifyMcpToken(db, raw);
     assert.equal(hit.apiKey, apiKey);
     assert.equal(hit.label, 'Verify test');
-    const row = db.prepare('SELECT last_used_at FROM mcp_tokens WHERE id = ?').get(hit.id);
+    const row = await db.prepare('SELECT last_used_at FROM mcp_tokens WHERE id = ?').get(hit.id);
     assert.ok(row.last_used_at);
   });
 
-  it('verifyMcpToken returns null for unknown, deactivated, and revoked tokens', () => {
-    assert.equal(verifyMcpToken(db, 'lcytmcp_' + 'ab'.repeat(32)), null);
-    assert.equal(verifyMcpToken(db, null), null);
+  it('verifyMcpToken returns null for unknown, deactivated, and revoked tokens', async () => {
+    assert.equal(await verifyMcpToken(db, 'lcytmcp_' + 'ab'.repeat(32)), null);
+    assert.equal(await verifyMcpToken(db, null), null);
 
-    const { id: revokedId, token: revokedRaw } = createMcpToken(db, apiKey, { label: 'Revoke test' });
-    assert.equal(revokeMcpToken(db, apiKey, revokedId), true);
-    assert.equal(verifyMcpToken(db, revokedRaw), null);
+    const { id: revokedId, token: revokedRaw } = await createMcpToken(db, apiKey, { label: 'Revoke test' });
+    assert.equal(await revokeMcpToken(db, apiKey, revokedId), true);
+    assert.equal(await verifyMcpToken(db, revokedRaw), null);
 
-    const { id: deactivatedId, token: deactivatedRaw } = createMcpToken(db, apiKey, { label: 'Deactivate test' });
-    updateMcpToken(db, apiKey, deactivatedId, { active: false });
-    assert.equal(verifyMcpToken(db, deactivatedRaw), null);
+    const { id: deactivatedId, token: deactivatedRaw } = await createMcpToken(db, apiKey, { label: 'Deactivate test' });
+    await updateMcpToken(db, apiKey, deactivatedId, { active: false });
+    assert.equal(await verifyMcpToken(db, deactivatedRaw), null);
   });
 
-  it('revokeMcpToken refuses another project\'s token and double revocation', () => {
-    const { id } = createMcpToken(db, apiKey, { label: 'Ownership test' });
-    assert.equal(revokeMcpToken(db, otherKey, id), false);
-    assert.equal(revokeMcpToken(db, apiKey, id), true);
-    assert.equal(revokeMcpToken(db, apiKey, id), false);
+  it('revokeMcpToken refuses another project\'s token and double revocation', async () => {
+    const { id } = await createMcpToken(db, apiKey, { label: 'Ownership test' });
+    assert.equal(await revokeMcpToken(db, otherKey, id), false);
+    assert.equal(await revokeMcpToken(db, apiKey, id), true);
+    assert.equal(await revokeMcpToken(db, apiKey, id), false);
   });
 
-  it('updateMcpToken can relabel and toggle active without revoking', () => {
-    const { id } = createMcpToken(db, apiKey, { label: 'Toggle test' });
-    const deactivated = updateMcpToken(db, apiKey, id, { active: false });
+  it('updateMcpToken can relabel and toggle active without revoking', async () => {
+    const { id } = await createMcpToken(db, apiKey, { label: 'Toggle test' });
+    const deactivated = await updateMcpToken(db, apiKey, id, { active: false });
     assert.equal(deactivated.active, false);
     assert.equal(deactivated.revokedAt, null);
-    const relabeled = updateMcpToken(db, apiKey, id, { label: 'Renamed', active: true });
+    const relabeled = await updateMcpToken(db, apiKey, id, { label: 'Renamed', active: true });
     assert.equal(relabeled.label, 'Renamed');
     assert.equal(relabeled.active, true);
   });
 
-  it('createMcpToken normalizes a bare or comma-joined scopes string to a JSON array at write time', () => {
-    const { id: bareId } = createMcpToken(db, apiKey, { label: 'Bare scope', scopes: 'dsk:read' });
-    const bareRow = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(bareId);
+  it('createMcpToken normalizes a bare or comma-joined scopes string to a JSON array at write time', async () => {
+    const { id: bareId } = await createMcpToken(db, apiKey, { label: 'Bare scope', scopes: 'dsk:read' });
+    const bareRow = await db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(bareId);
     assert.deepEqual(JSON.parse(bareRow.scopes), ['dsk:read']);
 
-    const { id: csvId } = createMcpToken(db, apiKey, { label: 'CSV scopes', scopes: 'dsk:read, events:read' });
-    const csvRow = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(csvId);
+    const { id: csvId } = await createMcpToken(db, apiKey, { label: 'CSV scopes', scopes: 'dsk:read, events:read' });
+    const csvRow = await db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(csvId);
     assert.deepEqual(JSON.parse(csvRow.scopes), ['dsk:read', 'events:read']);
   });
 
-  it('listMcpTokens never includes hash or raw token, and excludes revoked rows', () => {
-    const { id: revokedId } = createMcpToken(db, apiKey, { label: 'To exclude' });
-    revokeMcpToken(db, apiKey, revokedId);
-    const list = listMcpTokens(db, apiKey);
+  it('listMcpTokens never includes hash or raw token, and excludes revoked rows', async () => {
+    const { id: revokedId } = await createMcpToken(db, apiKey, { label: 'To exclude' });
+    await revokeMcpToken(db, apiKey, revokedId);
+    const list = await listMcpTokens(db, apiKey);
     assert.ok(list.length > 0);
     assert.ok(!list.find((t) => t.id === revokedId));
     for (const t of list) {
@@ -181,7 +181,7 @@ describe('POST /mcp-tokens', () => {
     assert.equal(res.status, 201);
     const body = await res.json();
     // The token now gates /events/stream: events:read granted, only dsk.* topics.
-    const row = db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(body.id);
+    const row = await db.prepare('SELECT scopes FROM mcp_tokens WHERE id = ?').get(body.id);
     assert.deepEqual(JSON.parse(row.scopes), ['events:read', 'dsk.*']);
   });
 
@@ -211,11 +211,11 @@ describe('POST/PATCH/DELETE /mcp-tokens require explicit owner/admin access', ()
   // gate (getEffectiveProjectAccessLevel()) for read-shaped resources.
   let noAccessToken, explicitMemberToken;
 
-  before(() => {
+  before(async () => {
     noAccessToken = jwt.sign({ type: 'user', userId: 999, email: 'nobody@example.com' }, JWT_SECRET, { expiresIn: '1h' });
     explicitMemberToken = jwt.sign({ type: 'user', userId: 998, email: 'member@example.com' }, JWT_SECRET, { expiresIn: '1h' });
-    db.prepare("INSERT INTO users (id, email, password_hash) VALUES (998, 'member@example.com', 'x')").run();
-    addMember(db, apiKey, 998, 'editor');
+    await db.prepare("INSERT INTO users (id, email, password_hash) VALUES (998, 'member@example.com', 'x')").run();
+    await addMember(db, apiKey, 998, 'editor');
   });
 
   function headersFor(token) {
@@ -291,7 +291,7 @@ describe('PATCH /mcp-tokens/:id', () => {
     assert.equal(res.status, 200);
     const body = await res.json();
     assert.equal(body.active, false);
-    assert.equal(verifyMcpToken(db, raw), null);
+    assert.equal(await verifyMcpToken(db, raw), null);
     const list = await (await fetch(`${baseUrl}/mcp-tokens`, { headers: headers() })).json();
     assert.ok(list.tokens.find((t) => t.id === id));
   });
@@ -316,8 +316,8 @@ describe('DELETE /mcp-tokens/:id', () => {
     const { id, token: raw } = await createRes.json();
     const res = await fetch(`${baseUrl}/mcp-tokens/${id}`, { method: 'DELETE', headers: headers() });
     assert.equal(res.status, 200);
-    assert.equal(verifyMcpToken(db, raw), null);
-    const list = listMcpTokens(db, apiKey);
+    assert.equal(await verifyMcpToken(db, raw), null);
+    const list = await listMcpTokens(db, apiKey);
     assert.ok(!list.find((t) => t.id === id));
   });
 

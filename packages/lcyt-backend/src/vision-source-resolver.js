@@ -7,7 +7,7 @@
  */
 
 /**
- * @param {{ db: import('better-sqlite3').Database,
+ * @param {{ db: import('./db/connection.js').Db,
  *           attributor: { tagForCapture: Function, tagForCamera: Function },
  *           sceneState?: { getState: (apiKey: string) => object },
  *           aggregator?: { labelTrack: Function },
@@ -22,20 +22,23 @@ function place(bbox) {
 }
 
 export function createVisionSourceResolver({ db, attributor, sceneState = null, aggregator = null, now = () => Date.now() }) {
-  function row(cameraId) {
-    return db.prepare('SELECT id, name, label, zone, camera_key, owner_api_key, overlap_links FROM prod_cameras WHERE id = ?').get(cameraId) ?? null;
+  async function row(cameraId) {
+    return (await db.prod_cameras.findUnique({
+      where: { id: cameraId },
+      select: { id: true, name: true, label: true, zone: true, camera_key: true, owner_api_key: true, overlap_links: true },
+    })) ?? null;
   }
 
   return {
     tagForCapture: (apiKey, ts) => attributor.tagForCapture(apiKey, ts),
     tagForCamera: (cameraId) => attributor.tagForCamera(cameraId),
 
-    feedKeyFor(cameraId) {
-      return row(cameraId)?.camera_key || null;
+    async feedKeyFor(cameraId) {
+      return (await row(cameraId))?.camera_key || null;
     },
 
-    cameraAllowed(apiKey, cameraId) {
-      const r = row(cameraId);
+    async cameraAllowed(apiKey, cameraId) {
+      const r = await row(cameraId);
       return !!r && (!r.owner_api_key || r.owner_api_key === apiKey);
     },
 
@@ -65,17 +68,15 @@ export function createVisionSourceResolver({ db, attributor, sceneState = null, 
     },
 
     /** One short sentence for the prompt: which camera this is, where it sits, what it overlaps with. */
-    cameraContext(apiKey, cameraId) {
-      const r = row(cameraId);
+    async cameraContext(apiKey, cameraId) {
+      const r = await row(cameraId);
       if (!r || (r.owner_api_key && r.owner_api_key !== apiKey)) return null;
       const name = r.label || r.name;
       let text = `This frame is from camera "${name}"${r.zone ? ` (placed ${r.zone})` : ''}.`;
       let links = [];
       try { links = JSON.parse(r.overlap_links || '[]'); } catch { links = []; }
-      const names = [...new Set(links.map((l) => {
-        const o = l?.cameraId ? row(l.cameraId) : null;
-        return o ? (o.label || o.name) : null;
-      }).filter(Boolean))];
+      const others = await Promise.all(links.map((l) => (l?.cameraId ? row(l.cameraId) : null)));
+      const names = [...new Set(others.map((o) => (o ? (o.label || o.name) : null)).filter(Boolean))];
       if (names.length) text += ` Its view can overlap with: ${names.join(', ')}.`;
       return text;
     },

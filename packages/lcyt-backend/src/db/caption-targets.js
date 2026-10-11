@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { sqlNow } from './helpers.js';
 
 const VALID_TYPES = new Set(['youtube', 'generic', 'viewer']);
 
@@ -45,25 +46,27 @@ function formatRow(row) {
 
 /**
  * Get all caption targets for an API key, ordered by sort_order.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {object[]}
+ * @returns {Promise<object[]>}
  */
-export function getCaptionTargets(db, apiKey) {
-  return db.prepare('SELECT * FROM caption_targets WHERE api_key = ? ORDER BY sort_order, created_at')
-    .all(apiKey)
-    .map(formatRow);
+export async function getCaptionTargets(db, apiKey) {
+  const rows = await db.caption_targets.findMany({
+    where: { api_key: apiKey },
+    orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+  });
+  return rows.map(formatRow);
 }
 
 /**
  * Get a single caption target by id, scoped to an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} id
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getCaptionTarget(db, apiKey, id) {
-  const row = db.prepare('SELECT * FROM caption_targets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function getCaptionTarget(db, apiKey, id) {
+  const row = await db.caption_targets.findFirst({ where: { api_key: apiKey, id } });
   return row ? formatRow(row) : null;
 }
 
@@ -99,45 +102,49 @@ function validateTypeFields(type, { streamKey, url, viewerKey }) {
 
 /**
  * Create a caption target for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {{ id?: string, type: string, enabled?: boolean, streamKey?: string, url?: string, headers?: object, viewerKey?: string, iconId?: number|null, iconEnabled?: boolean, noBatch?: boolean }} fields
- * @returns {{ ok: true, target: object }|{ ok: false, error: string }}
+ * @returns {Promise<{ ok: true, target: object }|{ ok: false, error: string }>}
  */
-export function createCaptionTarget(db, apiKey, fields = {}) {
+export async function createCaptionTarget(db, apiKey, fields = {}) {
   const { id = randomUUID(), type, enabled = true, streamKey = null, url = null, headers = null, viewerKey = null, iconId = null, iconEnabled = false, noBatch = false } = fields;
 
   const error = validateTypeFields(type, { streamKey, url, viewerKey });
   if (error) return { ok: false, error };
 
-  const { maxOrder } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS maxOrder FROM caption_targets WHERE api_key = ?').get(apiKey);
+  const agg = await db.caption_targets.aggregate({ where: { api_key: apiKey }, _max: { sort_order: true } });
+  const maxOrder = agg._max.sort_order ?? -1;
 
-  db.prepare(`
-    INSERT INTO caption_targets (id, api_key, type, enabled, sort_order, stream_key, url, headers, viewer_key, icon_id, icon_enabled, no_batch)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, apiKey, type, enabled ? 1 : 0, maxOrder + 1,
-    type === 'youtube' ? streamKey.trim() : null,
-    type === 'generic' ? url : null,
-    type === 'generic' && headers && typeof headers === 'object' ? JSON.stringify(headers) : null,
-    type === 'viewer' ? viewerKey : null,
-    type === 'viewer' ? normalizeIconId(iconId) : null,
-    type === 'viewer' && iconEnabled ? 1 : 0,
-    noBatch ? 1 : 0,
-  );
-  return { ok: true, target: getCaptionTarget(db, apiKey, id) };
+  await db.caption_targets.create({
+    data: {
+      id,
+      api_key: apiKey,
+      type,
+      enabled: enabled ? 1 : 0,
+      sort_order: maxOrder + 1,
+      stream_key: type === 'youtube' ? streamKey.trim() : null,
+      url: type === 'generic' ? url : null,
+      headers: type === 'generic' && headers && typeof headers === 'object' ? JSON.stringify(headers) : null,
+      viewer_key: type === 'viewer' ? viewerKey : null,
+      icon_id: type === 'viewer' ? normalizeIconId(iconId) : null,
+      icon_enabled: type === 'viewer' && iconEnabled ? 1 : 0,
+      no_batch: noBatch ? 1 : 0,
+    },
+  });
+  return { ok: true, target: await getCaptionTarget(db, apiKey, id) };
 }
 
 /**
  * Update a caption target. Only provided fields are changed; `type` is immutable.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} id
  * @param {{ enabled?: boolean, streamKey?: string, url?: string, headers?: object, viewerKey?: string, iconId?: number|null, iconEnabled?: boolean, noBatch?: boolean }} patch
- * @returns {{ ok: true, target: object }|{ ok: false, error: string, status?: number }}
+ * @returns {Promise<{ ok: true, target: object }|{ ok: false, error: string, status?: number }>}
  */
-export function updateCaptionTarget(db, apiKey, id, patch = {}) {
-  const existing = db.prepare('SELECT * FROM caption_targets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function updateCaptionTarget(db, apiKey, id, patch = {}) {
+  const existing = await db.caption_targets.findFirst({ where: { api_key: apiKey, id } });
   if (!existing) return { ok: false, error: 'Target not found', status: 404 };
 
   const streamKey = patch.streamKey !== undefined ? patch.streamKey : existing.stream_key;
@@ -154,63 +161,58 @@ export function updateCaptionTarget(db, apiKey, id, patch = {}) {
   const iconId = patch.iconId !== undefined ? normalizeIconId(patch.iconId) : existing.icon_id;
   const iconEnabled = patch.iconEnabled !== undefined ? (patch.iconEnabled ? 1 : 0) : existing.icon_enabled;
 
-  db.prepare(`
-    UPDATE caption_targets SET
-      enabled      = ?,
-      stream_key   = ?,
-      url          = ?,
-      headers      = ?,
-      viewer_key   = ?,
-      icon_id      = ?,
-      icon_enabled = ?,
-      no_batch     = ?,
-      updated_at   = datetime('now')
-    WHERE api_key = ? AND id = ?
-  `).run(
-    patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled,
-    existing.type === 'youtube' ? streamKey.trim() : null,
-    existing.type === 'generic' ? url : null,
-    existing.type === 'generic' ? headers : null,
-    existing.type === 'viewer' ? viewerKey : null,
-    existing.type === 'viewer' ? iconId : null,
-    existing.type === 'viewer' ? iconEnabled : 0,
-    patch.noBatch !== undefined ? (patch.noBatch ? 1 : 0) : existing.no_batch,
-    apiKey, id,
-  );
-  return { ok: true, target: getCaptionTarget(db, apiKey, id) };
+  await db.caption_targets.updateMany({
+    where: { api_key: apiKey, id },
+    data: {
+      enabled:      patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled,
+      stream_key:   existing.type === 'youtube' ? streamKey.trim() : null,
+      url:          existing.type === 'generic' ? url : null,
+      headers:      existing.type === 'generic' ? headers : null,
+      viewer_key:   existing.type === 'viewer' ? viewerKey : null,
+      icon_id:      existing.type === 'viewer' ? iconId : null,
+      icon_enabled: existing.type === 'viewer' ? iconEnabled : 0,
+      no_batch:     patch.noBatch !== undefined ? (patch.noBatch ? 1 : 0) : existing.no_batch,
+      updated_at:   sqlNow(),
+    },
+  });
+  return { ok: true, target: await getCaptionTarget(db, apiKey, id) };
 }
 
 /**
  * Delete a caption target.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} id
- * @returns {boolean} true if a row was deleted
+ * @returns {Promise<boolean>} true if a row was deleted
  */
-export function deleteCaptionTarget(db, apiKey, id) {
-  const result = db.prepare('DELETE FROM caption_targets WHERE api_key = ? AND id = ?').run(apiKey, id);
-  return result.changes > 0;
+export async function deleteCaptionTarget(db, apiKey, id) {
+  const r = await db.caption_targets.deleteMany({ where: { api_key: apiKey, id } });
+  return r.count > 0;
 }
 
 /**
  * Persist a new sort order for all of an API key's caption targets in one call.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string[]} order  target ids in the desired order
- * @returns {{ ok: true }|{ ok: false, error: string }}
+ * @returns {Promise<{ ok: true }|{ ok: false, error: string }>}
  */
-export function reorderCaptionTargets(db, apiKey, order) {
+export async function reorderCaptionTargets(db, apiKey, order) {
   if (!Array.isArray(order) || order.length === 0) {
     return { ok: false, error: 'order must be a non-empty array of target ids' };
   }
-  const existing = new Set(getCaptionTargets(db, apiKey).map(t => t.id));
+  const existing = new Set((await getCaptionTargets(db, apiKey)).map(t => t.id));
   for (const id of order) {
     if (!existing.has(id)) return { ok: false, error: `Unknown target id: ${id}` };
   }
-  const stmt = db.prepare('UPDATE caption_targets SET sort_order = ?, updated_at = datetime(\'now\') WHERE api_key = ? AND id = ?');
-  const tx = db.transaction(() => {
-    order.forEach((id, index) => stmt.run(index, apiKey, id));
+  const now = sqlNow();
+  await db.$transaction(async (tx) => {
+    for (let index = 0; index < order.length; index++) {
+      await tx.caption_targets.updateMany({
+        where: { api_key: apiKey, id: order[index] },
+        data: { sort_order: index, updated_at: now },
+      });
+    }
   });
-  tx();
   return { ok: true };
 }

@@ -105,7 +105,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   const baseUrl = 'http://127.0.0.1:' + port;
 
   // Create a bridge instance via API
-  const createRes = await fetch(`${baseUrl}/api/production/bridge/instances`, {
+  const createRes = await fetch(`${baseUrl}/api/v1/production/bridge/instances`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name: 'test-bridge' }),
@@ -164,7 +164,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   assert.ok(cmdJson.ok === true, `expected ok=true, got ${JSON.stringify(cmdJson)}`);
 
   // Also verify DB last_seen updated for the instance row
-  const row = db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(instanceId);
+  const row = await db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(instanceId);
   assert.ok(row, 'instance row exists in DB');
   assert.ok(row.last_seen, 'last_seen was updated');
 

@@ -1,23 +1,23 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import Database from 'better-sqlite3';
-import { runMigrations } from '../../plugins/lcyt-production/src/db.js';
+import { initDb } from '../src/db/index.js';
+import { ensurePluginTables } from './helpers/plugin-tables.js';
 import { createFeedAttributor } from '../src/feed-attributor.js';
 import { createAttributionRouter } from '../src/routes/attribution.js';
 
 let server, base, db, attributor;
 before(async () => {
-  db = new Database(':memory:'); runMigrations(db);
-  db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, owner_api_key) VALUES ('mine','Mine','visca-ip','{}',0,'k1')`).run();
-  db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, owner_api_key) VALUES ('theirs','Theirs','visca-ip','{}',0,'k2')`).run();
+  db = await initDb(':memory:'); ensurePluginTables(db);
+  await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, owner_api_key) VALUES ('mine','Mine','visca-ip','{}',0,'k1')`).run();
+  await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, owner_api_key) VALUES ('theirs','Theirs','visca-ip','{}',0,'k2')`).run();
   attributor = createFeedAttributor({ db, thumbnailPath: () => '/nope', fetchFrame: async () => null });
   const app = express(); app.use(express.json());
   const auth = (req, res, next) => { req.session = req.headers['x-key'] ? { apiKey: req.headers['x-key'] } : undefined; next(); };
   app.use('/a', createAttributionRouter(attributor, { db, auth }));
   server = app.listen(0); base = `http://127.0.0.1:${server.address().port}/a`;
 });
-after(() => { attributor.shutdown(); server.close(); db.close(); });
+after(async () => { attributor.shutdown(); server.close(); await db.close(); });
 
 const call = (path, body, key = 'k1') => fetch(base + path, {
   method: body === undefined ? 'GET' : 'POST', headers: { 'content-type': 'application/json', 'x-key': key },

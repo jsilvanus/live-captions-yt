@@ -19,15 +19,20 @@ process.env.DB_PATH = ':memory:';
 process.env.JWT_SECRET = 'test-server-cue-wiring-secret';
 process.env.PORT = '0';
 
-const { db, store, eventBus } = await import('../src/server.js');
+// server.js still hands the legacy SQLite handle to the plugins, so it cannot boot on PostgreSQL yet.
+const PG = !!process.env.DATABASE_URL?.startsWith('postgres');
+const SKIP = PG ? 'server.js needs SQLite (plugins not migrated to PostgreSQL)' : false;
+const { db, store, eventBus } = PG ? {} : await import('../src/server.js');
 const { createKey } = await import('../src/db.js');
 const { insertCueRule } = await import('lcyt-cues/src/db.js');
 
 const API_KEY = 'server-cue-wiring-key';
 
-before(() => {
-  createKey(db, { key: API_KEY, owner: 'Cue Wiring Test' });
-  insertCueRule(db, {
+before(async () => {
+  if (PG) return;
+  await createKey(db, { key: API_KEY, owner: 'Cue Wiring Test' });
+  // lcyt-cues still runs synchronous SQL on the legacy better-sqlite3 handle (see src/server.js `pdb`).
+  insertCueRule(db.$legacy, {
     id: 'rule-track-person',
     api_key: API_KEY,
     name: 'Person detected',
@@ -40,9 +45,9 @@ before(() => {
   });
 });
 
-after(() => db.close());
+after(async () => { if (!PG) await db.close(); });
 
-describe('server.js composition-root wiring: createTrackerCueListener', () => {
+describe('server.js composition-root wiring: createTrackerCueListener', { skip: SKIP }, () => {
   it('fires a track: cue rule when a track_state event is emitted on a session emitter', async () => {
     const session = store.create({ apiKey: API_KEY, streamKey: '', domain: 'https://cue-wiring.test', jwt: 'x' });
 

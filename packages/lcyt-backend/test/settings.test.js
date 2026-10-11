@@ -8,7 +8,7 @@
  * coercion behaviour.
  */
 
-import { describe, it, beforeEach, afterEach } from 'node:test';
+import { describe, it, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { initDb } from '../src/db.js';
 import { SettingsService } from '../src/settings/service.js';
@@ -31,9 +31,13 @@ afterEach(() => {
   for (const [k, v] of envSnapshot) process.env[k] = v;
 });
 
-function freshService() {
-  const db = initDb(':memory:');
-  return new SettingsService(db);
+const opened = [];
+after(async () => { for (const d of opened) await d.close(); });
+
+async function freshService() {
+  const db = await initDb(':memory:');
+  opened.push(db);
+  return await SettingsService.create(db);
 }
 
 describe('registry', () => {
@@ -56,40 +60,40 @@ describe('registry', () => {
 });
 
 describe('SettingsService precedence', () => {
-  it('falls through to the registry default when nothing is set', () => {
-    const svc = freshService();
+  it('falls through to the registry default when nothing is set', async () => {
+    const svc = await freshService();
     assert.equal(svc.get('contact.email'), '');
     assert.equal(svc.source('contact.email'), 'default');
     assert.equal(svc.get('retention.session_ttl'), 7_200_000);
   });
 
-  it('DB value wins over default once set', () => {
-    const svc = freshService();
-    svc.set('contact.email', 'ops@example.com');
+  it('DB value wins over default once set', async () => {
+    const svc = await freshService();
+    await svc.set('contact.email', 'ops@example.com');
     assert.equal(svc.get('contact.email'), 'ops@example.com');
     assert.equal(svc.source('contact.email'), 'db');
   });
 
-  it('env wins over DB even when a DB row exists', () => {
-    const svc = freshService();
-    svc.set('contact.email', 'db@example.com');
+  it('env wins over DB even when a DB row exists', async () => {
+    const svc = await freshService();
+    await svc.set('contact.email', 'db@example.com');
     process.env.CONTACT_EMAIL = 'env@example.com';
     assert.equal(svc.get('contact.email'), 'env@example.com');
     assert.equal(svc.source('contact.email'), 'env');
   });
 
-  it('clear() reverts to env/default and re-reads the cache', () => {
-    const svc = freshService();
-    svc.set('contact.email', 'db@example.com');
-    svc.clear('contact.email');
+  it('clear() reverts to env/default and re-reads the cache', async () => {
+    const svc = await freshService();
+    await svc.set('contact.email', 'db@example.com');
+    await svc.clear('contact.email');
     assert.equal(svc.get('contact.email'), '');
     assert.equal(svc.source('contact.email'), 'default');
   });
 });
 
 describe('coercion parity with legacy scattered parsing', () => {
-  it("boolStyle 'is1' matches `=== '1'` (RTMP_RELAY_ACTIVE)", () => {
-    const svc = freshService();
+  it("boolStyle 'is1' matches `=== '1'` (RTMP_RELAY_ACTIVE)", async () => {
+    const svc = await freshService();
     assert.equal(getSettingDef('media.rtmp_relay_active').boolStyle, 'is1');
     assert.equal(svc.get('media.rtmp_relay_active'), false);
     process.env.RTMP_RELAY_ACTIVE = '1';
@@ -98,8 +102,8 @@ describe('coercion parity with legacy scattered parsing', () => {
     assert.equal(svc.get('media.rtmp_relay_active'), false);
   });
 
-  it("boolStyle 'not0' matches `!== '0'` (USE_USER_LOGINS, default-on)", () => {
-    const svc = freshService();
+  it("boolStyle 'not0' matches `!== '0'` (USE_USER_LOGINS, default-on)", async () => {
+    const svc = await freshService();
     assert.equal(svc.get('app.use_user_logins'), true);
     process.env.USE_USER_LOGINS = '0';
     assert.equal(svc.get('app.use_user_logins'), false);
@@ -107,22 +111,22 @@ describe('coercion parity with legacy scattered parsing', () => {
     assert.equal(svc.get('app.use_user_logins'), true);
   });
 
-  it("boolStyle 'presence' matches truthy-if-set (USAGE_PUBLIC)", () => {
-    const svc = freshService();
+  it("boolStyle 'presence' matches truthy-if-set (USAGE_PUBLIC)", async () => {
+    const svc = await freshService();
     assert.equal(svc.get('app.usage_public'), false);
     process.env.USAGE_PUBLIC = '0'; // legacy code only checks `if (process.env.USAGE_PUBLIC)` — any non-empty string is truthy
     assert.equal(svc.get('app.usage_public'), true);
   });
 
-  it('csv splits and trims (ALLOWED_DOMAINS)', () => {
-    const svc = freshService();
+  it('csv splits and trims (ALLOWED_DOMAINS)', async () => {
+    const svc = await freshService();
     assert.deepEqual(svc.get('app.allowed_domains'), ['lcyt.fi', 'www.lcyt.fi', 'localhost']);
     process.env.ALLOWED_DOMAINS = 'a.com, b.com ,c.com';
     assert.deepEqual(svc.get('app.allowed_domains'), ['a.com', 'b.com', 'c.com']);
   });
 
-  it('int falls back to the registry default on a non-numeric env value', () => {
-    const svc = freshService();
+  it('int falls back to the registry default on a non-numeric env value', async () => {
+    const svc = await freshService();
     process.env.SESSION_TTL = 'not-a-number';
     assert.equal(svc.get('retention.session_ttl'), 7_200_000);
     process.env.SESSION_TTL = '1000';
@@ -131,30 +135,30 @@ describe('coercion parity with legacy scattered parsing', () => {
 });
 
 describe('Tier A / env-locked write rejection', () => {
-  it('rejects writes to a Tier A key', () => {
-    const svc = freshService();
-    assert.throws(() => svc.set('bootstrap.jwt_secret', 'x'), /TIER_A_LOCKED|env-only/);
+  it('rejects writes to a Tier A key', async () => {
+    const svc = await freshService();
+    await assert.rejects(() => svc.set('bootstrap.jwt_secret', 'x'), /TIER_A_LOCKED|env-only/);
   });
 
-  it('rejects a write when the env var is currently set (env-locked)', () => {
-    const svc = freshService();
+  it('rejects a write when the env var is currently set (env-locked)', async () => {
+    const svc = await freshService();
     process.env.CONTACT_EMAIL = 'env@example.com';
-    assert.throws(() => svc.set('contact.email', 'db@example.com'), /ENV_LOCKED|locked/);
+    await assert.rejects(() => svc.set('contact.email', 'db@example.com'), /ENV_LOCKED|locked/);
   });
 
-  it('rejects clear() on a Tier A key', () => {
-    const svc = freshService();
-    assert.throws(() => svc.clear('bootstrap.jwt_secret'), /TIER_A_LOCKED|env-only/);
+  it('rejects clear() on a Tier A key', async () => {
+    const svc = await freshService();
+    await assert.rejects(() => svc.clear('bootstrap.jwt_secret'), /TIER_A_LOCKED|env-only/);
   });
 });
 
 describe('change notification', () => {
-  it('emits "changed" on set() and clear()', () => {
-    const svc = freshService();
+  it('emits "changed" on set() and clear()', async () => {
+    const svc = await freshService();
     const events = [];
     svc.on('changed', (e) => events.push(e));
-    svc.set('contact.email', 'a@example.com');
-    svc.clear('contact.email');
+    await svc.set('contact.email', 'a@example.com');
+    await svc.clear('contact.email');
     assert.equal(events.length, 2);
     assert.equal(events[0].key, 'contact.email');
     assert.equal(events[0].source, 'db');
@@ -163,9 +167,9 @@ describe('change notification', () => {
 });
 
 describe('snapshot()', () => {
-  it('masks secrets and reports source/pendingRestart per key', () => {
-    const svc = freshService();
-    svc.set('contact.email', 'a@example.com');
+  it('masks secrets and reports source/pendingRestart per key', async () => {
+    const svc = await freshService();
+    await svc.set('contact.email', 'a@example.com');
     const snap = svc.snapshot();
     const contact = snap.find(s => s.key === 'contact.email');
     assert.equal(contact.value, 'a@example.com');
@@ -178,11 +182,11 @@ describe('snapshot()', () => {
     assert.equal(snap.length, REGISTRY.length);
   });
 
-  it('flags pendingRestart only once a restart-tier key diverges from its boot value', () => {
-    const svc = freshService();
+  it('flags pendingRestart only once a restart-tier key diverges from its boot value', async () => {
+    const svc = await freshService();
     const before = svc.snapshot().find(s => s.key === 'compute.ffmpeg_runner');
     assert.equal(before.pendingRestart, false);
-    svc.set('compute.ffmpeg_runner', 'docker');
+    await svc.set('compute.ffmpeg_runner', 'docker');
     const after = svc.snapshot().find(s => s.key === 'compute.ffmpeg_runner');
     assert.equal(after.pendingRestart, true);
   });

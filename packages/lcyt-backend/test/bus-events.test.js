@@ -11,7 +11,18 @@ import {
 } from '../src/db/bus-events.js';
 
 let db;
-beforeEach(() => { db = initDb(':memory:'); });
+beforeEach(async () => { db = await initDb(':memory:'); });
+
+// attachBusAuditLog writes fire-and-forget; wait until the expected number of rows is visible.
+async function listWhen(n, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  let rows = await listBusEvents(db);
+  while (rows.length < n && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10));
+    rows = await listBusEvents(db);
+  }
+  return rows;
+}
 
 describe('isAuditableTopic (curated allowlist)', () => {
   it('logs governance + low-frequency config topics', () => {
@@ -33,7 +44,7 @@ describe('isAuditableTopic (curated allowlist)', () => {
 });
 
 describe('attachBusAuditLog', () => {
-  it('persists only curated topics from bus publishes', () => {
+  it('persists only curated topics from bus publishes', async () => {
     const bus = new EventBus();
     attachBusAuditLog(bus, db);
 
@@ -41,7 +52,7 @@ describe('attachBusAuditLog', () => {
     bus.publish('p1', 'caption.sent', { requestId: 'r1' }); // high-frequency, skipped
     bus.publish('p2', 'dsk.graphics_changed', { layers: ['a'] });
 
-    const rows = listBusEvents(db);
+    const rows = await listWhen(2);
     assert.equal(rows.length, 2);
     const byTopic = Object.fromEntries(rows.map((r) => [r.topic, r]));
     assert.ok(byTopic['cue.fired']);
@@ -51,26 +62,28 @@ describe('attachBusAuditLog', () => {
     assert.equal(byTopic['caption.sent'], undefined);
   });
 
-  it('unregister stops logging', () => {
+  it('unregister stops logging', async () => {
     const bus = new EventBus();
     const off = attachBusAuditLog(bus, db);
     bus.publish('p1', 'cue.fired', {});
     off();
     bus.publish('p1', 'cue.fired', {});
-    assert.equal(listBusEvents(db).length, 1);
+    await listWhen(1);
+    await new Promise((r) => setTimeout(r, 100)); // give a (wrongly) still-attached tap time to write
+    assert.equal((await listBusEvents(db)).length, 1);
   });
 });
 
 describe('bus_events retention', () => {
-  it('deleteBusEventsOlderThan purges rows past the cutoff, keeps recent', () => {
+  it('deleteBusEventsOlderThan purges rows past the cutoff, keeps recent', async () => {
     const now = Date.now();
-    insertBusEvent(db, { projectId: 'p1', topic: 'cue.fired', ts: now - 40 * 86_400_000, payload: { old: true } });
-    insertBusEvent(db, { projectId: 'p1', topic: 'cue.fired', ts: now - 1 * 86_400_000, payload: { old: false } });
+    await insertBusEvent(db, { projectId: 'p1', topic: 'cue.fired', ts: now - 40 * 86_400_000, payload: { old: true } });
+    await insertBusEvent(db, { projectId: 'p1', topic: 'cue.fired', ts: now - 1 * 86_400_000, payload: { old: false } });
 
-    const { count } = deleteBusEventsOlderThan(db, 30);
+    const { count } = await deleteBusEventsOlderThan(db, 30);
     assert.equal(count, 1);
 
-    const rows = listBusEvents(db);
+    const rows = await listBusEvents(db);
     assert.equal(rows.length, 1);
     assert.equal(rows[0].payload.old, false);
   });

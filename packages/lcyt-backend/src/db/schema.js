@@ -1,45 +1,22 @@
 import Database from 'better-sqlite3';
-import { Pool } from 'pg';
-import { fileURLToPath } from 'node:url';
-import { join, dirname } from 'node:path';
-import { DbClient } from '../db-client.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const DEFAULT_DB_PATH = join(__dirname, '..', '..', 'lcyt-backend.db');
+import { mkdirSync } from 'node:fs';
+import { dirname } from 'node:path';
 
 /**
- * Initialize database connection based on DATABASE_URL.
- * - SQLite: creates/initializes the database file
- * - PostgreSQL: connects to existing database (schema created by migrations)
- * 
- * Returns a DbClient abstraction layer that works with both databases.
- * @param {string} [dbPath] - Path to the SQLite database file (ignored for PostgreSQL)
- * @returns {DbClient | Promise<DbClient>}
+ * Create / upgrade the SQLite tables (idempotent CREATE TABLE IF NOT EXISTS plus additive
+ * column migrations) and return the open better-sqlite3 handle.
+ *
+ * This is the SQLite DDL source. prisma/schema.prisma mirrors it (test/prisma-schema-drift.test.js
+ * fails when they disagree); PostgreSQL gets its tables from prisma/postgres/migrations/*.sql.
+ * The returned handle is the "legacy" synchronous handle that plugins still use until they
+ * are moved to Prisma.
+ *
+ * @param {string} dbPath
+ * @returns {import('better-sqlite3').Database}
  */
-export function initDb(dbPath) {
-  const databaseUrl = process.env.DATABASE_URL;
-  const dbType = DbClient.detectDatabaseType(databaseUrl);
-
-  if (dbType === 'postgres') {
-    // For PostgreSQL: connect to existing database
-    // In Phase 2 testing, the database is pre-initialized by Docker Compose
-    // In Phase 3, migrations will create/update schema
-    const pool = new Pool({
-      connectionString: databaseUrl,
-      // Connection pool settings for development/testing
-      min: 2,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    });
-
-    // Don't initialize schema here - it should exist from Docker Compose init script or migrations
-    return new DbClient(null, pool, 'postgres');
-  } else {
-    // SQLite: use existing synchronous initialization
-    const resolvedPath = dbPath || process.env.DB_PATH || DEFAULT_DB_PATH;
-    const sqlite = new Database(resolvedPath);
-    const db = new DbClient(sqlite, null, 'sqlite');
+export function initSqliteSchema(dbPath) {
+  if (dbPath !== ':memory:') mkdirSync(dirname(dbPath), { recursive: true });
+  const db = new Database(dbPath);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
@@ -319,7 +296,7 @@ export function initDb(dbPath) {
       domain          TEXT,
       started_at      TEXT NOT NULL,
       ended_at        TEXT NOT NULL,
-      duration_ms     INTEGER NOT NULL,
+      duration_ms     BIGINT NOT NULL,
       captions_sent   INTEGER NOT NULL DEFAULT 0,
       captions_failed INTEGER NOT NULL DEFAULT 0,
       final_sequence  INTEGER NOT NULL DEFAULT 0,
@@ -375,7 +352,7 @@ export function initDb(dbPath) {
       captions_sent     INTEGER NOT NULL DEFAULT 0,
       captions_failed   INTEGER NOT NULL DEFAULT 0,
       batches_sent      INTEGER NOT NULL DEFAULT 0,
-      total_duration_ms INTEGER NOT NULL DEFAULT 0,
+      total_duration_ms BIGINT NOT NULL DEFAULT 0,
       peak_sessions     INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (date, hour, domain)
     )
@@ -392,7 +369,7 @@ export function initDb(dbPath) {
       type        TEXT    NOT NULL DEFAULT 'captions',
       created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at  TEXT    NOT NULL DEFAULT (datetime('now')),
-      size_bytes  INTEGER NOT NULL DEFAULT 0
+      size_bytes  BIGINT NOT NULL DEFAULT 0
     )
   `);
 
@@ -404,7 +381,22 @@ export function initDb(dbPath) {
       disk_filename TEXT    NOT NULL,
       mime_type     TEXT    NOT NULL DEFAULT 'image/png',
       created_at    TEXT    NOT NULL DEFAULT (datetime('now')),
-      size_bytes    INTEGER NOT NULL DEFAULT 0
+      size_bytes    BIGINT NOT NULL DEFAULT 0
+    )
+  `);
+
+  // Per-key custom storage (lcyt-files plugin; also created by its own migration on legacy handles)
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS key_storage_config (
+      api_key           TEXT PRIMARY KEY NOT NULL,
+      storage_type      TEXT NOT NULL DEFAULT 's3',
+      bucket            TEXT NOT NULL DEFAULT '',
+      region            TEXT NOT NULL DEFAULT 'auto',
+      endpoint          TEXT,
+      prefix            TEXT NOT NULL DEFAULT 'captions',
+      access_key_id     TEXT,
+      secret_access_key TEXT,
+      updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
 
@@ -450,8 +442,8 @@ export function initDb(dbPath) {
       status        TEXT NOT NULL DEFAULT 'recording',
       storage_type  TEXT NOT NULL DEFAULT 'local',
       storage_key   TEXT,
-      duration_ms   INTEGER,
-      size_bytes    INTEGER NOT NULL DEFAULT 0,
+      duration_ms   BIGINT,
+      size_bytes    BIGINT NOT NULL DEFAULT 0,
       started_at    TEXT,
       ended_at      TEXT,
       created_at    TEXT NOT NULL DEFAULT (datetime('now')),
@@ -496,6 +488,11 @@ export function initDb(dbPath) {
   if (!sessionStatsCols.has('broadcast_id')) db.exec('ALTER TABLE session_stats ADD COLUMN broadcast_id TEXT');
   const captionFilesCols = new Set(db.prepare('PRAGMA table_info(caption_files)').all().map(c => c.name));
   if (!captionFilesCols.has('broadcast_id')) db.exec('ALTER TABLE caption_files ADD COLUMN broadcast_id TEXT');
+  // shorthand / mime_type / settings_json belong to the graphics-files feature (lcyt-dsk adds them too);
+  // they live here as well because prisma/schema.prisma models caption_files as one table.
+  for (const col of ['shorthand', 'mime_type', 'settings_json']) {
+    if (!captionFilesCols.has(col)) db.exec(`ALTER TABLE caption_files ADD COLUMN ${col} TEXT`);
+  }
 
   const broadcastCols = new Set(db.prepare('PRAGMA table_info(broadcasts)').all().map(c => c.name));
   if (!broadcastCols.has('record_enabled')) db.exec('ALTER TABLE broadcasts ADD COLUMN record_enabled INTEGER NOT NULL DEFAULT 0');
@@ -732,7 +729,7 @@ export function initDb(dbPath) {
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       project_id   TEXT,
       topic        TEXT NOT NULL,
-      ts           INTEGER NOT NULL,
+      ts           BIGINT NOT NULL,
       payload_json TEXT
     )
   `);
@@ -820,6 +817,5 @@ export function initDb(dbPath) {
   });
     backfillTx();
 
-    return db;
-  }
+  return db;
 }

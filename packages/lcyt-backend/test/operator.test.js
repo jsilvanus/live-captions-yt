@@ -18,10 +18,10 @@ const JWT_SECRET = 'test-operator-secret';
 
 let server, baseUrl, db, bus, apiKey, operatorManager;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   bus = new EventBus();
-  apiKey = createKey(db, { owner: 'OperatorUser' }).key;
+  apiKey = (await createKey(db, { owner: 'OperatorUser' })).key;
 
   const toolsContext = {
     tools: [

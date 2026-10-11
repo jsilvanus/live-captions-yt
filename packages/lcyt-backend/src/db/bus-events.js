@@ -1,3 +1,5 @@
+import { num } from './helpers.js';
+
 /**
  * bus_events audit log — insert-only history of notable EventBus topics.
  *
@@ -52,45 +54,49 @@ export function isAuditableTopic(topic) {
 
 /**
  * Insert one audit row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {{ projectId: string|null, topic: string, ts: number, payload: any }} entry
+ * @returns {Promise<void>}
  */
-export function insertBusEvent(db, { projectId, topic, ts, payload }) {
-  db.prepare(
-    'INSERT INTO bus_events (project_id, topic, ts, payload_json) VALUES (?, ?, ?, ?)',
-  ).run(projectId ?? null, topic, ts, payload === undefined ? null : JSON.stringify(payload));
+export async function insertBusEvent(db, { projectId, topic, ts, payload }) {
+  await db.bus_events.create({
+    data: { project_id: projectId ?? null, topic, ts, payload_json: payload === undefined ? null : JSON.stringify(payload) },
+  });
 }
 
 /**
  * Delete audit rows older than `retentionDays`.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} retentionDays
- * @returns {{ count: number }}
+ * @returns {Promise<{ count: number }>}
  */
-export function deleteBusEventsOlderThan(db, retentionDays) {
+export async function deleteBusEventsOlderThan(db, retentionDays) {
   const cutoff = Date.now() - retentionDays * 86_400_000;
-  const info = db.prepare('DELETE FROM bus_events WHERE ts < ?').run(cutoff);
-  return { count: info.changes };
+  const info = await db.bus_events.deleteMany({ where: { ts: { lt: cutoff } } });
+  return { count: info.count };
 }
 
 /**
  * List recent audit rows (newest first). Not wired to any route yet; provided
  * for tests and a future GET /events/log consumer.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {{ projectId?: string, limit?: number }} [opts]
+ * @returns {Promise<Array>}
  */
-export function listBusEvents(db, { projectId = null, limit = 100 } = {}) {
-  const rows = projectId
-    ? db.prepare('SELECT * FROM bus_events WHERE project_id = ? ORDER BY id DESC LIMIT ?').all(projectId, limit)
-    : db.prepare('SELECT * FROM bus_events ORDER BY id DESC LIMIT ?').all(limit);
-  return rows.map((r) => ({ ...r, payload: r.payload_json ? JSON.parse(r.payload_json) : null }));
+export async function listBusEvents(db, { projectId = null, limit = 100 } = {}) {
+  const rows = await db.bus_events.findMany({
+    where: projectId ? { project_id: projectId } : undefined,
+    orderBy: { id: 'desc' },
+    take: limit,
+  });
+  return rows.map((r) => ({ ...r, id: num(r.id), ts: num(r.ts), payload: r.payload_json ? JSON.parse(r.payload_json) : null }));
 }
 
 /**
  * Register a tap on the shared EventBus that persists curated topics to
  * bus_events. Returns an unregister function.
  * @param {import('lcyt/event-bus').EventBus} eventBus
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {{ log?: (msg: string) => void }} [opts]
  * @returns {() => void}
  */
@@ -98,7 +104,9 @@ export function attachBusAuditLog(eventBus, db, { log = null } = {}) {
   return eventBus.tap((env) => {
     if (!isAuditableTopic(env.topic)) return;
     try {
-      insertBusEvent(db, { projectId: env.projectId, topic: env.topic, ts: env.ts, payload: env.data });
+      insertBusEvent(db, { projectId: env.projectId, topic: env.topic, ts: env.ts, payload: env.data }).catch((err) => {
+        if (log) log(`[bus-audit] insert failed for ${env.topic}: ${err?.message ?? err}`);
+      });
     } catch (err) {
       if (log) log(`[bus-audit] insert failed for ${env.topic}: ${err?.message ?? err}`);
     }

@@ -47,3 +47,7 @@ tmp/
 /test-logs/
 /test-output.txt
 /test-results.txt
+
+# Generated Prisma clients (npm run db:generate)
+packages/lcyt-backend/generated/
+packages/lcyt-backend/recordings/

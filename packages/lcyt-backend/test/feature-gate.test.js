@@ -24,9 +24,9 @@ const JWT_SECRET = 'test-jwt-secret-fg';
 
 let server, baseUrl, db;
 
-before(() => new Promise(resolve => {
+before(() => new Promise(async resolve => {
   process.env.ADMIN_KEY = ADMIN_KEY;
-  db = initDb(':memory:');
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -43,8 +43,7 @@ before(() => new Promise(resolve => {
 after(() => new Promise(resolve => {
   delete process.env.ADMIN_KEY;
   delete process.env.FEATURE_GATE_ENFORCE;
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
 afterEach(() => {
@@ -98,31 +97,31 @@ describe('feature-gate middleware — isEnforced()', () => {
 });
 
 describe('createRequireFeature — session-based middleware', () => {
-  it('passes through when FEATURE_GATE_ENFORCE is off', () => {
+  it('passes through when FEATURE_GATE_ENFORCE is off', async () => {
     delete process.env.FEATURE_GATE_ENFORCE;
     const mw = createRequireFeature(db, 'captions');
     const next = { called: false };
     const req = { session: { apiKey: 'does-not-exist' } };
     const res = {};
-    mw(req, res, () => { next.called = true; });
+    await mw(req, res, () => { next.called = true; });
     assert.ok(next.called, 'should call next when enforcement is off');
   });
 
-  it('passes through when no apiKey on req.session', () => {
+  it('passes through when no apiKey on req.session', async () => {
     process.env.FEATURE_GATE_ENFORCE = '1';
     const mw = createRequireFeature(db, 'captions');
     const next = { called: false };
     const req = { session: {} };
     const res = {};
-    mw(req, res, () => { next.called = true; });
+    await mw(req, res, () => { next.called = true; });
     assert.ok(next.called, 'should call next when no apiKey (let auth handle 401)');
   });
 
-  it('returns 403 when enforcement is on and feature is disabled', () => {
+  it('returns 403 when enforcement is on and feature is disabled', async () => {
     process.env.FEATURE_GATE_ENFORCE = '1';
-    const key = createKey(db, { owner: 'gate-test', user_id: null });
+    const key = await createKey(db, { owner: 'gate-test', user_id: null });
     // Explicitly disable 'captions'
-    setProjectFeature(db, key.key, 'captions', false);
+    await setProjectFeature(db, key.key, 'captions', false);
 
     const mw = createRequireFeature(db, 'captions');
     let statusCode = null;
@@ -132,42 +131,42 @@ describe('createRequireFeature — session-based middleware', () => {
       status(code) { statusCode = code; return this; },
       json(body) { responseBody = body; },
     };
-    mw(req, res, () => { throw new Error('should not call next'); });
+    await mw(req, res, () => { throw new Error('should not call next'); });
 
     assert.equal(statusCode, 403);
     assert.equal(responseBody.feature, 'captions');
     assert.ok(responseBody.error);
   });
 
-  it('calls next when enforcement is on and feature is enabled', () => {
+  it('calls next when enforcement is on and feature is enabled', async () => {
     process.env.FEATURE_GATE_ENFORCE = '1';
-    const key = createKey(db, { owner: 'gate-enabled', user_id: null });
-    setProjectFeature(db, key.key, 'captions', true);
+    const key = await createKey(db, { owner: 'gate-enabled', user_id: null });
+    await setProjectFeature(db, key.key, 'captions', true);
 
     const mw = createRequireFeature(db, 'captions');
     let nextCalled = false;
     const req = { session: { apiKey: key.key } };
     const res = {};
-    mw(req, res, () => { nextCalled = true; });
+    await mw(req, res, () => { nextCalled = true; });
     assert.ok(nextCalled);
   });
 });
 
 describe('createRequireKeyFeature — key-param middleware', () => {
-  it('passes through when FEATURE_GATE_ENFORCE is off', () => {
+  it('passes through when FEATURE_GATE_ENFORCE is off', async () => {
     delete process.env.FEATURE_GATE_ENFORCE;
     const mw = createRequireKeyFeature(db, 'stats');
     let nextCalled = false;
     const req = { params: { key: 'does-not-exist' } };
     const res = {};
-    mw(req, res, () => { nextCalled = true; });
+    await mw(req, res, () => { nextCalled = true; });
     assert.ok(nextCalled);
   });
 
-  it('returns 403 when enforcement is on and feature is disabled', () => {
+  it('returns 403 when enforcement is on and feature is disabled', async () => {
     process.env.FEATURE_GATE_ENFORCE = '1';
-    const key = createKey(db, { owner: 'key-gate', user_id: null });
-    setProjectFeature(db, key.key, 'stats', false);
+    const key = await createKey(db, { owner: 'key-gate', user_id: null });
+    await setProjectFeature(db, key.key, 'stats', false);
 
     const mw = createRequireKeyFeature(db, 'stats');
     let statusCode = null;
@@ -177,22 +176,22 @@ describe('createRequireKeyFeature — key-param middleware', () => {
       status(code) { statusCode = code; return this; },
       json(body) { responseBody = body; },
     };
-    mw(req, res, () => { throw new Error('should not call next'); });
+    await mw(req, res, () => { throw new Error('should not call next'); });
 
     assert.equal(statusCode, 403);
     assert.equal(responseBody.feature, 'stats');
   });
 
-  it('calls next when feature is enabled', () => {
+  it('calls next when feature is enabled', async () => {
     process.env.FEATURE_GATE_ENFORCE = '1';
-    const key = createKey(db, { owner: 'key-gate-enabled', user_id: null });
-    setProjectFeature(db, key.key, 'stats', true);
+    const key = await createKey(db, { owner: 'key-gate-enabled', user_id: null });
+    await setProjectFeature(db, key.key, 'stats', true);
 
     const mw = createRequireKeyFeature(db, 'stats');
     let nextCalled = false;
     const req = { params: { key: key.key } };
     const res = {};
-    mw(req, res, () => { nextCalled = true; });
+    await mw(req, res, () => { nextCalled = true; });
     assert.ok(nextCalled);
   });
 });
@@ -212,10 +211,10 @@ describe('GET /admin/users/:id/features', () => {
 
   it('returns features array for a user with provisioned features', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'featuser1@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'featuser1@test.com', passwordHash: hash });
     // Provision default user features by directly writing them
-    db.prepare(`INSERT INTO user_features (user_id, feature_code, enabled) VALUES (?, 'captions', 1) ON CONFLICT DO NOTHING`).run(user.id);
-    db.prepare(`INSERT INTO user_features (user_id, feature_code, enabled) VALUES (?, 'stats', 1) ON CONFLICT DO NOTHING`).run(user.id);
+    await db.prepare(`INSERT INTO user_features (user_id, feature_code, enabled) VALUES (?, 'captions', 1) ON CONFLICT DO NOTHING`).run(user.id);
+    await db.prepare(`INSERT INTO user_features (user_id, feature_code, enabled) VALUES (?, 'stats', 1) ON CONFLICT DO NOTHING`).run(user.id);
 
     const { status, body } = await adminGet(`/admin/users/${user.id}/features`);
     assert.equal(status, 200);
@@ -230,7 +229,7 @@ describe('GET /admin/users/:id/features', () => {
 
   it('returns empty features array for a user with no entitlements', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'featuser-empty@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'featuser-empty@test.com', passwordHash: hash });
     const { status, body } = await adminGet(`/admin/users/${user.id}/features`);
     assert.equal(status, 200);
     assert.deepEqual(body.features, []);
@@ -245,14 +244,14 @@ describe('PATCH /admin/users/:id/features', () => {
 
   it('returns 400 when features is not an object', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'featuser-badreq@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'featuser-badreq@test.com', passwordHash: hash });
     const { status } = await adminPatch(`/admin/users/${user.id}/features`, { features: ['captions'] });
     assert.equal(status, 400);
   });
 
   it('grants new feature entitlements', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'featuser-grant@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'featuser-grant@test.com', passwordHash: hash });
 
     const { status, body } = await adminPatch(`/admin/users/${user.id}/features`, {
       features: { 'stt-server': true, 'radio': true },
@@ -268,9 +267,9 @@ describe('PATCH /admin/users/:id/features', () => {
 
   it('revokes a feature entitlement', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'featuser-revoke@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'featuser-revoke@test.com', passwordHash: hash });
     // First grant
-    db.prepare(`INSERT INTO user_features (user_id, feature_code, enabled) VALUES (?, 'captions', 1) ON CONFLICT(user_id, feature_code) DO UPDATE SET enabled = 1`).run(user.id);
+    await db.prepare(`INSERT INTO user_features (user_id, feature_code, enabled) VALUES (?, 'captions', 1) ON CONFLICT(user_id, feature_code) DO UPDATE SET enabled = 1`).run(user.id);
 
     // Then revoke
     const { status, body } = await adminPatch(`/admin/users/${user.id}/features`, {
@@ -284,7 +283,7 @@ describe('PATCH /admin/users/:id/features', () => {
 
   it('is idempotent — updating a feature twice gives consistent result', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'featuser-idem@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'featuser-idem@test.com', passwordHash: hash });
 
     await adminPatch(`/admin/users/${user.id}/features`, { features: { 'stats': true } });
     const { status, body } = await adminPatch(`/admin/users/${user.id}/features`, { features: { 'stats': true } });
@@ -304,8 +303,8 @@ describe('GET /keys/:key/features — user auth', () => {
 
   it('returns 403 when user is not a member', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'notmember@test.com', passwordHash: hash });
-    const key = createKey(db, { owner: 'other', user_id: null });
+    const user = await createUser(db, { email: 'notmember@test.com', passwordHash: hash });
+    const key = await createKey(db, { owner: 'other', user_id: null });
     const token = makeUserToken(user.id, user.email);
 
     const res = await fetch(`${baseUrl}/keys/${key.key}/features`, {
@@ -316,11 +315,11 @@ describe('GET /keys/:key/features — user auth', () => {
 
   it('returns features for a project member', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'member-feat@test.com', passwordHash: hash });
-    const key = createKey(db, { owner: 'proj1', user_id: user.id });
-    provisionDefaultProjectFeatures(db, key.key);
+    const user = await createUser(db, { email: 'member-feat@test.com', passwordHash: hash });
+    const key = await createKey(db, { owner: 'proj1', user_id: user.id });
+    await provisionDefaultProjectFeatures(db, key.key);
     // Add user as member (owner)
-    db.prepare(`INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner') ON CONFLICT DO NOTHING`).run(key.key, user.id);
+    await db.prepare(`INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner') ON CONFLICT DO NOTHING`).run(key.key, user.id);
     const token = makeUserToken(user.id, user.email);
 
     const res = await fetch(`${baseUrl}/keys/${key.key}/features`, {
@@ -336,10 +335,10 @@ describe('GET /keys/:key/features — user auth', () => {
 describe('PATCH /keys/:key/features/:code — policy gating', () => {
   it('rejects enabling a denied feature even when the user is entitled', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'policy-denied@test.com', passwordHash: hash });
-    const key = createKey(db, { owner: 'policy-proj', user_id: user.id });
-    setUserFeature(db, user.id, 'files-custom-bucket', true);
-    setSiteFeaturePolicy(db, 'files-custom-bucket', 'denied');
+    const user = await createUser(db, { email: 'policy-denied@test.com', passwordHash: hash });
+    const key = await createKey(db, { owner: 'policy-proj', user_id: user.id });
+    await setUserFeature(db, user.id, 'files-custom-bucket', true);
+    await setSiteFeaturePolicy(db, 'files-custom-bucket', 'denied');
 
     const token = makeUserToken(user.id, user.email);
     const res = await fetch(`${baseUrl}/keys/${key.key}/features/files-custom-bucket`, {
@@ -365,9 +364,9 @@ describe('GET /keys/:key/members — user auth', () => {
 
   it('returns members list for owner', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'owner-mbr@test.com', passwordHash: hash });
-    const key = createKey(db, { owner: 'mbrproj', user_id: user.id });
-    db.prepare(`INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner') ON CONFLICT DO NOTHING`).run(key.key, user.id);
+    const user = await createUser(db, { email: 'owner-mbr@test.com', passwordHash: hash });
+    const key = await createKey(db, { owner: 'mbrproj', user_id: user.id });
+    await db.prepare(`INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner') ON CONFLICT DO NOTHING`).run(key.key, user.id);
     const token = makeUserToken(user.id, user.email);
 
     const res = await fetch(`${baseUrl}/keys/${key.key}/members`, {
@@ -402,12 +401,12 @@ describe('POST /auth/device-login', () => {
 
   it('returns device JWT when credentials are valid', async () => {
     // Create project with device code
-    const key = createKey(db, { owner: 'device-proj', user_id: null });
-    db.prepare('UPDATE api_keys SET device_code = ? WHERE key = ?').run('777777', key.key);
+    const key = await createKey(db, { owner: 'device-proj', user_id: null });
+    await db.prepare('UPDATE api_keys SET device_code = ? WHERE key = ?').run('777777', key.key);
     // Create device role with known PIN
     const pin = '654321';
     const pinHash = bcrypt.hashSync(pin, 1); // rounds=1 for speed
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO project_device_roles (api_key, role_type, name, pin_hash, permissions)
       VALUES (?, 'camera', 'Camera 1', ?, '[]')
     `).run(key.key, pinHash);

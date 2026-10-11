@@ -33,7 +33,7 @@ export function unknownTag(since = Date.now()) {
 
 /**
  * @param {{
- *   db: import('better-sqlite3').Database,
+ *   db: import('./db/connection.js').Db,
  *   registry?: object,
  *   eventBus?: { publish: Function },
  *   previewBaseUrl?: string,
@@ -95,25 +95,29 @@ export function createFeedAttributor(deps) {
   // ── mixer / PTZ signals ──────────────────────────────────────────────────
   // mixer_input is only unique within one mixer: scope by mixer_id when the
   // camera has one, fall back to legacy unscoped cameras (see shared-feed-resolver history).
-  function cameraForMixerInput(mixerId, inputNumber) {
+  async function cameraForMixerInput(mixerId, inputNumber) {
     if (inputNumber == null) return null;
     if (mixerId != null) {
-      const scoped = db.prepare('SELECT id FROM prod_cameras WHERE mixer_input = ? AND mixer_id = ?').get(inputNumber, mixerId);
+      const scoped = await db.prod_cameras.findFirst({ where: { mixer_input: inputNumber, mixer_id: mixerId }, select: { id: true } });
       if (scoped) return scoped.id;
     }
-    const legacy = db.prepare('SELECT id FROM prod_cameras WHERE mixer_input = ? AND mixer_id IS NULL').get(inputNumber);
+    const legacy = await db.prod_cameras.findFirst({ where: { mixer_input: inputNumber, mixer_id: null }, select: { id: true } });
     return legacy ? legacy.id : null;
   }
 
   const unsubs = [];
-  unsubs.push(registry?.onProgramChanged?.(({ apiKey, mixerId, inputNumber }) => {
+  unsubs.push(registry?.onProgramChanged?.(async ({ apiKey, mixerId, inputNumber }) => {
     if (!apiKey) return;
-    const p = proj(apiKey);
-    p.lastSignalAt = now(); p.override = false;
-    const cameraId = cameraForMixerInput(mixerId, inputNumber);
-    setTag(apiKey, cameraId
-      ? { cameraId, mixerId: mixerId ?? null, input: inputNumber ?? null, confidence: 1, method: 'mixer-signal' }
-      : { mixerId: mixerId ?? null, input: inputNumber ?? null, confidence: 0, method: 'unknown' });
+    try {
+      const p = proj(apiKey);
+      p.lastSignalAt = now(); p.override = false;
+      const cameraId = await cameraForMixerInput(mixerId, inputNumber);
+      setTag(apiKey, cameraId
+        ? { cameraId, mixerId: mixerId ?? null, input: inputNumber ?? null, confidence: 1, method: 'mixer-signal' }
+        : { mixerId: mixerId ?? null, input: inputNumber ?? null, confidence: 0, method: 'unknown' });
+    } catch (err) {
+      console.warn(`[feed-attributor] program change handling failed: ${err.message}`);
+    }
   }));
   unsubs.push(registry?.onCameraPresetRecalled?.(({ apiKey, cameraId }) => {
     if (!apiKey || !cameraId) return;
@@ -165,13 +169,16 @@ export function createFeedAttributor(deps) {
   // ── visual loop ──────────────────────────────────────────────────────────
   async function loadRefs(apiKey, loop) {
     if (loop.refs && now() - loop.refsAt < refsTtlMs) return loop.refs;
-    const cams = db.prepare('SELECT id, thumbnail_captured_at FROM prod_cameras WHERE owner_api_key = ? OR owner_api_key IS NULL').all(apiKey);
+    const cams = await db.prod_cameras.findMany({
+      where: { OR: [{ owner_api_key: apiKey }, { owner_api_key: null }] },
+      select: { id: true, thumbnail_captured_at: true },
+    });
     const refs = [];
     const dir = thumbnailsDir;
     const entries = [];
     for (const c of cams) {
       if (c.thumbnail_captured_at) entries.push({ cameraId: c.id, presetId: null, at: c.thumbnail_captured_at });
-      for (const r of db.prepare('SELECT preset_id, captured_at FROM prod_camera_preset_thumbnails WHERE camera_id = ?').all(c.id)) {
+      for (const r of await db.prod_camera_preset_thumbnails.findMany({ where: { camera_id: c.id }, select: { preset_id: true, captured_at: true } })) {
         entries.push({ cameraId: c.id, presetId: r.preset_id, at: r.captured_at });
       }
     }

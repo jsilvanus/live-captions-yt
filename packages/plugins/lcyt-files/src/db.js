@@ -14,6 +14,7 @@
  * @param {import('better-sqlite3').Database} db
  */
 export function runFilesDbMigrations(db) {
+  if (isPrisma(db)) return; // the Prisma schema / PostgreSQL migrations own the table
   db.exec(`
     CREATE TABLE IF NOT EXISTS key_storage_config (
       api_key           TEXT PRIMARY KEY NOT NULL,
@@ -35,14 +36,25 @@ export function runFilesDbMigrations(db) {
   }
 }
 
+// The route handlers receive the Prisma client; initFilesControl()/createStorageResolver() may still
+// receive the legacy better-sqlite3 handle. Both work: `await` the results.
+const isPrisma = (db) => !!db && typeof db.key_storage_config?.findUnique === 'function';
+
+function nowStr() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
 /**
  * Get per-key storage config, or null if not set.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client or better-sqlite3 handle
  * @param {string} apiKey
- * @returns {{ api_key, storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key, updated_at }|null}
+ * @returns {Promise<{ api_key, storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key, updated_at }|null>}
  */
-export function getKeyStorageConfig(db, apiKey) {
+export async function getKeyStorageConfig(db, apiKey) {
+  if (isPrisma(db)) {
+    return (await db.key_storage_config.findUnique({ where: { api_key: apiKey } })) ?? null;
+  }
   return db.prepare(
     'SELECT api_key, storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key, updated_at FROM key_storage_config WHERE api_key = ?'
   ).get(apiKey) ?? null;
@@ -51,14 +63,29 @@ export function getKeyStorageConfig(db, apiKey) {
 /**
  * Upsert per-key storage config.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client or better-sqlite3 handle
  * @param {string} apiKey
  * @param {{ storage_type?: string, bucket?: string, region?: string, endpoint?: string, prefix?: string, access_key_id?: string, secret_access_key?: string }} config
+ * @returns {Promise<void>}
  */
-export function setKeyStorageConfig(db, apiKey, { storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key }) {
+export async function setKeyStorageConfig(db, apiKey, { storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key }) {
+  const values = {
+    storage_type: storage_type || 's3',
+    bucket: bucket || '',
+    region: region || 'auto',
+    endpoint: endpoint || null,
+    prefix: prefix || 'captions',
+    access_key_id: access_key_id || null,
+    secret_access_key: secret_access_key || null,
+    updated_at: nowStr(),
+  };
+  if (isPrisma(db)) {
+    await db.key_storage_config.upsert({ where: { api_key: apiKey }, create: { api_key: apiKey, ...values }, update: values });
+    return;
+  }
   db.prepare(`
     INSERT INTO key_storage_config (api_key, storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT (api_key) DO UPDATE SET
       storage_type      = excluded.storage_type,
       bucket            = excluded.bucket,
@@ -68,24 +95,21 @@ export function setKeyStorageConfig(db, apiKey, { storage_type, bucket, region, 
       access_key_id     = excluded.access_key_id,
       secret_access_key = excluded.secret_access_key,
       updated_at        = excluded.updated_at
-  `).run(
-    apiKey,
-    storage_type || 's3',
-    bucket || '',
-    region || 'auto',
-    endpoint || null,
-    prefix || 'captions',
-    access_key_id || null,
-    secret_access_key || null,
-  );
+  `).run(apiKey, values.storage_type, values.bucket, values.region, values.endpoint, values.prefix,
+    values.access_key_id, values.secret_access_key, values.updated_at);
 }
 
 /**
  * Remove per-key storage config (reverts key to global default storage).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client or better-sqlite3 handle
  * @param {string} apiKey
+ * @returns {Promise<void>}
  */
-export function deleteKeyStorageConfig(db, apiKey) {
+export async function deleteKeyStorageConfig(db, apiKey) {
+  if (isPrisma(db)) {
+    await db.key_storage_config.deleteMany({ where: { api_key: apiKey } });
+    return;
+  }
   db.prepare('DELETE FROM key_storage_config WHERE api_key = ?').run(apiKey);
 }

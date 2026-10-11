@@ -32,60 +32,68 @@ export function generateDeviceCode() {
 
 /**
  * Set (or regenerate) the project-level device code for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} code
+ * @returns {Promise<void>}
  */
-export function setProjectDeviceCode(db, apiKey, code) {
-  db.prepare('UPDATE api_keys SET device_code = ? WHERE key = ?').run(code, apiKey);
+export async function setProjectDeviceCode(db, apiKey, code) {
+  await db.api_keys.updateMany({ where: { key: apiKey }, data: { device_code: code } });
 }
 
 /**
  * Find an API key row by its 6-digit device_code.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} deviceCode
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getKeyByDeviceCode(db, deviceCode) {
-  return db.prepare('SELECT * FROM api_keys WHERE device_code = ? AND active = 1').get(deviceCode) || null;
+export async function getKeyByDeviceCode(db, deviceCode) {
+  return (await db.api_keys.findFirst({ where: { device_code: deviceCode, active: 1 } })) ?? null;
 }
 
 /**
  * Create a new device role for a project.
  * Returns the plain-text PIN (must be shown to the user exactly once) and the created row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {{ roleType: string, name: string, pinHash: string, permissions?: string[], config?: object, expiresAt?: string }} opts
- * @returns {{ id: number, api_key: string, role_type: string, name: string, permissions: string[], config: object|null, created_at: string, expires_at?: string }}
+ * @returns {Promise<{ id: number, apiKey: string, roleType: string, name: string, permissions: string[], config: object|null, active: boolean, createdAt: string }>}
  */
-export function createDeviceRole(db, apiKey, { roleType, name, pinHash, permissions = [], config = null, expiresAt = null }) {
-  const result = db.prepare(`
-    INSERT INTO project_device_roles (api_key, role_type, name, pin_hash, permissions, config, expires_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(apiKey, roleType, name, pinHash, JSON.stringify(permissions), config ? JSON.stringify(config) : null, expiresAt);
-  return getDeviceRole(db, result.lastInsertRowid);
+export async function createDeviceRole(db, apiKey, { roleType, name, pinHash, permissions = [], config = null, expiresAt = null }) {
+  const row = await db.project_device_roles.create({
+    data: {
+      api_key: apiKey,
+      role_type: roleType,
+      name,
+      pin_hash: pinHash,
+      permissions: JSON.stringify(permissions),
+      config: config ? JSON.stringify(config) : null,
+      expires_at: expiresAt,
+    },
+  });
+  return getDeviceRole(db, row.id);
 }
 
 /**
  * Get a single device role by id.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getDeviceRole(db, id) {
-  const row = db.prepare('SELECT * FROM project_device_roles WHERE id = ?').get(id);
+export async function getDeviceRole(db, id) {
+  const row = await db.project_device_roles.findUnique({ where: { id } });
   return row ? _formatRole(row) : null;
 }
 
 /**
  * Check if a device role is currently active (not deactivated and not expired).
  * Used by middleware to validate device JWTs on every request (Item 4 — Phase 4).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isDeviceRoleActive(db, id) {
-  const row = db.prepare('SELECT active, expires_at FROM project_device_roles WHERE id = ?').get(id);
+export async function isDeviceRoleActive(db, id) {
+  const row = await db.project_device_roles.findUnique({ where: { id }, select: { active: true, expires_at: true } });
   if (!row || row.active === 0) return false;
   if (row.expires_at && new Date(row.expires_at) <= new Date()) return false;
   return true;
@@ -93,64 +101,64 @@ export function isDeviceRoleActive(db, id) {
 
 /**
  * List all active device roles for a project (pin_hash excluded).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {Array}
+ * @returns {Promise<Array>}
  */
-export function getDeviceRoles(db, apiKey) {
-  return db.prepare(
-    'SELECT * FROM project_device_roles WHERE api_key = ? ORDER BY created_at ASC'
-  ).all(apiKey).map(_formatRole);
+export async function getDeviceRoles(db, apiKey) {
+  const rows = await db.project_device_roles.findMany({
+    where: { api_key: apiKey },
+    orderBy: [{ created_at: 'asc' }, { id: 'asc' }],
+  });
+  return rows.map(_formatRole);
 }
 
 /**
  * Find an active device role by api_key + pin_hash (for login verification).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {Array} all active roles for the key (caller bcrypt-compares PIN)
+ * @returns {Promise<Array>} all active roles for the key (caller bcrypt-compares PIN)
  */
-export function getActiveDeviceRolesForKey(db, apiKey) {
-  return db.prepare(
-    'SELECT * FROM project_device_roles WHERE api_key = ? AND active = 1'
-  ).all(apiKey);
+export async function getActiveDeviceRolesForKey(db, apiKey) {
+  return db.project_device_roles.findMany({ where: { api_key: apiKey, active: 1 } });
 }
 
 /**
  * Update a device role's name and/or permissions.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
  * @param {{ name?: string, permissions?: string[], config?: object }} updates
+ * @returns {Promise<void>}
  */
-export function updateDeviceRole(db, id, { name, permissions, config } = {}) {
-  const parts = [];
-  const params = [];
-  if (name !== undefined)        { parts.push('name = ?');        params.push(name); }
-  if (permissions !== undefined) { parts.push('permissions = ?'); params.push(JSON.stringify(permissions)); }
-  if (config !== undefined)      { parts.push('config = ?');      params.push(config ? JSON.stringify(config) : null); }
-  if (parts.length === 0) return;
-  params.push(id);
-  db.prepare(`UPDATE project_device_roles SET ${parts.join(', ')} WHERE id = ?`).run(...params);
+export async function updateDeviceRole(db, id, { name, permissions, config } = {}) {
+  const data = {};
+  if (name !== undefined)        data.name = name;
+  if (permissions !== undefined) data.permissions = JSON.stringify(permissions);
+  if (config !== undefined)      data.config = config ? JSON.stringify(config) : null;
+  if (Object.keys(data).length === 0) return;
+  await db.project_device_roles.updateMany({ where: { id }, data });
 }
 
 /**
  * Reset the PIN hash for a device role.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
  * @param {string} newPinHash
+ * @returns {Promise<void>}
  */
-export function resetDeviceRolePin(db, id, newPinHash) {
-  db.prepare('UPDATE project_device_roles SET pin_hash = ? WHERE id = ?').run(newPinHash, id);
+export async function resetDeviceRolePin(db, id, newPinHash) {
+  await db.project_device_roles.updateMany({ where: { id }, data: { pin_hash: newPinHash } });
 }
 
 /**
  * Deactivate (soft-delete) a device role.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function deactivateDeviceRole(db, id) {
-  const result = db.prepare('UPDATE project_device_roles SET active = 0 WHERE id = ?').run(id);
-  return result.changes > 0;
+export async function deactivateDeviceRole(db, id) {
+  const result = await db.project_device_roles.updateMany({ where: { id }, data: { active: 0 } });
+  return result.count > 0;
 }
 
 function _formatRole(row) {

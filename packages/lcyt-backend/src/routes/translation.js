@@ -31,37 +31,37 @@ export function createTranslationRouter(auth, db) {
   // /ai/providers. GET stays open via requireProjectRole's read exemption.
   const requireSetup = requireProjectRole(db, 'setup');
 
-  router.get('/config', auth, (req, res) => {
+  router.get('/config', auth, async (req, res) => {
     const apiKey = req.session.apiKey;
     res.json({
-      vendor:  getTranslationVendorConfig(db, apiKey),
-      targets: getTranslationTargets(db, apiKey),
+      vendor:  await getTranslationVendorConfig(db, apiKey),
+      targets: await getTranslationTargets(db, apiKey),
     });
   });
 
-  router.put('/config/vendor', auth, requireSetup, (req, res) => {
+  router.put('/config/vendor', auth, requireSetup, async (req, res) => {
     const { vendor, vendorApiKey, libreUrl, libreKey, showOriginal } = req.body || {};
-    const result = setTranslationVendorConfig(db, req.session.apiKey, { vendor, vendorApiKey, libreUrl, libreKey, showOriginal });
+    const result = await setTranslationVendorConfig(db, req.session.apiKey, { vendor, vendorApiKey, libreUrl, libreKey, showOriginal });
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.json({ ok: true, vendor: result.config });
   });
 
-  router.post('/config/targets', auth, requireSetup, (req, res) => {
+  router.post('/config/targets', auth, requireSetup, async (req, res) => {
     const { id, enabled, lang, target, format, captionTargetId, showOriginal } = req.body || {};
-    const result = createTranslationTarget(db, req.session.apiKey, { id, enabled, lang, target, format, captionTargetId, showOriginal });
+    const result = await createTranslationTarget(db, req.session.apiKey, { id, enabled, lang, target, format, captionTargetId, showOriginal });
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.status(201).json({ ok: true, target: result.target });
   });
 
-  router.put('/config/targets/:id', auth, requireSetup, (req, res) => {
+  router.put('/config/targets/:id', auth, requireSetup, async (req, res) => {
     const { enabled, lang, target, format, captionTargetId, showOriginal } = req.body || {};
-    const result = updateTranslationTarget(db, req.session.apiKey, req.params.id, { enabled, lang, target, format, captionTargetId, showOriginal });
+    const result = await updateTranslationTarget(db, req.session.apiKey, req.params.id, { enabled, lang, target, format, captionTargetId, showOriginal });
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, target: result.target });
   });
 
-  router.delete('/config/targets/:id', auth, requireSetup, (req, res) => {
-    const deleted = deleteTranslationTarget(db, req.session.apiKey, req.params.id);
+  router.delete('/config/targets/:id', auth, requireSetup, async (req, res) => {
+    const deleted = await deleteTranslationTarget(db, req.session.apiKey, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Translation target not found' });
     res.json({ ok: true });
   });

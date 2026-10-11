@@ -14,9 +14,9 @@ import { viewerKeyOwners } from '../src/routes/viewer.js';
 
 let db, fanOut;
 
-before(() => {
-  db = initDb(':memory:');
-  createKey(db, { key: 'fanout-key', owner: 'Fanout' });
+before(async () => {
+  db = await initDb(':memory:');
+  await createKey(db, { key: 'fanout-key', owner: 'Fanout' });
   fanOut = createCaptionFanout({ db });
 });
 
@@ -42,9 +42,9 @@ describe('createCaptionFanout', () => {
   });
 
   it('re-composes per routed translation target (YouTube)', async () => {
-    const target = createCaptionTarget(db, 'fanout-key', { type: 'youtube', streamKey: 'sk-routed' });
+    const target = await createCaptionTarget(db, 'fanout-key', { type: 'youtube', streamKey: 'sk-routed' });
     assert.ok(target.ok, target.error);
-    const routed = createTranslationTarget(db, 'fanout-key', {
+    const routed = await createTranslationTarget(db, 'fanout-key', {
       lang: 'fi-FI', target: 'captions', captionTargetId: target.target.id, showOriginal: false,
     });
     assert.ok(routed.ok, routed.error);

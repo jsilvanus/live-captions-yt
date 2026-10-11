@@ -3,9 +3,9 @@ import assert from 'node:assert';
 import { createServer } from 'node:http';
 import express from 'express';
 import { initDb, createKey, getKey, updateKey, formatKey } from '../src/db.js';
-import { runMigrations } from 'lcyt-rtmp/src/db.js';
+import { SQLITE_ONLY_PLUGIN, ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 
-function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { const db = await initDb(':memory:'); runMigrations(db); return db; }
 import {
   isRelayAllowed,
   isRelayActive,
@@ -44,37 +44,37 @@ function bearerHeaders(token) {
 // DB helpers for relay_allowed
 // ---------------------------------------------------------------------------
 
-describe('relay_allowed column', () => {
+describe('relay_allowed column', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
-  it('defaults to false on createKey', () => {
-    const k = createKey(db, { owner: 'Alice' });
+  it('defaults to false on createKey', async () => {
+    const k = await createKey(db, { owner: 'Alice' });
     assert.strictEqual(k.relay_allowed, 0);
     assert.strictEqual(formatKey(k).relayAllowed, false);
   });
 
-  it('can be set to true on createKey', () => {
-    const k = createKey(db, { owner: 'Bob', relay_allowed: true });
+  it('can be set to true on createKey', async () => {
+    const k = await createKey(db, { owner: 'Bob', relay_allowed: true });
     assert.strictEqual(k.relay_allowed, 1);
     assert.strictEqual(formatKey(k).relayAllowed, true);
   });
 
-  it('isRelayAllowed returns false by default', () => {
-    const k = createKey(db, { owner: 'Carol' });
-    assert.strictEqual(isRelayAllowed(db, k.key), false);
+  it('isRelayAllowed returns false by default', async () => {
+    const k = await createKey(db, { owner: 'Carol' });
+    assert.strictEqual(isRelayAllowed(db.$legacy, k.key), false);
   });
 
-  it('isRelayAllowed returns true after updateKey', () => {
-    const k = createKey(db, { owner: 'Dave' });
-    updateKey(db, k.key, { relay_allowed: true });
-    assert.strictEqual(isRelayAllowed(db, k.key), true);
+  it('isRelayAllowed returns true after updateKey', async () => {
+    const k = await createKey(db, { owner: 'Dave' });
+    await updateKey(db, k.key, { relay_allowed: true });
+    assert.strictEqual(isRelayAllowed(db.$legacy, k.key), true);
   });
 
   it('isRelayAllowed returns false for unknown key', () => {
-    assert.strictEqual(isRelayAllowed(db, 'no-such-key'), false);
+    assert.strictEqual(isRelayAllowed(db.$legacy, 'no-such-key'), false);
   });
 });
 
@@ -82,127 +82,127 @@ describe('relay_allowed column', () => {
 // DB helpers for relay_active (user toggle)
 // ---------------------------------------------------------------------------
 
-describe('relay_active column', () => {
+describe('relay_active column', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
-  it('defaults to false on createKey', () => {
-    const k = createKey(db, { owner: 'ActiveA' });
-    assert.strictEqual(isRelayActive(db, k.key), false);
+  it('defaults to false on createKey', async () => {
+    const k = await createKey(db, { owner: 'ActiveA' });
+    assert.strictEqual(isRelayActive(db.$legacy, k.key), false);
     assert.strictEqual(formatKey(k).relayActive, false);
   });
 
-  it('setRelayActive sets it to true', () => {
-    const k = createKey(db, { owner: 'ActiveB' });
-    const changed = setRelayActive(db, k.key, true);
+  it('setRelayActive sets it to true', async () => {
+    const k = await createKey(db, { owner: 'ActiveB' });
+    const changed = setRelayActive(db.$legacy, k.key, true);
     assert.strictEqual(changed, true);
-    assert.strictEqual(isRelayActive(db, k.key), true);
+    assert.strictEqual(isRelayActive(db.$legacy, k.key), true);
   });
 
-  it('setRelayActive sets it back to false', () => {
-    const k = createKey(db, { owner: 'ActiveC' });
-    setRelayActive(db, k.key, true);
-    setRelayActive(db, k.key, false);
-    assert.strictEqual(isRelayActive(db, k.key), false);
+  it('setRelayActive sets it back to false', async () => {
+    const k = await createKey(db, { owner: 'ActiveC' });
+    setRelayActive(db.$legacy, k.key, true);
+    setRelayActive(db.$legacy, k.key, false);
+    assert.strictEqual(isRelayActive(db.$legacy, k.key), false);
   });
 
   it('isRelayActive returns false for unknown key', () => {
-    assert.strictEqual(isRelayActive(db, 'no-such-key'), false);
+    assert.strictEqual(isRelayActive(db.$legacy, 'no-such-key'), false);
   });
 
   it('setRelayActive returns false for unknown key', () => {
-    assert.strictEqual(setRelayActive(db, 'no-such-key', true), false);
+    assert.strictEqual(setRelayActive(db.$legacy, 'no-such-key', true), false);
   });
 });
 
-describe('rtmp_relays DB helpers (fan-out)', () => {
+describe('rtmp_relays DB helpers (fan-out)', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
   it('getRelaySlot returns null when no relay configured', () => {
-    assert.strictEqual(getRelaySlot(db, 'no-key', 1), null);
+    assert.strictEqual(getRelaySlot(db.$legacy, 'no-key', 1), null);
   });
 
   it('getRelay (compat alias) returns null for slot 1 when no relay configured', () => {
-    assert.strictEqual(getRelay(db, 'no-key'), null);
+    assert.strictEqual(getRelay(db.$legacy, 'no-key'), null);
   });
 
   it('upsertRelay creates relay at slot 1 by default (via compat alias)', () => {
-    const relay = upsertRelay(db, 'key-1', 1, 'rtmp://a.example.com/live/xyz');
+    const relay = upsertRelay(db.$legacy, 'key-1', 1, 'rtmp://a.example.com/live/xyz');
     assert.strictEqual(relay.apiKey, 'key-1');
     assert.strictEqual(relay.slot, 1);
     assert.strictEqual(relay.targetUrl, 'rtmp://a.example.com/live/xyz');
   });
 
   it('upsertRelay creates relay at slot 2', () => {
-    const relay = upsertRelay(db, 'key-1', 2, 'rtmp://b.example.com/live/xyz');
+    const relay = upsertRelay(db.$legacy, 'key-1', 2, 'rtmp://b.example.com/live/xyz');
     assert.strictEqual(relay.slot, 2);
     assert.strictEqual(relay.targetUrl, 'rtmp://b.example.com/live/xyz');
   });
 
   it('getRelays returns all slots ordered by slot', () => {
-    const relays = getRelays(db, 'key-1');
+    const relays = getRelays(db.$legacy, 'key-1');
     assert.strictEqual(relays.length, 2);
     assert.strictEqual(relays[0].slot, 1);
     assert.strictEqual(relays[1].slot, 2);
   });
 
   it('upsertRelay updates existing relay slot', () => {
-    upsertRelay(db, 'key-2', 1, 'rtmp://old.example.com/live/key');
-    const updated = upsertRelay(db, 'key-2', 1, 'rtmp://new.example.com/live/key');
+    upsertRelay(db.$legacy, 'key-2', 1, 'rtmp://old.example.com/live/key');
+    const updated = upsertRelay(db.$legacy, 'key-2', 1, 'rtmp://new.example.com/live/key');
     assert.strictEqual(updated.targetUrl, 'rtmp://new.example.com/live/key');
   });
 
   it('deleteRelaySlot removes a specific slot', () => {
-    upsertRelay(db, 'key-3', 1, 'rtmp://del.example.com/live/key');
-    upsertRelay(db, 'key-3', 2, 'rtmp://del2.example.com/live/key');
-    const ok = deleteRelaySlot(db, 'key-3', 1);
+    upsertRelay(db.$legacy, 'key-3', 1, 'rtmp://del.example.com/live/key');
+    upsertRelay(db.$legacy, 'key-3', 2, 'rtmp://del2.example.com/live/key');
+    const ok = deleteRelaySlot(db.$legacy, 'key-3', 1);
     assert.strictEqual(ok, true);
-    assert.strictEqual(getRelaySlot(db, 'key-3', 1), null);
-    assert.ok(getRelaySlot(db, 'key-3', 2)); // slot 2 still there
+    assert.strictEqual(getRelaySlot(db.$legacy, 'key-3', 1), null);
+    assert.ok(getRelaySlot(db.$legacy, 'key-3', 2)); // slot 2 still there
   });
 
   it('deleteAllRelays removes all slots for a key', () => {
-    upsertRelay(db, 'key-4', 1, 'rtmp://x.example.com/live/1');
-    upsertRelay(db, 'key-4', 2, 'rtmp://x.example.com/live/2');
-    const count = deleteAllRelays(db, 'key-4');
+    upsertRelay(db.$legacy, 'key-4', 1, 'rtmp://x.example.com/live/1');
+    upsertRelay(db.$legacy, 'key-4', 2, 'rtmp://x.example.com/live/2');
+    const count = deleteAllRelays(db.$legacy, 'key-4');
     assert.strictEqual(count, 2);
-    assert.strictEqual(getRelays(db, 'key-4').length, 0);
+    assert.strictEqual(getRelays(db.$legacy, 'key-4').length, 0);
   });
 
   it('deleteRelay (compat alias) removes all slots and returns boolean', () => {
-    upsertRelay(db, 'key-5', 1, 'rtmp://y.example.com/live/1');
-    const ok = deleteRelay(db, 'key-5');
+    upsertRelay(db.$legacy, 'key-5', 1, 'rtmp://y.example.com/live/1');
+    const ok = deleteRelay(db.$legacy, 'key-5');
     assert.strictEqual(ok, true);
-    assert.strictEqual(deleteRelay(db, 'ghost'), false);
+    assert.strictEqual(deleteRelay(db.$legacy, 'ghost'), false);
   });
 
   it('upsertRelay rejects non-positive slots but allows slot 5+ (plan_ingest_feeds.md §1b removed the 4-slot cap)', () => {
-    assert.throws(() => upsertRelay(db, 'key-6', 0, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
-    assert.throws(() => upsertRelay(db, 'key-6', -1, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
-    const relay = upsertRelay(db, 'key-6', 5, 'rtmp://z.example.com/live/1');
+    assert.throws(() => upsertRelay(db.$legacy, 'key-6', 0, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+    assert.throws(() => upsertRelay(db.$legacy, 'key-6', -1, 'rtmp://z.example.com/live/1'), /RangeError|slot must be/i);
+    const relay = upsertRelay(db.$legacy, 'key-6', 5, 'rtmp://z.example.com/live/1');
     assert.strictEqual(relay.slot, 5);
   });
 
   it('upsertRelay stores targetName and captionMode', () => {
-    const relay = upsertRelay(db, 'key-7', 1, 'rtmp://base.example.com/live', { targetName: 'sk', captionMode: 'cea708' });
+    const relay = upsertRelay(db.$legacy, 'key-7', 1, 'rtmp://base.example.com/live', { targetName: 'sk', captionMode: 'cea708' });
     assert.strictEqual(relay.targetName, 'sk');
     assert.strictEqual(relay.captionMode, 'cea708');
   });
 
   it('upsertRelay stores recordOnStart and recordOnButton', () => {
-    const relay = upsertRelay(db, 'key-8', 1, 'rtmp://recording.example.com/live', {
+    const relay = upsertRelay(db.$legacy, 'key-8', 1, 'rtmp://recording.example.com/live', {
       recordOnStart: true,
       recordOnButton: true,
     });
     assert.strictEqual(relay.recordOnStart, true);
     assert.strictEqual(relay.recordOnButton, true);
-    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnStart, true);
-    assert.strictEqual(getRelaySlot(db, 'key-8', 1).recordOnButton, true);
+    assert.strictEqual(getRelaySlot(db.$legacy, 'key-8', 1).recordOnStart, true);
+    assert.strictEqual(getRelaySlot(db.$legacy, 'key-8', 1).recordOnButton, true);
   });
 });
 
@@ -210,11 +210,11 @@ describe('rtmp_relays DB helpers (fan-out)', () => {
 // PATCH /keys/:key — relay_allowed
 // ---------------------------------------------------------------------------
 
-describe('PATCH /keys/:key relay_allowed', () => {
+describe('PATCH /keys/:key relay_allowed', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     const app = express();
     app.use(express.json());
     app.use('/keys', createKeysRouter(db));
@@ -232,7 +232,7 @@ describe('PATCH /keys/:key relay_allowed', () => {
   }));
 
   it('should set relay_allowed via PATCH', async () => {
-    const k = createKey(db, { owner: 'Relay-Test' });
+    const k = await createKey(db, { owner: 'Relay-Test' });
     const res = await fetch(`${baseUrl}/keys/${k.key}`, {
       method: 'PATCH',
       headers: adminHeaders(),
@@ -244,7 +244,7 @@ describe('PATCH /keys/:key relay_allowed', () => {
   });
 
   it('should unset relay_allowed via PATCH', async () => {
-    const k = createKey(db, { owner: 'Relay-Test2', relay_allowed: true });
+    const k = await createKey(db, { owner: 'Relay-Test2', relay_allowed: true });
     const res = await fetch(`${baseUrl}/keys/${k.key}`, {
       method: 'PATCH',
       headers: adminHeaders(),
@@ -354,16 +354,16 @@ describe('RtmpRelayManager', () => {
 // POST /rtmp — nginx-rtmp callback (form-encoded body)
 // ---------------------------------------------------------------------------
 
-describe('POST /rtmp (nginx-rtmp callbacks)', () => {
+describe('POST /rtmp (nginx-rtmp callbacks)', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl, relayManager;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     relayManager = new RtmpRelayManager();
     const app = express();
     // Note: createRtmpRouter registers express.urlencoded() internally,
     // so no additional body parser is needed here.
-    app.use('/rtmp', createRtmpRouter(db, relayManager));
+    app.use('/rtmp', createRtmpRouter(db.$legacy, relayManager));
     server = createServer(app);
     server.listen(0, () => {
       baseUrl = `http://localhost:${server.address().port}`;
@@ -391,13 +391,13 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   });
 
   it('returns 403 when relay not allowed (call=publish)', async () => {
-    const k = createKey(db, { owner: 'NoRelay' });
+    const k = await createKey(db, { owner: 'NoRelay' });
     const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 403);
   });
 
   it('returns 200 when relay_allowed (no relay configured)', async () => {
-    const k = createKey(db, { owner: 'WithRelay', relay_allowed: true });
+    const k = await createKey(db, { owner: 'WithRelay', relay_allowed: true });
     const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 200);
   });
@@ -408,14 +408,14 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   });
 
   it('marks key as publishing on call=publish', async () => {
-    const k = createKey(db, { owner: 'MarkPub', relay_allowed: true });
+    const k = await createKey(db, { owner: 'MarkPub', relay_allowed: true });
     assert.strictEqual(relayManager.isPublishing(k.key), false);
     await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(relayManager.isPublishing(k.key), true);
   });
 
   it('unmarks key on call=publish_done', async () => {
-    const k = createKey(db, { owner: 'MarkPubDone', relay_allowed: true });
+    const k = await createKey(db, { owner: 'MarkPubDone', relay_allowed: true });
     await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     await postRtmp({ call: 'publish_done', app: 'stream', name: k.key });
     assert.strictEqual(relayManager.isPublishing(k.key), false);
@@ -423,8 +423,8 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
 
   it('does NOT start fan-out when relay_active=false even with slots configured', async () => {
     // relay_allowed=true but relay_active=false (default)
-    const k = createKey(db, { owner: 'InactiveRelay', relay_allowed: true });
-    upsertRelay(db, k.key, 1, 'rtmp://target.example.com/live');
+    const k = await createKey(db, { owner: 'InactiveRelay', relay_allowed: true });
+    upsertRelay(db.$legacy, k.key, 1, 'rtmp://target.example.com/live');
     const startedKeys = [];
     relayManager._onStreamStarted = (apiKey) => startedKeys.push(apiKey);
     await postRtmp({ call: 'publish', app: 'stream', name: k.key });
@@ -433,13 +433,13 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   });
 
   it('returns 400 for unknown call type', async () => {
-    const k = createKey(db, { owner: 'BadCall', relay_allowed: true });
+    const k = await createKey(db, { owner: 'BadCall', relay_allowed: true });
     const res = await postRtmp({ call: 'unknown', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 400);
   });
 
   it('rejects wrong app name when RTMP_APPLICATION is set', async () => {
-    const k = createKey(db, { owner: 'WrongApp', relay_allowed: true });
+    const k = await createKey(db, { owner: 'WrongApp', relay_allowed: true });
     const saved = process.env.RTMP_APPLICATION;
     process.env.RTMP_APPLICATION = 'expected-app';
     try {
@@ -452,7 +452,7 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
   });
 
   it('accepts correct app name when RTMP_APPLICATION is set', async () => {
-    const k = createKey(db, { owner: 'RightApp', relay_allowed: true });
+    const k = await createKey(db, { owner: 'RightApp', relay_allowed: true });
     const saved = process.env.RTMP_APPLICATION;
     process.env.RTMP_APPLICATION = 'live';
     try {
@@ -469,14 +469,14 @@ describe('POST /rtmp (nginx-rtmp callbacks)', () => {
 // plan/selfservice_config_backend §2 — rotated ingest_stream_key resolution
 // ---------------------------------------------------------------------------
 
-describe('POST /rtmp — resolveApiKeyFromIngestStreamKey', () => {
+describe('POST /rtmp — resolveApiKeyFromIngestStreamKey', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl, relayManager;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     relayManager = new RtmpRelayManager();
     const app = express();
-    app.use('/rtmp', createRtmpRouter(db, relayManager));
+    app.use('/rtmp', createRtmpRouter(db.$legacy, relayManager));
     server = createServer(app);
     server.listen(0, () => {
       baseUrl = `http://localhost:${server.address().port}`;
@@ -499,16 +499,16 @@ describe('POST /rtmp — resolveApiKeyFromIngestStreamKey', () => {
   }
 
   it('accepts a publish using the literal api_key when no ingest_stream_key is set', async () => {
-    const k = createKey(db, { owner: 'NoRotate', relay_allowed: true });
+    const k = await createKey(db, { owner: 'NoRotate', relay_allowed: true });
     const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 200);
     assert.strictEqual(relayManager.isPublishing(k.key), true);
   });
 
   it('resolves a rotated ingest_stream_key to the owning api_key', async () => {
-    const k = createKey(db, { owner: 'Rotated', relay_allowed: true });
+    const k = await createKey(db, { owner: 'Rotated', relay_allowed: true });
     const rotatedStreamKey = 'rotated-stream-key-abc123';
-    db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run(rotatedStreamKey, k.key);
+    await db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run(rotatedStreamKey, k.key);
 
     const res = await postRtmp({ call: 'publish', app: 'stream', name: rotatedStreamKey });
     assert.strictEqual(res.status, 200);
@@ -522,8 +522,8 @@ describe('POST /rtmp — resolveApiKeyFromIngestStreamKey', () => {
     // only affects lookups BY the rotated value — publishing with the literal api_key
     // still resolves to itself and is still allowed. This documents that behavior:
     // rotation does not retroactively block the old literal api_key from publishing.
-    const k = createKey(db, { owner: 'StillAllowed', relay_allowed: true });
-    db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run('some-other-value', k.key);
+    const k = await createKey(db, { owner: 'StillAllowed', relay_allowed: true });
+    await db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run('some-other-value', k.key);
     const res = await postRtmp({ call: 'publish', app: 'stream', name: k.key });
     assert.strictEqual(res.status, 200);
   });
@@ -538,23 +538,23 @@ describe('POST /rtmp — resolveApiKeyFromIngestStreamKey', () => {
 // /stream CRUD — fan-out (up to 4 slots per key)
 // ---------------------------------------------------------------------------
 
-describe('/stream CRUD (fan-out)', () => {
+describe('/stream CRUD (fan-out)', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl, relayManager;
   let apiKey, token;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     relayManager = new RtmpRelayManager();
     const auth = createAuthMiddleware(JWT_SECRET);
     const app = express();
     app.use(express.json());
-    app.use('/stream', createStreamRouter(db, auth, relayManager));
+    app.use('/stream', createStreamRouter(db.$legacy, auth, relayManager));
     server = createServer(app);
-    server.listen(0, () => {
+    server.listen(0, async () => {
       baseUrl = `http://localhost:${server.address().port}`;
 
       // Create a key with relay_allowed=true
-      const k = createKey(db, { owner: 'StreamUser', relay_allowed: true });
+      const k = await createKey(db, { owner: 'StreamUser', relay_allowed: true });
       apiKey = k.key;
       // Issue a JWT that auth middleware will accept
       token = jwt.sign({ sessionId: 'fake-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
@@ -726,7 +726,7 @@ describe('/stream CRUD (fan-out)', () => {
   });
 
   it('GET /stream returns 403 for key without relay_allowed', async () => {
-    const k2 = createKey(db, { owner: 'NoStream' });
+    const k2 = await createKey(db, { owner: 'NoStream' });
     const t2 = jwt.sign({ sessionId: 'fake2', apiKey: k2.key }, JWT_SECRET, { expiresIn: '1h' });
     const res = await fetch(`${baseUrl}/stream`, { headers: bearerHeaders(t2) });
     assert.strictEqual(res.status, 403);
@@ -752,33 +752,33 @@ describe('/stream CRUD (fan-out)', () => {
 // Phase 5: cea708_delay_ms per-key DB column
 // ---------------------------------------------------------------------------
 
-describe('cea708_delay_ms per-key column', () => {
+describe('cea708_delay_ms per-key column', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
-  it('defaults to 0 on createKey', () => {
-    const k = createKey(db, { owner: 'Delay-A' });
+  it('defaults to 0 on createKey', async () => {
+    const k = await createKey(db, { owner: 'Delay-A' });
     assert.strictEqual(k.cea708_delay_ms, 0);
     assert.strictEqual(formatKey(k).cea708DelayMs, 0);
   });
 
-  it('can be set via createKey', () => {
-    const k = createKey(db, { owner: 'Delay-B', cea708_delay_ms: 2000 });
+  it('can be set via createKey', async () => {
+    const k = await createKey(db, { owner: 'Delay-B', cea708_delay_ms: 2000 });
     assert.strictEqual(k.cea708_delay_ms, 2000);
     assert.strictEqual(formatKey(k).cea708DelayMs, 2000);
   });
 
-  it('can be updated via updateKey', () => {
-    const k = createKey(db, { owner: 'Delay-C' });
-    updateKey(db, k.key, { cea708_delay_ms: 3500 });
-    const row = db.prepare('SELECT cea708_delay_ms FROM api_keys WHERE key = ?').get(k.key);
+  it('can be updated via updateKey', async () => {
+    const k = await createKey(db, { owner: 'Delay-C' });
+    await updateKey(db, k.key, { cea708_delay_ms: 3500 });
+    const row = await db.prepare('SELECT cea708_delay_ms FROM api_keys WHERE key = ?').get(k.key);
     assert.strictEqual(row.cea708_delay_ms, 3500);
   });
 
-  it('is exposed in formatKey as cea708DelayMs', () => {
-    const k = createKey(db, { owner: 'Delay-D', cea708_delay_ms: 1000 });
+  it('is exposed in formatKey as cea708DelayMs', async () => {
+    const k = await createKey(db, { owner: 'Delay-D', cea708_delay_ms: 1000 });
     const formatted = formatKey(k);
     assert.ok('cea708DelayMs' in formatted);
     assert.strictEqual(formatted.cea708DelayMs, 1000);
@@ -880,11 +880,11 @@ describe('RtmpRelayManager CEA-708 (meta injection, no real ffmpeg)', () => {
 // Phase 5: PATCH /keys/:key — cea708_delay_ms
 // ---------------------------------------------------------------------------
 
-describe('PATCH /keys/:key cea708_delay_ms', () => {
+describe('PATCH /keys/:key cea708_delay_ms', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     const app = express();
     app.use(express.json());
     app.use('/keys', createKeysRouter(db));
@@ -902,7 +902,7 @@ describe('PATCH /keys/:key cea708_delay_ms', () => {
   }));
 
   it('sets cea708_delay_ms via PATCH', async () => {
-    const k = createKey(db, { owner: 'Cea-Test' });
+    const k = await createKey(db, { owner: 'Cea-Test' });
     const res = await fetch(`${baseUrl}/keys/${k.key}`, {
       method: 'PATCH',
       headers: adminHeaders(),
@@ -914,7 +914,7 @@ describe('PATCH /keys/:key cea708_delay_ms', () => {
   });
 
   it('resets cea708_delay_ms to 0 via PATCH', async () => {
-    const k = createKey(db, { owner: 'Cea-Test2', cea708_delay_ms: 1500 });
+    const k = await createKey(db, { owner: 'Cea-Test2', cea708_delay_ms: 1500 });
     const res = await fetch(`${baseUrl}/keys/${k.key}`, {
       method: 'PATCH',
       headers: adminHeaders(),
@@ -929,20 +929,20 @@ describe('PATCH /keys/:key cea708_delay_ms', () => {
 // Phase 5: POST /stream — captionMode: 'cea708' accepted
 // ---------------------------------------------------------------------------
 
-describe('POST /stream captionMode cea708 accepted', () => {
+describe('POST /stream captionMode cea708 accepted', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl, token;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     const auth = createAuthMiddleware(JWT_SECRET);
     const app = express();
     app.use(express.json());
     const relayManager = new RtmpRelayManager();
-    app.use('/stream', createStreamRouter(db, auth, relayManager));
+    app.use('/stream', createStreamRouter(db.$legacy, auth, relayManager));
     server = createServer(app);
-    server.listen(0, () => {
+    server.listen(0, async () => {
       baseUrl = `http://localhost:${server.address().port}`;
-      const k = createKey(db, { owner: 'CeaSlot', relay_allowed: true });
+      const k = await createKey(db, { owner: 'CeaSlot', relay_allowed: true });
       token = jwt.sign({ sessionId: 'cea-session', apiKey: k.key }, JWT_SECRET, { expiresIn: '1h' });
       resolve();
     });
@@ -980,14 +980,14 @@ describe('POST /stream captionMode cea708 accepted', () => {
 // Phase 7: per-slot transcoding DB fields
 // ---------------------------------------------------------------------------
 
-describe('upsertRelay — per-slot transcoding fields', () => {
+describe('upsertRelay — per-slot transcoding fields', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
   it('stores scale, fps, videoBitrate, audioBitrate in the DB', () => {
-    const relay = upsertRelay(db, 'txcode-key', 1, 'rtmp://yt.example.com/live2', {
+    const relay = upsertRelay(db.$legacy, 'txcode-key', 1, 'rtmp://yt.example.com/live2', {
       targetName: 'sk',
       captionMode: 'http',
       scale: '1280x720',
@@ -1002,7 +1002,7 @@ describe('upsertRelay — per-slot transcoding fields', () => {
   });
 
   it('all transcode fields default to null', () => {
-    const relay = upsertRelay(db, 'txcode-key2', 1, 'rtmp://yt.example.com/live2');
+    const relay = upsertRelay(db.$legacy, 'txcode-key2', 1, 'rtmp://yt.example.com/live2');
     assert.strictEqual(relay.scale, null);
     assert.strictEqual(relay.fps, null);
     assert.strictEqual(relay.videoBitrate, null);
@@ -1010,8 +1010,8 @@ describe('upsertRelay — per-slot transcoding fields', () => {
   });
 
   it('can update transcode fields via a second upsertRelay', () => {
-    upsertRelay(db, 'txcode-key3', 1, 'rtmp://yt.example.com/live2');
-    const relay = upsertRelay(db, 'txcode-key3', 1, 'rtmp://yt.example.com/live2', {
+    upsertRelay(db.$legacy, 'txcode-key3', 1, 'rtmp://yt.example.com/live2');
+    const relay = upsertRelay(db.$legacy, 'txcode-key3', 1, 'rtmp://yt.example.com/live2', {
       scale: '854x480',
       fps: 24,
     });
@@ -1025,20 +1025,20 @@ describe('upsertRelay — per-slot transcoding fields', () => {
 // Phase 7: POST /stream — transcode field validation
 // ---------------------------------------------------------------------------
 
-describe('POST /stream — transcode field validation', () => {
+describe('POST /stream — transcode field validation', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, baseUrl, token;
 
-  before(() => new Promise((resolve) => {
-    db = initTestDb();
+  before(() => new Promise(async (resolve) => {
+    db = await initTestDb();
     const auth = createAuthMiddleware(JWT_SECRET);
     const app = express();
     app.use(express.json());
     const relayManager = new RtmpRelayManager();
-    app.use('/stream', createStreamRouter(db, auth, relayManager));
+    app.use('/stream', createStreamRouter(db.$legacy, auth, relayManager));
     server = createServer(app);
-    server.listen(0, () => {
+    server.listen(0, async () => {
       baseUrl = `http://localhost:${server.address().port}`;
-      const k = createKey(db, { owner: 'TxUser', relay_allowed: true });
+      const k = await createKey(db, { owner: 'TxUser', relay_allowed: true });
       token = jwt.sign({ sessionId: 'tx-session', apiKey: k.key }, JWT_SECRET, { expiresIn: '1h' });
       resolve();
     });

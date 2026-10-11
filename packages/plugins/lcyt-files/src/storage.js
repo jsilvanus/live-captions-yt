@@ -99,7 +99,7 @@ export function createStorageResolver(db, fallback) {
     }
 
     const { getKeyStorageConfig } = await import('./db.js');
-    const config = getKeyStorageConfig(db, apiKey);
+    const config = await getKeyStorageConfig(db, apiKey);
     if (!config) return fallback;
 
     let adapter;

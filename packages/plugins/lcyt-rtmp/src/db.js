@@ -113,7 +113,7 @@ export function runMigrations(db) {
       caption_mode  TEXT    NOT NULL DEFAULT 'http',
       started_at    TEXT    NOT NULL,
       ended_at      TEXT,
-      duration_ms   INTEGER NOT NULL DEFAULT 0,
+      duration_ms   BIGINT NOT NULL DEFAULT 0,
       captions_sent INTEGER NOT NULL DEFAULT 0
     )
   `);

@@ -21,12 +21,12 @@ const INVALID_PNG_BASE64 = btoa('not a png at all');
 
 let server, baseUrl, db, iconsDir, ownerToken;
 
-before(() => new Promise((resolve) => {
+before(() => new Promise(async (resolve) => {
   iconsDir = join(tmpdir(), `lcyt-icons-test-${Date.now()}`);
   fs.mkdirSync(iconsDir, { recursive: true });
 
-  db = initDb(':memory:');
-  createKey(db, { key: API_KEY, owner: 'Test' });
+  db = await initDb(':memory:');
+  await createKey(db, { key: API_KEY, owner: 'Test' });
 
   // Real production mounting (server.js) uses scopedAuth('icon')/
   // createProjectAccessMiddleware + requireProjectRole('setup'), not the
@@ -34,8 +34,8 @@ before(() => new Promise((resolve) => {
   // (plan_project_roles.md; previously store.get(sessionId), see
   // CONSIDER.md) — writes now need a real userId with explicit owner/admin.
   const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'icon' });
-  const owner = createUser(db, { email: 'icons-owner@example.com', passwordHash: 'x' });
-  addMember(db, API_KEY, owner.id, 'owner');
+  const owner = await createUser(db, { email: 'icons-owner@example.com', passwordHash: 'x' });
+  await addMember(db, API_KEY, owner.id, 'owner');
   ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: API_KEY }, JWT_SECRET, { expiresIn: '1h' });
 
   const app = express();
@@ -56,10 +56,10 @@ after(() => new Promise((resolve) => {
   });
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   // Clear icons for the test API key so tests start with a clean state
-  db.prepare('DELETE FROM icons WHERE api_key = ?').run(API_KEY);
-  db.prepare('DELETE FROM icons WHERE api_key LIKE ?').run('other-key%');
+  await db.prepare('DELETE FROM icons WHERE api_key = ?').run(API_KEY);
+  await db.prepare('DELETE FROM icons WHERE api_key LIKE ?').run('other-key%');
   // Clear the icons directory (recursive, including subdirectories)
   try { fs.rmSync(iconsDir, { recursive: true, force: true }); } catch {}
   try { fs.mkdirSync(iconsDir, { recursive: true }); } catch {}
@@ -241,9 +241,9 @@ describe('DELETE /icons/:id', () => {
     const up = await postIcon({ filename: 'owned.png', mimeType: 'image/png', data: VALID_PNG_BASE64 });
     const { id } = await up.json();
 
-    createKey(db, { key: 'other-key-icons', owner: 'Other' });
-    const otherOwner = createUser(db, { email: 'other-icons-owner@example.com', passwordHash: 'x' });
-    addMember(db, 'other-key-icons', otherOwner.id, 'owner');
+    await createKey(db, { key: 'other-key-icons', owner: 'Other' });
+    const otherOwner = await createUser(db, { email: 'other-icons-owner@example.com', passwordHash: 'x' });
+    await addMember(db, 'other-key-icons', otherOwner.id, 'owner');
     const otherToken = jwt.sign({ type: 'user', userId: otherOwner.id, email: otherOwner.email, projectId: 'other-key-icons' }, JWT_SECRET);
 
     const del = await fetch(`${baseUrl}/icons/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${otherToken}`, 'X-Api-Key': 'other-key-icons' } });

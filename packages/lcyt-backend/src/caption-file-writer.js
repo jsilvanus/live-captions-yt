@@ -21,11 +21,11 @@ const FILE_FORMATS = new Set(['text', 'youtube', 'vtt']);
  * @returns {(session: object, entry: { text: string, translations?: Record<string,string>, fileFormats?: Record<string,string>, timestamp?: string }) => void}
  */
 export function createSessionCaptionFileWriter({ db, resolveStorage }) {
-  return function writeSessionCaptionFiles(session, { text, translations, fileFormats, timestamp } = {}) {
+  return async function writeSessionCaptionFiles(session, { text, translations, fileFormats, timestamp } = {}) {
     if (!db || !resolveStorage || !session) return;
 
     let enabled = false;
-    try { enabled = isBackendFileEnabled(db, session.apiKey); } catch {}
+    try { enabled = await isBackendFileEnabled(db, session.apiKey); } catch {}
     if (!enabled) return;
 
     if (!session._fileHandles) session._fileHandles = new Map();

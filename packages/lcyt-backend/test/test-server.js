@@ -20,7 +20,7 @@ export function createTestServer(dbPath) {
 
   // Mount bridge router under /production/bridge
   const prodRouter = createBridgeRouter(db, bridgeManager, 'http://localhost');
-  app.use('/production/bridge', prodRouter);
+  app.use('/api/v1/production/bridge', prodRouter);
 
   return { app, db, bridgeManager };
 }

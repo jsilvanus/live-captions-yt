@@ -49,24 +49,37 @@ export function resolveLocalBind(env = process.env) {
 }
 
 /** Create (once) the local admin user and its default project. */
-export function ensureLocalIdentity(db) {
-  let user = db.prepare('SELECT id FROM users WHERE email = ?').get(LOCAL_USER_EMAIL);
+export async function ensureLocalIdentity(db) {
+  let user = await db.users.findUnique({ where: { email: LOCAL_USER_EMAIL }, select: { id: true } });
   if (!user) {
     // No usable password: the account can only be reached through local mode.
-    user = createUser(db, { email: LOCAL_USER_EMAIL, passwordHash: '!local-mode', name: 'Local user' });
-    db.prepare('UPDATE users SET is_admin = 1 WHERE id = ?').run(user.id);
+    user = await createUser(db, { email: LOCAL_USER_EMAIL, passwordHash: '!local-mode', name: 'Local user' });
+    await db.users.updateMany({ where: { id: user.id }, data: { is_admin: 1 } });
   }
   const userId = Number(user.id);
-  let key = db.prepare('SELECT key FROM api_keys WHERE user_id = ? AND active = 1 ORDER BY rowid LIMIT 1').get(userId);
-  if (!key) key = createKey(db, { owner: 'Local project', user_id: userId });
-  addMember(db, key.key, userId, 'owner');
+  let key = await db.api_keys.findFirst({ where: { user_id: userId, active: 1 }, orderBy: { id: 'asc' }, select: { key: true } });
+  if (!key) key = await createKey(db, { owner: 'Local project', user_id: userId });
+  await addMember(db, key.key, userId, 'owner');
   return { userId, email: LOCAL_USER_EMAIL, projectId: key.key };
 }
 
-const OWN_ALL_PROJECTS = `
-  INSERT INTO project_members (api_key, user_id, access_level)
-  SELECT key, ?, 'owner' FROM api_keys
-  WHERE active = 1 AND key NOT IN (SELECT api_key FROM project_members WHERE user_id = ?)`;
+/** Make the local user owner of every active project it is not yet a member of. */
+async function ownAllProjects(db, userId) {
+  const projects = await db.api_keys.findMany({
+    where: { active: 1, project_members: { none: { user_id: userId } } },
+    select: { key: true },
+  });
+  if (!projects.length) return;
+  await db.$transaction(async (tx) => {
+    for (const { key } of projects) {
+      await tx.project_members.upsert({
+        where: { api_key_user_id: { api_key: key, user_id: userId } },
+        create: { api_key: key, user_id: userId, access_level: 'owner' },
+        update: {},
+      });
+    }
+  });
+}
 
 /**
  * Express middleware: requests without credentials get the local admin's
@@ -79,13 +92,12 @@ export function createLocalModeMiddleware(db, jwtSecret, identity) {
     jwtSecret,
     { expiresIn: '30d' },
   );
-  const ownAll = db.prepare(OWN_ALL_PROJECTS);
-  const middleware = (req, _res, next) => {
+  const middleware = async (req, _res, next) => {
     const hasAdminKey = Boolean(req.headers['x-admin-key']);
     if (!extractAuthToken(req) && !hasAdminKey) {
       req.headers.authorization = `Bearer ${token}`;
       // Projects created since the last request (any route) belong to the local user too.
-      ownAll.run(identity.userId, identity.userId);
+      try { await ownAllProjects(db, identity.userId); } catch (err) { return next(err); }
     }
     next();
   };

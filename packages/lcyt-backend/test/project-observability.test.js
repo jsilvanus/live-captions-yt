@@ -31,9 +31,9 @@ function authed(user) {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${makeToken(user)}` };
 }
 
-before(() => new Promise(resolve => {
+before(() => new Promise(async resolve => {
   process.env.ADMIN_KEY = ADMIN_KEY;
-  db = initDb(':memory:');
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -52,21 +52,21 @@ after(() => new Promise(resolve => {
   server.close(resolve);
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   // FK-safe order: project_members -> org_members -> api_keys -> organizations -> users
-  db.prepare('DELETE FROM project_member_permissions').run();
-  db.prepare('DELETE FROM project_members').run();
-  db.prepare('DELETE FROM org_members').run();
-  db.prepare('DELETE FROM api_keys').run();
-  db.prepare('DELETE FROM organizations').run();
-  db.prepare('DELETE FROM users').run();
-  owner = createUser(db, { email: 'owner@example.com', passwordHash: 'hash', name: 'Owner' });
-  outsider = createUser(db, { email: 'outsider@example.com', passwordHash: 'hash', name: 'Outsider' });
+  await db.prepare('DELETE FROM project_member_permissions').run();
+  await db.prepare('DELETE FROM project_members').run();
+  await db.prepare('DELETE FROM org_members').run();
+  await db.prepare('DELETE FROM api_keys').run();
+  await db.prepare('DELETE FROM organizations').run();
+  await db.prepare('DELETE FROM users').run();
+  owner = await createUser(db, { email: 'owner@example.com', passwordHash: 'hash', name: 'Owner' });
+  outsider = await createUser(db, { email: 'outsider@example.com', passwordHash: 'hash', name: 'Outsider' });
 });
 
 describe('GET /keys/:key/audit', () => {
   it('401s with no token', async () => {
-    const key = createKey(db, { key: 'proj-a', owner: 'P', user_id: owner.id });
+    const key = await createKey(db, { key: 'proj-a', owner: 'P', user_id: owner.id });
     const res = await fetch(`${baseUrl}/keys/${key.key}/audit`);
     assert.strictEqual(res.status, 401);
   });
@@ -77,8 +77,8 @@ describe('GET /keys/:key/audit', () => {
   });
 
   it('allows the owning user', async () => {
-    const key = createKey(db, { key: 'proj-b', owner: 'P', user_id: owner.id });
-    writeAuditLog(db, { actor: 'owner', actorKind: 'user', action: 'auth.login', apiKey: key.key });
+    const key = await createKey(db, { key: 'proj-b', owner: 'P', user_id: owner.id });
+    await writeAuditLog(db, { actor: 'owner', actorKind: 'user', action: 'auth.login', apiKey: key.key });
     const res = await fetch(`${baseUrl}/keys/${key.key}/audit`, { headers: authed(owner) });
     assert.strictEqual(res.status, 200);
     const body = await res.json();
@@ -86,32 +86,32 @@ describe('GET /keys/:key/audit', () => {
   });
 
   it('403s an explicit member-level user (admin required for audit)', async () => {
-    const key = createKey(db, { key: 'proj-c', owner: 'P', user_id: owner.id });
-    addMember(db, key.key, outsider.id, 'member', owner.id);
+    const key = await createKey(db, { key: 'proj-c', owner: 'P', user_id: owner.id });
+    await addMember(db, key.key, outsider.id, 'member', owner.id);
     const res = await fetch(`${baseUrl}/keys/${key.key}/audit`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 403);
   });
 
   it('allows an explicit admin member', async () => {
-    const key = createKey(db, { key: 'proj-d', owner: 'P', user_id: owner.id });
-    addMember(db, key.key, outsider.id, 'admin', owner.id);
+    const key = await createKey(db, { key: 'proj-d', owner: 'P', user_id: owner.id });
+    await addMember(db, key.key, outsider.id, 'admin', owner.id);
     const res = await fetch(`${baseUrl}/keys/${key.key}/audit`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 200);
   });
 
   it('403s a user whose only access is an org-baseline "member" (audit requires admin)', async () => {
-    const org = createOrganization(db, { name: 'Team', slug: 'team-obs-1', ownerUserId: owner.id });
-    createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'operator', invitedBy: owner.id });
-    const key = createKey(db, { key: 'proj-e', owner: 'P', user_id: owner.id, org_id: org.id });
+    const org = await createOrganization(db, { name: 'Team', slug: 'team-obs-1', ownerUserId: owner.id });
+    await createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'operator', invitedBy: owner.id });
+    const key = await createKey(db, { key: 'proj-e', owner: 'P', user_id: owner.id, org_id: org.id });
     const res = await fetch(`${baseUrl}/keys/${key.key}/audit`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 403);
   });
 
   it('403s a user with org membership on a restricted project (no baseline at all)', async () => {
-    const org = createOrganization(db, { name: 'Team', slug: 'team-obs-2', ownerUserId: owner.id });
-    createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'admin', invitedBy: owner.id });
-    const key = createKey(db, { key: 'proj-f', owner: 'P', user_id: owner.id, org_id: org.id });
-    db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(key.key);
+    const org = await createOrganization(db, { name: 'Team', slug: 'team-obs-2', ownerUserId: owner.id });
+    await createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'admin', invitedBy: owner.id });
+    const key = await createKey(db, { key: 'proj-f', owner: 'P', user_id: owner.id, org_id: org.id });
+    await db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(key.key);
     const res = await fetch(`${baseUrl}/keys/${key.key}/audit`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 403);
   });
@@ -119,8 +119,8 @@ describe('GET /keys/:key/audit', () => {
 
 describe('GET /keys/:key/usage', () => {
   it('allows any explicit member (member-level is enough for usage)', async () => {
-    const key = createKey(db, { key: 'proj-g', owner: 'P', user_id: owner.id });
-    addMember(db, key.key, outsider.id, 'member', owner.id);
+    const key = await createKey(db, { key: 'proj-g', owner: 'P', user_id: owner.id });
+    await addMember(db, key.key, outsider.id, 'member', owner.id);
     const res = await fetch(`${baseUrl}/keys/${key.key}/usage`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 200);
     const body = await res.json();
@@ -128,30 +128,30 @@ describe('GET /keys/:key/usage', () => {
   });
 
   it('allows a user whose only access is the org baseline "member"', async () => {
-    const org = createOrganization(db, { name: 'Team', slug: 'team-obs-3', ownerUserId: owner.id });
-    createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'viewer', invitedBy: owner.id });
-    const key = createKey(db, { key: 'proj-h', owner: 'P', user_id: owner.id, org_id: org.id });
+    const org = await createOrganization(db, { name: 'Team', slug: 'team-obs-3', ownerUserId: owner.id });
+    await createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'viewer', invitedBy: owner.id });
+    const key = await createKey(db, { key: 'proj-h', owner: 'P', user_id: owner.id, org_id: org.id });
     const res = await fetch(`${baseUrl}/keys/${key.key}/usage`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 200);
   });
 
   it('403s an org member on a restricted project with no explicit row', async () => {
-    const org = createOrganization(db, { name: 'Team', slug: 'team-obs-4', ownerUserId: owner.id });
-    createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'viewer', invitedBy: owner.id });
-    const key = createKey(db, { key: 'proj-i', owner: 'P', user_id: owner.id, org_id: org.id });
-    db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(key.key);
+    const org = await createOrganization(db, { name: 'Team', slug: 'team-obs-4', ownerUserId: owner.id });
+    await createOrganizationMember(db, { orgId: org.id, userId: outsider.id, role: 'viewer', invitedBy: owner.id });
+    const key = await createKey(db, { key: 'proj-i', owner: 'P', user_id: owner.id, org_id: org.id });
+    await db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(key.key);
     const res = await fetch(`${baseUrl}/keys/${key.key}/usage`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 403);
   });
 
   it('403s a plain outsider with no membership at all', async () => {
-    const key = createKey(db, { key: 'proj-j', owner: 'P', user_id: owner.id });
+    const key = await createKey(db, { key: 'proj-j', owner: 'P', user_id: owner.id });
     const res = await fetch(`${baseUrl}/keys/${key.key}/usage`, { headers: authed(outsider) });
     assert.strictEqual(res.status, 403);
   });
 
   it('allows X-Admin-Key regardless of membership', async () => {
-    const key = createKey(db, { key: 'proj-k', owner: 'P', user_id: owner.id });
+    const key = await createKey(db, { key: 'proj-k', owner: 'P', user_id: owner.id });
     const res = await fetch(`${baseUrl}/keys/${key.key}/usage`, { headers: { 'X-Admin-Key': ADMIN_KEY } });
     assert.strictEqual(res.status, 200);
   });

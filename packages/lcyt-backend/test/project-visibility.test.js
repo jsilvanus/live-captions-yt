@@ -20,24 +20,24 @@ const JWT_SECRET = 'test-visibility-secret';
 let server, baseUrl, db;
 let apiKey, orgAdmin, orgViewer, explicitEditor, stranger;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   const app = express();
   app.use(express.json());
   app.use('/keys', createKeysRouter(db, { loginEnabled: true, jwtSecret: JWT_SECRET }));
 
-  const creator = createUser(db, { email: 'creator@example.com', passwordHash: 'x' });
-  orgAdmin = createUser(db, { email: 'org-admin@example.com', passwordHash: 'x' });
-  orgViewer = createUser(db, { email: 'org-viewer@example.com', passwordHash: 'x' });
-  explicitEditor = createUser(db, { email: 'explicit-editor@example.com', passwordHash: 'x' });
-  stranger = createUser(db, { email: 'stranger@example.com', passwordHash: 'x' });
+  const creator = await createUser(db, { email: 'creator@example.com', passwordHash: 'x' });
+  orgAdmin = await createUser(db, { email: 'org-admin@example.com', passwordHash: 'x' });
+  orgViewer = await createUser(db, { email: 'org-viewer@example.com', passwordHash: 'x' });
+  explicitEditor = await createUser(db, { email: 'explicit-editor@example.com', passwordHash: 'x' });
+  stranger = await createUser(db, { email: 'stranger@example.com', passwordHash: 'x' });
 
-  const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: creator.id });
-  createOrganizationMember(db, { orgId: org.id, userId: orgAdmin.id, role: 'admin', invitedBy: creator.id });
-  createOrganizationMember(db, { orgId: org.id, userId: orgViewer.id, role: 'viewer', invitedBy: creator.id });
+  const org = await createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: creator.id });
+  await createOrganizationMember(db, { orgId: org.id, userId: orgAdmin.id, role: 'admin', invitedBy: creator.id });
+  await createOrganizationMember(db, { orgId: org.id, userId: orgViewer.id, role: 'viewer', invitedBy: creator.id });
 
-  apiKey = createKey(db, { owner: 'proj', user_id: creator.id, org_id: org.id }).key;
-  addMember(db, apiKey, explicitEditor.id, 'editor', creator.id);
+  apiKey = (await createKey(db, { owner: 'proj', user_id: creator.id, org_id: org.id })).key;
+  await addMember(db, apiKey, explicitEditor.id, 'editor', creator.id);
 
   server = createServer(app);
   server.listen(0, () => {

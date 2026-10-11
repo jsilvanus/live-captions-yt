@@ -112,16 +112,16 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       return res.status(400).json({ error: 'password must be at least 8 characters' });
     }
     // Check for existing account
-    const existing = getUserByEmail(db, email);
+    const existing = await getUserByEmail(db, email);
     if (existing) {
       return res.status(409).json({ error: 'An account with this email already exists' });
     }
     try {
       const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
-      const user = createUser(db, { email, passwordHash, name: name || null });
-      provisionDefaultUserFeatures(db, user.id);
+      const user = await createUser(db, { email, passwordHash, name: name || null });
+      await provisionDefaultUserFeatures(db, user.id);
       const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: false });
-      writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.register', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
+      await writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.register', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
       res.status(201).json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: false });
     } catch (err) {
       console.error('[auth] register error:', err.message);
@@ -136,10 +136,10 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       return res.status(400).json({ error: 'email and password are required' });
     }
     metrics?.count('auth.logins', 1, { project: 'system' });
-    const user = getUserByEmail(db, email);
+    const user = await getUserByEmail(db, email);
     if (!user) {
       if (shouldRecordFailedLogin(req, email)) {
-        writeAuditLog(db, { actor: String(email), actorKind: 'user', actorId: String(email), action: 'auth.login_failed', targetType: 'user', details: { email }, ip: resolveIp(req) });
+        await writeAuditLog(db, { actor: String(email), actorKind: 'user', actorId: String(email), action: 'auth.login_failed', targetType: 'user', details: { email }, ip: resolveIp(req) });
       }
       return res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -147,12 +147,12 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       const match = await bcrypt.compare(password, user.password_hash);
       if (!match) {
         if (shouldRecordFailedLogin(req, email)) {
-          writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.login_failed', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
+          await writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.login_failed', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
         }
         return res.status(401).json({ error: 'Invalid email or password' });
       }
       const token = issueUserToken(jwtSecret, { userId: user.id, email: user.email, isAdmin: !!user.is_admin });
-      writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.login', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
+      await writeAuditLog(db, { actor: user.email, actorKind: 'user', actorId: user.email, userId: user.id, action: 'auth.login', targetType: 'user', targetId: String(user.id), details: { email: user.email }, ip: resolveIp(req) });
       res.json({ token, userId: user.id, email: user.email, name: user.name, isAdmin: !!user.is_admin });
     } catch (err) {
       console.error('[auth] login error:', err.message);
@@ -161,12 +161,12 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // POST /auth/project-token — exchange a user JWT for a project-scoped access JWT
-  router.post('/project-token', userAuth, (req, res) => {
+  router.post('/project-token', userAuth, async (req, res) => {
     const { projectId, projectRole = 'member', scopes } = req.body || {};
     if (!projectId || typeof projectId !== 'string' || !projectId.trim()) {
       return res.status(400).json({ error: 'projectId is required' });
     }
-    const accessLevel = getEffectiveProjectAccessLevel(db, projectId.trim(), req.user.userId);
+    const accessLevel = await getEffectiveProjectAccessLevel(db, projectId.trim(), req.user.userId);
     if (!accessLevel) {
       return res.status(403).json({ error: 'Not a project member' });
     }
@@ -185,7 +185,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     if (grantedRole === 'owner' || grantedRole === 'admin') {
       if (PROJECT_ROLE_ORDER[accessLevel] < PROJECT_ROLE_ORDER[grantedRole]) grantedRole = accessLevel;
     }
-    const activeBroadcastId = getActiveBroadcastId(db, projectId.trim());
+    const activeBroadcastId = await getActiveBroadcastId(db, projectId.trim());
     const token = issueProjectToken(jwtSecret, {
       userId: req.user.userId,
       email: req.user.email,
@@ -198,14 +198,14 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // GET /auth/me — requires user token
-  router.get('/me', userAuth, (req, res) => {
-    const user = getUserById(db, req.user.userId);
+  router.get('/me', userAuth, async (req, res) => {
+    const user = await getUserById(db, req.user.userId);
     if (!user) return res.status(404).json({ error: 'User not found' });
     res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
   });
 
   // PATCH /auth/me — update own profile (name); requires user token
-  router.patch('/me', requireLoginEnabled, userAuth, (req, res) => {
+  router.patch('/me', requireLoginEnabled, userAuth, async (req, res) => {
     const { name } = req.body || {};
     if (name === undefined) {
       return res.status(400).json({ error: 'name is required' });
@@ -218,8 +218,8 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       return res.status(400).json({ error: 'name cannot be empty' });
     }
     try {
-      updateUser(db, req.user.userId, { name: trimmed });
-      const user = getUserById(db, req.user.userId);
+      await updateUser(db, req.user.userId, { name: trimmed });
+      const user = await getUserById(db, req.user.userId);
       if (!user) return res.status(404).json({ error: 'User not found' });
       res.json({ userId: user.id, email: user.email, name: user.name, createdAt: user.created_at, isAdmin: !!user.is_admin });
     } catch (err) {
@@ -229,31 +229,29 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
   });
 
   // GET /auth/me/export — export the current user's own data
-  router.get('/me/export', requireLoginEnabled, userAuth, (req, res) => {
-    const exportData = getUserAccountExport(db, req.user.userId);
+  router.get('/me/export', requireLoginEnabled, userAuth, async (req, res) => {
+    const exportData = await getUserAccountExport(db, req.user.userId);
     if (!exportData) return res.status(404).json({ error: 'User not found' });
     res.json(exportData);
   });
 
   // DELETE /auth/me/data — delete the user's owned projects, keep the account
-  router.delete('/me/data', requireLoginEnabled, userAuth, (req, res) => {
-    const deletedProjectCount = deleteOwnedProjectsForUser(db, req.user.userId);
+  router.delete('/me/data', requireLoginEnabled, userAuth, async (req, res) => {
+    const deletedProjectCount = await deleteOwnedProjectsForUser(db, req.user.userId);
     res.json({ deletedProjectCount });
   });
 
   // DELETE /auth/me — full account deletion
-  router.delete('/me', requireLoginEnabled, userAuth, (req, res) => {
-    const orgRows = db.prepare(`
-      SELECT om.org_id
-      FROM org_members om
-      JOIN organizations o ON o.id = om.org_id
-      WHERE om.user_id = ? AND om.role = 'owner'
-    `).all(req.user.userId);
+  router.delete('/me', requireLoginEnabled, userAuth, async (req, res) => {
+    const orgRows = await db.org_members.findMany({
+      where: { user_id: req.user.userId, role: 'owner' },
+      select: { org_id: true },
+    });
 
     for (const orgRow of orgRows) {
-      const memberCount = db.prepare(
-        'SELECT COUNT(*) as count FROM org_members WHERE org_id = ? AND user_id != ?'
-      ).get(orgRow.org_id, req.user.userId).count;
+      const memberCount = await db.org_members.count({
+        where: { org_id: orgRow.org_id, user_id: { not: req.user.userId } },
+      });
       if (memberCount > 0) {
         return res.status(409).json({
           error: 'Cannot delete your account while you are the sole owner of an org with other members. Transfer ownership or remove them first.',
@@ -261,7 +259,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
       }
     }
 
-    deleteUserAccount(db, req.user.userId);
+    await deleteUserAccount(db, req.user.userId);
     res.json({ deleted: true });
   });
 
@@ -274,7 +272,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
     if (newPassword.length < 8) {
       return res.status(400).json({ error: 'newPassword must be at least 8 characters' });
     }
-    const user = getUserByEmail(db, req.user.email);
+    const user = await getUserByEmail(db, req.user.email);
     if (!user) return res.status(404).json({ error: 'User not found' });
     try {
       const match = await bcrypt.compare(currentPassword, user.password_hash);
@@ -282,7 +280,7 @@ export function createAuthRouter(db, jwtSecret, { loginEnabled }) {
         return res.status(401).json({ error: 'Current password is incorrect' });
       }
       const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
-      updateUserPassword(db, user.id, newHash);
+      await updateUserPassword(db, user.id, newHash);
       res.json({ ok: true });
     } catch (err) {
       console.error('[auth] change-password error:', err.message);

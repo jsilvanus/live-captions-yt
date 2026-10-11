@@ -51,7 +51,7 @@ export async function purgeKeyFiles(db, apiKey, { mediaStores = null, resolveSto
   }
 
   await step('recordings', async () => {
-    for (const video of listVideos(db, apiKey)) {
+    for (const video of await listVideos(db, apiKey)) {
       await deleteVideo(db, apiKey, video.id, { recordingsStore: mediaStores?.recordingsStore ?? null });
     }
   });
@@ -59,7 +59,7 @@ export async function purgeKeyFiles(db, apiKey, { mediaStores = null, resolveSto
   if (resolveStorage) {
     await step('caption files', async () => {
       const storage = await resolveStorage(apiKey);
-      const rows = db.prepare('SELECT filename FROM caption_files WHERE api_key = ?').all(apiKey);
+      const rows = await db.caption_files.findMany({ where: { api_key: apiKey }, select: { filename: true } });
       for (const row of rows) await storage.deleteFile(apiKey, row.filename).catch(() => {});
     });
   }

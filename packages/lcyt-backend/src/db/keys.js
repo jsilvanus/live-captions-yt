@@ -1,4 +1,30 @@
 import { randomUUID } from 'node:crypto';
+import { getDialect } from './connection.js';
+import { sqlNow } from './helpers.js';
+
+/**
+ * Run fn inside a transaction. `db` may already be a transaction client (no $transaction), in which
+ * case fn simply joins it.
+ * @template T
+ * @param {import('./connection.js').Db} db
+ * @param {(tx: import('./connection.js').Db) => Promise<T>} fn
+ * @returns {Promise<T>}
+ */
+export function inTx(db, fn) {
+  return typeof db.$transaction === 'function' ? db.$transaction((tx) => fn(tx)) : fn(db);
+}
+
+/** DELETE ... WHERE api_key = key on a table that is not in the Prisma schema (RTMP plugin tables). */
+async function deleteByApiKeyIfTableExists(db, table, keys) {
+  const pg = getDialect() === 'postgres';
+  const exists = pg
+    ? (await db.$queryRawUnsafe('SELECT to_regclass($1)::text AS t', table))[0]?.t != null
+    : (await db.$queryRawUnsafe("SELECT name FROM sqlite_master WHERE type='table' AND name = ?", table)).length > 0;
+  if (!exists) return;
+  const ph = keys.map((_, i) => (pg ? `$${i + 1}` : '?')).join(',');
+  await db.$executeRawUnsafe(`DELETE FROM ${table} WHERE api_key IN (${ph})`, ...keys);
+}
+
 
 /**
  * Format a raw db row into the standard API response shape.
@@ -67,41 +93,38 @@ export function validatePublicSlugFormat(slug) {
 /**
  * The prefix (e.g. "team1-") this project's slug must start with, per its
  * organization's project_slug_policy. Null when no prefix is required.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
-export function getRequiredSlugPrefix(db, key) {
-  const row = db.prepare(`
-    SELECT o.slug AS org_slug, o.project_slug_policy AS policy
-    FROM api_keys k JOIN organizations o ON o.id = k.org_id
-    WHERE k.key = ?
-  `).get(key);
-  if (!row || row.policy !== 'prefix' || !row.org_slug) return null;
-  return `${row.org_slug}-`;
+export async function getRequiredSlugPrefix(db, key) {
+  const k = await db.api_keys.findUnique({ where: { key }, select: { organizations: { select: { slug: true, project_slug_policy: true } } } });
+  const org = k?.organizations;
+  if (!org || org.project_slug_policy !== 'prefix' || !org.slug) return null;
+  return `${org.slug}-`;
 }
 
 /**
  * Full availability check for assigning `slug` to project `key`:
  * format, reserved words, org prefix policy (unless bypassed), uniqueness.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  * @param {string} slug
  * @param {{ bypassPolicy?: boolean }} [opts]  bypassPolicy: site-admin override
- * @returns {{ available: true } | { available: false, reason: string }}
+ * @returns {Promise<{ available: true } | { available: false, reason: string }>}
  */
-export function checkPublicSlugAvailability(db, key, slug, { bypassPolicy = false } = {}) {
+export async function checkPublicSlugAvailability(db, key, slug, { bypassPolicy = false } = {}) {
   const fmt = validatePublicSlugFormat(slug);
   if (!fmt.ok) return { available: false, reason: fmt.reason };
 
   if (!bypassPolicy) {
-    const prefix = getRequiredSlugPrefix(db, key);
+    const prefix = await getRequiredSlugPrefix(db, key);
     if (prefix && !slug.startsWith(prefix)) {
       return { available: false, reason: `slug must start with '${prefix}' (organization policy)` };
     }
   }
 
-  const taken = db.prepare('SELECT key FROM api_keys WHERE public_slug = ?').get(slug);
+  const taken = await db.api_keys.findFirst({ where: { public_slug: slug }, select: { key: true } });
   if (taken && taken.key !== key) return { available: false, reason: 'slug is already taken' };
 
   return { available: true };
@@ -111,67 +134,67 @@ export function checkPublicSlugAvailability(db, key, slug, { bypassPolicy = fals
  * Set (or clear with null) a project's public slug. Callers validate first
  * via checkPublicSlugAvailability(); the unique index is the last line of
  * defense against races.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  * @param {string|null} slug
- * @returns {boolean} true when a row was updated
+ * @returns {Promise<boolean>} true when a row was updated
  */
-export function setPublicSlug(db, key, slug) {
-  return db.prepare('UPDATE api_keys SET public_slug = ? WHERE key = ?').run(slug, key).changes > 0;
+export async function setPublicSlug(db, key, slug) {
+  return (await db.api_keys.updateMany({ where: { key }, data: { public_slug: slug } })).count > 0;
 }
 
 /**
  * Read the currently-active broadcast pointer for a project.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
-export function getActiveBroadcastId(db, key) {
-  const row = db.prepare('SELECT active_broadcast_id FROM api_keys WHERE key = ?').get(key);
+export async function getActiveBroadcastId(db, key) {
+  const row = await db.api_keys.findUnique({ where: { key }, select: { active_broadcast_id: true } });
   return row?.active_broadcast_id ?? null;
 }
 
 /**
  * Set the currently-active broadcast pointer for a project.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  * @param {string|null} broadcastId
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function setActiveBroadcastId(db, key, broadcastId) {
-  return db.prepare('UPDATE api_keys SET active_broadcast_id = ? WHERE key = ?').run(broadcastId, key).changes > 0;
+export async function setActiveBroadcastId(db, key, broadcastId) {
+  return (await db.api_keys.updateMany({ where: { key }, data: { active_broadcast_id: broadcastId } })).count > 0;
 }
 
 /**
  * Read the project's display name (the `owner` field the Projects UI shows).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
-export function getProjectName(db, key) {
-  const row = db.prepare('SELECT owner FROM api_keys WHERE key = ?').get(key);
+export async function getProjectName(db, key) {
+  const row = await db.api_keys.findUnique({ where: { key }, select: { owner: true } });
   return row?.owner ?? null;
 }
 
 /**
  * Resolve a public slug to its api_key. Null when no project has this slug.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} slug
- * @returns {string|null}
+ * @returns {Promise<string|null>}
  */
-export function resolveKeyByPublicSlug(db, slug) {
-  const row = db.prepare('SELECT key FROM api_keys WHERE public_slug = ? AND active = 1').get(slug);
+export async function resolveKeyByPublicSlug(db, slug) {
+  const row = await db.api_keys.findFirst({ where: { public_slug: slug, active: 1 }, select: { key: true } });
   return row ? row.key : null;
 }
 
 /**
  * Validate an API key against the database.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {{ valid: true, owner: string, expiresAt: string|null } | { valid: false, reason: string }}
+ * @returns {Promise<{ valid: true, owner: string, expiresAt: string|null } | { valid: false, reason: string }>}
  */
-export function validateApiKey(db, key) {
-  const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
+export async function validateApiKey(db, key) {
+  const row = await db.api_keys.findUnique({ where: { key } });
 
   if (!row) {
     return { valid: false, reason: 'unknown_key' };
@@ -190,168 +213,150 @@ export function validateApiKey(db, key) {
 
 /**
  * Check whether the graphics_enabled flag is set for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isGraphicsEnabled(db, key) {
-  const row = db.prepare('SELECT graphics_enabled FROM api_keys WHERE key = ?').get(key);
+export async function isGraphicsEnabled(db, key) {
+  const row = await db.api_keys.findUnique({ where: { key }, select: { graphics_enabled: true } });
   return row?.graphics_enabled === 1;
 }
 
 /**
  * Check usage limits and, if allowed, atomically increment both daily and lifetime counters.
  * Keys with null limits are always allowed.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {{ allowed: true } | { allowed: false, reason: 'daily_limit_exceeded' | 'lifetime_limit_exceeded' }}
+ * @returns {Promise<{ allowed: true } | { allowed: false, reason: 'daily_limit_exceeded' | 'lifetime_limit_exceeded' }>}
  */
-export const checkAndIncrementUsage = (() => {
-  // Pre-compile statements once per db instance via closure over the first call.
-  // Better-sqlite3 transactions are synchronous.
-  const cache = new WeakMap();
+export async function checkAndIncrementUsage(db, key) {
+  const today = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
 
-  return function checkAndIncrementUsage(db, key) {
-    if (!cache.has(db)) {
-      cache.set(db, {
-        getLimits: db.prepare(
-          'SELECT daily_limit, lifetime_limit, lifetime_used FROM api_keys WHERE key = ?'
-        ),
-        getDailyCount: db.prepare(
-          'SELECT count FROM caption_usage WHERE api_key = ? AND date = ?'
-        ),
-        incrementLifetime: db.prepare(
-          'UPDATE api_keys SET lifetime_used = lifetime_used + 1 WHERE key = ?'
-        ),
-        incrementDaily: db.prepare(
-          'INSERT INTO caption_usage (api_key, date, count) VALUES (?, ?, 1) ' +
-          'ON CONFLICT (api_key, date) DO UPDATE SET count = count + 1'
-        ),
-      });
+  return inTx(db, async (tx) => {
+    const row = await tx.api_keys.findUnique({
+      where: { key }, select: { daily_limit: true, lifetime_limit: true, lifetime_used: true },
+    });
+    if (!row) return { allowed: false, reason: 'lifetime_limit_exceeded' }; // shouldn't happen
+
+    if (row.lifetime_limit !== null && row.lifetime_used >= row.lifetime_limit) {
+      return { allowed: false, reason: 'lifetime_limit_exceeded' };
     }
 
-    const stmts = cache.get(db);
-    const today = new Date().toISOString().slice(0, 10); // 'YYYY-MM-DD'
-
-    return db.transaction(() => {
-      const row = stmts.getLimits.get(key);
-      if (!row) return { allowed: false, reason: 'lifetime_limit_exceeded' }; // shouldn't happen
-
-      if (row.lifetime_limit !== null && row.lifetime_used >= row.lifetime_limit) {
-        return { allowed: false, reason: 'lifetime_limit_exceeded' };
+    if (row.daily_limit !== null) {
+      const usageRow = await tx.caption_usage.findUnique({ where: { api_key_date: { api_key: key, date: today } } });
+      const todayCount = usageRow ? usageRow.count : 0;
+      if (todayCount >= row.daily_limit) {
+        return { allowed: false, reason: 'daily_limit_exceeded' };
       }
+    }
 
-      if (row.daily_limit !== null) {
-        const usageRow = stmts.getDailyCount.get(key, today);
-        const todayCount = usageRow ? usageRow.count : 0;
-        if (todayCount >= row.daily_limit) {
-          return { allowed: false, reason: 'daily_limit_exceeded' };
-        }
-      }
-
-      stmts.incrementLifetime.run(key);
-      stmts.incrementDaily.run(key, today);
-      return { allowed: true };
-    })();
-  };
-})();
+    await tx.api_keys.updateMany({ where: { key }, data: { lifetime_used: { increment: 1 } } });
+    await tx.caption_usage.upsert({
+      where: { api_key_date: { api_key: key, date: today } },
+      create: { api_key: key, date: today, count: 1 },
+      update: { count: { increment: 1 } },
+    });
+    return { allowed: true };
+  });
+}
 
 /**
  * Get all API keys.
- * @param {import('better-sqlite3').Database} db
- * @returns {Array}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<Array>}
  */
-export function getAllKeys(db) {
-  return db.prepare('SELECT * FROM api_keys ORDER BY id').all();
+export async function getAllKeys(db) {
+  return db.api_keys.findMany({ orderBy: { id: 'asc' } });
 }
 
 /**
  * Get a single API key row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getKey(db, key) {
-  return db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key) || null;
+export async function getKey(db, key) {
+  return (await db.api_keys.findUnique({ where: { key } })) || null;
 }
 
 /**
  * Get an API key row by email address.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} email
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getKeyByEmail(db, email) {
-  return db.prepare('SELECT * FROM api_keys WHERE email = ?').get(email) || null;
+export async function getKeyByEmail(db, email) {
+  return (await db.api_keys.findFirst({ where: { email }, orderBy: { id: 'asc' } })) || null;
 }
 
 /**
  * Create a new API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {{ key?: string, owner: string, email?: string, expiresAt?: string, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, user_id?: number|null, org_id?: number|null }} options
- * @returns {object} The created row
+ * @returns {Promise<object>} The created row
  */
-export function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id, org_id } = {}) {
+export async function createKey(db, { key, owner, email, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id, org_id } = {}) {
   const resolvedKey = key || randomUUID();
-  db.prepare(
-    'INSERT INTO api_keys (key, owner, email, expires_at, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, user_id, org_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-  ).run(
-    resolvedKey,
-    owner,
-    email ?? null,
-    expiresAt ?? null,
-    daily_limit ?? null,
-    lifetime_limit ?? null,
-    (backend_file_enabled ?? false) ? 1 : 0,
-    (graphics_enabled ?? false) ? 1 : 0,
-    (relay_allowed ?? false) ? 1 : 0,
-    (radio_enabled ?? false) ? 1 : 0,
-    (hls_enabled ?? false) ? 1 : 0,
-    cea708_delay_ms ?? 0,
-    embed_cors ?? '*',
-    user_id ?? null,
-    org_id ?? null,
-  );
+  await db.api_keys.create({
+    data: {
+      key: resolvedKey,
+      owner,
+      email: email ?? null,
+      expires_at: expiresAt ?? null,
+      created_at: sqlNow(),
+      daily_limit: daily_limit ?? null,
+      lifetime_limit: lifetime_limit ?? null,
+      backend_file_enabled: (backend_file_enabled ?? false) ? 1 : 0,
+      graphics_enabled: (graphics_enabled ?? false) ? 1 : 0,
+      relay_allowed: (relay_allowed ?? false) ? 1 : 0,
+      radio_enabled: (radio_enabled ?? false) ? 1 : 0,
+      hls_enabled: (hls_enabled ?? false) ? 1 : 0,
+      cea708_delay_ms: cea708_delay_ms ?? 0,
+      embed_cors: embed_cors ?? '*',
+      user_id: user_id ?? null,
+      org_id: org_id ?? null,
+    },
+  });
   return getKey(db, resolvedKey);
 }
 
 /**
  * Revoke (soft-delete) an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {boolean} true if a row was updated
+ * @returns {Promise<boolean>} true if a row was updated
  */
-export function revokeKey(db, key) {
-  const result = db.prepare("UPDATE api_keys SET active = 0, revoked_at = datetime('now') WHERE key = ?").run(key);
-  return result.changes > 0;
+export async function revokeKey(db, key) {
+  const result = await db.api_keys.updateMany({ where: { key }, data: { active: 0, revoked_at: sqlNow() } });
+  return result.count > 0;
 }
 
 /**
  * Permanently delete all revoked keys older than N days, along with their associated data.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} olderThanDays
  * @param {boolean} [dryRun=false] - If true, returns count without deleting
- * @returns {{ count: number, deleted: boolean }}
+ * @returns {Promise<{ count: number, deleted: boolean }>}
  */
-export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
-  const keys = db.prepare(
-    `SELECT key FROM api_keys WHERE active = 0 AND revoked_at < datetime('now', ?)`
-  ).all(`-${Math.floor(olderThanDays)} days`).map(r => r.key);
+export async function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
+  const cutoff = sqlNow(new Date(Date.now() - Math.floor(olderThanDays) * 86400000));
+  const keys = (await db.api_keys.findMany({
+    where: { active: 0, revoked_at: { lt: cutoff } }, select: { key: true },
+  })).map(r => r.key);
 
   if (dryRun || keys.length === 0) return { count: keys.length, deleted: false };
 
-  db.transaction(() => {
-    const placeholders = keys.map(() => '?').join(',');
-    db.prepare(`DELETE FROM caption_errors WHERE api_key IN (${placeholders})`).run(...keys);
-    db.prepare(`DELETE FROM session_stats WHERE api_key IN (${placeholders})`).run(...keys);
-    db.prepare(`DELETE FROM caption_usage WHERE api_key IN (${placeholders})`).run(...keys);
-    db.prepare(`DELETE FROM auth_events WHERE api_key IN (${placeholders})`).run(...keys);
-    try {
-      db.prepare(`DELETE FROM rtmp_stream_stats WHERE api_key IN (${placeholders})`).run(...keys);
-      db.prepare(`DELETE FROM rtmp_relays WHERE api_key IN (${placeholders})`).run(...keys);
-    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
-    db.prepare(`DELETE FROM api_keys WHERE key IN (${placeholders})`).run(...keys);
-  })();
+  await inTx(db, async (tx) => {
+    const where = { api_key: { in: keys } };
+    await tx.caption_errors.deleteMany({ where });
+    await tx.session_stats.deleteMany({ where });
+    await tx.caption_usage.deleteMany({ where });
+    await tx.auth_events.deleteMany({ where });
+    // RTMP tables are absent when the lcyt-rtmp plugin is not loaded
+    await deleteByApiKeyIfTableExists(tx, 'rtmp_stream_stats', keys);
+    await deleteByApiKeyIfTableExists(tx, 'rtmp_relays', keys);
+    await tx.api_keys.deleteMany({ where: { key: { in: keys } } });
+  });
 
   return { count: keys.length, deleted: true };
 }
@@ -372,9 +377,9 @@ export function cleanRevokedKeys(db, olderThanDays, dryRun = false) {
  * these, but would silently orphan their rows, so they're cleaned up
  * explicitly here too, mirroring cleanRevokedKeys()'s existing pattern for
  * the subset it already covers.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {boolean} true if a row was deleted
+ * @returns {Promise<boolean>} true if a row was deleted
  */
 /**
  * Registered by composition-root-level in-memory stores (lcyt-agent's
@@ -397,28 +402,27 @@ export function onKeyDeleted(fn) {
   _onKeyDeletedHooks.push(fn);
 }
 
-export function deleteKey(db, key) {
-  const result = db.transaction(() => {
+export async function deleteKey(db, key) {
+  const where = { api_key: key };
+  const deleted = await inTx(db, async (tx) => {
     // No declared FK — orphan-row cleanup, not FK-required, but done here so
     // deleteKey() is a complete teardown of everything keyed on `key`.
-    db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM session_stats WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM sessions WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM icons WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM viewer_key_daily_stats WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM mcp_tokens WHERE api_key = ?').run(key);
-    try {
-      db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
-      db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
-    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
+    await tx.caption_usage.deleteMany({ where });
+    await tx.session_stats.deleteMany({ where });
+    await tx.caption_errors.deleteMany({ where });
+    await tx.auth_events.deleteMany({ where });
+    await tx.sessions.deleteMany({ where });
+    await tx.caption_files.deleteMany({ where });
+    await tx.icons.deleteMany({ where });
+    await tx.viewer_key_daily_stats.deleteMany({ where });
+    await tx.mcp_tokens.deleteMany({ where });
+    // RTMP tables are absent when the lcyt-rtmp plugin is not loaded
+    await deleteByApiKeyIfTableExists(tx, 'rtmp_stream_stats', [key]);
+    await deleteByApiKeyIfTableExists(tx, 'rtmp_relays', [key]);
     // caption_targets/translation_vendor_config/translation_targets/project_features/
     // project_members(+permissions)/project_device_roles: ON DELETE CASCADE, left to the engine.
-    return db.prepare('DELETE FROM api_keys WHERE key = ?').run(key);
-  })();
-  const deleted = result.changes > 0;
+    return (await tx.api_keys.deleteMany({ where: { key } })).count > 0;
+  });
   if (deleted) {
     for (const fn of _onKeyDeletedHooks) {
       try { fn(key); } catch (err) { console.error('onKeyDeleted hook failed:', err && err.message); }
@@ -429,115 +433,66 @@ export function deleteKey(db, key) {
 
 /**
  * Renew an API key's expiration date.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  * @param {string|null} newExpiresAt - ISO date string or null for never
- * @returns {boolean} true if a row was updated
+ * @returns {Promise<boolean>} true if a row was updated
  */
-export function renewKey(db, key, newExpiresAt) {
-  const result = db.prepare('UPDATE api_keys SET expires_at = ? WHERE key = ?').run(
-    newExpiresAt || null,
-    key
-  );
-  return result.changes > 0;
+export async function renewKey(db, key, newExpiresAt) {
+  const result = await db.api_keys.updateMany({ where: { key }, data: { expires_at: newExpiresAt || null } });
+  return result.count > 0;
 }
 
 /**
  * Anonymize a key for GDPR erasure: clears owner, revokes the key, and deletes all
  * associated usage/session/error data. Retains email and expires_at for legitimate
  * interest (preventing free-tier abuse until the original expiry).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {boolean} true if the key existed
+ * @returns {Promise<boolean>} true if the key existed
  */
-export function anonymizeKey(db, key) {
-  const existing = getKey(db, key);
+export async function anonymizeKey(db, key) {
+  const existing = await getKey(db, key);
   if (!existing) return false;
-  db.transaction(() => {
-    db.prepare("UPDATE api_keys SET owner = '', active = 0 WHERE key = ?").run(key);
-    db.prepare('DELETE FROM session_stats WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM caption_errors WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM auth_events WHERE api_key = ?').run(key);
-    db.prepare('DELETE FROM caption_usage WHERE api_key = ?').run(key);
-    try {
-      db.prepare('DELETE FROM rtmp_stream_stats WHERE api_key = ?').run(key);
-      db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(key);
-    } catch { /* RTMP tables absent when lcyt-rtmp plugin not loaded */ }
-  })();
+  await inTx(db, async (tx) => {
+    const where = { api_key: key };
+    await tx.api_keys.updateMany({ where: { key }, data: { owner: '', active: 0 } });
+    await tx.session_stats.deleteMany({ where });
+    await tx.caption_errors.deleteMany({ where });
+    await tx.auth_events.deleteMany({ where });
+    await tx.caption_usage.deleteMany({ where });
+    await deleteByApiKeyIfTableExists(tx, 'rtmp_stream_stats', [key]);
+    await deleteByApiKeyIfTableExists(tx, 'rtmp_relays', [key]);
+  });
   return true;
 }
 
 /**
  * Update owner and/or expires_at for a key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  * @param {{ owner?: string, expiresAt?: string|null, daily_limit?: number|null, lifetime_limit?: number|null, backend_file_enabled?: boolean, relay_allowed?: boolean, radio_enabled?: boolean, hls_enabled?: boolean, cea708_delay_ms?: number, embed_cors?: string, org_id?: number|null, restricted?: boolean, org_baseline_role?: 'viewer'|'editor' }} fields
- * @returns {boolean} true if a row was updated
+ * @returns {Promise<boolean>} true if a row was updated
  */
-export function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, org_id, restricted, org_baseline_role } = {}) {
-  const parts = [];
-  const params = [];
+export async function updateKey(db, key, { owner, expiresAt, daily_limit, lifetime_limit, backend_file_enabled, graphics_enabled, relay_allowed, radio_enabled, hls_enabled, cea708_delay_ms, embed_cors, org_id, restricted, org_baseline_role } = {}) {
+  const data = {};
+  if (owner !== undefined) data.owner = owner;
+  if (expiresAt !== undefined) data.expires_at = expiresAt || null;
+  if (daily_limit !== undefined) data.daily_limit = daily_limit ?? null;
+  if (lifetime_limit !== undefined) data.lifetime_limit = lifetime_limit ?? null;
+  if (backend_file_enabled !== undefined) data.backend_file_enabled = backend_file_enabled ? 1 : 0;
+  if (graphics_enabled !== undefined) data.graphics_enabled = graphics_enabled ? 1 : 0;
+  if (relay_allowed !== undefined) data.relay_allowed = relay_allowed ? 1 : 0;
+  if (radio_enabled !== undefined) data.radio_enabled = radio_enabled ? 1 : 0;
+  if (hls_enabled !== undefined) data.hls_enabled = hls_enabled ? 1 : 0;
+  if (cea708_delay_ms !== undefined) data.cea708_delay_ms = Math.max(0, Math.round(Number(cea708_delay_ms ?? 0)));
+  if (embed_cors !== undefined) data.embed_cors = embed_cors ?? '*';
+  if (org_id !== undefined) data.org_id = org_id ?? null;
+  if (restricted !== undefined) data.restricted = restricted ? 1 : 0;
+  if (org_baseline_role !== undefined) data.org_baseline_role = org_baseline_role === 'editor' ? 'editor' : 'viewer';
 
-  if (owner !== undefined) {
-    parts.push('owner = ?');
-    params.push(owner);
-  }
-  if (expiresAt !== undefined) {
-    parts.push('expires_at = ?');
-    params.push(expiresAt || null);
-  }
-  if (daily_limit !== undefined) {
-    parts.push('daily_limit = ?');
-    params.push(daily_limit ?? null);
-  }
-  if (lifetime_limit !== undefined) {
-    parts.push('lifetime_limit = ?');
-    params.push(lifetime_limit ?? null);
-  }
-  if (backend_file_enabled !== undefined) {
-    parts.push('backend_file_enabled = ?');
-    params.push(backend_file_enabled ? 1 : 0);
-  }
-  if (graphics_enabled !== undefined) {
-    parts.push('graphics_enabled = ?');
-    params.push(graphics_enabled ? 1 : 0);
-  }
-  if (relay_allowed !== undefined) {
-    parts.push('relay_allowed = ?');
-    params.push(relay_allowed ? 1 : 0);
-  }
-  if (radio_enabled !== undefined) {
-    parts.push('radio_enabled = ?');
-    params.push(radio_enabled ? 1 : 0);
-  }
-  if (hls_enabled !== undefined) {
-    parts.push('hls_enabled = ?');
-    params.push(hls_enabled ? 1 : 0);
-  }
-  if (cea708_delay_ms !== undefined) {
-    parts.push('cea708_delay_ms = ?');
-    params.push(Math.max(0, Math.round(Number(cea708_delay_ms ?? 0))));
-  }
-  if (embed_cors !== undefined) {
-    parts.push('embed_cors = ?');
-    params.push(embed_cors ?? '*');
-  }
-  if (org_id !== undefined) {
-    parts.push('org_id = ?');
-    params.push(org_id ?? null);
-  }
-  if (restricted !== undefined) {
-    parts.push('restricted = ?');
-    params.push(restricted ? 1 : 0);
-  }
-  if (org_baseline_role !== undefined) {
-    parts.push('org_baseline_role = ?');
-    params.push(org_baseline_role === 'editor' ? 'editor' : 'viewer');
-  }
+  if (Object.keys(data).length === 0) return false;
 
-  if (parts.length === 0) return false;
-
-  params.push(key);
-  const result = db.prepare(`UPDATE api_keys SET ${parts.join(', ')} WHERE key = ?`).run(...params);
-  return result.changes > 0;
+  const result = await db.api_keys.updateMany({ where: { key }, data });
+  return result.count > 0;
 }

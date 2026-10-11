@@ -6,9 +6,9 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
 import { initDb, createKey, updateKey, formatKey } from '../src/db.js';
-import { runMigrations } from 'lcyt-rtmp/src/db.js';
+import { SQLITE_ONLY_PLUGIN, ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 
-function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { const db = await initDb(':memory:'); runMigrations(db); return db; }
 import { isHlsEnabled } from 'lcyt-rtmp/src/db.js';
 import { createStreamHlsRouter } from 'lcyt-rtmp/src/routes/stream-hls.js';
 import { createPreviewRouter } from 'lcyt-rtmp/src/routes/preview.js';
@@ -40,42 +40,42 @@ async function getJson(server, path) {
 // DB helpers: hls_enabled column
 // ---------------------------------------------------------------------------
 
-describe('hls_enabled DB column', () => {
+describe('hls_enabled DB column', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
-  it('defaults to false on createKey', () => {
-    const k = createKey(db, { owner: 'Alice' });
-    assert.strictEqual(isHlsEnabled(db, k.key), false);
+  it('defaults to false on createKey', async () => {
+    const k = await createKey(db, { owner: 'Alice' });
+    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), false);
   });
 
-  it('can be set to true on createKey', () => {
-    const k = createKey(db, { owner: 'Bob', hls_enabled: true });
-    assert.strictEqual(isHlsEnabled(db, k.key), true);
+  it('can be set to true on createKey', async () => {
+    const k = await createKey(db, { owner: 'Bob', hls_enabled: true });
+    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), true);
   });
 
   it('isHlsEnabled returns false for unknown key', () => {
-    assert.strictEqual(isHlsEnabled(db, 'no-such-key'), false);
+    assert.strictEqual(isHlsEnabled(db.$legacy, 'no-such-key'), false);
   });
 
-  it('isHlsEnabled returns true after updateKey', () => {
-    const k = createKey(db, { owner: 'Carol' });
-    assert.strictEqual(isHlsEnabled(db, k.key), false);
-    updateKey(db, k.key, { hls_enabled: true });
-    assert.strictEqual(isHlsEnabled(db, k.key), true);
+  it('isHlsEnabled returns true after updateKey', async () => {
+    const k = await createKey(db, { owner: 'Carol' });
+    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), false);
+    await updateKey(db, k.key, { hls_enabled: true });
+    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), true);
   });
 
-  it('isHlsEnabled returns false after disabling', () => {
-    const k = createKey(db, { owner: 'Dave', hls_enabled: true });
-    updateKey(db, k.key, { hls_enabled: false });
-    assert.strictEqual(isHlsEnabled(db, k.key), false);
+  it('isHlsEnabled returns false after disabling', async () => {
+    const k = await createKey(db, { owner: 'Dave', hls_enabled: true });
+    await updateKey(db, k.key, { hls_enabled: false });
+    assert.strictEqual(isHlsEnabled(db.$legacy, k.key), false);
   });
 
-  it('formatKey includes hlsEnabled field', () => {
-    const k = createKey(db, { owner: 'Eve', hls_enabled: true });
-    const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(k.key);
+  it('formatKey includes hlsEnabled field', async () => {
+    const k = await createKey(db, { owner: 'Eve', hls_enabled: true });
+    const row = await db.prepare('SELECT * FROM api_keys WHERE key = ?').get(k.key);
     const formatted = formatKey(row);
     assert.strictEqual(formatted.hlsEnabled, true);
   });
@@ -149,17 +149,17 @@ describe('PreviewManager', () => {
 // POST /stream-hls nginx callbacks
 // ---------------------------------------------------------------------------
 
-describe('POST /stream-hls — nginx callbacks', () => {
+describe('POST /stream-hls — nginx callbacks', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `hls-nginx-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager();
 
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
@@ -178,7 +178,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
   });
 
   it('returns 403 when HLS is not enabled for the key', async () => {
-    const k = createKey(db, { owner: 'Test' });
+    const k = await createKey(db, { owner: 'Test' });
     const res = await postForm(server, '/stream-hls', { call: 'publish', name: k.key });
     assert.strictEqual(res.status, 403);
   });
@@ -189,13 +189,13 @@ describe('POST /stream-hls — nginx callbacks', () => {
   });
 
   it('returns 400 for unknown call type', async () => {
-    const k = createKey(db, { owner: 'Test2', hls_enabled: true });
+    const k = await createKey(db, { owner: 'Test2', hls_enabled: true });
     const res = await postForm(server, '/stream-hls', { call: 'unknown', name: k.key });
     assert.strictEqual(res.status, 400);
   });
 
   it('POST /stream-hls/on_publish returns 403 if not enabled', async () => {
-    const k = createKey(db, { owner: 'Test3' });
+    const k = await createKey(db, { owner: 'Test3' });
     const res = await postForm(server, '/stream-hls/on_publish', { name: k.key });
     assert.strictEqual(res.status, 403);
   });
@@ -210,11 +210,11 @@ describe('POST /stream-hls — nginx callbacks', () => {
 // GET /stream-hls/:key/index.m3u8 — HLS playlist serving
 // ---------------------------------------------------------------------------
 
-describe('GET /stream-hls/:key/index.m3u8', () => {
+describe('GET /stream-hls/:key/index.m3u8', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `hls-playlist-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
 
@@ -240,7 +240,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
 
     manager = new HlsManager();
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
     await new Promise(resolve => {
       appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -291,11 +291,11 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
 // GET /stream-hls/:key/:segment — HLS segment proxy (proxies to MediaMTX)
 // ---------------------------------------------------------------------------
 
-describe('GET /stream-hls/:key/:segment', () => {
+describe('GET /stream-hls/:key/:segment', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `hls-seg-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
 
@@ -321,7 +321,7 @@ describe('GET /stream-hls/:key/:segment', () => {
 
     manager = new HlsManager();
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
     await new Promise(resolve => {
       appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -391,17 +391,17 @@ describe('GET /stream-hls/:key/:segment', () => {
 // GET /stream-hls/:key/player.js — embeddable video player snippet
 // ---------------------------------------------------------------------------
 
-describe('GET /stream-hls/:key/player.js', () => {
+describe('GET /stream-hls/:key/player.js', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     const tmpRoot = join(tmpdir(), `hls-player-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager();
 
     const app = express();
-    app.use('/stream-hls', createStreamHlsRouter(db, manager));
+    app.use('/stream-hls', createStreamHlsRouter(db.$legacy, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);

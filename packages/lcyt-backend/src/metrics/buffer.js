@@ -41,23 +41,24 @@ export function createUsageBuffer({ db, flushIntervalMs = DEFAULT_FLUSH_INTERVAL
     scheduleFlush();
   }
 
-  function flushNow() {
+  /** @returns {Promise<number>} number of entries written */
+  async function flushNow() {
     if (pending.size === 0) return 0;
     const entries = Array.from(pending.values());
     pending.clear();
     try {
-      db.transaction(() => {
-        for (const entry of entries) {
-          writeUsageRollup(db, {
-            apiKey: entry.apiKey,
-            metric: entry.metric,
-            value: entry.value,
-            kind: entry.kind,
-            grain: entry.grain,
-            periodStart: entry.periodStart,
-          });
-        }
-      })();
+      // No wrapping transaction: writeUsageRollup is best-effort per entry, and on PostgreSQL one
+      // failed statement would abort a shared transaction and silently lose the whole batch.
+      for (const entry of entries) {
+        await writeUsageRollup(db, {
+          apiKey: entry.apiKey,
+          metric: entry.metric,
+          value: entry.value,
+          kind: entry.kind,
+          grain: entry.grain,
+          periodStart: entry.periodStart,
+        });
+      }
       return entries.length;
     } catch (err) {
       // Swallow flush errors so caller hot paths never fail; put the entries

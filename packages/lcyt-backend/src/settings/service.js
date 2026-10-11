@@ -71,25 +71,34 @@ function coerceDbValue(def, value) {
  */
 export class SettingsService extends EventEmitter {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {import('../db/connection.js').Db} db
+   *
+   * Use `await SettingsService.create(db)`: the constructor cannot load the DB rows (async).
    */
   constructor(db) {
     super();
     this.db = db;
     /** @type {Map<string, *>} */
     this._dbCache = new Map();
-    this._loadCache();
+    this._bootSnapshot = new Map();
+  }
+
+  /** Create the service and load the server_settings rows. */
+  static async create(db) {
+    const service = new SettingsService(db);
+    await service._loadCache();
     // Boot-time snapshot of every 'restart'-apply key's effective value, so a
     // later DB write can be diffed against what the running process actually
     // used at startup — that diff is "pending restart" (see pendingRestart()).
-    this._bootSnapshot = new Map(
-      REGISTRY.filter(d => d.apply === 'restart').map(d => [d.key, this.get(d.key)])
+    service._bootSnapshot = new Map(
+      REGISTRY.filter(d => d.apply === 'restart').map(d => [d.key, service.get(d.key)])
     );
+    return service;
   }
 
-  _loadCache() {
+  async _loadCache() {
     this._dbCache.clear();
-    for (const row of getAllServerSettingRows(this.db)) {
+    for (const row of await getAllServerSettingRows(this.db)) {
       try {
         this._dbCache.set(row.key, JSON.parse(row.value));
       } catch {
@@ -131,7 +140,7 @@ export class SettingsService extends EventEmitter {
    * @param {*} value
    * @param {{ updatedBy?: string|null }} [opts]
    */
-  set(key, value, { updatedBy = null } = {}) {
+  async set(key, value, { updatedBy = null } = {}) {
     const def = REGISTRY_BY_KEY.get(key);
     if (!def) throw new Error(`Unknown setting: ${key}`);
     if (def.tier === 'env') {
@@ -145,7 +154,7 @@ export class SettingsService extends EventEmitter {
       throw err;
     }
     const coerced = coerceDbValue(def, value);
-    setServerSettingRow(this.db, key, JSON.stringify(coerced), updatedBy);
+    await setServerSettingRow(this.db, key, JSON.stringify(coerced), updatedBy);
     this._dbCache.set(key, coerced);
     this.emit('changed', { key, source: 'db', value: coerced });
   }
@@ -155,7 +164,7 @@ export class SettingsService extends EventEmitter {
    * @param {string} key
    * @param {{ updatedBy?: string|null }} [opts]
    */
-  clear(key, { updatedBy = null } = {}) {
+  async clear(key, { updatedBy = null } = {}) {
     const def = REGISTRY_BY_KEY.get(key);
     if (!def) throw new Error(`Unknown setting: ${key}`);
     if (def.tier === 'env') {
@@ -163,7 +172,7 @@ export class SettingsService extends EventEmitter {
       err.code = 'TIER_A_LOCKED';
       throw err;
     }
-    deleteServerSettingRow(this.db, key);
+    await deleteServerSettingRow(this.db, key);
     this._dbCache.delete(key);
     this.emit('changed', { key, source: this.source(key), value: this.get(key), updatedBy });
   }

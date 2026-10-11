@@ -17,22 +17,22 @@ import {
 const KEY = 'bcast-test-key';
 
 let db;
-before(() => {
-  db = initDb(':memory:');
-  db.prepare("INSERT INTO api_keys (key, owner, active) VALUES (?, 'Owner', 1)").run(KEY);
+before(async () => {
+  db = await initDb(':memory:');
+  await db.prepare("INSERT INTO api_keys (key, owner, active) VALUES (?, 'Owner', 1)").run(KEY);
 });
 after(() => db.close());
 
-beforeEach(() => {
-  db.prepare('DELETE FROM broadcast_assets').run();
-  db.prepare('DELETE FROM broadcast_files').run();
-  db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(KEY);
-  db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(KEY);
+beforeEach(async () => {
+  await db.prepare('DELETE FROM broadcast_assets').run();
+  await db.prepare('DELETE FROM broadcast_files').run();
+  await db.prepare('DELETE FROM caption_files WHERE api_key = ?').run(KEY);
+  await db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(KEY);
 });
 
 describe('createBroadcast / getBroadcast', () => {
-  it('creates a draft with defaults and returns it', () => {
-    const r = createBroadcast(db, KEY, { title: 'Sunday Service' });
+  it('creates a draft with defaults and returns it', async () => {
+    const r = await createBroadcast(db, KEY, { title: 'Sunday Service' });
     assert.equal(r.ok, true);
     assert.equal(r.broadcast.title, 'Sunday Service');
     assert.equal(r.broadcast.status, 'draft');
@@ -40,174 +40,174 @@ describe('createBroadcast / getBroadcast', () => {
     assert.deepEqual(r.broadcast.assets, []);
   });
 
-  it('rejects an invalid status', () => {
-    const r = createBroadcast(db, KEY, { title: 'x', status: 'bogus' });
+  it('rejects an invalid status', async () => {
+    const r = await createBroadcast(db, KEY, { title: 'x', status: 'bogus' });
     assert.equal(r.ok, false);
   });
 
-  it('getBroadcast returns null for unknown id', () => {
-    assert.equal(getBroadcast(db, KEY, 'nope'), null);
+  it('getBroadcast returns null for unknown id', async () => {
+    assert.equal(await getBroadcast(db, KEY, 'nope'), null);
   });
 });
 
 describe('listBroadcasts', () => {
-  it('excludes archived by default, includes with flag', () => {
-    const a = createBroadcast(db, KEY, { title: 'A' }).broadcast;
-    createBroadcast(db, KEY, { title: 'B' });
-    archiveBroadcast(db, KEY, a.id);
+  it('excludes archived by default, includes with flag', async () => {
+    const a = (await createBroadcast(db, KEY, { title: 'A' })).broadcast;
+    await createBroadcast(db, KEY, { title: 'B' });
+    await archiveBroadcast(db, KEY, a.id);
 
-    const visible = listBroadcasts(db, KEY);
+    const visible = await listBroadcasts(db, KEY);
     assert.equal(visible.length, 1);
     assert.equal(visible[0].title, 'B');
 
-    const all = listBroadcasts(db, KEY, { includeArchived: true });
+    const all = await listBroadcasts(db, KEY, { includeArchived: true });
     assert.equal(all.length, 2);
   });
 
-  it('filters by status', () => {
-    createBroadcast(db, KEY, { title: 'sched', status: 'scheduled' });
-    createBroadcast(db, KEY, { title: 'draft' });
-    const sched = listBroadcasts(db, KEY, { status: 'scheduled' });
+  it('filters by status', async () => {
+    await createBroadcast(db, KEY, { title: 'sched', status: 'scheduled' });
+    await createBroadcast(db, KEY, { title: 'draft' });
+    const sched = await listBroadcasts(db, KEY, { status: 'scheduled' });
     assert.equal(sched.length, 1);
     assert.equal(sched[0].title, 'sched');
   });
 });
 
 describe('updateBroadcast', () => {
-  it('patches only provided fields', () => {
-    const b = createBroadcast(db, KEY, { title: 'orig' }).broadcast;
-    const r = updateBroadcast(db, KEY, b.id, { title: 'new', scheduledStart: '2026-08-01T10:00:00' });
+  it('patches only provided fields', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'orig' })).broadcast;
+    const r = await updateBroadcast(db, KEY, b.id, { title: 'new', scheduledStart: '2026-08-01T10:00:00' });
     assert.equal(r.ok, true);
     assert.equal(r.broadcast.title, 'new');
     assert.equal(r.broadcast.scheduledStart, '2026-08-01T10:00:00');
   });
 
-  it('404s for unknown id', () => {
-    const r = updateBroadcast(db, KEY, 'nope', { title: 'x' });
+  it('404s for unknown id', async () => {
+    const r = await updateBroadcast(db, KEY, 'nope', { title: 'x' });
     assert.equal(r.ok, false);
     assert.equal(r.status, 404);
   });
 });
 
 describe('archive / restore / delete lifecycle', () => {
-  it('archive sets status+archived_at; restore clears it', () => {
-    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
-    const arch = archiveBroadcast(db, KEY, b.id);
+  it('archive sets status+archived_at; restore clears it', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+    const arch = await archiveBroadcast(db, KEY, b.id);
     assert.equal(arch.broadcast.status, 'archived');
     assert.ok(arch.broadcast.archivedAt);
 
-    const rest = restoreBroadcast(db, KEY, b.id);
+    const rest = await restoreBroadcast(db, KEY, b.id);
     assert.equal(rest.broadcast.status, 'draft');
     assert.equal(rest.broadcast.archivedAt, null);
   });
 
-  it('cannot archive a live broadcast', () => {
-    const b = autoCreateForSession(db, KEY, {});
-    const r = archiveBroadcast(db, KEY, b.id);
+  it('cannot archive a live broadcast', async () => {
+    const b = await autoCreateForSession(db, KEY, {});
+    const r = await archiveBroadcast(db, KEY, b.id);
     assert.equal(r.ok, false);
     assert.equal(r.status, 409);
   });
 
-  it('first delete archives (202); second is blocked until cooling-off; then succeeds and nulls produced links', () => {
-    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
+  it('first delete archives (202); second is blocked until cooling-off; then succeeds and nulls produced links', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
 
     // First delete → archive
-    const first = deleteBroadcast(db, KEY, b.id);
+    const first = await deleteBroadcast(db, KEY, b.id);
     assert.equal(first.ok, false);
     assert.equal(first.status, 202);
-    assert.equal(getBroadcast(db, KEY, b.id).status, 'archived');
+    assert.equal((await getBroadcast(db, KEY, b.id)).status, 'archived');
 
     // Attach a produced session_stats row to this broadcast
-    db.prepare(
+    await db.prepare(
       "INSERT INTO session_stats (session_id, api_key, started_at, ended_at, duration_ms, broadcast_id) VALUES ('s1', ?, 'a', 'b', 1, ?)"
     ).run(KEY, b.id);
 
     // Second delete → still within cooling-off window → blocked
-    const blocked = deleteBroadcast(db, KEY, b.id);
+    const blocked = await deleteBroadcast(db, KEY, b.id);
     assert.equal(blocked.ok, false);
     assert.equal(blocked.status, 409);
 
     // Backdate archived_at beyond the window
-    db.prepare("UPDATE broadcasts SET archived_at = datetime('now', '-40 days') WHERE id = ?").run(b.id);
+    await db.prepare("UPDATE broadcasts SET archived_at = datetime('now', '-40 days') WHERE id = ?").run(b.id);
 
-    const done = deleteBroadcast(db, KEY, b.id);
+    const done = await deleteBroadcast(db, KEY, b.id);
     assert.equal(done.ok, true);
-    assert.equal(getBroadcast(db, KEY, b.id), null);
+    assert.equal(await getBroadcast(db, KEY, b.id), null);
 
     // Produced content survives with broadcast_id nulled
-    const stat = db.prepare("SELECT broadcast_id FROM session_stats WHERE session_id = 's1'").get();
+    const stat = await db.prepare("SELECT broadcast_id FROM session_stats WHERE session_id = 's1'").get();
     assert.equal(stat.broadcast_id, null);
   });
 });
 
 describe('asset linkage', () => {
-  it('links, lists, rejects dup, and unlinks', () => {
-    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
-    const link = linkAsset(db, KEY, b.id, { assetType: 'graphic', assetRef: '42' });
+  it('links, lists, rejects dup, and unlinks', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+    const link = await linkAsset(db, KEY, b.id, { assetType: 'graphic', assetRef: '42' });
     assert.equal(link.ok, true);
 
-    const withAssets = getBroadcast(db, KEY, b.id);
+    const withAssets = await getBroadcast(db, KEY, b.id);
     assert.equal(withAssets.assets.length, 1);
     assert.equal(withAssets.assets[0].assetType, 'graphic');
     assert.equal(withAssets.assets[0].assetRef, '42');
 
-    const dup = linkAsset(db, KEY, b.id, { assetType: 'graphic', assetRef: '42' });
+    const dup = await linkAsset(db, KEY, b.id, { assetType: 'graphic', assetRef: '42' });
     assert.equal(dup.ok, false);
     assert.equal(dup.status, 409);
 
-    const un = unlinkAsset(db, KEY, b.id, link.asset.id);
+    const un = await unlinkAsset(db, KEY, b.id, link.asset.id);
     assert.equal(un.ok, true);
-    assert.equal(getBroadcast(db, KEY, b.id).assets.length, 0);
+    assert.equal((await getBroadcast(db, KEY, b.id)).assets.length, 0);
   });
 
-  it('rejects an invalid asset type', () => {
-    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
-    const r = linkAsset(db, KEY, b.id, { assetType: 'nonsense', assetRef: '1' });
+  it('rejects an invalid asset type', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+    const r = await linkAsset(db, KEY, b.id, { assetType: 'nonsense', assetRef: '1' });
     assert.equal(r.ok, false);
   });
 });
 
 describe('file linkage', () => {
-  it('links, lists, rejects dup, and unlinks files for a broadcast', () => {
-    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
-    const fileId = db.prepare(
+  it('links, lists, rejects dup, and unlinks files for a broadcast', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+    const fileId = (await db.prepare(
       'INSERT INTO caption_files (api_key, session_id, filename, lang, format, type) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(KEY, 's1', 'rundown.md', 'en', 'md', 'rundown').lastInsertRowid;
+    ).run(KEY, 's1', 'rundown.md', 'en', 'md', 'rundown')).lastInsertRowid;
 
-    const link = linkBroadcastFile(db, KEY, b.id, fileId);
+    const link = await linkBroadcastFile(db, KEY, b.id, fileId);
     assert.equal(link.ok, true);
     assert.equal(link.file.fileId, fileId);
 
-    const listed = listBroadcastFiles(db, KEY, b.id);
+    const listed = await listBroadcastFiles(db, KEY, b.id);
     assert.equal(listed.length, 1);
     assert.equal(listed[0].fileId, fileId);
 
-    const withFiles = getBroadcast(db, KEY, b.id);
+    const withFiles = await getBroadcast(db, KEY, b.id);
     assert.equal(withFiles.files.length, 1);
     assert.equal(withFiles.files[0].fileId, fileId);
 
-    const dup = linkBroadcastFile(db, KEY, b.id, fileId);
+    const dup = await linkBroadcastFile(db, KEY, b.id, fileId);
     assert.equal(dup.ok, false);
     assert.equal(dup.status, 409);
 
-    const un = unlinkBroadcastFile(db, KEY, b.id, fileId);
+    const un = await unlinkBroadcastFile(db, KEY, b.id, fileId);
     assert.equal(un.ok, true);
-    assert.equal(listBroadcastFiles(db, KEY, b.id).length, 0);
+    assert.equal((await listBroadcastFiles(db, KEY, b.id)).length, 0);
   });
 });
 
 describe('duplicateBroadcast (same project)', () => {
-  it('copies title+links, not produced content, and starts as fresh draft', () => {
-    const b = createBroadcast(db, KEY, { title: 'Original', status: 'scheduled', scheduledStart: '2026-08-01T10:00:00' }).broadcast;
-    linkAsset(db, KEY, b.id, { assetType: 'cue', assetRef: 'c1' });
-    const fileId = db.prepare(
+  it('copies title+links, not produced content, and starts as fresh draft', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'Original', status: 'scheduled', scheduledStart: '2026-08-01T10:00:00' })).broadcast;
+    await linkAsset(db, KEY, b.id, { assetType: 'cue', assetRef: 'c1' });
+    const fileId = (await db.prepare(
       'INSERT INTO caption_files (api_key, session_id, filename, lang, format, type) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(KEY, 's1', 'rundown.md', 'en', 'md', 'rundown').lastInsertRowid;
-    linkBroadcastFile(db, KEY, b.id, fileId);
+    ).run(KEY, 's1', 'rundown.md', 'en', 'md', 'rundown')).lastInsertRowid;
+    await linkBroadcastFile(db, KEY, b.id, fileId);
     // Simulate produced content on the source
-    completeBroadcast(db, b.id, { youtubeVideoIds: ['vid123'] });
+    await completeBroadcast(db, b.id, { youtubeVideoIds: ['vid123'] });
 
-    const dup = duplicateBroadcast(db, KEY, b.id);
+    const dup = await duplicateBroadcast(db, KEY, b.id);
     assert.equal(dup.ok, true);
     assert.equal(dup.broadcast.title, 'Original (copy)');
     assert.equal(dup.broadcast.status, 'draft');
@@ -221,77 +221,77 @@ describe('duplicateBroadcast (same project)', () => {
 });
 
 describe('session-lifecycle binding', () => {
-  it('autoCreateForSession creates a live broadcast with a timestamp title', () => {
-    const b = autoCreateForSession(db, KEY, {});
+  it('autoCreateForSession creates a live broadcast with a timestamp title', async () => {
+    const b = await autoCreateForSession(db, KEY, {});
     assert.equal(b.status, 'live');
     assert.match(b.title, /^Broadcast \d{4}-\d{2}-\d{2}/);
   });
 
-  it('bindSessionStart moves draft→live and rejects a second bind', () => {
-    const b = createBroadcast(db, KEY, { title: 'x', status: 'scheduled' }).broadcast;
-    const bind = bindSessionStart(db, KEY, b.id);
+  it('bindSessionStart moves draft→live and rejects a second bind', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x', status: 'scheduled' })).broadcast;
+    const bind = await bindSessionStart(db, KEY, b.id);
     assert.equal(bind.ok, true);
     assert.equal(bind.broadcast.status, 'live');
     assert.ok(bind.broadcast.actualStart);
 
-    const second = bindSessionStart(db, KEY, b.id);
+    const second = await bindSessionStart(db, KEY, b.id);
     assert.equal(second.ok, false);
     assert.equal(second.status, 409);
   });
 
-  it('completeBroadcast sets completed + actual_end + youtube ids', () => {
-    const b = autoCreateForSession(db, KEY, {});
-    completeBroadcast(db, b.id, { youtubeVideoIds: ['abc', 'def'] });
-    const done = getBroadcast(db, KEY, b.id);
+  it('completeBroadcast sets completed + actual_end + youtube ids', async () => {
+    const b = await autoCreateForSession(db, KEY, {});
+    await completeBroadcast(db, b.id, { youtubeVideoIds: ['abc', 'def'] });
+    const done = await getBroadcast(db, KEY, b.id);
     assert.equal(done.status, 'completed');
     assert.ok(done.actualEnd);
     assert.deepEqual(done.youtubeVideoIds, ['abc', 'def']);
   });
 
-  it('completeBroadcast does not revive an archived broadcast', () => {
-    const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
-    archiveBroadcast(db, KEY, b.id);
-    completeBroadcast(db, b.id, {});
-    assert.equal(getBroadcast(db, KEY, b.id).status, 'archived');
+  it('completeBroadcast does not revive an archived broadcast', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+    await archiveBroadcast(db, KEY, b.id);
+    await completeBroadcast(db, b.id, {});
+    assert.equal((await getBroadcast(db, KEY, b.id)).status, 'archived');
   });
 
   describe('privacyStatus (plan_broadcast_platform_sync)', () => {
-    it('defaults to unlisted', () => {
+    it('defaults to unlisted', async () => {
       // The safe value is the default: a broadcast accidentally created public
       // is a worse failure than one accidentally left unlisted.
-      const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
+      const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
       assert.equal(b.privacyStatus, 'unlisted');
     });
 
-    it('accepts an explicit value on create', () => {
-      const b = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'public' }).broadcast;
-      assert.equal(getBroadcast(db, KEY, b.id).privacyStatus, 'public');
+    it('accepts an explicit value on create', async () => {
+      const b = (await createBroadcast(db, KEY, { title: 'x', privacyStatus: 'public' })).broadcast;
+      assert.equal((await getBroadcast(db, KEY, b.id)).privacyStatus, 'public');
     });
 
-    it('rejects an unknown value on create', () => {
-      const result = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'everyone' });
+    it('rejects an unknown value on create', async () => {
+      const result = await createBroadcast(db, KEY, { title: 'x', privacyStatus: 'everyone' });
       assert.equal(result.ok, false);
       assert.match(result.error, /Invalid privacyStatus/);
     });
 
-    it('is updatable', () => {
-      const b = createBroadcast(db, KEY, { title: 'x' }).broadcast;
-      const updated = updateBroadcast(db, KEY, b.id, { privacyStatus: 'private' });
+    it('is updatable', async () => {
+      const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+      const updated = await updateBroadcast(db, KEY, b.id, { privacyStatus: 'private' });
       assert.equal(updated.ok, true);
       assert.equal(updated.broadcast.privacyStatus, 'private');
     });
 
-    it('rejects an unknown value on update without changing anything', () => {
-      const b = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'public' }).broadcast;
-      const result = updateBroadcast(db, KEY, b.id, { privacyStatus: 'nonsense' });
+    it('rejects an unknown value on update without changing anything', async () => {
+      const b = (await createBroadcast(db, KEY, { title: 'x', privacyStatus: 'public' })).broadcast;
+      const result = await updateBroadcast(db, KEY, b.id, { privacyStatus: 'nonsense' });
       assert.equal(result.ok, false);
-      assert.equal(getBroadcast(db, KEY, b.id).privacyStatus, 'public');
+      assert.equal((await getBroadcast(db, KEY, b.id)).privacyStatus, 'public');
     });
 
-    it('is left alone by an unrelated update', () => {
-      const b = createBroadcast(db, KEY, { title: 'x', privacyStatus: 'private' }).broadcast;
-      updateBroadcast(db, KEY, b.id, { title: 'renamed' });
-      assert.equal(getBroadcast(db, KEY, b.id).privacyStatus, 'private');
+    it('is left alone by an unrelated update', async () => {
+      const b = (await createBroadcast(db, KEY, { title: 'x', privacyStatus: 'private' })).broadcast;
+      await updateBroadcast(db, KEY, b.id, { title: 'renamed' });
+      assert.equal((await getBroadcast(db, KEY, b.id)).privacyStatus, 'private');
     });
   });
 });

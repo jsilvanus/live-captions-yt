@@ -10,9 +10,11 @@
  *   - 'custom' — user provides custom embedding API endpoint + key
  *   - 'none'   — AI features disabled (default)
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {any} db  legacy better-sqlite3 handle (`db.$legacy`); a Prisma client is ignored
  */
 export function runAiMigrations(db) {
+  // Prisma client (PostgreSQL, or SQLite via Prisma): the tables come from schema.js / the migrations. Nothing to do.
+  if (!db || typeof db.exec !== 'function') return;
   db.exec(`
     CREATE TABLE IF NOT EXISTS ai_config (
       api_key             TEXT PRIMARY KEY,
@@ -37,12 +39,12 @@ export const VALID_PROVIDERS = ['none', 'server', 'openai', 'custom'];
 
 /**
  * Get AI config for an API key, or null if not configured.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @param {string} apiKey
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getAiConfig(db, apiKey) {
-  const row = db.prepare('SELECT * FROM ai_config WHERE api_key = ?').get(apiKey);
+export async function getAiConfig(db, apiKey) {
+  const row = await db.ai_config.findUnique({ where: { api_key: apiKey } });
   if (!row) return null;
   return {
     embeddingProvider: row.embedding_provider,
@@ -55,12 +57,12 @@ export function getAiConfig(db, apiKey) {
 
 /**
  * Get the raw AI config (includes actual API key, for internal use only).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @param {string} apiKey
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getAiConfigRaw(db, apiKey) {
-  const row = db.prepare('SELECT * FROM ai_config WHERE api_key = ?').get(apiKey);
+export async function getAiConfigRaw(db, apiKey) {
+  const row = await db.ai_config.findUnique({ where: { api_key: apiKey } });
   if (!row) return null;
   return {
     embeddingProvider: row.embedding_provider,
@@ -73,35 +75,33 @@ export function getAiConfigRaw(db, apiKey) {
 
 /**
  * Upsert AI config for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @param {string} apiKey
  * @param {object} opts
  */
-export function setAiConfig(db, apiKey, opts) {
-  const existing = db.prepare('SELECT api_key FROM ai_config WHERE api_key = ?').get(apiKey);
+export async function setAiConfig(db, apiKey, opts) {
+  const existing = await db.ai_config.findUnique({ where: { api_key: apiKey }, select: { api_key: true } });
   if (!existing) {
-    db.prepare(`
-      INSERT INTO ai_config (api_key, embedding_provider, embedding_model, embedding_api_key, embedding_api_url, fuzzy_threshold)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      apiKey,
-      opts.embeddingProvider || 'none',
-      opts.embeddingModel || '',
-      opts.embeddingApiKey || '',
-      opts.embeddingApiUrl || '',
-      opts.fuzzyThreshold ?? 0.75,
-    );
+    await db.ai_config.create({
+      data: {
+        api_key: apiKey,
+        embedding_provider: opts.embeddingProvider || 'none',
+        embedding_model: opts.embeddingModel || '',
+        embedding_api_key: opts.embeddingApiKey || '',
+        embedding_api_url: opts.embeddingApiUrl || '',
+        fuzzy_threshold: opts.fuzzyThreshold ?? 0.75,
+        updated_at: Math.floor(Date.now() / 1000),
+      },
+    });
   } else {
-    const sets = [];
-    const vals = [];
-    if (opts.embeddingProvider !== undefined) { sets.push('embedding_provider = ?'); vals.push(opts.embeddingProvider); }
-    if (opts.embeddingModel !== undefined) { sets.push('embedding_model = ?'); vals.push(opts.embeddingModel); }
-    if (opts.embeddingApiKey !== undefined) { sets.push('embedding_api_key = ?'); vals.push(opts.embeddingApiKey); }
-    if (opts.embeddingApiUrl !== undefined) { sets.push('embedding_api_url = ?'); vals.push(opts.embeddingApiUrl); }
-    if (opts.fuzzyThreshold !== undefined) { sets.push('fuzzy_threshold = ?'); vals.push(opts.fuzzyThreshold); }
-    if (sets.length === 0) return;
-    sets.push('updated_at = strftime(\'%s\',\'now\')');
-    vals.push(apiKey);
-    db.prepare(`UPDATE ai_config SET ${sets.join(', ')} WHERE api_key = ?`).run(...vals);
+    const data = {};
+    if (opts.embeddingProvider !== undefined) data.embedding_provider = opts.embeddingProvider;
+    if (opts.embeddingModel !== undefined) data.embedding_model = opts.embeddingModel;
+    if (opts.embeddingApiKey !== undefined) data.embedding_api_key = opts.embeddingApiKey;
+    if (opts.embeddingApiUrl !== undefined) data.embedding_api_url = opts.embeddingApiUrl;
+    if (opts.fuzzyThreshold !== undefined) data.fuzzy_threshold = opts.fuzzyThreshold;
+    if (Object.keys(data).length === 0) return;
+    data.updated_at = Math.floor(Date.now() / 1000);
+    await db.ai_config.updateMany({ where: { api_key: apiKey }, data });
   }
 }

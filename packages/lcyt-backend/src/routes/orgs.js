@@ -42,40 +42,40 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
     authMiddleware(req, res, next);
   });
 
-  router.get('/', (req, res) => {
-    const rows = listOrganizationsForUser(db, req.user.userId);
+  router.get('/', async (req, res) => {
+    const rows = await listOrganizationsForUser(db, req.user.userId);
     return res.json({ organizations: rows });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const name = String(req.body?.name || '').trim();
     if (!name) return res.status(400).json({ error: 'name is required' });
 
-    const slug = buildUniqueSlug(db, name);
-    const created = createOrganization(db, { name, slug, ownerUserId: req.user.userId });
+    const slug = await buildUniqueSlug(db, name);
+    const created = await createOrganization(db, { name, slug, ownerUserId: req.user.userId });
     return res.status(201).json({ organization: created });
   });
 
-  router.get('/:id', (req, res) => {
+  router.get('/:id', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
-    const details = getOrganizationDetails(db, orgId);
+    const details = await getOrganizationDetails(db, orgId);
     return res.json({ organization: details, role: membership.role });
   });
 
   // GET /orgs/:id/audit — org audit trail (owner/admin only; plan_metering_audit §5.5)
-  router.get('/:id/audit', (req, res) => {
+  router.get('/:id/audit', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (!canManageMembers(membership.role)) return res.status(403).json({ error: 'owner or admin required' });
 
     const limit  = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
-    const { rows, total } = queryAuditLog(db, {
+    const { rows, total } = await queryAuditLog(db, {
       orgId,
       q:      (req.query.q      || '').trim(),
       action: (req.query.action || '').trim(),
@@ -96,16 +96,16 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
   // GET /orgs/:id/usage — usage rollups for the org's projects
   // (plan_metering_audit §6.1): any member; per-project breakdown for
   // owner/admin, aggregated totals otherwise.
-  router.get('/:id/usage', (req, res) => {
+  router.get('/:id/usage', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
 
     const grain = req.query.grain === 'day' ? 'day' : 'hour';
     const metricsFilter = (req.query.metrics || '').split(',').map(s => s.trim()).filter(Boolean);
     const groupBy = canManageMembers(membership.role) && req.query.groupBy === 'project' ? 'project' : 'metric';
-    const series = queryRollupSeries(db, {
+    const series = await queryRollupSeries(db, {
       from: (req.query.from || '').trim(),
       to: (req.query.to || '').trim(),
       grain,
@@ -116,10 +116,10 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
     return res.json({ series, groupBy });
   });
 
-  router.patch('/:id', (req, res) => {
+  router.patch('/:id', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (membership.role !== 'owner') return res.status(403).json({ error: 'owner role required' });
 
@@ -148,33 +148,33 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
       updates.projectSlugPolicy = projectSlugPolicy;
     }
 
-    const updated = updateOrganization(db, orgId, updates);
+    const updated = await updateOrganization(db, orgId, updates);
     return res.json({ organization: updated });
   });
 
-  router.delete('/:id', (req, res) => {
+  router.delete('/:id', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (membership.role !== 'owner') return res.status(403).json({ error: 'owner role required' });
-    deleteOrganization(db, orgId);
+    await deleteOrganization(db, orgId);
     return res.json({ deleted: true });
   });
 
-  router.get('/:id/members', (req, res) => {
+  router.get('/:id/members', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
-    const members = listOrganizationMembers(db, orgId);
+    const members = await listOrganizationMembers(db, orgId);
     return res.json({ members });
   });
 
-  router.post('/:id/members', (req, res) => {
+  router.post('/:id/members', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (!canManageMembers(membership.role)) return res.status(403).json({ error: 'owner or admin required' });
 
@@ -183,14 +183,14 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
     if (!email) return res.status(400).json({ error: 'email is required' });
     if (!ROLE_ORDER.includes(role)) return res.status(400).json({ error: 'role is invalid' });
 
-    const targetUser = getUserByEmail(db, email);
+    const targetUser = await getUserByEmail(db, email);
     if (!targetUser) return res.status(404).json({ error: 'No account found with that email' });
     if (!targetUser.active) return res.status(400).json({ error: 'User account is not active' });
 
-    const existing = getOrganizationMember(db, orgId, targetUser.id);
+    const existing = await getOrganizationMember(db, orgId, targetUser.id);
     if (existing) return res.status(409).json({ error: 'User is already a member of this team' });
 
-    const createdMember = createOrganizationMember(db, {
+    const createdMember = await createOrganizationMember(db, {
       orgId,
       userId: targetUser.id,
       role,
@@ -204,69 +204,69 @@ export function createOrganizationsRouter(db, authMiddleware, { loginEnabled = f
     }});
   });
 
-  router.patch('/:id/members/:userId', (req, res) => {
+  router.patch('/:id/members/:userId', async (req, res) => {
     const orgId = Number(req.params.id);
     const targetUserId = Number(req.params.userId);
     if (!Number.isFinite(orgId) || !Number.isFinite(targetUserId)) return res.status(400).json({ error: 'Invalid id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (!canManageMembers(membership.role)) return res.status(403).json({ error: 'owner or admin required' });
 
     const role = String(req.body?.role || '').trim().toLowerCase();
     if (!ROLE_ORDER.includes(role)) return res.status(400).json({ error: 'role is invalid' });
 
-    const target = getOrganizationMember(db, orgId, targetUserId);
+    const target = await getOrganizationMember(db, orgId, targetUserId);
     if (!target) return res.status(404).json({ error: 'Member not found' });
     if (target.role === 'owner' && membership.role !== 'owner') return res.status(403).json({ error: 'owner role required' });
     if (role === 'owner' && membership.role !== 'owner') return res.status(403).json({ error: 'owner role required' });
 
-    const updated = updateOrganizationMemberRole(db, { orgId, userId: targetUserId, role });
+    const updated = await updateOrganizationMemberRole(db, { orgId, userId: targetUserId, role });
     return res.json({ member: { userId: targetUserId, role: updated.role } });
   });
 
-  router.delete('/:id/members/:userId', (req, res) => {
+  router.delete('/:id/members/:userId', async (req, res) => {
     const orgId = Number(req.params.id);
     const targetUserId = Number(req.params.userId);
     if (!Number.isFinite(orgId) || !Number.isFinite(targetUserId)) return res.status(400).json({ error: 'Invalid id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (req.user.userId !== targetUserId && !canManageMembers(membership.role)) return res.status(403).json({ error: 'owner or admin required' });
 
-    const target = getOrganizationMember(db, orgId, targetUserId);
+    const target = await getOrganizationMember(db, orgId, targetUserId);
     if (!target) return res.status(404).json({ error: 'Member not found' });
     if (target.role === 'owner') return res.status(403).json({ error: 'Cannot remove owner' });
 
-    removeOrganizationMember(db, { orgId, userId: targetUserId });
+    await removeOrganizationMember(db, { orgId, userId: targetUserId });
     return res.json({ removed: true });
   });
 
-  router.get('/:id/projects', (req, res) => {
+  router.get('/:id/projects', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
-    const projects = listOrganizationProjects(db, orgId);
+    const projects = await listOrganizationProjects(db, orgId);
     return res.json({ projects });
   });
 
-  router.get('/:id/features', (req, res) => {
+  router.get('/:id/features', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
-    const features = getOrganizationFeatureCodes(db, orgId);
+    const features = await getOrganizationFeatureCodes(db, orgId);
     return res.json({ features });
   });
 
-  router.put('/:id/features', (req, res) => {
+  router.put('/:id/features', async (req, res) => {
     const orgId = Number(req.params.id);
     if (!Number.isFinite(orgId)) return res.status(400).json({ error: 'Invalid org id' });
-    const membership = getOrgMembership(db, orgId, req.user.userId);
+    const membership = await getOrgMembership(db, orgId, req.user.userId);
     if (!membership) return res.status(404).json({ error: 'Organization not found' });
     if (!canManageMembers(membership.role)) return res.status(403).json({ error: 'owner or admin required' });
 
     const requested = Array.isArray(req.body?.features) ? req.body.features : [];
-    const features = setOrganizationFeatureCodes(db, {
+    const features = await setOrganizationFeatureCodes(db, {
       orgId,
       userId: req.user.userId,
       features: requested,

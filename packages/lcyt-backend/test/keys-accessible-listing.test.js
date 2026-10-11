@@ -27,47 +27,45 @@ let server, baseUrl, db;
 let owner, orgAdmin, orgViewer, explicitEditor, stranger;
 let teamVisibleKey, restrictedKey, ownedKey;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(async () => {
+  db = await initDb(':memory:');
   const app = express();
   app.use(express.json());
   app.use('/keys', createKeysRouter(db, { loginEnabled: true, jwtSecret: JWT_SECRET }));
 
-  owner = createUser(db, { email: 'owner@example.com', passwordHash: 'x' });
-  orgAdmin = createUser(db, { email: 'org-admin@example.com', passwordHash: 'x' });
-  orgViewer = createUser(db, { email: 'org-viewer@example.com', passwordHash: 'x' });
-  explicitEditor = createUser(db, { email: 'explicit-editor@example.com', passwordHash: 'x' });
-  stranger = createUser(db, { email: 'stranger@example.com', passwordHash: 'x' });
+  owner = await createUser(db, { email: 'owner@example.com', passwordHash: 'x' });
+  orgAdmin = await createUser(db, { email: 'org-admin@example.com', passwordHash: 'x' });
+  orgViewer = await createUser(db, { email: 'org-viewer@example.com', passwordHash: 'x' });
+  explicitEditor = await createUser(db, { email: 'explicit-editor@example.com', passwordHash: 'x' });
+  stranger = await createUser(db, { email: 'stranger@example.com', passwordHash: 'x' });
 
-  const org = createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
-  createOrganizationMember(db, { orgId: org.id, userId: orgAdmin.id, role: 'admin', invitedBy: owner.id });
-  createOrganizationMember(db, { orgId: org.id, userId: orgViewer.id, role: 'viewer', invitedBy: owner.id });
+  const org = await createOrganization(db, { name: 'Team', slug: 'team', ownerUserId: owner.id });
+  await createOrganizationMember(db, { orgId: org.id, userId: orgAdmin.id, role: 'admin', invitedBy: owner.id });
+  await createOrganizationMember(db, { orgId: org.id, userId: orgViewer.id, role: 'viewer', invitedBy: owner.id });
   // explicitEditor and stranger are deliberately NOT org members.
 
   // Team-visible (default restricted=0) project with an org, an explicit
   // editor member, and org-baseline/org-admin-override reachable.
-  teamVisibleKey = createKey(db, { owner: 'Team-visible project', user_id: owner.id, org_id: org.id }).key;
-  addMember(db, teamVisibleKey, explicitEditor.id, 'editor', owner.id);
+  teamVisibleKey = (await createKey(db, { owner: 'Team-visible project', user_id: owner.id, org_id: org.id })).key;
+  await addMember(db, teamVisibleKey, explicitEditor.id, 'editor', owner.id);
 
   // Restricted (private) project in the same org — org baseline/override
   // must contribute nothing here, even for the org admin.
-  restrictedKey = createKey(db, { owner: 'Restricted project', user_id: owner.id, org_id: org.id }).key;
-  db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(restrictedKey);
+  restrictedKey = (await createKey(db, { owner: 'Restricted project', user_id: owner.id, org_id: org.id })).key;
+  await db.prepare('UPDATE api_keys SET restricted = 1 WHERE key = ?').run(restrictedKey);
 
   // Plain owned project, no org at all.
-  ownedKey = createKey(db, { owner: 'No-org project', user_id: owner.id }).key;
+  ownedKey = (await createKey(db, { owner: 'No-org project', user_id: owner.id })).key;
 
   server = createServer(app);
-  server.listen(0, () => {
-    baseUrl = `http://localhost:${server.address().port}`;
-    resolve();
-  });
-}));
+  await new Promise((resolve) => server.listen(0, resolve));
+  baseUrl = `http://localhost:${server.address().port}`;
+});
 
-after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
-}));
+after(async () => {
+  await new Promise((resolve) => server.close(resolve));
+  await db.close();
+});
 
 function tokenFor(user) {
   return jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });

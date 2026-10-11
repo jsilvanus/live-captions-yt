@@ -3,122 +3,109 @@ import { reassignOrDeleteOwnedOrgs } from './orgs.js';
 
 /**
  * User CRUD operations for the `users` table.
- * Migrated to Prisma ORM - works with both SQLite and PostgreSQL.
- * Used when USE_USER_LOGINS=1 (default).
+ *  * Used when USE_USER_LOGINS=1 (default).
  */
 
 /**
  * Create a new user account.
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {{ email: string, passwordHash: string, name?: string }} opts
- * @returns {{ id: number, email: string, name: string|null }}
+ * @returns {Promise<{ id: number, email: string, name: string|null }>}
  */
-export function createUser(db, { email, passwordHash, name = null }) {
-  const result = db.run(
-    'INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)',
-    [email.toLowerCase().trim(), passwordHash, name || null]
-  );
-  return { id: result.lastInsertRowid, email: email.toLowerCase().trim(), name: name || null };
+export async function createUser(db, { email, passwordHash, name = null }) {
+  const row = await db.users.create({
+    data: { email: email.toLowerCase().trim(), password_hash: passwordHash, name: name || null },
+  });
+  return { id: row.id, email: row.email, name: row.name };
 }
 
 /**
  * Fetch a user by email (includes password_hash for verification).
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {string} email
- * @returns {object|undefined}
+ * @returns {Promise<object|undefined>}
  */
-export function getUserByEmail(db, email) {
-  return db.get(
-    'SELECT * FROM users WHERE email = ? AND active = 1',
-    [email.toLowerCase().trim()]
-  );
+export async function getUserByEmail(db, email) {
+  return (await db.users.findFirst({ where: { email: email.toLowerCase().trim(), active: 1 } })) ?? undefined;
 }
+
+const PUBLIC_USER_FIELDS = { id: true, email: true, name: true, created_at: true, active: true, is_admin: true, admin_role: true };
 
 /**
  * Fetch a user by ID (excludes password_hash).
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
- * @returns {{ id: number, email: string, name: string|null, created_at: string, active: number, is_admin: number, admin_role: string }|undefined}
+ * @returns {Promise<{ id: number, email: string, name: string|null, created_at: string, active: number, is_admin: number, admin_role: string }|undefined>}
  */
-export function getUserById(db, id) {
-  return db.get(
-    'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users WHERE id = ?',
-    [id]
-  );
+export async function getUserById(db, id) {
+  return (await db.users.findUnique({ where: { id }, select: PUBLIC_USER_FIELDS })) ?? undefined;
 }
 
 /**
  * Update a user's password hash.
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
  * @param {string} passwordHash
  */
-export function updateUserPassword(db, id, passwordHash) {
-  db.run('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
+export async function updateUserPassword(db, id, passwordHash) {
+  await db.users.updateMany({ where: { id }, data: { password_hash: passwordHash } });
 }
 
 /**
  * Get all API keys belonging to a user.
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
- * @returns {object[]}
+ * @returns {Promise<object[]>}
  */
-export function getKeysByUserId(db, userId) {
-  return db.all(
-    'SELECT * FROM api_keys WHERE user_id = ? ORDER BY created_at DESC',
-    [userId]
-  );
+export async function getKeysByUserId(db, userId) {
+  return db.api_keys.findMany({ where: { user_id: userId }, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
 }
 
 /**
  * Grant or revoke admin rights for a user.
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
  * @param {boolean} isAdmin
  */
-export function setUserAdmin(db, userId, isAdmin) {
-  db.run('UPDATE users SET is_admin = ? WHERE id = ?', [isAdmin ? 1 : 0, userId]);
+export async function setUserAdmin(db, userId, isAdmin) {
+  await db.users.updateMany({ where: { id: userId }, data: { is_admin: isAdmin ? 1 : 0 } });
 }
 
 /**
  * Set the admin role for a user (when is_admin = 1).
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
  * @param {string} role - 'full' or 'readonly'
  */
-export function setUserAdminRole(db, userId, role) {
+export async function setUserAdminRole(db, userId, role) {
   const validRoles = ['full', 'readonly'];
   if (!validRoles.includes(role)) {
     throw new Error(`Invalid admin_role: ${role}. Must be one of: ${validRoles.join(', ')}`);
   }
-  db.run('UPDATE users SET admin_role = ? WHERE id = ?', [role, userId]);
+  await db.users.updateMany({ where: { id: userId }, data: { admin_role: role } });
 }
 
 /**
  * List all users (excludes password_hash).
- * @param {import('../db-factory.js').DbClient} db
- * @returns {object[]}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object[]>}
  */
-export function getAllUsers(db) {
-  return db.all(
-    'SELECT id, email, name, created_at, active, is_admin, admin_role FROM users ORDER BY id'
-  );
+export async function getAllUsers(db) {
+  return db.users.findMany({ select: PUBLIC_USER_FIELDS, orderBy: { id: 'asc' } });
 }
 
 /**
  * Update user fields (name, active).
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
  * @param {{ name?: string|null, active?: boolean }} updates
  */
-export function updateUser(db, userId, updates) {
-  const parts = [];
-  const params = [];
-  if ('name' in updates) { parts.push('name = ?'); params.push(updates.name ?? null); }
-  if ('active' in updates) { parts.push('active = ?'); params.push(updates.active ? 1 : 0); }
-  if (parts.length === 0) return;
-  params.push(userId);
-  db.run(`UPDATE users SET ${parts.join(', ')} WHERE id = ?`, params);
+export async function updateUser(db, userId, updates) {
+  const data = {};
+  if ('name' in updates) data.name = updates.name ?? null;
+  if ('active' in updates) data.active = updates.active ? 1 : 0;
+  if (Object.keys(data).length === 0) return;
+  await db.users.updateMany({ where: { id: userId }, data });
 }
 
 const PROJECT_ROLE_RANK = { owner: 5, admin: 4, editor: 3, operator: 2, viewer: 1 };
@@ -136,11 +123,11 @@ function pickHigherRole(primary, secondary) {
   return (PROJECT_ROLE_RANK[primary] ?? 0) >= (PROJECT_ROLE_RANK[secondary] ?? 0) ? primary : secondary;
 }
 
-export function getUserAccountExport(db, userId) {
-  const user = getUserById(db, userId);
+export async function getUserAccountExport(db, userId) {
+  const user = await getUserById(db, userId);
   if (!user) return null;
 
-  const projectRows = db.all(`
+  const projectRows = await db.$queryRaw`
     SELECT
       ak.key,
       ak.owner,
@@ -148,47 +135,49 @@ export function getUserAccountExport(db, userId) {
       ak.expires_at,
       ak.org_id,
       ak.user_id,
-      (SELECT pm.access_level FROM project_members pm WHERE pm.api_key = ak.key AND pm.user_id = ? LIMIT 1) AS explicit_access_level,
-      (SELECT om.role FROM org_members om WHERE om.org_id = ak.org_id AND om.user_id = ? LIMIT 1) AS org_role
+      (SELECT pm.access_level FROM project_members pm WHERE pm.api_key = ak.key AND pm.user_id = ${userId} LIMIT 1) AS explicit_access_level,
+      (SELECT om.role FROM org_members om WHERE om.org_id = ak.org_id AND om.user_id = ${userId} LIMIT 1) AS org_role
     FROM api_keys ak
-    WHERE ak.user_id = ?
+    WHERE ak.user_id = ${userId}
        OR EXISTS (
-          SELECT 1 FROM project_members pm WHERE pm.api_key = ak.key AND pm.user_id = ?
+          SELECT 1 FROM project_members pm WHERE pm.api_key = ak.key AND pm.user_id = ${userId}
        )
        OR EXISTS (
-          SELECT 1 FROM org_members om WHERE om.org_id = ak.org_id AND om.user_id = ?
+          SELECT 1 FROM org_members om WHERE om.org_id = ak.org_id AND om.user_id = ${userId}
        )
     ORDER BY ak.created_at DESC
-  `, [userId, userId, userId, userId, userId]);
+  `;
 
-  const projects = projectRows.map((row) => {
+  const projects = [];
+  for (const row of projectRows) {
     const explicitRole = normalizeProjectRole(row.explicit_access_level);
     const orgRole = normalizeProjectRole(row.org_role);
     const effectiveRole = pickHigherRole(explicitRole, orgRole);
     const effectiveAccessLevel = effectiveRole || (row.user_id === userId ? 'owner' : 'viewer');
 
-    const featureRows = db.all(
-      'SELECT feature_code FROM project_features WHERE api_key = ? AND enabled = 1 ORDER BY feature_code',
-      [row.key]
-    );
+    const featureRows = await db.project_features.findMany({
+      where: { api_key: row.key, enabled: 1 },
+      select: { feature_code: true },
+      orderBy: { feature_code: 'asc' },
+    });
 
-    return {
+    projects.push({
       key: row.key,
       name: row.owner,
       role: effectiveAccessLevel,
       createdAt: row.created_at,
       expires: row.expires_at,
       features: featureRows.map(feature => feature.feature_code),
-    };
-  });
+    });
+  }
 
-  const orgRows = db.all(`
+  const orgRows = await db.$queryRaw`
     SELECT o.id, o.name, o.slug, om.role, om.joined_at
     FROM org_members om
     JOIN organizations o ON o.id = om.org_id
-    WHERE om.user_id = ?
+    WHERE om.user_id = ${userId}
     ORDER BY om.joined_at ASC
-  `, [userId]);
+  `;
 
   return {
     user: {
@@ -208,28 +197,26 @@ export function getUserAccountExport(db, userId) {
   };
 }
 
-export function deleteOwnedProjectsForUser(db, userId) {
-  const ownedKeyRows = db.all(
-    'SELECT key FROM api_keys WHERE user_id = ? ORDER BY created_at DESC',
-    [userId]
-  );
-  const explicitOwnerRows = db.all(
-    "SELECT api_key FROM project_members WHERE user_id = ? AND access_level = 'owner'",
-    [userId]
-  );
+export async function deleteOwnedProjectsForUser(db, userId) {
+  const ownedKeyRows = await db.api_keys.findMany({
+    where: { user_id: userId }, select: { key: true }, orderBy: { created_at: 'desc' },
+  });
+  const explicitOwnerRows = await db.project_members.findMany({
+    where: { user_id: userId, access_level: 'owner' }, select: { api_key: true },
+  });
 
   const keys = [...new Set([...ownedKeyRows.map(row => row.key), ...explicitOwnerRows.map(row => row.api_key)])];
 
   for (const key of keys) {
-    const existing = db.get('SELECT key FROM api_keys WHERE key = ?', [key]);
+    const existing = await db.api_keys.findUnique({ where: { key }, select: { key: true } });
     if (!existing) continue;
-    anonymizeKey(db, key);
-    db.run('DELETE FROM project_features WHERE api_key = ?', [key]);
-    db.run('DELETE FROM project_member_permissions WHERE member_id IN (SELECT id FROM project_members WHERE api_key = ?)', [key]);
-    db.run('DELETE FROM project_members WHERE api_key = ?', [key]);
-    deleteKey(db, key);
+    await anonymizeKey(db, key);
+    await db.project_features.deleteMany({ where: { api_key: key } });
+    await db.project_member_permissions.deleteMany({ where: { project_members: { api_key: key } } });
+    await db.project_members.deleteMany({ where: { api_key: key } });
+    await deleteKey(db, key);
   }
-  db.run('DELETE FROM project_members WHERE user_id = ?', [userId]);
+  await db.project_members.deleteMany({ where: { user_id: userId } });
   return keys.length;
 }
 
@@ -243,16 +230,16 @@ export function deleteOwnedProjectsForUser(db, userId) {
  * (deleteOwnedProjectsForUser deletes those keys outright; the admin route
  * SETs it NULL to keep the project alive) and `organizations.owner_user_id`
  * is NOT NULL, so it's resolved separately via `reassignOrDeleteOwnedOrgs`.
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
  */
-export function clearUserReferences(db, userId) {
-  db.run('UPDATE org_members SET invited_by = NULL WHERE invited_by = ?', [userId]);
-  db.run('UPDATE project_members SET invited_by = NULL WHERE invited_by = ?', [userId]);
-  db.run('UPDATE project_features SET granted_by = NULL WHERE granted_by = ?', [userId]);
-  db.run('UPDATE user_features SET granted_by = NULL WHERE granted_by = ?', [userId]);
-  db.run('UPDATE site_feature_policies SET updated_by = NULL WHERE updated_by = ?', [userId]);
-  db.run('UPDATE org_feature_overrides SET set_by = NULL WHERE set_by = ?', [userId]);
+export async function clearUserReferences(db, userId) {
+  await db.org_members.updateMany({ where: { invited_by: userId }, data: { invited_by: null } });
+  await db.project_members.updateMany({ where: { invited_by: userId }, data: { invited_by: null } });
+  await db.project_features.updateMany({ where: { granted_by: userId }, data: { granted_by: null } });
+  await db.user_features.updateMany({ where: { granted_by: userId }, data: { granted_by: null } });
+  await db.site_feature_policies.updateMany({ where: { updated_by: userId }, data: { updated_by: null } });
+  await db.org_feature_overrides.updateMany({ where: { set_by: userId }, data: { set_by: null } });
 }
 
 /**
@@ -264,17 +251,16 @@ export function clearUserReferences(db, userId) {
  * row. Order matters under live FK enforcement: organizations.owner_user_id
  * (NOT NULL, no ON DELETE action) must be resolved before `DELETE FROM users`
  * or the delete throws SQLITE_CONSTRAINT_FOREIGNKEY.
- * @param {import('../db-factory.js').DbClient} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
  */
-export function deleteUserAccount(db, userId) {
-  const tx = db.transaction(() => {
-    deleteOwnedProjectsForUser(db, userId);
-    reassignOrDeleteOwnedOrgs(db, userId);
-    clearUserReferences(db, userId);
-    db.run('DELETE FROM org_members WHERE user_id = ?', [userId]);
-    db.run('DELETE FROM users WHERE id = ?', [userId]);
+export async function deleteUserAccount(db, userId) {
+  await db.$transaction(async (tx) => {
+    await deleteOwnedProjectsForUser(tx, userId);
+    await reassignOrDeleteOwnedOrgs(tx, userId);
+    await clearUserReferences(tx, userId);
+    await tx.org_members.deleteMany({ where: { user_id: userId } });
+    await tx.users.deleteMany({ where: { id: userId } });
   });
-  tx();
   return true;
 }

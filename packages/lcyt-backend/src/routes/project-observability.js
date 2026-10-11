@@ -14,7 +14,7 @@ import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 import { queryAuditLog } from '../db/audit-log.js';
 import { queryRollupSeries } from '../db/usage-rollups.js';
 
-function requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel }, req, res, handler) {
+async function requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel }, req, res, handler) {
   const hasAdmin = !!req.headers['x-admin-key'];
   if (hasAdmin) {
     return adminMiddleware(req, res, () => handler());
@@ -23,13 +23,13 @@ function requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel }, req, re
   const user = extractAndVerifyUserToken(jwtSecret, req);
   if (!user) return res.status(401).json({ error: 'Authentication required' });
 
-  const row = getKey(db, req.params.key);
+  const row = await getKey(db, req.params.key);
   if (!row) return res.status(404).json({ error: 'Project not found' });
 
   // The key's owning user always has access (same shortcut as the features
   // routes); everyone else needs a membership row.
   if (row.user_id !== user.userId) {
-    const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
+    const level = await getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
     if (!level) return res.status(403).json({ error: 'Not a project member' });
     if (minLevel === 'admin' && level !== 'owner' && level !== 'admin') {
       return res.status(403).json({ error: 'owner or admin required' });
@@ -41,11 +41,11 @@ function requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel }, req, re
 export function createProjectObservabilityRouter(db, { loginEnabled = false, jwtSecret = null } = {}) {
   const router = Router({ mergeParams: true });
 
-  router.get('/audit', (req, res) => {
-    requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel: 'admin' }, req, res, () => {
+  router.get('/audit', async (req, res) => {
+    await requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel: 'admin' }, req, res, async () => {
       const limit  = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
       const offset = Math.max(Number(req.query.offset) || 0, 0);
-      const { rows, total } = queryAuditLog(db, {
+      const { rows, total } = await queryAuditLog(db, {
         apiKey: req.params.key,
         q:      (req.query.q      || '').trim(),
         action: (req.query.action || '').trim(),
@@ -63,11 +63,11 @@ export function createProjectObservabilityRouter(db, { loginEnabled = false, jwt
     });
   });
 
-  router.get('/usage', (req, res) => {
-    requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel: 'member' }, req, res, () => {
+  router.get('/usage', async (req, res) => {
+    await requireProjectAccess(db, { loginEnabled, jwtSecret, minLevel: 'member' }, req, res, async () => {
       const grain = req.query.grain === 'day' ? 'day' : 'hour';
       const metricsFilter = (req.query.metrics || '').split(',').map(s => s.trim()).filter(Boolean);
-      const series = queryRollupSeries(db, {
+      const series = await queryRollupSeries(db, {
         from: (req.query.from || '').trim(),
         to: (req.query.to || '').trim(),
         grain,

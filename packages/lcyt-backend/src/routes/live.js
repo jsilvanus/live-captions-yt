@@ -8,7 +8,6 @@ import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
 import { startVideoRecording, finishVideoRecording, getVideoStorageDir, syncVideoRecordingToStorage } from '../db/videos.js';
-import { getRelays as getRelaySlots } from 'lcyt-rtmp/src/db/relay.js';
 import { getMetricsInstance } from '../metrics/index.js';
 
 /**
@@ -21,9 +20,15 @@ import { getMetricsInstance } from '../metrics/index.js';
  * handler — Express 4 never awaits the handler, so no response was ever sent
  * and the client's request hung indefinitely instead of erroring.
  */
-function safeGetRelaySlots(db, apiKey) {
+async function safeGetRelaySlots(db, apiKey) {
   try {
-    return getRelaySlots(db, apiKey);
+    // Prisma, not lcyt-rtmp's getRelays(): that helper runs synchronous SQL on the legacy SQLite handle.
+    const rows = await db.rtmp_relays.findMany({ where: { api_key: apiKey }, orderBy: { slot: 'asc' } });
+    return rows.map(r => ({
+      slot: r.slot,
+      recordOnStart: r.record_on_start === 1,
+      recordOnButton: r.record_on_button === 1,
+    }));
   } catch (err) {
     logger.warn(`[live] getRelaySlots failed for ${apiKey}: ${err?.message}`);
     return [];
@@ -50,7 +55,7 @@ function safeGetRelaySlots(db, apiKey) {
 async function buildExtraTargets(targets, { db, apiKey } = {}) {
   if (targets === undefined) {
     targets = (db && apiKey)
-      ? getCaptionTargets(db, apiKey)
+      ? (await getCaptionTargets(db, apiKey))
         .filter(t => t.enabled)
         .map(t => ({ id: t.id, type: t.type, streamKey: t.streamKey, url: t.url, headers: t.headers, viewerKey: t.viewerKey, noBatch: t.noBatch }))
       : [];
@@ -134,8 +139,8 @@ async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, 
 // record:no patch is acknowledged; give it a brief grace window before an
 // S3-backed recording's local artifacts are read for upload.
 function scheduleRecordingStorageSync(db, apiKey, videoId, delayMs = 3000, recordingsStore = null) {
-  setTimeout(() => {
-    syncVideoRecordingToStorage(db, apiKey, videoId, { recordingsStore }).catch((err) => {
+  setTimeout(async () => {
+    (await syncVideoRecordingToStorage(db, apiKey, videoId, { recordingsStore })).catch((err) => {
       logger.warn(`[videos] recording storage sync failed (videoId=${videoId}): ${err?.message}`);
     });
   }, delayMs).unref?.();
@@ -146,7 +151,7 @@ async function startSessionRecording(db, session, { mediamtxClient, recordingsSt
   if (session.recordingVideoId) {
     return { ok: true, active: true };
   }
-  const videoResult = startVideoRecording(db, session.apiKey, {
+  const videoResult = await startVideoRecording(db, session.apiKey, {
     broadcastId: session.broadcastId || null,
     title: 'Recorded broadcast',
     startedAt: new Date().toISOString(),
@@ -154,7 +159,7 @@ async function startSessionRecording(db, session, { mediamtxClient, recordingsSt
   });
   if (!videoResult.ok) return videoResult;
   session.recordingVideoId = videoResult.video.id;
-  const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(session.apiKey);
+  const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
   const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
   const recordingVideoDir = getVideoStorageDir(session.apiKey, videoResult.video.id);
   await configureMediaMtxRecording(mediamtxClient, {
@@ -174,11 +179,11 @@ async function stopSessionRecording(db, session, { mediamtxClient, recordingsSto
   const startedAtMs = Number.isFinite(Number(session.startedAt))
     ? Number(session.startedAt)
     : Date.parse(session.startedAt || new Date().toISOString());
-  finishVideoRecording(db, session.apiKey, recordingVideoId, {
+  await finishVideoRecording(db, session.apiKey, recordingVideoId, {
     endedAt,
     durationMs: Math.max(0, Date.now() - startedAtMs),
   });
-  const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(session.apiKey);
+  const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
   const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
   await configureMediaMtxRecording(mediamtxClient, {
     pathName: recordingPathName,
@@ -226,14 +231,14 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
 
     // Check domain allowlist
     if (!isAllowedDomain(domain)) {
-      writeAuthEvent(db, { apiKey, eventType: 'domain_not_allowed', domain });
+      await writeAuthEvent(db, { apiKey, eventType: 'domain_not_allowed', domain });
       return res.status(403).json({ error: 'Domain not allowed' });
     }
 
     // Validate API key against SQLite
-    const validation = validateApiKey(db, apiKey);
+    const validation = await validateApiKey(db, apiKey);
     if (!validation.valid) {
-      writeAuthEvent(db, { apiKey, eventType: validation.reason, domain });
+      await writeAuthEvent(db, { apiKey, eventType: validation.reason, domain });
       const status = validation.reason === 'expired' ? 401 : 401;
       return res.status(status).json({ error: `API key ${validation.reason}` });
     }
@@ -249,7 +254,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     // try loading from database with the default empty streamKey first
     if (!store.has(sessionId) && !streamKey) {
       try {
-        const dbSession = loadSession(db, sessionId);
+        const dbSession = await loadSession(db, sessionId);
         if (dbSession && dbSession.streamKey) {
           effectiveStreamKey = dbSession.streamKey;
           sessionId = makeSessionId(apiKey, effectiveStreamKey, domain);
@@ -290,7 +295,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       // Recreate primary sender for rehydrated sessions that have no active sender,
       // but only when a streamKey is available (target-array sessions have no primary sender).
       if (!existing.sender && streamKey) {
-        const keySeq = getKeySequence(db, apiKey);
+        const keySeq = await getKeySequence(db, apiKey);
         const newSender = new YoutubeLiveCaptionSender({ streamKey, sequence: keySeq });
         try {
           newSender.start();
@@ -307,7 +312,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         existing.jwt = newToken;
         // Persist updated metadata so future rehydrates have consistent state
         try {
-          saveSession(db, {
+          await saveSession(db, {
             sessionId: existing.sessionId || sessionId,
             apiKey: existing.apiKey || apiKey,
             streamKey: existing.streamKey ?? streamKey ?? null,
@@ -331,7 +336,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         sequence: existing.sequence,
         syncOffset: existing.syncOffset,
         startedAt: existing.startedAt,
-        graphicsEnabled: isGraphicsEnabled(db, apiKey),
+        graphicsEnabled: await isGraphicsEnabled(db, apiKey),
       });
     }
 
@@ -347,7 +352,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     // Create primary sender when a streamKey is provided.
     // When operating in target-array mode (no streamKey), sender remains null
     // and all caption delivery uses the extraTargets array.
-    const keySeq = getKeySequence(db, apiKey);
+    const keySeq = await getKeySequence(db, apiKey);
     const initialSeq = startSeqRaw !== undefined ? Number(startSeqRaw) : keySeq;
     let sender = null;
     let syncOffset = 0;
@@ -371,20 +376,20 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     let boundBroadcastId = null;
     let recordingVideo = null;
     if (broadcastId) {
-      const bind = bindSessionStart(db, apiKey, broadcastId, { recordEnabled: broadcastRecordEnabled });
+      const bind = await bindSessionStart(db, apiKey, broadcastId, { recordEnabled: broadcastRecordEnabled });
       if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
       boundBroadcastId = broadcastId;
     } else {
-      boundBroadcastId = autoCreateForSession(db, apiKey, { recordEnabled: broadcastRecordEnabled }).id;
+      boundBroadcastId = (await autoCreateForSession(db, apiKey, { recordEnabled: broadcastRecordEnabled })).id;
     }
     // Going live arms production (plan_backend_actions.md); the operator can override.
-    armOnGoLive(db, store.eventBus, apiKey, boundBroadcastId);
+    await armOnGoLive(db, store.eventBus, apiKey, boundBroadcastId);
 
-    const broadcast = boundBroadcastId ? getBroadcast(db, apiKey, boundBroadcastId) : null;
-    const relaySlots = safeGetRelaySlots(db, apiKey);
+    const broadcast = boundBroadcastId ? await getBroadcast(db, apiKey, boundBroadcastId) : null;
+    const relaySlots = await safeGetRelaySlots(db, apiKey);
     const shouldRecord = Boolean(broadcastRecordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
     if (shouldRecord) {
-      const videoResult = startVideoRecording(db, apiKey, {
+      const videoResult = await startVideoRecording(db, apiKey, {
         broadcastId: boundBroadcastId,
         title: broadcast?.title || 'Recorded broadcast',
         startedAt: new Date().toISOString(),
@@ -392,7 +397,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       });
       if (videoResult.ok) {
         recordingVideo = videoResult.video;
-        const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(apiKey);
+        const keyRow = await db.api_keys.findUnique({ where: { key: apiKey }, select: { ingest_stream_key: true } });
         const recordingPathName = keyRow?.ingest_stream_key || apiKey;
         const recordingVideoDir = getVideoStorageDir(apiKey, recordingVideo.id);
         await configureMediaMtxRecording(mediamtxClient, {
@@ -421,7 +426,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     session.broadcastId = boundBroadcastId;
     session.recordingVideoId = recordingVideo?.id ?? null;
 
-    incrementDomainHourlySessionStart(db, domain, store.size());
+    await incrementDomainHourlySessionStart(db, domain, store.size());
     // sessions.count / sessions.seconds are tallied by the bus tap on
     // session.closed; only the concurrency peak needs a start-path hook.
     getMetricsInstance()?.max('sessions.peak_concurrent', store.size(), { project: apiKey });
@@ -434,7 +439,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       syncOffset: session.syncOffset,
       startedAt: session.startedAt,
       broadcastId: boundBroadcastId,
-      graphicsEnabled: isGraphicsEnabled(db, apiKey),
+      graphicsEnabled: await isGraphicsEnabled(db, apiKey),
     });
   });
 
@@ -453,7 +458,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     if (slot !== undefined && (!Number.isInteger(slotNumber) || slotNumber < 1 || slotNumber > 4)) {
       return res.status(400).json({ error: 'slot must be an integer between 1 and 4' });
     }
-    const relaySlots = safeGetRelaySlots(db, session.apiKey);
+    const relaySlots = await safeGetRelaySlots(db, session.apiKey);
     const matchingSlot = slotNumber === undefined
       ? relaySlots.find(item => item.recordOnButton)
       : relaySlots.find(item => item.slot === slotNumber);
@@ -517,9 +522,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       if (db) {
         try {
           if (seq === 0) {
-            resetKeySequence(db, session.apiKey);
+            await resetKeySequence(db, session.apiKey);
           } else {
-            updateKeySequence(db, session.apiKey, seq);
+            await updateKeySequence(db, session.apiKey, seq);
           }
         } catch (_) {}
       }
@@ -578,7 +583,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     if (removed) {
       const durationMs = Date.now() - removed.startedAt;
       const endedAt = new Date().toISOString();
-      writeSessionStat(db, {
+      await writeSessionStat(db, {
         sessionId: removed.sessionId,
         apiKey: removed.apiKey,
         domain: removed.domain,
@@ -596,11 +601,11 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
           const startedAtMs = Number.isFinite(Number(removed.startedAt))
             ? Number(removed.startedAt)
             : Date.parse(removed.startedAt);
-          finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
+          await finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
             endedAt,
             durationMs: Math.max(0, Date.now() - startedAtMs),
           });
-          const keyRow = db.prepare('SELECT ingest_stream_key FROM api_keys WHERE key = ?').get(removed.apiKey);
+          const keyRow = await db.api_keys.findUnique({ where: { key: removed.apiKey }, select: { ingest_stream_key: true } });
           const recordingPathName = keyRow?.ingest_stream_key || removed.apiKey;
           await configureMediaMtxRecording(mediamtxClient, {
             pathName: recordingPathName,
@@ -615,8 +620,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       // Transition the bound broadcast to completed (plan/broadcasts).
       if (removed.broadcastId) {
         try {
-          disarmOnEnd(db, store.eventBus, removed.apiKey, removed.broadcastId);
-          completeBroadcast(db, removed.broadcastId, {
+          await disarmOnEnd(db, store.eventBus, removed.apiKey, removed.broadcastId);
+          await completeBroadcast(db, removed.broadcastId, {
             youtubeVideoIds: removed.youtubeVideoIds,
             endedAt,
           });
@@ -624,7 +629,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
           logger.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
         }
       }
-      incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
+      await incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
     }
     return res.status(200).json({ removed: true, sessionId });
   });

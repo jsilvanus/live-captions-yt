@@ -13,7 +13,7 @@ describe('purgeKeyFiles', () => {
   let db, root, stores, apiKey, otherKey;
 
   before(async () => {
-    db = initDb(':memory:');
+    db = await initDb(':memory:');
     root = await mkdtemp(join(tmpdir(), 'lcyt-purge-'));
     const make = (name) => createLocalObjectStore({ baseDir: join(root, name) });
     stores = {
@@ -22,8 +22,8 @@ describe('purgeKeyFiles', () => {
       dskThumbnailsStore: make('dsk'),
       recordingsStore: make('recordings'),
     };
-    apiKey = createKey(db, { owner: 'Purge' }).key;
-    otherKey = createKey(db, { owner: 'Keep' }).key;
+    apiKey = (await createKey(db, { owner: 'Purge' })).key;
+    otherKey = (await createKey(db, { owner: 'Keep' })).key;
   });
 
   after(async () => {
@@ -38,12 +38,12 @@ describe('purgeKeyFiles', () => {
       await stores.iconsStore.put(`${iconKeySegment(k)}/icon.svg`, 'svg');
       await stores.dskThumbnailsStore.put(`${seg(k)}/thumb.png`, 'png');
     }
-    const video = createVideo(db, apiKey, { storageType: 's3', title: 'rec' }).video;
+    const video = (await createVideo(db, apiKey, { storageType: 's3', title: 'rec' })).video;
     await stores.recordingsStore.put(`${video.storageKey}/segment0.ts`, 'ts');
-    const otherVideo = createVideo(db, otherKey, { storageType: 's3', title: 'rec2' }).video;
+    const otherVideo = (await createVideo(db, otherKey, { storageType: 's3', title: 'rec2' })).video;
     await stores.recordingsStore.put(`${otherVideo.storageKey}/segment0.ts`, 'ts');
 
-    db.prepare('INSERT INTO caption_files (api_key, filename) VALUES (?, ?)').run(apiKey, 'captions/a.txt');
+    await db.prepare('INSERT INTO caption_files (api_key, filename) VALUES (?, ?)').run(apiKey, 'captions/a.txt');
     const deleted = [];
     const resolveStorage = async () => ({ deleteFile: async (k, f) => { deleted.push([k, f]); } });
 
@@ -54,7 +54,7 @@ describe('purgeKeyFiles', () => {
     assert.strictEqual(await stores.iconsStore.exists(`${iconKeySegment(apiKey)}/icon.svg`), false);
     assert.strictEqual(await stores.dskThumbnailsStore.exists(`${seg(apiKey)}/thumb.png`), false);
     assert.strictEqual(await stores.recordingsStore.exists(`${video.storageKey}/segment0.ts`), false);
-    assert.strictEqual(getVideo(db, apiKey, video.id), null);
+    assert.strictEqual(await getVideo(db, apiKey, video.id), null);
     assert.deepStrictEqual(deleted, [[apiKey, 'captions/a.txt']]);
 
     // The other project is untouched.

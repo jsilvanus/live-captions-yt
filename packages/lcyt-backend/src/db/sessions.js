@@ -1,98 +1,83 @@
+const toSession = (r) => ({
+  sessionId: r.session_id,
+  apiKey: r.api_key,
+  streamKey: r.stream_key,
+  domain: r.domain,
+  sequence: r.sequence,
+  startedAt: r.started_at,
+  lastActivity: r.last_activity,
+  syncOffset: r.sync_offset,
+  micHolder: r.mic_holder,
+  data: r.data ? JSON.parse(r.data) : null,
+});
+
 /**
  * Save or update a session row.
- * @param {import('better-sqlite3').Database} db
+ * @param {D} db
  * @param {{ sessionId: string, apiKey?: string, streamKey?: string, domain?: string, sequence?: number, startedAt?: string, lastActivity?: string, syncOffset?: number, micHolder?: string, data?: object }} s
+ * @returns {Promise<void>}
  */
-export function saveSession(db, s) {
-  db.prepare(
-    `INSERT INTO sessions (session_id, api_key, stream_key, domain, sequence, started_at, last_activity, sync_offset, mic_holder, data)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(session_id) DO UPDATE SET
-       api_key = excluded.api_key,
-       stream_key = excluded.stream_key,
-       domain = excluded.domain,
-       sequence = excluded.sequence,
-       started_at = excluded.started_at,
-       last_activity = excluded.last_activity,
-       sync_offset = excluded.sync_offset,
-       mic_holder = excluded.mic_holder,
-       data = excluded.data
-    `
-  ).run(
-    s.sessionId,
-    s.apiKey ?? null,
-    s.streamKey ?? null,
-    s.domain ?? null,
-    s.sequence ?? 0,
-    s.startedAt ?? null,
-    s.lastActivity ?? null,
-    s.syncOffset ?? null,
-    s.micHolder ?? null,
-    s.data ? JSON.stringify(s.data) : null
-  );
+export async function saveSession(db, s) {
+  const fields = {
+    api_key: s.apiKey ?? null,
+    stream_key: s.streamKey ?? null,
+    domain: s.domain ?? null,
+    sequence: s.sequence ?? 0,
+    started_at: s.startedAt ?? null,
+    last_activity: s.lastActivity ?? null,
+    sync_offset: s.syncOffset ?? null,
+    mic_holder: s.micHolder ?? null,
+    data: s.data ? JSON.stringify(s.data) : null,
+  };
+  await db.sessions.upsert({
+    where: { session_id: s.sessionId },
+    create: { session_id: s.sessionId, ...fields },
+    update: fields,
+  });
 }
 
 /**
  * Load a session row by ID.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} sessionId
+ * @returns {Promise<object|null>}
  */
-export function loadSession(db, sessionId) {
-  const row = db.prepare('SELECT * FROM sessions WHERE session_id = ?').get(sessionId);
-  if (!row) return null;
-  return {
-    sessionId: row.session_id,
-    apiKey: row.api_key,
-    streamKey: row.stream_key,
-    domain: row.domain,
-    sequence: row.sequence,
-    startedAt: row.started_at,
-    lastActivity: row.last_activity,
-    syncOffset: row.sync_offset,
-    micHolder: row.mic_holder,
-    data: row.data ? JSON.parse(row.data) : null,
-  };
+export async function loadSession(db, sessionId) {
+  const row = await db.sessions.findUnique({ where: { session_id: sessionId } });
+  return row ? toSession(row) : null;
 }
 
 /**
  * Delete a persisted session.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} sessionId
+ * @returns {Promise<{ changes: number }>} number of deleted rows (same field as the old better-sqlite3 result)
  */
-export function deleteSession(db, sessionId) {
-  return db.prepare('DELETE FROM sessions WHERE session_id = ?').run(sessionId);
+export async function deleteSession(db, sessionId) {
+  const r = await db.sessions.deleteMany({ where: { session_id: sessionId } });
+  return { changes: r.count };
 }
 
 /**
  * List all persisted sessions.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object[]>}
  */
-export function listSessions(db) {
-  return db.prepare('SELECT * FROM sessions').all().map(r => ({
-    sessionId: r.session_id,
-    apiKey: r.api_key,
-    streamKey: r.stream_key,
-    domain: r.domain,
-    sequence: r.sequence,
-    startedAt: r.started_at,
-    lastActivity: r.last_activity,
-    syncOffset: r.sync_offset,
-    micHolder: r.mic_holder,
-    data: r.data ? JSON.parse(r.data) : null,
-  }));
+export async function listSessions(db) {
+  return (await db.sessions.findMany()).map(toSession);
 }
 
 /**
  * Atomically increment and return the next sequence number for a session.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} sessionId
- * @returns {number} new sequence
+ * @returns {Promise<number|null>} new sequence
  */
-export function incSessionSequence(db, sessionId) {
-  const tx = db.transaction((sid) => {
-    db.prepare('UPDATE sessions SET sequence = sequence + 1 WHERE session_id = ?').run(sid);
-    const row = db.prepare('SELECT sequence FROM sessions WHERE session_id = ?').get(sid);
+export async function incSessionSequence(db, sessionId) {
+  const run = async (tx) => {
+    await tx.sessions.updateMany({ where: { session_id: sessionId }, data: { sequence: { increment: 1 } } });
+    const row = await tx.sessions.findUnique({ where: { session_id: sessionId }, select: { sequence: true } });
     return row ? row.sequence : null;
-  });
-  return tx(sessionId);
+  };
+  return typeof db.$transaction === 'function' ? db.$transaction(run) : run(db);
 }

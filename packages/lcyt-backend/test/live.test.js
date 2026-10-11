@@ -9,7 +9,7 @@ import jwt from 'jsonwebtoken';
 import { initDb, createKey, createCaptionTarget } from '../src/db.js';
 import { SessionStore, makeSessionId } from '../src/store.js';
 import { createLiveRouter } from '../src/routes/live.js';
-import { runMigrations as runRtmpMigrations } from 'lcyt-rtmp/src/db.js';
+import { ensureRtmpTables as runRtmpMigrations } from './helpers/rtmp-tables.js';
 
 const JWT_SECRET = 'test-live-secret';
 
@@ -19,8 +19,8 @@ const JWT_SECRET = 'test-live-secret';
 
 let server, baseUrl, db, store;
 
-function makeTestApp({ db: customDb, store: customStore, mediamtxClient } = {}) {
-  const testDb = customDb ?? initDb(':memory:');
+async function makeTestApp({ db: customDb, store: customStore, mediamtxClient } = {}) {
+  const testDb = customDb ?? await initDb(':memory:');
   runRtmpMigrations(testDb); // POST /live checks rtmp_relays for the recordOnStart flag; idempotent
   const testStore = customStore ?? new SessionStore({ cleanupInterval: 0 });
 
@@ -31,8 +31,8 @@ function makeTestApp({ db: customDb, store: customStore, mediamtxClient } = {}) 
   return { app, db: testDb, store: testStore };
 }
 
-before(() => new Promise((resolve) => {
-  const { app, db: testDb, store: testStore } = makeTestApp();
+before(() => new Promise(async (resolve) => {
+  const { app, db: testDb, store: testStore } = await makeTestApp();
   db = testDb;
   store = testStore;
 
@@ -111,7 +111,7 @@ describe('POST /live', () => {
   });
 
   it('should allow loopback domains used by local dev clients', async () => {
-    const { key } = createKey(db, { owner: 'Loopback' });
+    const { key } = await createKey(db, { owner: 'Loopback' });
 
     const res = await postLive({
       apiKey: key,
@@ -124,9 +124,9 @@ describe('POST /live', () => {
   });
 
   it('should return 401 for revoked API key', async () => {
-    const { key } = createKey(db, { owner: 'Revoked' });
+    const { key } = await createKey(db, { owner: 'Revoked' });
     // Revoke it directly via SQL
-    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(key);
+    await db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(key);
 
     const res = await postLive({
       apiKey: key,
@@ -137,7 +137,7 @@ describe('POST /live', () => {
   });
 
   it('should return 200 with token, sessionId, sequence, syncOffset, startedAt for valid key (target-array mode, no streamKey)', async () => {
-    const { key } = createKey(db, { owner: 'Valid User' });
+    const { key } = await createKey(db, { owner: 'Valid User' });
 
     const res = await postLive({
       apiKey: key,
@@ -155,7 +155,7 @@ describe('POST /live', () => {
   });
 
   it('should return 200 with token for valid key with legacy streamKey', async () => {
-    const { key } = createKey(db, { owner: 'Legacy User' });
+    const { key } = await createKey(db, { owner: 'Legacy User' });
 
     const res = await postLive({
       apiKey: key,
@@ -173,14 +173,14 @@ describe('POST /live', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'lcyt-live-recording-'));
     process.env.VIDEOS_STORAGE_DIR = join(tempDir, 'recordings');
     try {
-      const { key } = createKey(db, { owner: 'Recording User' });
+      const { key } = await createKey(db, { owner: 'Recording User' });
       const calls = [];
       const mediamtxClient = {
         async addPath(name, config) { calls.push(['add', name, config]); },
         async patchPath(name, config) { calls.push(['patch', name, config]); },
       };
 
-      const { app } = makeTestApp({ db, store, mediamtxClient });
+      const { app } = await makeTestApp({ db, store, mediamtxClient });
       const testServer = createServer(app);
       await new Promise((resolve) => testServer.listen(0, resolve));
       const address = testServer.address();
@@ -222,7 +222,7 @@ describe('POST /live', () => {
   });
 
   it('should store the session in the store (target-array mode)', async () => {
-    const { key } = createKey(db, { owner: 'Store Test' });
+    const { key } = await createKey(db, { owner: 'Store Test' });
     const domain = 'https://store-test.com';
 
     await postLive({ apiKey: key, domain });
@@ -233,7 +233,7 @@ describe('POST /live', () => {
   });
 
   it('should store the session in the store (legacy streamKey mode)', async () => {
-    const { key } = createKey(db, { owner: 'Store Legacy' });
+    const { key } = await createKey(db, { owner: 'Store Legacy' });
     const domain = 'https://store-legacy.com';
     const streamKey = 'store-stream';
 
@@ -244,7 +244,7 @@ describe('POST /live', () => {
   });
 
   it('should be idempotent — re-registration returns same token', async () => {
-    const { key } = createKey(db, { owner: 'Idempotent' });
+    const { key } = await createKey(db, { owner: 'Idempotent' });
 
     const res1 = await postLive({ apiKey: key, domain: 'https://i.com' });
     const data1 = await res1.json();
@@ -257,7 +257,7 @@ describe('POST /live', () => {
   });
 
   it('should set Access-Control-Allow-Origin header to domain', async () => {
-    const { key } = createKey(db, { owner: 'CORS Test' });
+    const { key } = await createKey(db, { owner: 'CORS Test' });
     const domain = 'https://cors-test.com';
 
     const res = await postLive({ apiKey: key, domain });
@@ -265,7 +265,7 @@ describe('POST /live', () => {
   });
 
   it('JWT payload should contain sessionId and apiKey, and must not expose streamKey or domain', async () => {
-    const { key } = createKey(db, { owner: 'JWT Test' });
+    const { key } = await createKey(db, { owner: 'JWT Test' });
     const domain = 'https://jwt-test.com';
 
     const res = await postLive({ apiKey: key, domain });
@@ -312,7 +312,7 @@ describe('GET /live', () => {
   });
 
   it('should return 200 with sequence and syncOffset for valid session', async () => {
-    const { key } = createKey(db, { owner: 'Get Status' });
+    const { key } = await createKey(db, { owner: 'Get Status' });
     const regRes = await postLive({ apiKey: key, domain: 'https://gs.com' });
     const { token } = await regRes.json();
 
@@ -354,7 +354,7 @@ describe('DELETE /live', () => {
   });
 
   it('should return 200 with removed=true and remove the session', async () => {
-    const { key } = createKey(db, { owner: 'Delete Test' });
+    const { key } = await createKey(db, { owner: 'Delete Test' });
     const regRes = await postLive({ apiKey: key, domain: 'https://del.com' });
     const { token, sessionId } = await regRes.json();
 
@@ -375,9 +375,9 @@ describe('DELETE /live', () => {
 
 describe('POST /live — targets override-vs-default', () => {
   it('new session with targets omitted loads the project\'s saved enabled caption_targets', async () => {
-    const { key } = createKey(db, { owner: 'DefaultLoad' });
-    createCaptionTarget(db, key, { type: 'youtube', streamKey: 'saved-stream-key' });
-    createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'saved-viewer-key', enabled: false });
+    const { key } = await createKey(db, { owner: 'DefaultLoad' });
+    await createCaptionTarget(db, key, { type: 'youtube', streamKey: 'saved-stream-key' });
+    await createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'saved-viewer-key', enabled: false });
     const domain = 'https://default-load.com';
 
     const res = await postLive({ apiKey: key, domain });
@@ -391,7 +391,7 @@ describe('POST /live — targets override-vs-default', () => {
   });
 
   it('new session with targets omitted and no saved targets gets an empty extraTargets array', async () => {
-    const { key } = createKey(db, { owner: 'NoSavedTargets' });
+    const { key } = await createKey(db, { owner: 'NoSavedTargets' });
     const domain = 'https://no-saved.com';
 
     const res = await postLive({ apiKey: key, domain });
@@ -401,8 +401,8 @@ describe('POST /live — targets override-vs-default', () => {
   });
 
   it('new session with an explicit empty targets array does NOT load saved defaults', async () => {
-    const { key } = createKey(db, { owner: 'ExplicitEmptyOverride' });
-    createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'should-not-load' });
+    const { key } = await createKey(db, { owner: 'ExplicitEmptyOverride' });
+    await createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'should-not-load' });
     const domain = 'https://explicit-empty.com';
 
     const res = await postLive({ apiKey: key, domain, targets: [] });
@@ -412,8 +412,8 @@ describe('POST /live — targets override-vs-default', () => {
   });
 
   it('new session with an explicit targets array overrides saved defaults', async () => {
-    const { key } = createKey(db, { owner: 'ExplicitOverride' });
-    createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'saved-not-used' });
+    const { key } = await createKey(db, { owner: 'ExplicitOverride' });
+    await createCaptionTarget(db, key, { type: 'viewer', viewerKey: 'saved-not-used' });
     const domain = 'https://explicit-override.com';
 
     const res = await postLive({ apiKey: key, domain, targets: [{ id: 'x', type: 'viewer', viewerKey: 'override-viewer-key' }] });
@@ -424,7 +424,7 @@ describe('POST /live — targets override-vs-default', () => {
   });
 
   it('reconnecting (existing session) with targets omitted does NOT wipe the running session\'s targets', async () => {
-    const { key } = createKey(db, { owner: 'ReconnectNoWipe' });
+    const { key } = await createKey(db, { owner: 'ReconnectNoWipe' });
     const domain = 'https://reconnect-no-wipe.com';
 
     // First connect: explicit targets establish the running session's extraTargets.
@@ -441,7 +441,7 @@ describe('POST /live — targets override-vs-default', () => {
   });
 
   it('reconnecting (existing session) with an explicit targets array still replaces the running targets', async () => {
-    const { key } = createKey(db, { owner: 'ReconnectExplicit' });
+    const { key } = await createKey(db, { owner: 'ReconnectExplicit' });
     const domain = 'https://reconnect-explicit.com';
 
     const first = await postLive({ apiKey: key, domain, targets: [{ id: 'a', type: 'viewer', viewerKey: 'old-key' }] });
@@ -455,7 +455,7 @@ describe('POST /live — targets override-vs-default', () => {
   });
 
   it('reconnecting with an explicit empty targets array clears the running session\'s targets', async () => {
-    const { key } = createKey(db, { owner: 'ReconnectExplicitEmpty' });
+    const { key } = await createKey(db, { owner: 'ReconnectExplicitEmpty' });
     const domain = 'https://reconnect-explicit-empty.com';
 
     const first = await postLive({ apiKey: key, domain, targets: [{ id: 'a', type: 'viewer', viewerKey: 'to-be-cleared' }] });

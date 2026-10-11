@@ -9,12 +9,12 @@ const KEY_SEQUENCE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
  * Returns 0 (reset) if no captions have ever been sent or if the last caption was
  * sent more than 2 hours ago.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {number} The sequence to use for the next session
+ * @returns {Promise<number>} The sequence to use for the next session
  */
-export function getKeySequence(db, apiKey) {
-  const row = db.prepare('SELECT sequence, last_caption_at FROM api_keys WHERE key = ?').get(apiKey);
+export async function getKeySequence(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { sequence: true, last_caption_at: true } });
   if (!row) return 0;
   if (!row.last_caption_at) return 0;
   const lastTs = new Date(row.last_caption_at).getTime();
@@ -26,25 +26,26 @@ export function getKeySequence(db, apiKey) {
  * Persist the latest sequence number for an API key and record when the last
  * caption was sent (used for the 2-hour auto-reset TTL).
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {number} sequence
+ * @returns {Promise<void>}
  */
-export function updateKeySequence(db, apiKey, sequence) {
-  db.prepare(
-    'UPDATE api_keys SET sequence = ?, last_caption_at = ? WHERE key = ?'
-  ).run(sequence, new Date().toISOString(), apiKey);
+export async function updateKeySequence(db, apiKey, sequence) {
+  await db.api_keys.updateMany({
+    where: { key: apiKey },
+    data: { sequence, last_caption_at: new Date().toISOString() },
+  });
 }
 
 /**
  * Explicitly reset the sequence for an API key to 0 and clear the
  * last-caption timestamp so the next session starts from the beginning.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
+ * @returns {Promise<void>}
  */
-export function resetKeySequence(db, apiKey) {
-  db.prepare(
-    'UPDATE api_keys SET sequence = 0, last_caption_at = NULL WHERE key = ?'
-  ).run(apiKey);
+export async function resetKeySequence(db, apiKey) {
+  await db.api_keys.updateMany({ where: { key: apiKey }, data: { sequence: 0, last_caption_at: null } });
 }

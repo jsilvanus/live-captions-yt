@@ -7,6 +7,7 @@
  * - Storage gauges: per-project caption-file and image bytes every 5 min.
  */
 import logger from 'lcyt/logger';
+import { num } from '../db/helpers.js';
 import { createFleetPoller } from './fleet-poller.js';
 
 /**
@@ -49,24 +50,24 @@ export function createMediaMtxEgressPoller({ metrics, mediamtxClient, intervalMs
 }
 
 export function createStorageGaugePoller({ db, metrics, intervalMs = 300_000 }) {
-  function poll() {
+  async function poll() {
     try {
-      const rows = db.prepare(`
+      const rows = await db.$queryRaw`
         SELECT api_key,
                COALESCE(SUM(CASE WHEN type = 'image' THEN size_bytes ELSE 0 END), 0) AS image_bytes,
                COALESCE(SUM(CASE WHEN type != 'image' OR type IS NULL THEN size_bytes ELSE 0 END), 0) AS file_bytes
         FROM caption_files GROUP BY api_key
-      `).all();
+      `;
       for (const row of rows) {
-        metrics.gauge('storage.caption_files_bytes', row.file_bytes, { project: row.api_key });
-        metrics.gauge('storage.images_bytes', row.image_bytes, { project: row.api_key });
+        metrics.gauge('storage.caption_files_bytes', num(row.file_bytes), { project: row.api_key });
+        metrics.gauge('storage.images_bytes', num(row.image_bytes), { project: row.api_key });
       }
     } catch (err) {
       logger.warn('[metrics] storage gauge poll failed', err);
     }
   }
 
-  const timer = setInterval(poll, intervalMs);
+  const timer = setInterval(() => { poll().catch(() => {}); }, intervalMs);
   timer.unref();
   return { poll, stop: () => clearInterval(timer) };
 }

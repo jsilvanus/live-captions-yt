@@ -10,8 +10,8 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import Database from 'better-sqlite3';
-import { runMigrations } from '../../plugins/lcyt-production/src/db.js';
+import { initDb } from '../src/db/index.js';
+import { ensurePluginTables } from './helpers/plugin-tables.js';
 import { thumbnailPath } from '../../plugins/lcyt-production/src/camera-thumbnail.js';
 import { fingerprintFromRgb, FP_WIDTH, FP_HEIGHT } from '../../lcyt-compute/src/perception/attribution.js';
 import { createFeedAttributor } from '../src/feed-attributor.js';
@@ -44,16 +44,16 @@ function fakeRegistry() {
 describe('feed attributor', () => {
   let db, dir, registry, events, clock, frame, attributor;
 
-  function insertCamera(id, mixerInput = null, mixerId = null) {
-    db.prepare(`INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, mixer_id)
+  async function insertCamera(id, mixerInput = null, mixerId = null) {
+    await db.prepare(`INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, mixer_id)
       VALUES (?, ?, ?, 'visca-ip', '{}', 0, ?)`).run(id, id, mixerInput, mixerId);
   }
-  function saveRef(cameraId, buf, presetId = null) {
+  async function saveRef(cameraId, buf, presetId = null) {
     fs.writeFileSync(thumbnailPath(cameraId, dir, presetId), buf);
     if (presetId) {
-      db.prepare('INSERT INTO prod_camera_preset_thumbnails (camera_id, preset_id, captured_at) VALUES (?, ?, ?)').run(cameraId, presetId, 't1');
+      await db.prepare('INSERT INTO prod_camera_preset_thumbnails (camera_id, preset_id, captured_at) VALUES (?, ?, ?)').run(cameraId, presetId, 't1');
     } else {
-      db.prepare('UPDATE prod_cameras SET thumbnail_captured_at = ? WHERE id = ?').run('t1', cameraId);
+      await db.prepare('UPDATE prod_cameras SET thumbnail_captured_at = ? WHERE id = ?').run('t1', cameraId);
     }
   }
   function make(extra = {}) {
@@ -66,12 +66,14 @@ describe('feed attributor', () => {
     });
   }
 
-  beforeEach(() => {
-    db = new Database(':memory:'); runMigrations(db);
+  const settle = () => new Promise((r) => setTimeout(r, 25)); // async program-change handler
+
+  beforeEach(async () => {
+    db = await initDb(':memory:'); ensurePluginTables(db);
     dir = fs.mkdtempSync(join(tmpdir(), 'attr-'));
     registry = fakeRegistry(); events = []; clock = 10_000; frame = null;
   });
-  afterEach(() => { attributor?.shutdown(); db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+  afterEach(async () => { attributor?.shutdown(); await db.close(); fs.rmSync(dir, { recursive: true, force: true }); });
 
   it('starts unknown', () => {
     make();
@@ -79,10 +81,10 @@ describe('feed attributor', () => {
     assert.equal(attributor.getTag(API).cameraId, null);
   });
 
-  it('mixer signal sets the camera and publishes feed.source_changed', () => {
-    insertCamera('altar', 3);
+  it('mixer signal sets the camera and publishes feed.source_changed', async () => {
+    await insertCamera('altar', 3);
     make();
-    registry.program({ apiKey: API, mixerId: null, inputNumber: 3 });
+    registry.program({ apiKey: API, mixerId: null, inputNumber: 3 }); await settle();
     const tag = attributor.getTag(API);
     assert.equal(tag.cameraId, 'altar'); assert.equal(tag.method, 'mixer-signal'); assert.equal(tag.confidence, 1);
     assert.equal(events.length, 1);
@@ -90,26 +92,26 @@ describe('feed attributor', () => {
     assert.equal(events[0].d.cameraId, 'altar');
   });
 
-  it('a mixer input with no camera is unknown but keeps the input', () => {
+  it('a mixer input with no camera is unknown but keeps the input', async () => {
     make();
-    registry.program({ apiKey: API, mixerId: 'm1', inputNumber: 9 });
+    registry.program({ apiKey: API, mixerId: 'm1', inputNumber: 9 }); await settle();
     const tag = attributor.getTag(API);
     assert.equal(tag.cameraId, null); assert.equal(tag.input, 9); assert.equal(tag.method, 'unknown');
   });
 
-  it('guard window: a frame captured just after a switch is unknown, later ones are tagged', () => {
-    insertCamera('altar', 3); insertCamera('choir', 4);
+  it('guard window: a frame captured just after a switch is unknown, later ones are tagged', async () => {
+    await insertCamera('altar', 3); await insertCamera('choir', 4);
     make();
-    clock = 10_000; registry.program({ apiKey: API, inputNumber: 3 });
-    clock = 20_000; registry.program({ apiKey: API, inputNumber: 4 });
+    clock = 10_000; registry.program({ apiKey: API, inputNumber: 3 }); await settle();
+    clock = 20_000; registry.program({ apiKey: API, inputNumber: 4 }); await settle();
     assert.equal(attributor.tagForCapture(API, 19_000).cameraId, 'altar'); // before the switch
     assert.equal(attributor.tagForCapture(API, 20_100).cameraId, null);    // inside the guard
     assert.equal(attributor.tagForCapture(API, 20_500).cameraId, 'choir'); // after it
   });
 
   it('visual loop: references (camera + preset) attribute the feed without mixer signals', async () => {
-    insertCamera('altar'); insertCamera('choir'); insertCamera('pulpit');
-    saveRef('altar', SHOTS.altar, 'p1'); saveRef('choir', SHOTS.choir); saveRef('pulpit', SHOTS.pulpit);
+    await insertCamera('altar'); await insertCamera('choir'); await insertCamera('pulpit');
+    await saveRef('altar', SHOTS.altar, 'p1'); await saveRef('choir', SHOTS.choir); await saveRef('pulpit', SHOTS.pulpit);
     make();
     attributor.start(API, { intervalMs: 3_600_000 });
     await new Promise((r) => setImmediate(r)); // let start()'s own first tick finish
@@ -127,8 +129,8 @@ describe('feed attributor', () => {
   });
 
   it('visual loop: an unmatched shot ends in unknown, never a guess', async () => {
-    insertCamera('altar'); insertCamera('choir');
-    saveRef('altar', SHOTS.altar); saveRef('choir', SHOTS.choir);
+    await insertCamera('altar'); await insertCamera('choir');
+    await saveRef('altar', SHOTS.altar); await saveRef('choir', SHOTS.choir);
     make();
     attributor.start(API, { intervalMs: 3_600_000 });
     await new Promise((r) => setImmediate(r)); // let start()'s own first tick finish
@@ -140,10 +142,10 @@ describe('feed attributor', () => {
   });
 
   it('a fresh mixer signal beats the visual loop', async () => {
-    insertCamera('altar', 3); insertCamera('choir');
-    saveRef('altar', SHOTS.altar); saveRef('choir', SHOTS.choir);
+    await insertCamera('altar', 3); await insertCamera('choir');
+    await saveRef('altar', SHOTS.altar); await saveRef('choir', SHOTS.choir);
     make();
-    registry.program({ apiKey: API, inputNumber: 3 });
+    registry.program({ apiKey: API, inputNumber: 3 }); await settle();
     attributor.start(API, { intervalMs: 3_600_000 });
     await new Promise((r) => setImmediate(r)); // let start()'s own first tick finish
     frame = SHOTS.choir;
@@ -153,8 +155,8 @@ describe('feed attributor', () => {
   });
 
   it('operator override holds until the next scene cut', async () => {
-    insertCamera('altar'); insertCamera('choir');
-    saveRef('altar', SHOTS.altar); saveRef('choir', SHOTS.choir);
+    await insertCamera('altar'); await insertCamera('choir');
+    await saveRef('altar', SHOTS.altar); await saveRef('choir', SHOTS.choir);
     make();
     attributor.start(API, { intervalMs: 3_600_000 });
     await new Promise((r) => setImmediate(r)); // let start()'s own first tick finish
@@ -180,15 +182,15 @@ describe('feed attributor', () => {
     assert.equal(attributor.status(API).running, false);
   });
 
-  it('shared-feed resolver with an attributor tags by capture time and emits visible:false for the outgoing camera', () => {
-    insertCamera('altar', 3); insertCamera('choir', 4);
+  it('shared-feed resolver with an attributor tags by capture time and emits visible:false for the outgoing camera', async () => {
+    await insertCamera('altar', 3); await insertCamera('choir', 4);
     make();
     const ingested = [];
     const resolver = createSharedFeedResolver({ db, registry, aggregator: { ingest: (k, d) => ingested.push(d) }, attributor });
-    clock = 10_000; registry.program({ apiKey: API, inputNumber: 3 });
+    clock = 10_000; registry.program({ apiKey: API, inputNumber: 3 }); await settle();
     clock = 12_000;
     assert.equal(resolver.tagSharedDetection(API, { capturedAt: 11_000, objects: [] }).cameraId, 'altar');
-    clock = 20_000; registry.program({ apiKey: API, inputNumber: 4 });
+    clock = 20_000; registry.program({ apiKey: API, inputNumber: 4 }); await settle();
     assert.deepEqual(ingested.map((d) => [d.cameraId, d.visible]), [['altar', false]]);
     assert.equal(resolver.tagSharedDetection(API, { capturedAt: 20_050, objects: [] }), null); // guard window
     assert.equal(resolver.tagSharedDetection(API, { capturedAt: 21_000, objects: [] }).source.cameraId, 'choir');

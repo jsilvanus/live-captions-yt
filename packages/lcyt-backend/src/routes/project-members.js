@@ -36,70 +36,70 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
   const router = Router({ mergeParams: true });
 
   // GET /keys/:key/members
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
-    if (hasAdmin) return adminMiddleware(req, res, () => _listMembers(db, req, res));
+    if (hasAdmin) return adminMiddleware(req, res, async () => await _listMembers(db, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
-    const level = getMemberAccessLevel(db, req.params.key, user.userId);
+    const level = await getMemberAccessLevel(db, req.params.key, user.userId);
     if (!level) return res.status(403).json({ error: 'Not a project member' });
-    return _listMembers(db, req, res);
+    return await _listMembers(db, req, res);
   });
 
   // POST /keys/:key/members — invite by email
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
-    if (hasAdmin) return adminMiddleware(req, res, () => _inviteMember(db, null, req, res));
+    if (hasAdmin) return adminMiddleware(req, res, async () => await _inviteMember(db, null, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
-    const level = getMemberAccessLevel(db, req.params.key, user.userId);
+    const level = await getMemberAccessLevel(db, req.params.key, user.userId);
     if (level !== 'owner' && level !== 'admin') {
       return res.status(403).json({ error: 'owner or admin required to invite members' });
     }
-    return _inviteMember(db, user, req, res);
+    return await _inviteMember(db, user, req, res);
   });
 
   // DELETE /keys/:key/members/:userId
-  router.delete('/:userId', (req, res) => {
+  router.delete('/:userId', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
-    if (hasAdmin) return adminMiddleware(req, res, () => _removeMember(db, req, res));
+    if (hasAdmin) return adminMiddleware(req, res, async () => await _removeMember(db, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const targetId = Number(req.params.userId);
     // Members may remove themselves; admins/owners may remove others
     if (user.userId !== targetId) {
-      const level = getMemberAccessLevel(db, req.params.key, user.userId);
+      const level = await getMemberAccessLevel(db, req.params.key, user.userId);
       if (level !== 'owner' && level !== 'admin') {
         return res.status(403).json({ error: 'owner or admin required to remove other members' });
       }
     }
-    return _removeMember(db, req, res);
+    return await _removeMember(db, req, res);
   });
 
   // PATCH /keys/:key/members/:userId — change access_level or permissions
-  router.patch('/:userId', (req, res) => {
+  router.patch('/:userId', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
-    if (hasAdmin) return adminMiddleware(req, res, () => _updateMember(db, req, res));
+    if (hasAdmin) return adminMiddleware(req, res, async () => await _updateMember(db, req, res));
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
-    const level = getMemberAccessLevel(db, req.params.key, user.userId);
+    const level = await getMemberAccessLevel(db, req.params.key, user.userId);
     if (level !== 'owner' && level !== 'admin') {
       return res.status(403).json({ error: 'owner or admin required' });
     }
-    return _updateMember(db, req, res);
+    return await _updateMember(db, req, res);
   });
 
   // POST /keys/:key/members/:userId/transfer-ownership
-  router.post('/:userId/transfer-ownership', (req, res) => {
+  router.post('/:userId/transfer-ownership', async (req, res) => {
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     const toUserId = Number(req.params.userId);
-    const result = transferOwnership(db, req.params.key, user.userId, toUserId);
+    const result = await transferOwnership(db, req.params.key, user.userId, toUserId);
     if (!result.ok) {
       const status = result.reason === 'not_owner' ? 403 : 400;
       return res.status(status).json({ error: result.reason });
@@ -110,8 +110,8 @@ export function createProjectMembersRouter(db, { loginEnabled = false, jwtSecret
   return router;
 }
 
-function _listMembers(db, req, res) {
-  const rows = getMembers(db, req.params.key);
+async function _listMembers(db, req, res) {
+  const rows = await getMembers(db, req.params.key);
   return res.json({
     members: rows.map(r => ({
       userId:      r.user_id,
@@ -125,15 +125,15 @@ function _listMembers(db, req, res) {
   });
 }
 
-function _inviteMember(db, actingUser, req, res) {
+async function _inviteMember(db, actingUser, req, res) {
   const { email, accessLevel = 'editor', permissions = [] } = req.body || {};
   if (!email) return res.status(400).json({ error: 'email is required' });
 
-  const targetUser = getUserByEmail(db, email);
+  const targetUser = await getUserByEmail(db, email);
   if (!targetUser) return res.status(404).json({ error: 'No account found with that email' });
   if (!targetUser.active) return res.status(400).json({ error: 'User account is not active' });
 
-  const existing = getMember(db, req.params.key, targetUser.id);
+  const existing = await getMember(db, req.params.key, targetUser.id);
   if (existing) return res.status(409).json({ error: 'User is already a member of this project' });
 
   const validLevels = ['admin', 'editor', 'operator', 'viewer'];
@@ -141,7 +141,7 @@ function _inviteMember(db, actingUser, req, res) {
     return res.status(400).json({ error: 'accessLevel must be admin, editor, operator, or viewer' });
   }
 
-  const member = addMember(db, req.params.key, targetUser.id, accessLevel, actingUser?.userId ?? null);
+  const member = await addMember(db, req.params.key, targetUser.id, accessLevel, actingUser?.userId ?? null);
   return res.status(201).json({
     memberId:    member.id,
     userId:      member.user_id,
@@ -151,9 +151,9 @@ function _inviteMember(db, actingUser, req, res) {
   });
 }
 
-function _removeMember(db, req, res) {
+async function _removeMember(db, req, res) {
   const targetId = Number(req.params.userId);
-  const result = removeMember(db, req.params.key, targetId);
+  const result = await removeMember(db, req.params.key, targetId);
   if (!result.removed) {
     const status = result.reason === 'not_found' ? 404 : 400;
     return res.status(status).json({ error: result.reason });
@@ -161,9 +161,9 @@ function _removeMember(db, req, res) {
   return res.json({ removed: true });
 }
 
-function _updateMember(db, req, res) {
+async function _updateMember(db, req, res) {
   const targetId = Number(req.params.userId);
-  const member = getMember(db, req.params.key, targetId);
+  const member = await getMember(db, req.params.key, targetId);
   if (!member) return res.status(404).json({ error: 'Member not found' });
 
   const { accessLevel, permissions } = req.body || {};
@@ -175,19 +175,19 @@ function _updateMember(db, req, res) {
     if (member.access_level === 'owner') {
       return res.status(400).json({ error: 'Cannot change access level of owner; use transfer-ownership' });
     }
-    updateMemberAccessLevel(db, member.id, accessLevel);
+    await updateMemberAccessLevel(db, member.id, accessLevel);
   }
 
   // permissions: array of '+code' / '-code' delta strings
   if (Array.isArray(permissions)) {
     for (const p of permissions) {
       if (typeof p !== 'string') continue;
-      if (p.startsWith('+')) setMemberPermission(db, member.id, p.slice(1), true);
-      else if (p.startsWith('-')) setMemberPermission(db, member.id, p.slice(1), false);
+      if (p.startsWith('+')) await setMemberPermission(db, member.id, p.slice(1), true);
+      else if (p.startsWith('-')) await setMemberPermission(db, member.id, p.slice(1), false);
     }
   }
 
-  const updated = getMember(db, req.params.key, targetId);
+  const updated = await getMember(db, req.params.key, targetId);
   return res.json({
     userId:      updated.user_id,
     accessLevel: updated.access_level,

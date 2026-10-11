@@ -11,7 +11,7 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb } from '../src/db.js';
-import { runMigrations } from 'lcyt-rtmp/src/db.js';
+import { SQLITE_ONLY_PLUGIN, ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 import { createUser } from '../src/db/users.js';
 import { addMember } from '../src/db/project-members.js';
 import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
@@ -55,12 +55,12 @@ function makeMockRelayManager({ runningKeys = [], publishingKeys = [] } = {}) {
 
 let server, baseUrl, db, mockRelay, authToken;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => SQLITE_ONLY_PLUGIN ? undefined : new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   runMigrations(db);
 
   // Insert a relay-allowed API key
-  db.prepare(
+  await db.prepare(
     `INSERT INTO api_keys (key, owner, active, relay_allowed, relay_active)
      VALUES (?, 'Test Owner', 1, 1, 0)`
   ).run(TEST_API_KEY);
@@ -69,8 +69,8 @@ before(() => new Promise((resolve) => {
   // no dependency on lcyt-production, so db/relay.js's resolveRelaySourceCameraKey()
   // queries it directly; this test exercises that cross-plugin path with its
   // own inline schema, same convention as feed-rtmp.test.js.
-  db.exec(`CREATE TABLE prod_cameras (id TEXT PRIMARY KEY, camera_key TEXT UNIQUE, control_type TEXT NOT NULL DEFAULT 'none', owner_api_key TEXT)`);
-  db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type, owner_api_key) VALUES ('cam-altar', 'altar-cam', 'rtmp', NULL)").run();
+  await db.exec(`CREATE TABLE prod_cameras (id TEXT PRIMARY KEY, camera_key TEXT UNIQUE, control_type TEXT NOT NULL DEFAULT 'none', owner_api_key TEXT)`);
+  await db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type, owner_api_key) VALUES ('cam-altar', 'altar-cam', 'rtmp', NULL)").run();
 
   mockRelay = makeMockRelayManager();
 
@@ -82,7 +82,7 @@ before(() => new Promise((resolve) => {
   const app = express();
   app.use(express.json());
   // allowedRtmpDomains = '*' → no domain restriction
-  app.use('/stream', createStreamRouter(db, auth, mockRelay, '*', requireProjectRole(db, 'setup')));
+  app.use('/stream', createStreamRouter(db.$legacy, auth, mockRelay, '*', requireProjectRole(db, 'setup')));
 
   server = createServer(app);
   server.listen(0, () => {
@@ -92,22 +92,23 @@ before(() => new Promise((resolve) => {
 
   // Explicit project owner — authToken used for every request in this file
   // (GET and write) below, same as a real logged-in admin using Setup Hub.
-  const owner = createUser(db, { email: 'stream-owner@example.com', passwordHash: 'x' });
-  addMember(db, TEST_API_KEY, owner.id, 'owner');
+  const owner = await createUser(db, { email: 'stream-owner@example.com', passwordHash: 'x' });
+  await addMember(db, TEST_API_KEY, owner.id, 'owner');
   authToken = jwt.sign(
     { type: 'user', userId: owner.id, email: owner.email, projectId: TEST_API_KEY },
     JWT_SECRET,
   );
 }));
 
-after(() => new Promise((resolve) => {
+after(() => SQLITE_ONLY_PLUGIN ? undefined : new Promise((resolve) => {
   db.close();
   server.close(resolve);
 }));
 
 // Reset relay mock and DB slots before each test
-beforeEach(() => {
-  db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(TEST_API_KEY);
+beforeEach(async () => {
+  if (SQLITE_ONLY_PLUGIN) return;
+  await db.prepare('DELETE FROM rtmp_relays WHERE api_key = ?').run(TEST_API_KEY);
   mockRelay._running.clear();
   mockRelay._startCalls.length = 0;
   mockRelay._stopCalls.length = 0;
@@ -129,7 +130,7 @@ async function streamFetch(path, opts = {}) {
 // Authentication
 // ---------------------------------------------------------------------------
 
-describe('GET /stream — authentication', () => {
+describe('GET /stream — authentication', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 401 without token', async () => {
     const res = await fetch(`${baseUrl}/stream`);
     assert.equal(res.status, 401);
@@ -147,11 +148,11 @@ describe('GET /stream — authentication', () => {
 // relay_allowed check
 // ---------------------------------------------------------------------------
 
-describe('/stream — relay_allowed check', () => {
+describe('/stream — relay_allowed check', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 403 when relay_allowed = 0', async () => {
     // Insert a key with relay_allowed = 0
     const LOCKED_KEY = 'no-relay-key-xyz9876';
-    db.prepare(
+    await db.prepare(
       `INSERT OR IGNORE INTO api_keys (key, owner, active, relay_allowed) VALUES (?, 'Locked', 1, 0)`
     ).run(LOCKED_KEY);
 
@@ -171,7 +172,7 @@ describe('/stream — relay_allowed check', () => {
 // POST /stream
 // ---------------------------------------------------------------------------
 
-describe('POST /stream — create relay slot', () => {
+describe('POST /stream — create relay slot', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('403s for a session token with no explicit project role (setup tier required)', async () => {
     const sessionToken = jwt.sign(
       { sessionId: 'sess-no-role', apiKey: TEST_API_KEY, domain: 'https://test.com' },
@@ -303,7 +304,7 @@ describe('POST /stream — create relay slot', () => {
   });
 
   it("returns 400 for a sourceCameraId owned by a different project (code-review follow-up: cross-tenant sourceCameraId)", async () => {
-    db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type, owner_api_key) VALUES ('cam-other', 'other-cam', 'rtmp', 'some-other-project-key')").run();
+    await db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type, owner_api_key) VALUES ('cam-other', 'other-cam', 'rtmp', 'some-other-project-key')").run();
     try {
       const res = await streamFetch('/', {
         method: 'POST',
@@ -311,7 +312,7 @@ describe('POST /stream — create relay slot', () => {
       });
       assert.equal(res.status, 400);
     } finally {
-      db.prepare("DELETE FROM prod_cameras WHERE id = 'cam-other'").run();
+      await db.prepare("DELETE FROM prod_cameras WHERE id = 'cam-other'").run();
     }
   });
 });
@@ -320,7 +321,7 @@ describe('POST /stream — create relay slot', () => {
 // GET /stream
 // ---------------------------------------------------------------------------
 
-describe('GET /stream — list slots', () => {
+describe('GET /stream — list slots', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 200 with empty relays when none configured', async () => {
     const res = await streamFetch('/');
     assert.equal(res.status, 200);
@@ -358,7 +359,7 @@ describe('GET /stream — list slots', () => {
 // GET /stream/history
 // ---------------------------------------------------------------------------
 
-describe('GET /stream/history', () => {
+describe('GET /stream/history', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 200 with empty streams array initially', async () => {
     const res = await streamFetch('/history');
     assert.equal(res.status, 200);
@@ -371,7 +372,7 @@ describe('GET /stream/history', () => {
 // PUT /stream/active
 // ---------------------------------------------------------------------------
 
-describe('PUT /stream/active', () => {
+describe('PUT /stream/active', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 400 when active is not boolean', async () => {
     const res = await streamFetch('/active', {
       method: 'PUT',
@@ -391,7 +392,7 @@ describe('PUT /stream/active', () => {
     assert.equal(body.active, true);
 
     // Verify persisted
-    const row = db.prepare('SELECT relay_active FROM api_keys WHERE key = ?').get(TEST_API_KEY);
+    const row = await db.prepare('SELECT relay_active FROM api_keys WHERE key = ?').get(TEST_API_KEY);
     assert.equal(row.relay_active, 1);
   });
 
@@ -411,7 +412,7 @@ describe('PUT /stream/active', () => {
 // PUT /stream/:slot
 // ---------------------------------------------------------------------------
 
-describe('PUT /stream/:slot — update slot', () => {
+describe('PUT /stream/:slot — update slot', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 404 for a slot that does not exist', async () => {
     const res = await streamFetch('/2', {
       method: 'PUT',
@@ -451,7 +452,7 @@ describe('PUT /stream/:slot — update slot', () => {
 // DELETE /stream/:slot
 // ---------------------------------------------------------------------------
 
-describe('DELETE /stream/:slot', () => {
+describe('DELETE /stream/:slot', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('returns 400 for a malformed slot (not a positive integer)', async () => {
     const res = await streamFetch('/0', { method: 'DELETE' });
     assert.equal(res.status, 400);
@@ -479,7 +480,7 @@ describe('DELETE /stream/:slot', () => {
     assert.equal(body.slot, 1);
 
     // Verify gone from DB
-    const remaining = db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').all(TEST_API_KEY);
+    const remaining = await db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').all(TEST_API_KEY);
     assert.equal(remaining.length, 0);
   });
 });
@@ -488,7 +489,7 @@ describe('DELETE /stream/:slot', () => {
 // DELETE /stream
 // ---------------------------------------------------------------------------
 
-describe('DELETE /stream — delete all slots', () => {
+describe('DELETE /stream — delete all slots', { skip: SQLITE_ONLY_PLUGIN }, () => {
   it('deletes all slots and returns count', async () => {
     // Create two slots
     await streamFetch('/', {
@@ -507,7 +508,7 @@ describe('DELETE /stream — delete all slots', () => {
     assert.equal(body.deleted, 2);
 
     // Verify DB is empty
-    const remaining = db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').all(TEST_API_KEY);
+    const remaining = await db.prepare('SELECT * FROM rtmp_relays WHERE api_key = ?').all(TEST_API_KEY);
     assert.equal(remaining.length, 0);
   });
 

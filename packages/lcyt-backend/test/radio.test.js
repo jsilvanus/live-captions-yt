@@ -7,13 +7,13 @@ import { tmpdir } from 'node:os';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey, updateKey } from '../src/db.js';
-import { runMigrations } from 'lcyt-rtmp/src/db.js';
+import { SQLITE_ONLY_PLUGIN, ensureRtmpTables as runMigrations } from './helpers/rtmp-tables.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createUser } from '../src/db/users.js';
 import { addMember } from '../src/db/project-members.js';
 import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
 
-function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { const db = await initDb(':memory:'); runMigrations(db); return db; }
 import { isRadioEnabled, getRadioConfig, setRadioConfig } from 'lcyt-rtmp/src/db.js';
 import { createRadioRouter } from 'lcyt-rtmp/src/routes/radio.js';
 import { RadioManager } from 'lcyt-rtmp/src/radio-manager.js';
@@ -45,37 +45,37 @@ async function getJson(server, path) {
 // DB helpers: radio_enabled column
 // ---------------------------------------------------------------------------
 
-describe('radio_enabled DB column', () => {
+describe('radio_enabled DB column', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db;
 
-  before(() => { db = initTestDb(); });
+  before(async () => { db = await initTestDb(); });
   after(() => { db.close(); });
 
-  it('defaults to false on createKey', () => {
-    const k = createKey(db, { owner: 'Alice' });
-    assert.strictEqual(isRadioEnabled(db, k.key), false);
+  it('defaults to false on createKey', async () => {
+    const k = await createKey(db, { owner: 'Alice' });
+    assert.strictEqual(isRadioEnabled(db.$legacy, k.key), false);
   });
 
-  it('can be set to true on createKey', () => {
-    const k = createKey(db, { owner: 'Bob', radio_enabled: true });
-    assert.strictEqual(isRadioEnabled(db, k.key), true);
+  it('can be set to true on createKey', async () => {
+    const k = await createKey(db, { owner: 'Bob', radio_enabled: true });
+    assert.strictEqual(isRadioEnabled(db.$legacy, k.key), true);
   });
 
   it('isRadioEnabled returns false for unknown key', () => {
-    assert.strictEqual(isRadioEnabled(db, 'no-such-key'), false);
+    assert.strictEqual(isRadioEnabled(db.$legacy, 'no-such-key'), false);
   });
 
-  it('isRadioEnabled returns true after updateKey', () => {
-    const k = createKey(db, { owner: 'Carol' });
-    assert.strictEqual(isRadioEnabled(db, k.key), false);
-    updateKey(db, k.key, { radio_enabled: true });
-    assert.strictEqual(isRadioEnabled(db, k.key), true);
+  it('isRadioEnabled returns true after updateKey', async () => {
+    const k = await createKey(db, { owner: 'Carol' });
+    assert.strictEqual(isRadioEnabled(db.$legacy, k.key), false);
+    await updateKey(db, k.key, { radio_enabled: true });
+    assert.strictEqual(isRadioEnabled(db.$legacy, k.key), true);
   });
 
-  it('isRadioEnabled returns false after disabling', () => {
-    const k = createKey(db, { owner: 'Dave', radio_enabled: true });
-    updateKey(db, k.key, { radio_enabled: false });
-    assert.strictEqual(isRadioEnabled(db, k.key), false);
+  it('isRadioEnabled returns false after disabling', async () => {
+    const k = await createKey(db, { owner: 'Dave', radio_enabled: true });
+    await updateKey(db, k.key, { radio_enabled: false });
+    assert.strictEqual(isRadioEnabled(db.$legacy, k.key), false);
   });
 });
 
@@ -118,11 +118,11 @@ describe('RadioManager', () => {
 // POST /radio — nginx-rtmp single-URL callbacks
 // ---------------------------------------------------------------------------
 
-describe('POST /radio (nginx-rtmp single-URL callbacks)', () => {
+describe('POST /radio (nginx-rtmp single-URL callbacks)', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
 
     // Fake RadioManager to avoid spawning real ffmpeg
     manager = {
@@ -136,7 +136,7 @@ describe('POST /radio (nginx-rtmp single-URL callbacks)', () => {
     };
 
     const app = express();
-    app.use('/radio', createRadioRouter(db, manager));
+    app.use('/radio', createRadioRouter(db.$legacy, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
@@ -154,27 +154,27 @@ describe('POST /radio (nginx-rtmp single-URL callbacks)', () => {
   });
 
   it('returns 403 when radio is not enabled for the key', async () => {
-    const k = createKey(db, { owner: 'NotEnabled', radio_enabled: false });
+    const k = await createKey(db, { owner: 'NotEnabled', radio_enabled: false });
     const res = await postForm(server, '/radio', { call: 'publish', name: k.key });
     assert.strictEqual(res.status, 403);
   });
 
   it('returns 200 and starts HLS when radio is enabled (call=publish)', async () => {
-    const k = createKey(db, { owner: 'Enabled', radio_enabled: true });
+    const k = await createKey(db, { owner: 'Enabled', radio_enabled: true });
     const res = await postForm(server, '/radio', { call: 'publish', name: k.key });
     assert.strictEqual(res.status, 200);
     assert.ok(manager._started.has(k.key), 'start() should have been called');
   });
 
   it('returns 200 and stops HLS on call=publish_done', async () => {
-    const k = createKey(db, { owner: 'Enabled2', radio_enabled: true });
+    const k = await createKey(db, { owner: 'Enabled2', radio_enabled: true });
     const res = await postForm(server, '/radio', { call: 'publish_done', name: k.key });
     assert.strictEqual(res.status, 200);
     assert.ok(manager._stopped.has(k.key), 'stop() should have been called');
   });
 
   it('returns 400 for unknown call type', async () => {
-    const k = createKey(db, { owner: 'UnknownCall', radio_enabled: true });
+    const k = await createKey(db, { owner: 'UnknownCall', radio_enabled: true });
     const res = await postForm(server, '/radio', { call: 'invalid', name: k.key });
     assert.strictEqual(res.status, 400);
   });
@@ -184,11 +184,11 @@ describe('POST /radio (nginx-rtmp single-URL callbacks)', () => {
 // POST /radio/on_publish and /radio/on_publish_done — separate-URL style
 // ---------------------------------------------------------------------------
 
-describe('POST /radio/on_publish and /radio/on_publish_done', () => {
+describe('POST /radio/on_publish and /radio/on_publish_done', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
 
     manager = {
       _started: new Set(),
@@ -201,7 +201,7 @@ describe('POST /radio/on_publish and /radio/on_publish_done', () => {
     };
 
     const app = express();
-    app.use('/radio', createRadioRouter(db, manager));
+    app.use('/radio', createRadioRouter(db.$legacy, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
@@ -214,20 +214,20 @@ describe('POST /radio/on_publish and /radio/on_publish_done', () => {
   }));
 
   it('POST /radio/on_publish starts enabled key', async () => {
-    const k = createKey(db, { owner: 'PubA', radio_enabled: true });
+    const k = await createKey(db, { owner: 'PubA', radio_enabled: true });
     const res = await postForm(server, '/radio/on_publish', { name: k.key });
     assert.strictEqual(res.status, 200);
     assert.ok(manager._started.has(k.key));
   });
 
   it('POST /radio/on_publish denies disabled key', async () => {
-    const k = createKey(db, { owner: 'PubB', radio_enabled: false });
+    const k = await createKey(db, { owner: 'PubB', radio_enabled: false });
     const res = await postForm(server, '/radio/on_publish', { name: k.key });
     assert.strictEqual(res.status, 403);
   });
 
   it('POST /radio/on_publish_done stops the stream', async () => {
-    const k = createKey(db, { owner: 'PubC', radio_enabled: true });
+    const k = await createKey(db, { owner: 'PubC', radio_enabled: true });
     const res = await postForm(server, '/radio/on_publish_done', { name: k.key });
     assert.strictEqual(res.status, 200);
     assert.ok(manager._stopped.has(k.key));
@@ -238,11 +238,11 @@ describe('POST /radio/on_publish and /radio/on_publish_done', () => {
 // GET /radio/:key/index.m3u8 — HLS playlist proxy (proxies to MediaMTX)
 // ---------------------------------------------------------------------------
 
-describe('GET /radio/:key/index.m3u8', () => {
+describe('GET /radio/:key/index.m3u8', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `radio-hls-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
 
@@ -269,7 +269,7 @@ describe('GET /radio/:key/index.m3u8', () => {
 
     manager = new RadioManager();
     const app = express();
-    app.use('/radio', createRadioRouter(db, manager));
+    app.use('/radio', createRadioRouter(db.$legacy, manager));
     await new Promise(resolve => {
       appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -320,11 +320,11 @@ describe('GET /radio/:key/index.m3u8', () => {
 // GET /radio/:key/:segment — HLS segment proxy (proxies to MediaMTX)
 // ---------------------------------------------------------------------------
 
-describe('GET /radio/:key/:segment', () => {
+describe('GET /radio/:key/:segment', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `radio-seg-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
 
@@ -350,7 +350,7 @@ describe('GET /radio/:key/:segment', () => {
 
     manager = new RadioManager();
     const app = express();
-    app.use('/radio', createRadioRouter(db, manager));
+    app.use('/radio', createRadioRouter(db.$legacy, manager));
     await new Promise(resolve => {
       appServer = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -396,17 +396,17 @@ describe('GET /radio/:key/:segment', () => {
 // GET /radio/:key/player.js — embeddable player snippet
 // ---------------------------------------------------------------------------
 
-describe('GET /radio/:key/player.js', () => {
+describe('GET /radio/:key/player.js', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     const tmpRoot = join(tmpdir(), `radio-player-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new RadioManager({ hlsRoot: tmpRoot });
 
     const app = express();
-    app.use('/radio', createRadioRouter(db, manager));
+    app.use('/radio', createRadioRouter(db.$legacy, manager));
 
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
@@ -451,7 +451,7 @@ describe('GET /radio/:key/player.js', () => {
 
   it('snippet includes title and cover image when configured', async () => {
     const k = 'metaevent12345';
-    setRadioConfig(db, k, { title: 'Sunday Service', coverImageUrl: 'https://example.com/cover.png' });
+    setRadioConfig(db.$legacy, k, { title: 'Sunday Service', coverImageUrl: 'https://example.com/cover.png' });
     const res = await getJson(server, `/radio/${k}/player.js`);
     const body = await res.text();
     assert.ok(body.includes('Sunday Service'));
@@ -464,14 +464,14 @@ describe('GET /radio/:key/player.js', () => {
 // (plan/selfservice_config_backend §3 — surfaces title/description/coverImageUrl/autoplay)
 // ---------------------------------------------------------------------------
 
-describe('GET /radio/:key/info', () => {
+describe('GET /radio/:key/info', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     manager = new RadioManager();
     const app = express();
-    app.use('/radio', createRadioRouter(db, manager));
+    app.use('/radio', createRadioRouter(db.$legacy, manager));
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
     });
@@ -495,7 +495,7 @@ describe('GET /radio/:key/info', () => {
 
   it('surfaces configured title/description/coverImageUrl/autoplay', async () => {
     const k = 'infoconfigured1';
-    setRadioConfig(db, k, { title: 'Live Show', description: 'Weekly stream', coverImageUrl: 'https://x.example/c.png', autoplay: true });
+    setRadioConfig(db.$legacy, k, { title: 'Live Show', description: 'Weekly stream', coverImageUrl: 'https://x.example/c.png', autoplay: true });
     const res = await getJson(server, `/radio/${k}/info`);
     const body = await res.json();
     assert.strictEqual(body.title, 'Live Show');
@@ -510,11 +510,11 @@ describe('GET /radio/:key/info', () => {
 // (plan/selfservice_config_backend §3/§3a — session Bearer)
 // ---------------------------------------------------------------------------
 
-describe('GET/PUT /radio/config', () => {
+describe('GET/PUT /radio/config', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager, apiKey, token, ownerToken;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     manager = new RadioManager();
     // Real production mounting (server.js) uses scopedAuth('rtmp')/
     // createProjectAccessMiddleware + requireProjectRole('setup'), not the
@@ -523,13 +523,13 @@ describe('GET/PUT /radio/config', () => {
     const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'rtmp' });
     const app = express();
     app.use(express.json());
-    app.use('/radio', createRadioRouter(db, manager, null, auth, null, requireProjectRole(db, 'setup')));
+    app.use('/radio', createRadioRouter(db.$legacy, manager, null, auth, null, requireProjectRole(db, 'setup')));
 
-    const k = createKey(db, { owner: 'RadioConfigUser', radio_enabled: true });
+    const k = await createKey(db, { owner: 'RadioConfigUser', radio_enabled: true });
     apiKey = k.key;
     token = jwt.sign({ sessionId: 'radio-config-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
-    const owner = createUser(db, { email: 'radio-owner@example.com', passwordHash: 'x' });
-    addMember(db, apiKey, owner.id, 'owner');
+    const owner = await createUser(db, { email: 'radio-owner@example.com', passwordHash: 'x' });
+    await addMember(db, apiKey, owner.id, 'owner');
     ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
 
     await new Promise(resolve => {
@@ -619,15 +619,15 @@ describe('GET/PUT /radio/config', () => {
 // GET/PUT /radio/config — 501 when auth is not wired up (createRadioRouter without auth)
 // ---------------------------------------------------------------------------
 
-describe('GET/PUT /radio/config without auth configured', () => {
+describe('GET/PUT /radio/config without auth configured', { skip: SQLITE_ONLY_PLUGIN }, () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     manager = new RadioManager();
     const app = express();
     app.use(express.json());
-    app.use('/radio', createRadioRouter(db, manager)); // no auth passed
+    app.use('/radio', createRadioRouter(db.$legacy, manager)); // no auth passed
     await new Promise(resolve => {
       server = createServer(app).listen(0, '127.0.0.1', resolve);
     });

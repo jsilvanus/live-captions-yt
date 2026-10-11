@@ -95,7 +95,7 @@ export function createViewerRouter(db) {
   });
 
   // GET /viewer/:key — subscribe to live captions
-  router.get('/:key', (req, res) => {
+  router.get('/:key', async (req, res) => {
     const key = req.params.key;
 
     // Validate key: minimum 3 characters, URL-safe (letters, digits, hyphens, underscores)
@@ -120,11 +120,11 @@ export function createViewerRouter(db) {
     if (db) {
       try {
         // Anon stat: always increment
-        incrementViewerAnonStat(db);
+        await incrementViewerAnonStat(db);
         // Per-key stat: look up which API key owns this viewerKey via the global viewerKeyOwners map
         const ownerKey = viewerKeyOwners.get(key);
         if (ownerKey) {
-          incrementViewerKeyStat(db, ownerKey, key);
+          await incrementViewerKeyStat(db, ownerKey, key);
         }
       } catch (err) {
         console.warn(`[viewer] Failed to record stats for key "${key}": ${err.message}`);

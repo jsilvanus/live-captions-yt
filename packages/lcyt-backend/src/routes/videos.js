@@ -65,14 +65,14 @@ export function createVideosRouter(auth, db, { recordingsStore = null } = {}) {
   const limiter = rateLimit({ windowMs: 60 * 1000, max: 120, standardHeaders: true, legacyHeaders: false });
   router.use(limiter);
 
-  router.get('/', auth, (req, res) => {
-    const videos = listVideos(db, req.session.apiKey);
+  router.get('/', auth, async (req, res) => {
+    const videos = await listVideos(db, req.session.apiKey);
     res.json({ videos: videos.map((video) => withPlaybackUrl(req, video)) });
   });
 
-  router.post('/', auth, (req, res) => {
+  router.post('/', auth, async (req, res) => {
     const { broadcastId, title } = req.body || {};
-    const result = startVideoRecording(db, req.session.apiKey, {
+    const result = await startVideoRecording(db, req.session.apiKey, {
       broadcastId: broadcastId || null,
       title: title || undefined,
       storageType: recordingsStore?.type === 's3' ? 's3' : 'local',
@@ -81,20 +81,20 @@ export function createVideosRouter(auth, db, { recordingsStore = null } = {}) {
     res.status(201).json({ ok: true, video: withPlaybackUrl(req, result.video) });
   });
 
-  router.get('/:id', auth, (req, res) => {
-    const video = getVideo(db, req.session.apiKey, req.params.id);
+  router.get('/:id', auth, async (req, res) => {
+    const video = await getVideo(db, req.session.apiKey, req.params.id);
     if (!video) return res.status(404).json({ error: 'Video not found' });
     res.json({ video: withPlaybackUrl(req, video) });
   });
 
   router.get('/:id/playlist.m3u8', auth, async (req, res) => {
-    const video = getVideo(db, req.session.apiKey, req.params.id);
+    const video = await getVideo(db, req.session.apiKey, req.params.id);
     if (!video) return res.status(404).json({ error: 'Video not found' });
     await streamVideoAsset(req, res, video, 'playlist.m3u8', { recordingsStore });
   });
 
   router.get('/:id/*', auth, async (req, res) => {
-    const video = getVideo(db, req.session.apiKey, req.params.id);
+    const video = await getVideo(db, req.session.apiKey, req.params.id);
     if (!video) return res.status(404).json({ error: 'Video not found' });
     const relativePath = req.params[0] || 'playlist.m3u8';
     await streamVideoAsset(req, res, video, relativePath, { recordingsStore });

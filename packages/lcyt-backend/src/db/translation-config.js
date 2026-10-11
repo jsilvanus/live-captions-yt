@@ -10,6 +10,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { sqlNow } from './helpers.js';
 
 const VALID_VENDORS = new Set(['mymemory', 'google', 'deepl', 'libretranslate']);
 const VALID_TARGETS = new Set(['captions', 'file', 'backend-file']);
@@ -38,27 +39,27 @@ function formatVendorRow(row) {
 
 /**
  * Get the translation vendor config for an API key, or the defaults if unset.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {object}
+ * @returns {Promise<object>}
  */
-export function getTranslationVendorConfig(db, apiKey) {
-  const row = db.prepare('SELECT * FROM translation_vendor_config WHERE api_key = ?').get(apiKey);
+export async function getTranslationVendorConfig(db, apiKey) {
+  const row = await db.translation_vendor_config.findUnique({ where: { api_key: apiKey } });
   return formatVendorRow(row);
 }
 
 /**
  * Upsert the translation vendor config for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {{ vendor?: string, vendorApiKey?: string|null, libreUrl?: string|null, libreKey?: string|null, showOriginal?: boolean }} patch
- * @returns {{ ok: true, config: object }|{ ok: false, error: string }}
+ * @returns {Promise<{ ok: true, config: object }|{ ok: false, error: string }>}
  */
-export function setTranslationVendorConfig(db, apiKey, patch = {}) {
+export async function setTranslationVendorConfig(db, apiKey, patch = {}) {
   if (patch.vendor !== undefined && !VALID_VENDORS.has(patch.vendor)) {
     return { ok: false, error: `Invalid vendor. Supported: ${[...VALID_VENDORS].join(', ')}` };
   }
-  const existing = db.prepare('SELECT * FROM translation_vendor_config WHERE api_key = ?').get(apiKey);
+  const existing = await db.translation_vendor_config.findUnique({ where: { api_key: apiKey } });
   const current = formatVendorRow(existing);
 
   const next = {
@@ -69,19 +70,21 @@ export function setTranslationVendorConfig(db, apiKey, patch = {}) {
     showOriginal: patch.showOriginal !== undefined ? Boolean(patch.showOriginal) : current.showOriginal,
   };
 
-  db.prepare(`
-    INSERT INTO translation_vendor_config (api_key, vendor, vendor_api_key, libre_url, libre_key, show_original)
-    VALUES (?, ?, ?, ?, ?, ?)
-    ON CONFLICT(api_key) DO UPDATE SET
-      vendor         = excluded.vendor,
-      vendor_api_key = excluded.vendor_api_key,
-      libre_url      = excluded.libre_url,
-      libre_key      = excluded.libre_key,
-      show_original  = excluded.show_original,
-      updated_at     = datetime('now')
-  `).run(apiKey, next.vendor, next.vendorApiKey, next.libreUrl, next.libreKey, next.showOriginal ? 1 : 0);
+  const data = {
+    vendor:         next.vendor,
+    vendor_api_key: next.vendorApiKey,
+    libre_url:      next.libreUrl,
+    libre_key:      next.libreKey,
+    show_original:  next.showOriginal ? 1 : 0,
+    updated_at:     sqlNow(),
+  };
+  await db.translation_vendor_config.upsert({
+    where: { api_key: apiKey },
+    create: { api_key: apiKey, ...data },
+    update: data,
+  });
 
-  return { ok: true, config: getTranslationVendorConfig(db, apiKey) };
+  return { ok: true, config: await getTranslationVendorConfig(db, apiKey) };
 }
 
 // ─── Translation targets (list per key) ──────────────────────────────────────
@@ -103,24 +106,26 @@ function formatTargetRow(row) {
 
 /**
  * Get all translation targets for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {object[]}
+ * @returns {Promise<object[]>}
  */
-export function getTranslationTargets(db, apiKey) {
-  return db.prepare('SELECT * FROM translation_targets WHERE api_key = ? ORDER BY sort_order, created_at')
-    .all(apiKey)
-    .map(formatTargetRow);
+export async function getTranslationTargets(db, apiKey) {
+  const rows = await db.translation_targets.findMany({
+    where: { api_key: apiKey },
+    orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+  });
+  return rows.map(formatTargetRow);
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} id
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getTranslationTarget(db, apiKey, id) {
-  const row = db.prepare('SELECT * FROM translation_targets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function getTranslationTarget(db, apiKey, id) {
+  const row = await db.translation_targets.findFirst({ where: { api_key: apiKey, id } });
   return row ? formatTargetRow(row) : null;
 }
 
@@ -135,36 +140,49 @@ function validateTargetFields({ lang, target, format }) {
 
 /**
  * Create a translation target for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {{ id?: string, enabled?: boolean, lang: string, target: string, format?: string|null, captionTargetId?: string|null, showOriginal?: boolean }} fields
- * @returns {{ ok: true, target: object }|{ ok: false, error: string }}
+ * @returns {Promise<{ ok: true, target: object }|{ ok: false, error: string }>}
  */
-export function createTranslationTarget(db, apiKey, fields = {}) {
+export async function createTranslationTarget(db, apiKey, fields = {}) {
   const { id = randomUUID(), enabled = true, lang, target, format = null, captionTargetId = null, showOriginal = false } = fields;
   const error = validateTargetFields({ lang, target, format });
   if (error) return { ok: false, error };
 
-  const { maxOrder } = db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS maxOrder FROM translation_targets WHERE api_key = ?').get(apiKey);
+  const agg = await db.translation_targets.aggregate({ where: { api_key: apiKey }, _max: { sort_order: true } });
+  const maxOrder = agg._max.sort_order ?? -1;
 
-  db.prepare(`
-    INSERT INTO translation_targets (id, api_key, enabled, lang, target, format, sort_order, caption_target_id, show_original)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, apiKey, enabled ? 1 : 0, lang, target, format, maxOrder + 1, captionTargetId ?? null, showOriginal ? 1 : 0);
+  const now = sqlNow();
+  await db.translation_targets.create({
+    data: {
+      id,
+      api_key: apiKey,
+      enabled: enabled ? 1 : 0,
+      lang,
+      target,
+      format,
+      sort_order: maxOrder + 1,
+      caption_target_id: captionTargetId ?? null,
+      show_original: showOriginal ? 1 : 0,
+      created_at: now,
+      updated_at: now,
+    },
+  });
 
-  return { ok: true, target: getTranslationTarget(db, apiKey, id) };
+  return { ok: true, target: await getTranslationTarget(db, apiKey, id) };
 }
 
 /**
  * Update a translation target.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} id
  * @param {{ enabled?: boolean, lang?: string, target?: string, format?: string|null, captionTargetId?: string|null, showOriginal?: boolean }} patch
- * @returns {{ ok: true, target: object }|{ ok: false, error: string, status?: number }}
+ * @returns {Promise<{ ok: true, target: object }|{ ok: false, error: string, status?: number }>}
  */
-export function updateTranslationTarget(db, apiKey, id, patch = {}) {
-  const existing = db.prepare('SELECT * FROM translation_targets WHERE api_key = ? AND id = ?').get(apiKey, id);
+export async function updateTranslationTarget(db, apiKey, id, patch = {}) {
+  const existing = await db.translation_targets.findFirst({ where: { api_key: apiKey, id } });
   if (!existing) return { ok: false, error: 'Translation target not found', status: 404 };
 
   const lang              = patch.lang              !== undefined ? patch.lang              : existing.lang;
@@ -176,34 +194,29 @@ export function updateTranslationTarget(db, apiKey, id, patch = {}) {
   const error = validateTargetFields({ lang, target, format });
   if (error) return { ok: false, error };
 
-  db.prepare(`
-    UPDATE translation_targets SET
-      enabled            = ?,
-      lang               = ?,
-      target             = ?,
-      format             = ?,
-      caption_target_id  = ?,
-      show_original      = ?,
-      updated_at         = datetime('now')
-    WHERE api_key = ? AND id = ?
-  `).run(
-    patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled,
-    lang, target, format,
-    captionTargetId ?? null,
-    showOriginal ? 1 : 0,
-    apiKey, id,
-  );
-  return { ok: true, target: getTranslationTarget(db, apiKey, id) };
+  await db.translation_targets.updateMany({
+    where: { api_key: apiKey, id },
+    data: {
+      enabled: patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : existing.enabled,
+      lang,
+      target,
+      format,
+      caption_target_id: captionTargetId ?? null,
+      show_original: showOriginal ? 1 : 0,
+      updated_at: sqlNow(),
+    },
+  });
+  return { ok: true, target: await getTranslationTarget(db, apiKey, id) };
 }
 
 /**
  * Delete a translation target.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} id
- * @returns {boolean} true if a row was deleted
+ * @returns {Promise<boolean>} true if a row was deleted
  */
-export function deleteTranslationTarget(db, apiKey, id) {
-  const result = db.prepare('DELETE FROM translation_targets WHERE api_key = ? AND id = ?').run(apiKey, id);
-  return result.changes > 0;
+export async function deleteTranslationTarget(db, apiKey, id) {
+  const result = await db.translation_targets.deleteMany({ where: { api_key: apiKey, id } });
+  return result.count > 0;
 }

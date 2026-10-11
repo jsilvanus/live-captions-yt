@@ -5,6 +5,7 @@ import express from 'express';
 import { initDb, createKey } from '../src/db.js';
 import { createKeysRouter } from '../src/routes/keys.js';
 import { deleteKey as deleteKeyDirect } from '../src/db/keys.js';
+import { getDialect } from '../src/db/connection.js';
 
 const ADMIN_KEY = 'test-admin-key-secret';
 
@@ -15,8 +16,8 @@ const ADMIN_KEY = 'test-admin-key-secret';
 let server, baseUrl, db;
 let savedAdminKey;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json({ limit: '64kb' }));
@@ -34,13 +35,13 @@ after(() => new Promise((resolve) => {
   server.close(resolve);
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   // Set a fresh admin key before each test
   savedAdminKey = process.env.ADMIN_KEY;
   process.env.ADMIN_KEY = ADMIN_KEY;
 
   // Clear all keys
-  db.prepare('DELETE FROM api_keys').run();
+  await db.prepare('DELETE FROM api_keys').run();
 });
 
 // Restore env after each test (using after-each style via the test runner)
@@ -133,8 +134,8 @@ describe('GET /keys', () => {
   });
 
   it('should return all keys in the database', async () => {
-    createKey(db, { owner: 'Alice' });
-    createKey(db, { owner: 'Bob' });
+    await createKey(db, { owner: 'Alice' });
+    await createKey(db, { owner: 'Bob' });
 
     const res = await getKeys();
     const data = await res.json();
@@ -143,7 +144,7 @@ describe('GET /keys', () => {
   });
 
   it('should format keys with key, owner, active, expires, createdAt', async () => {
-    createKey(db, { owner: 'Frank', expiresAt: '2026-12-31' });
+    await createKey(db, { owner: 'Frank', expiresAt: '2026-12-31' });
 
     const res = await getKeys();
     const data = await res.json();
@@ -215,7 +216,7 @@ describe('GET /keys/:key', () => {
   });
 
   it('should return key details for existing key', async () => {
-    const { key } = createKey(db, { owner: 'Alice' });
+    const { key } = await createKey(db, { owner: 'Alice' });
     const res = await getKey(key);
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -238,7 +239,7 @@ describe('PATCH /keys/:key', () => {
   });
 
   it('should update owner', async () => {
-    const { key } = createKey(db, { owner: 'Old Name' });
+    const { key } = await createKey(db, { owner: 'Old Name' });
     const res = await patchKey(key, { owner: 'New Name' });
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -246,7 +247,7 @@ describe('PATCH /keys/:key', () => {
   });
 
   it('should update expires', async () => {
-    const { key } = createKey(db, { owner: 'Expires Test' });
+    const { key } = await createKey(db, { owner: 'Expires Test' });
     const res = await patchKey(key, { expires: '2027-06-30' });
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -254,7 +255,7 @@ describe('PATCH /keys/:key', () => {
   });
 
   it('should update both owner and expires', async () => {
-    const { key } = createKey(db, { owner: 'Old', expiresAt: '2026-01-01' });
+    const { key } = await createKey(db, { owner: 'Old', expiresAt: '2026-01-01' });
     const res = await patchKey(key, { owner: 'New', expires: '2027-01-01' });
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -263,7 +264,7 @@ describe('PATCH /keys/:key', () => {
   });
 
   it('should clear expiration when expires is null', async () => {
-    const { key } = createKey(db, { owner: 'Has Expiry', expiresAt: '2026-12-31' });
+    const { key } = await createKey(db, { owner: 'Has Expiry', expiresAt: '2026-12-31' });
     const res = await patchKey(key, { expires: null });
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -284,7 +285,7 @@ describe('DELETE /keys/:key', () => {
   });
 
   it('should soft-delete (revoke) by default', async () => {
-    const { key } = createKey(db, { owner: 'To Revoke' });
+    const { key } = await createKey(db, { owner: 'To Revoke' });
     const res = await deleteKeyReq(key);
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -292,13 +293,13 @@ describe('DELETE /keys/:key', () => {
     assert.strictEqual(data.revoked, true);
 
     // Key still exists but is inactive
-    const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
+    const row = await db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
     assert.ok(row);
     assert.strictEqual(row.active, 0);
   });
 
   it('should permanently delete when permanent=true', async () => {
-    const { key } = createKey(db, { owner: 'To Delete' });
+    const { key } = await createKey(db, { owner: 'To Delete' });
     const res = await deleteKeyReq(key, true);
     const data = await res.json();
     assert.strictEqual(res.status, 200);
@@ -306,7 +307,7 @@ describe('DELETE /keys/:key', () => {
     assert.strictEqual(data.deleted, true);
 
     // Key should be gone
-    const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
+    const row = await db.prepare('SELECT * FROM api_keys WHERE key = ?').get(key);
     assert.strictEqual(row, undefined);
   });
 });
@@ -318,57 +319,59 @@ describe('DELETE /keys/:key', () => {
 // ---------------------------------------------------------------------------
 
 describe('deleteKey() under live FK enforcement', () => {
-  it('confirms this better-sqlite3 install enforces foreign_keys by default', () => {
-    assert.strictEqual(db.pragma('foreign_keys', { simple: true }), 1);
+  it('confirms the database enforces foreign keys', async (t) => {
+    if (getDialect() === 'postgres') return t.skip('PostgreSQL always enforces foreign keys');
+    const [row] = await db.$queryRawUnsafe('PRAGMA foreign_keys');
+    assert.strictEqual(Number(row.foreign_keys), 1);
   });
 
-  it('does not throw, and cascades every ON DELETE CASCADE child table without manual cleanup', () => {
-    const { key } = createKey(db, { owner: 'Cascade Test' });
-    db.prepare("INSERT INTO caption_targets (id, api_key, type) VALUES ('ct1', ?, 'youtube')").run(key);
-    db.prepare("INSERT INTO translation_vendor_config (api_key, vendor) VALUES (?, 'mymemory')").run(key);
-    db.prepare("INSERT INTO translation_targets (id, api_key, lang, target) VALUES ('tt1', ?, 'en', 'fi')").run(key);
-    db.prepare("INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'captions', 1)").run(key);
-    db.prepare("INSERT INTO project_device_roles (api_key, role_type, name, pin_hash) VALUES (?, 'camera', 'Cam1', 'hash')").run(key);
+  it('does not throw, and cascades every ON DELETE CASCADE child table without manual cleanup', async () => {
+    const { key } = await createKey(db, { owner: 'Cascade Test' });
+    await db.prepare("INSERT INTO caption_targets (id, api_key, type) VALUES ('ct1', ?, 'youtube')").run(key);
+    await db.prepare("INSERT INTO translation_vendor_config (api_key, vendor) VALUES (?, 'mymemory')").run(key);
+    await db.prepare("INSERT INTO translation_targets (id, api_key, lang, target) VALUES ('tt1', ?, 'en', 'fi')").run(key);
+    await db.prepare("INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'captions', 1)").run(key);
+    await db.prepare("INSERT INTO project_device_roles (api_key, role_type, name, pin_hash) VALUES (?, 'camera', 'Cam1', 'hash')").run(key);
 
-    assert.doesNotThrow(() => deleteKeyDirect(db, key));
+    await assert.doesNotReject(() => deleteKeyDirect(db, key));
 
     for (const table of ['caption_targets', 'translation_vendor_config', 'translation_targets', 'project_features', 'project_device_roles']) {
-      const n = db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE api_key = ?`).get(key).n;
+      const n = (await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE api_key = ?`).get(key)).n;
       assert.strictEqual(n, 0, `${table} should have been cascade-deleted`);
     }
   });
 
-  it('cascades project_members and, transitively, project_member_permissions', () => {
-    const { key } = createKey(db, { owner: 'Member Cascade Test' });
-    const userResult = db.prepare("INSERT INTO users (email, password_hash) VALUES ('memcascade@test.com', 'x')").run();
+  it('cascades project_members and, transitively, project_member_permissions', async () => {
+    const { key } = await createKey(db, { owner: 'Member Cascade Test' });
+    const userResult = await db.prepare("INSERT INTO users (email, password_hash) VALUES ('memcascade@test.com', 'x')").run();
     const userId = userResult.lastInsertRowid;
-    const memberResult = db.prepare("INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner')").run(key, userId);
-    db.prepare("INSERT INTO project_member_permissions (member_id, permission, granted) VALUES (?, 'edit', 1)").run(memberResult.lastInsertRowid);
+    const memberResult = await db.prepare("INSERT INTO project_members (api_key, user_id, access_level) VALUES (?, ?, 'owner')").run(key, userId);
+    await db.prepare("INSERT INTO project_member_permissions (member_id, permission, granted) VALUES (?, 'edit', 1)").run(memberResult.lastInsertRowid);
 
-    assert.doesNotThrow(() => deleteKeyDirect(db, key));
+    await assert.doesNotReject(() => deleteKeyDirect(db, key));
 
-    assert.strictEqual(db.prepare('SELECT COUNT(*) n FROM project_members WHERE api_key = ?').get(key).n, 0);
-    assert.strictEqual(db.prepare('SELECT COUNT(*) n FROM project_member_permissions WHERE member_id = ?').get(memberResult.lastInsertRowid).n, 0);
+    assert.strictEqual((await db.prepare('SELECT COUNT(*) n FROM project_members WHERE api_key = ?').get(key)).n, 0);
+    assert.strictEqual((await db.prepare('SELECT COUNT(*) n FROM project_member_permissions WHERE member_id = ?').get(memberResult.lastInsertRowid)).n, 0);
 
-    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   });
 
-  it('cleans up orphaned rows in tables that key off api_key with no declared FK', () => {
-    const { key } = createKey(db, { owner: 'Orphan Test' });
-    db.prepare("INSERT INTO caption_usage (api_key, date, count) VALUES (?, '2026-01-01', 5)").run(key);
-    db.prepare("INSERT INTO session_stats (session_id, api_key, started_at, ended_at, duration_ms) VALUES ('s1', ?, 'x', 'y', 100)").run(key);
-    db.prepare("INSERT INTO caption_errors (api_key, session_id, timestamp) VALUES (?, 's1', 'x')").run(key);
-    db.prepare("INSERT INTO auth_events (api_key, event_type, timestamp) VALUES (?, 'login', 'x')").run(key);
-    db.prepare("INSERT INTO sessions (session_id, api_key) VALUES ('sess-orphan', ?)").run(key);
-    db.prepare("INSERT INTO caption_files (api_key, filename) VALUES (?, 'f.vtt')").run(key);
-    db.prepare("INSERT INTO icons (api_key, filename, disk_filename) VALUES (?, 'a.png', 'a-disk.png')").run(key);
-    db.prepare("INSERT INTO viewer_key_daily_stats (date, api_key, viewer_key, views) VALUES ('2026-01-01', ?, 'vk1', 3)").run(key);
-    db.prepare("INSERT INTO mcp_tokens (api_key, label, token_hash) VALUES (?, 'tok', 'orphan-hash')").run(key);
+  it('cleans up orphaned rows in tables that key off api_key with no declared FK', async () => {
+    const { key } = await createKey(db, { owner: 'Orphan Test' });
+    await db.prepare("INSERT INTO caption_usage (api_key, date, count) VALUES (?, '2026-01-01', 5)").run(key);
+    await db.prepare("INSERT INTO session_stats (session_id, api_key, started_at, ended_at, duration_ms) VALUES ('s1', ?, 'x', 'y', 100)").run(key);
+    await db.prepare("INSERT INTO caption_errors (api_key, session_id, timestamp) VALUES (?, 's1', 'x')").run(key);
+    await db.prepare("INSERT INTO auth_events (api_key, event_type, timestamp) VALUES (?, 'login', 'x')").run(key);
+    await db.prepare("INSERT INTO sessions (session_id, api_key) VALUES ('sess-orphan', ?)").run(key);
+    await db.prepare("INSERT INTO caption_files (api_key, filename) VALUES (?, 'f.vtt')").run(key);
+    await db.prepare("INSERT INTO icons (api_key, filename, disk_filename) VALUES (?, 'a.png', 'a-disk.png')").run(key);
+    await db.prepare("INSERT INTO viewer_key_daily_stats (date, api_key, viewer_key, views) VALUES ('2026-01-01', ?, 'vk1', 3)").run(key);
+    await db.prepare("INSERT INTO mcp_tokens (api_key, label, token_hash) VALUES (?, 'tok', 'orphan-hash')").run(key);
 
-    deleteKeyDirect(db, key);
+    await deleteKeyDirect(db, key);
 
     for (const table of ['caption_usage', 'session_stats', 'caption_errors', 'auth_events', 'sessions', 'caption_files', 'icons', 'viewer_key_daily_stats', 'mcp_tokens']) {
-      const n = db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE api_key = ?`).get(key).n;
+      const n = (await db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE api_key = ?`).get(key)).n;
       assert.strictEqual(n, 0, `${table} should have no orphaned rows after deleteKey()`);
     }
   });
@@ -386,28 +389,28 @@ describe('deleteKey() under live FK enforcement', () => {
 describe('onKeyDeleted()', () => {
   it('fires every registered hook, with the deleted key, only on a real deletion', async () => {
     const { onKeyDeleted } = await import('../src/db/keys.js');
-    const { key } = createKey(db, { owner: 'Hook Test' });
+    const { key } = await createKey(db, { owner: 'Hook Test' });
 
     const calls = [];
     onKeyDeleted((apiKey) => calls.push(apiKey));
 
     // Deleting a key that doesn't exist must not fire the hook.
-    deleteKeyDirect(db, 'does-not-exist-at-all');
+    await deleteKeyDirect(db, 'does-not-exist-at-all');
     assert.strictEqual(calls.length, 0);
 
-    deleteKeyDirect(db, key);
+    await deleteKeyDirect(db, key);
     assert.deepStrictEqual(calls, [key]);
   });
 
   it('does not let one hook throwing stop the others from running or deleteKey() from returning', async () => {
     const { onKeyDeleted } = await import('../src/db/keys.js');
-    const { key } = createKey(db, { owner: 'Hook Throw Test' });
+    const { key } = await createKey(db, { owner: 'Hook Throw Test' });
 
     let secondHookRan = false;
     onKeyDeleted(() => { throw new Error('boom'); });
     onKeyDeleted(() => { secondHookRan = true; });
 
-    assert.strictEqual(deleteKeyDirect(db, key), true);
+    assert.strictEqual(await deleteKeyDirect(db, key), true);
     assert.strictEqual(secondHookRan, true);
   });
 });

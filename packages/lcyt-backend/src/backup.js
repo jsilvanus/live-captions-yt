@@ -20,19 +20,24 @@ export function parseBackupDays(value) {
 /**
  * Create a date-stamped backup of the SQLite database in backupDir.
  * Uses better-sqlite3's built-in backup() method for a safe online copy.
- * @param {import('better-sqlite3').Database} db - Open database instance
+ * @param {object} db - Prisma client from initDb() (or a better-sqlite3 handle); SQLite only
  * @param {string|object} backupDir - Root backup directory (e.g. /backups), or an object store
  *   (`putFile`/`list`/`deletePrefix`, e.g. the S3 store). A store receives `<date>/lcyt-backend.db`.
  * @returns {Promise<string>} Path (or object key) where the backup was written
  */
 export async function runBackup(db, backupDir) {
+  // Prisma client: the file-level online backup lives on the legacy better-sqlite3 handle.
+  const sqlite = db.$legacy ?? db;
+  if (typeof sqlite.backup !== 'function') {
+    throw new Error('runBackup only supports SQLite; back up PostgreSQL with pg_dump');
+  }
   const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
   if (typeof backupDir !== 'string') {
     // Object store: write a local copy first (db.backup() needs a file), then upload it.
     const workDir = await mkdtemp(join(tmpdir(), 'lcyt-backup-'));
     try {
       const localCopy = join(workDir, 'lcyt-backend.db');
-      await db.backup(localCopy);
+      await sqlite.backup(localCopy);
       const key = `${today}/lcyt-backend.db`;
       const stored = await backupDir.putFile(key, localCopy, { contentType: 'application/vnd.sqlite3' });
       const { size } = await stat(localCopy);
@@ -46,7 +51,7 @@ export async function runBackup(db, backupDir) {
   }
   const dir = join(backupDir, today);
   await mkdir(dir, { recursive: true });
-  await db.backup(join(dir, 'lcyt-backend.db'));
+  await sqlite.backup(join(dir, 'lcyt-backend.db'));
   return dir;
 }
 

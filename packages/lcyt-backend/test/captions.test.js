@@ -22,10 +22,10 @@ const JWT_SECRET = 'test-captions-secret';
 
 let server, baseUrl, store, db;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   // Create the test API key with no limits so usage checks pass
-  createKey(db, { key: 'test-key', owner: 'Test User' });
+  await createKey(db, { key: 'test-key', owner: 'Test User' });
 
   store = new SessionStore({ cleanupInterval: 0 });
   const auth = createAuthMiddleware(JWT_SECRET);
@@ -313,9 +313,9 @@ describe('POST /captions', () => {
         // caption_targets.id is a real FK target for translation_targets.caption_target_id
         // (enforced — confirmed by this test originally failing with
         // SQLITE_CONSTRAINT_FOREIGNKEY against made-up ids), so create real rows first.
-        const routedTarget = createCaptionTarget(db, 'test-key', { type: 'generic', url: routed.url });
+        const routedTarget = await createCaptionTarget(db, 'test-key', { type: 'generic', url: routed.url });
         assert.ok(routedTarget.ok, routedTarget.error);
-        const unroutedTarget = createCaptionTarget(db, 'test-key', { type: 'generic', url: unrouted.url });
+        const unroutedTarget = await createCaptionTarget(db, 'test-key', { type: 'generic', url: unrouted.url });
         assert.ok(unroutedTarget.ok, unroutedTarget.error);
 
         const session = store.create({
@@ -332,7 +332,7 @@ describe('POST /captions', () => {
         });
 
         // Route Finnish translation delivery specifically to the routed target.
-        const created = createTranslationTarget(db, 'test-key', {
+        const created = await createTranslationTarget(db, 'test-key', {
           lang: 'fi-FI', target: 'captions', captionTargetId: routedTarget.target.id, showOriginal: false,
         });
         assert.ok(created.ok, created.error);
@@ -369,8 +369,8 @@ describe('POST /captions', () => {
 describe('POST /captions — backend file formats', () => {
   let fileServer, fileBaseUrl, filesDir;
 
-  before(() => new Promise((resolve) => {
-    createKey(db, { key: 'file-key', owner: 'File User', backend_file_enabled: 1 });
+  before(() => new Promise(async (resolve) => {
+    await createKey(db, { key: 'file-key', owner: 'File User', backend_file_enabled: 1 });
     filesDir = mkdtempSync(join(tmpdir(), 'lcyt-captions-files-'));
     const adapter = createLocalAdapter(filesDir);
     const auth = createAuthMiddleware(JWT_SECRET);

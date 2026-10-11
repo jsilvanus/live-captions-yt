@@ -57,7 +57,7 @@ export function createExternalTokensRouter(db, auth) {
   });
   const explicitAdmin = requireProjectRole(db, 'setup');
 
-  router.post('/', explicitAdmin, (req, res) => {
+  router.post('/', explicitAdmin, async (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     const label = typeof req.body?.label === 'string' ? req.body.label.trim() : '';
@@ -65,7 +65,7 @@ export function createExternalTokensRouter(db, auth) {
     if (label.length > 100) return res.status(400).json({ error: 'label must be 100 characters or fewer' });
 
     try {
-      const created = createMcpToken(db, projectId, {
+      const created = await createMcpToken(db, projectId, {
         label,
         active: req.body?.active,
         createdByName: req.body?.createdByName || req.body?.created_by_name,
@@ -81,19 +81,19 @@ export function createExternalTokensRouter(db, auth) {
     }
   });
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
-    return res.json({ ok: true, tokens: listMcpTokens(db, projectId) });
+    return res.json({ ok: true, tokens: await listMcpTokens(db, projectId) });
   });
 
-  router.patch('/:id', explicitAdmin, (req, res) => {
+  router.patch('/:id', explicitAdmin, async (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     const id = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid token id' });
 
-    const updated = updateMcpToken(db, projectId, id, {
+    const updated = await updateMcpToken(db, projectId, id, {
       label: req.body?.label,
       active: req.body?.active,
       createdByName: req.body?.createdByName || req.body?.created_by_name,
@@ -103,12 +103,12 @@ export function createExternalTokensRouter(db, auth) {
     return res.json({ ok: true, ...updated });
   });
 
-  router.delete('/:id', explicitAdmin, (req, res) => {
+  router.delete('/:id', explicitAdmin, async (req, res) => {
     const projectId = req.auth?.projectId || resolveProjectId(req);
     if (!projectId) return res.status(400).json({ error: 'projectId is required' });
     const id = Number.parseInt(req.params.id, 10);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid token id' });
-    const revoked = revokeMcpToken(db, projectId, id);
+    const revoked = await revokeMcpToken(db, projectId, id);
     if (!revoked) return res.status(404).json({ error: 'Token not found' });
     res.json({ ok: true });
   });

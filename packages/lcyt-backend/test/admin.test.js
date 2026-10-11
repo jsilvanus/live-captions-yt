@@ -20,9 +20,9 @@ const JWT_SECRET = 'test-jwt-secret-for-admin';
 
 let server, baseUrl, db;
 
-before(() => new Promise((resolve) => {
+before(() => new Promise(async (resolve) => {
   process.env.ADMIN_KEY = ADMIN_KEY;
-  db = initDb(':memory:');
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -37,8 +37,7 @@ before(() => new Promise((resolve) => {
 
 after(() => new Promise((resolve) => {
   delete process.env.ADMIN_KEY;
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
 // Helpers
@@ -87,14 +86,14 @@ async function adminDelete(path) {
 
 // Seed a test user directly in DB
 // Uses bcrypt rounds=1 intentionally for test speed — not security-relevant in tests.
-function seedUser(email, name = null) {
+async function seedUser(email, name = null) {
   const hash = bcrypt.hashSync('password123', 1);
-  return createUser(db, { email, passwordHash: hash, name });
+  return await createUser(db, { email, passwordHash: hash, name });
 }
 
 // Seed a test project (API key)
-function seedProject(owner, userId = null) {
-  return createKey(db, { owner, user_id: userId });
+async function seedProject(owner, userId = null) {
+  return await createKey(db, { owner, user_id: userId });
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +115,7 @@ describe('/admin — authentication', () => {
 
   it('rejects non-admin user JWT tokens', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'nonadmin@test.com', passwordHash: hash });
+    const user = await createUser(db, { email: 'nonadmin@test.com', passwordHash: hash });
     const token = jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
     const res = await fetch(`${baseUrl}/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -124,13 +123,13 @@ describe('/admin — authentication', () => {
     const body = await res.json();
     assert.equal(res.status, 401);
     assert.ok(body.error, 'should include error message');
-    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   });
 
   it('accepts user JWT token when user has is_admin = 1', async () => {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'adminuser@test.com', passwordHash: hash });
-    setUserAdmin(db, user.id, true);
+    const user = await createUser(db, { email: 'adminuser@test.com', passwordHash: hash });
+    await setUserAdmin(db, user.id, true);
     const token = jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
     const res = await fetch(`${baseUrl}/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -138,7 +137,7 @@ describe('/admin — authentication', () => {
     const body = await res.json();
     assert.equal(res.status, 200);
     assert.ok(Array.isArray(body.users), 'should return users array');
-    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+    await db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
   });
 });
 
@@ -147,30 +146,30 @@ describe('/admin — authentication', () => {
 // ---------------------------------------------------------------------------
 
 describe('/admin — role-tiered access (readonly admin)', () => {
-  beforeEach(() => {
-    db.exec('PRAGMA foreign_keys = OFF');
-    try { db.prepare('DELETE FROM users').run(); } catch { /* */ }
-    db.exec('PRAGMA foreign_keys = ON');
+  beforeEach(async () => {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    try { await db.prepare('DELETE FROM users').run(); } catch { /* */ }
+    await db.exec('PRAGMA foreign_keys = ON');
   });
 
-  function readonlyAdminToken() {
+  async function readonlyAdminToken() {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'readonly-admin@test.com', passwordHash: hash });
-    setUserAdmin(db, user.id, true);
-    setUserAdminRole(db, user.id, 'readonly');
+    const user = await createUser(db, { email: 'readonly-admin@test.com', passwordHash: hash });
+    await setUserAdmin(db, user.id, true);
+    await setUserAdminRole(db, user.id, 'readonly');
     return jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
   }
 
-  function fullAdminToken() {
+  async function fullAdminToken() {
     const hash = bcrypt.hashSync('pass1234', 1);
-    const user = createUser(db, { email: 'full-admin@test.com', passwordHash: hash });
-    setUserAdmin(db, user.id, true);
-    setUserAdminRole(db, user.id, 'full');
+    const user = await createUser(db, { email: 'full-admin@test.com', passwordHash: hash });
+    await setUserAdmin(db, user.id, true);
+    await setUserAdminRole(db, user.id, 'full');
     return jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET);
   }
 
   it('readonly admin gets 200 on GET /admin/users', async () => {
-    const token = readonlyAdminToken();
+    const token = await readonlyAdminToken();
     const res = await fetch(`${baseUrl}/admin/users`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -178,7 +177,7 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 creating a user (POST /admin/users)', async () => {
-    const token = readonlyAdminToken();
+    const token = await readonlyAdminToken();
     const res = await fetch(`${baseUrl}/admin/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -188,8 +187,8 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 on PATCH /admin/users/:id', async () => {
-    const token = readonlyAdminToken();
-    const target = seedUser('target@test.com');
+    const token = await readonlyAdminToken();
+    const target = await seedUser('target@test.com');
     const res = await fetch(`${baseUrl}/admin/users/${target.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -199,8 +198,8 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 on DELETE /admin/users/:id', async () => {
-    const token = readonlyAdminToken();
-    const target = seedUser('target2@test.com');
+    const token = await readonlyAdminToken();
+    const target = await seedUser('target2@test.com');
     const res = await fetch(`${baseUrl}/admin/users/${target.id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
@@ -209,8 +208,8 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 on PATCH /admin/users/:id/features', async () => {
-    const token = readonlyAdminToken();
-    const target = seedUser('target3@test.com');
+    const token = await readonlyAdminToken();
+    const target = await seedUser('target3@test.com');
     const res = await fetch(`${baseUrl}/admin/users/${target.id}/features`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -220,7 +219,7 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 on POST /admin/import/users', async () => {
-    const token = readonlyAdminToken();
+    const token = await readonlyAdminToken();
     const res = await fetch(`${baseUrl}/admin/import/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -230,7 +229,7 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 on POST /admin/import/projects', async () => {
-    const token = readonlyAdminToken();
+    const token = await readonlyAdminToken();
     const res = await fetch(`${baseUrl}/admin/import/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -240,8 +239,8 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('readonly admin gets 403 on POST /admin/batch/users', async () => {
-    const token = readonlyAdminToken();
-    const target = seedUser('target4@test.com');
+    const token = await readonlyAdminToken();
+    const target = await seedUser('target4@test.com');
     const res = await fetch(`${baseUrl}/admin/batch/users`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -251,8 +250,8 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('full admin (default role) is unaffected by requireFullAdmin', async () => {
-    const token = fullAdminToken();
-    const target = seedUser('target5@test.com');
+    const token = await fullAdminToken();
+    const target = await seedUser('target5@test.com');
     const res = await fetch(`${baseUrl}/admin/users/${target.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -262,7 +261,7 @@ describe('/admin — role-tiered access (readonly admin)', () => {
   });
 
   it('X-Admin-Key bypasses role restriction on mutating routes', async () => {
-    const target = seedUser('target6@test.com');
+    const target = await seedUser('target6@test.com');
     const { status } = await adminPatch(`/admin/users/${target.id}`, { name: 'Renamed via key' });
     assert.equal(status, 200);
   });
@@ -275,18 +274,18 @@ describe('/admin — role-tiered access (readonly admin)', () => {
 describe('/admin/users', () => {
   let testUser;
 
-  beforeEach(() => {
-    db.exec('PRAGMA foreign_keys = OFF');
-    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM org_feature_overrides').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM org_members').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM organizations').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM api_keys').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM users').run(); } catch { /* */ }
-    db.exec('PRAGMA foreign_keys = ON');
+  beforeEach(async () => {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    try { await db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM org_feature_overrides').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM org_members').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM organizations').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM api_keys').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM users').run(); } catch { /* */ }
+    await db.exec('PRAGMA foreign_keys = ON');
   });
 
   it('GET /admin/users returns empty list', async () => {
@@ -297,8 +296,8 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/users lists users', async () => {
-    seedUser('alice@test.com', 'Alice');
-    seedUser('bob@test.com', 'Bob');
+    await seedUser('alice@test.com', 'Alice');
+    await seedUser('bob@test.com', 'Bob');
 
     const { status, body } = await adminGet('/admin/users');
     assert.equal(status, 200);
@@ -307,8 +306,8 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/users?q= searches by email', async () => {
-    seedUser('alice@test.com', 'Alice');
-    seedUser('bob@test.com', 'Bob');
+    await seedUser('alice@test.com', 'Alice');
+    await seedUser('bob@test.com', 'Bob');
 
     const { body } = await adminGet('/admin/users?q=alice');
     assert.equal(body.users.length, 1);
@@ -316,8 +315,8 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/users?q= searches by name', async () => {
-    seedUser('alice@test.com', 'Alice');
-    seedUser('bob@test.com', 'Bob');
+    await seedUser('alice@test.com', 'Alice');
+    await seedUser('bob@test.com', 'Bob');
 
     const { body } = await adminGet('/admin/users?q=Bob');
     assert.equal(body.users.length, 1);
@@ -325,7 +324,7 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/users supports pagination', async () => {
-    for (let i = 0; i < 5; i++) seedUser(`user${i}@test.com`);
+    for (let i = 0; i < 5; i++) await seedUser(`user${i}@test.com`);
 
     const { body } = await adminGet('/admin/users?limit=2&offset=0');
     assert.equal(body.users.length, 2);
@@ -335,10 +334,10 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/orgs lists all orgs with counts', async () => {
-    const owner = seedUser('admin-org-owner@test.com', 'Admin Org Owner');
-    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Admin Org', 'admin-org', owner.id);
-    db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, owner.id, 'owner', owner.id);
-    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('org-project-key', 'Org Project', org.lastInsertRowid);
+    const owner = await seedUser('admin-org-owner@test.com', 'Admin Org Owner');
+    const org = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Admin Org', 'admin-org', owner.id);
+    await db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, owner.id, 'owner', owner.id);
+    await db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('org-project-key', 'Org Project', org.lastInsertRowid);
 
     const { status, body } = await adminGet('/admin/orgs');
     assert.equal(status, 200);
@@ -348,9 +347,9 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/users?orgId= filters users by org membership and includes orgName + role', async () => {
-    const user = seedUser('orguser@test.com', 'Org User');
-    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Org Team', 'org-team', user.id);
-    db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, user.id, 'editor', user.id);
+    const user = await seedUser('orguser@test.com', 'Org User');
+    const org = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Org Team', 'org-team', user.id);
+    await db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(org.lastInsertRowid, user.id, 'editor', user.id);
 
     const { body } = await adminGet(`/admin/users?orgId=${org.lastInsertRowid}`);
     assert.equal(body.users.length, 1);
@@ -360,8 +359,8 @@ describe('/admin/users', () => {
   });
 
   it('GET /admin/users/:id returns user with projects', async () => {
-    const user = seedUser('detail@test.com', 'Detail User');
-    seedProject('Test Project', user.id);
+    const user = await seedUser('detail@test.com', 'Detail User');
+    await seedProject('Test Project', user.id);
 
     const { status, body } = await adminGet(`/admin/users/${user.id}`);
     assert.equal(status, 200);
@@ -389,7 +388,7 @@ describe('/admin/users', () => {
   });
 
   it('POST /admin/users rejects duplicate email', async () => {
-    seedUser('dup@test.com');
+    await seedUser('dup@test.com');
     const { status } = await adminPost('/admin/users', {
       email: 'dup@test.com',
       password: 'secret',
@@ -398,25 +397,25 @@ describe('/admin/users', () => {
   });
 
   it('PATCH /admin/users/:id updates name', async () => {
-    const user = seedUser('patch@test.com', 'Old Name');
+    const user = await seedUser('patch@test.com', 'Old Name');
     const { status } = await adminPatch(`/admin/users/${user.id}`, { name: 'New Name' });
     assert.equal(status, 200);
 
-    const updated = getUserById(db, user.id);
+    const updated = await getUserById(db, user.id);
     assert.equal(updated.name, 'New Name');
   });
 
   it('PATCH /admin/users/:id deactivates user', async () => {
-    const user = seedUser('deact@test.com');
+    const user = await seedUser('deact@test.com');
     const { status } = await adminPatch(`/admin/users/${user.id}`, { active: false });
     assert.equal(status, 200);
 
-    const updated = getUserById(db, user.id);
+    const updated = await getUserById(db, user.id);
     assert.equal(updated.active, 0);
   });
 
   it('POST /admin/users/:id/set-password changes password', async () => {
-    const user = seedUser('pw@test.com');
+    const user = await seedUser('pw@test.com');
     const { status, body } = await adminPost(`/admin/users/${user.id}/set-password`, {
       password: 'newpassword123',
     });
@@ -424,13 +423,13 @@ describe('/admin/users', () => {
     assert.equal(body.ok, true);
 
     // Verify new password works
-    const row = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(user.id);
+    const row = await db.prepare('SELECT password_hash FROM users WHERE id = ?').get(user.id);
     assert.ok(await bcrypt.compare('newpassword123', row.password_hash));
   });
 
   it('DELETE /admin/users/:id refuses without force when user has active projects', async () => {
-    const user = seedUser('del@test.com');
-    seedProject('Project1', user.id);
+    const user = await seedUser('del@test.com');
+    await seedProject('Project1', user.id);
 
     const { status, body } = await adminDelete(`/admin/users/${user.id}`);
     assert.equal(status, 409);
@@ -438,17 +437,17 @@ describe('/admin/users', () => {
   });
 
   it('DELETE /admin/users/:id?force=true deletes user and unlinks projects', async () => {
-    const user = seedUser('delforce@test.com');
-    const project = seedProject('Project2', user.id);
+    const user = await seedUser('delforce@test.com');
+    const project = await seedProject('Project2', user.id);
 
     const { status, body } = await adminDelete(`/admin/users/${user.id}?force=true`);
     assert.equal(status, 200);
     assert.equal(body.deleted, true);
 
     // User should be gone
-    assert.equal(getUserById(db, user.id), undefined);
+    assert.equal(await getUserById(db, user.id), undefined);
     // Project should still exist but unlinked
-    const key = getKey(db, project.key);
+    const key = await getKey(db, project.key);
     assert.ok(key);
     assert.equal(key.user_id, null);
   });
@@ -459,50 +458,50 @@ describe('/admin/users', () => {
   // target user owns an org — this exercises both branches of
   // reassignOrDeleteOwnedOrgs().
   it('DELETE /admin/users/:id refuses without force when user owns an organization', async () => {
-    const user = seedUser('orgowner-noforce@test.com');
-    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('NoForce Org', 'noforce-org', user.id);
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(org.lastInsertRowid, user.id, user.id);
+    const user = await seedUser('orgowner-noforce@test.com');
+    const org = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('NoForce Org', 'noforce-org', user.id);
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(org.lastInsertRowid, user.id, user.id);
 
     const { status, body } = await adminDelete(`/admin/users/${user.id}`);
     assert.equal(status, 409);
     assert.equal(body.ownedOrgs, 1);
-    assert.ok(getUserById(db, user.id));
+    assert.ok(await getUserById(db, user.id));
   });
 
   it('DELETE /admin/users/:id?force=true transfers ownership of a multi-member org', async () => {
-    const owner = seedUser('orgowner-transfer@test.com');
-    const admin2 = seedUser('org-admin@test.com');
-    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Transfer Org', 'transfer-org', owner.id);
+    const owner = await seedUser('orgowner-transfer@test.com');
+    const admin2 = await seedUser('org-admin@test.com');
+    const org = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Transfer Org', 'transfer-org', owner.id);
     const orgId = org.lastInsertRowid;
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, owner.id, owner.id);
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'admin', ?)").run(orgId, admin2.id, owner.id);
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, owner.id, owner.id);
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'admin', ?)").run(orgId, admin2.id, owner.id);
 
     const { status, body } = await adminDelete(`/admin/users/${owner.id}?force=true`);
     assert.equal(status, 200);
     assert.equal(body.deleted, true);
-    assert.equal(getUserById(db, owner.id), undefined);
+    assert.equal(await getUserById(db, owner.id), undefined);
 
-    const updatedOrg = db.prepare('SELECT owner_user_id FROM organizations WHERE id = ?').get(orgId);
+    const updatedOrg = await db.prepare('SELECT owner_user_id FROM organizations WHERE id = ?').get(orgId);
     assert.ok(updatedOrg, 'org should survive when another member can take over');
     assert.equal(updatedOrg.owner_user_id, admin2.id);
-    const promotedMember = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(orgId, admin2.id);
+    const promotedMember = await db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(orgId, admin2.id);
     assert.equal(promotedMember.role, 'owner');
   });
 
   it('DELETE /admin/users/:id?force=true tears down a solely-owned org and detaches its projects', async () => {
-    const user = seedUser('orgowner-solo@test.com');
-    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Solo Admin Org', 'solo-admin-org', user.id);
+    const user = await seedUser('orgowner-solo@test.com');
+    const org = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Solo Admin Org', 'solo-admin-org', user.id);
     const orgId = org.lastInsertRowid;
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, user.id, user.id);
-    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('solo-admin-org-project', 'Solo Admin Org Project', orgId);
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, user.id, user.id);
+    await db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('solo-admin-org-project', 'Solo Admin Org Project', orgId);
 
     const { status, body } = await adminDelete(`/admin/users/${user.id}?force=true`);
     assert.equal(status, 200);
     assert.equal(body.deleted, true);
-    assert.equal(getUserById(db, user.id), undefined);
-    assert.equal(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
+    assert.equal(await getUserById(db, user.id), undefined);
+    assert.equal(await db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
 
-    const project = getKey(db, 'solo-admin-org-project');
+    const project = await getKey(db, 'solo-admin-org-project');
     assert.ok(project, 'the org\'s project must survive the org teardown');
     assert.equal(project.org_id, null);
   });
@@ -513,17 +512,17 @@ describe('/admin/users', () => {
 // ---------------------------------------------------------------------------
 
 describe('/admin/projects', () => {
-  beforeEach(() => {
-    db.exec('PRAGMA foreign_keys = OFF');
-    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM org_feature_overrides').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM org_members').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM organizations').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM api_keys').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM users').run(); } catch { /* */ }
-    db.exec('PRAGMA foreign_keys = ON');
+  beforeEach(async () => {
+    await db.exec('PRAGMA foreign_keys = OFF');
+    try { await db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM org_feature_overrides').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM org_members').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM organizations').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM api_keys').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM users').run(); } catch { /* */ }
+    await db.exec('PRAGMA foreign_keys = ON');
   });
 
   it('GET /admin/projects returns empty list', async () => {
@@ -533,8 +532,8 @@ describe('/admin/projects', () => {
   });
 
   it('GET /admin/projects lists projects with user info', async () => {
-    const user = seedUser('projowner@test.com', 'Owner');
-    seedProject('MyProject', user.id);
+    const user = await seedUser('projowner@test.com', 'Owner');
+    await seedProject('MyProject', user.id);
 
     const { status, body } = await adminGet('/admin/projects');
     assert.equal(status, 200);
@@ -544,8 +543,8 @@ describe('/admin/projects', () => {
   });
 
   it('GET /admin/projects?q= searches by owner name', async () => {
-    seedProject('AlphaProject');
-    seedProject('BetaProject');
+    await seedProject('AlphaProject');
+    await seedProject('BetaProject');
 
     const { body } = await adminGet('/admin/projects?q=Alpha');
     assert.equal(body.projects.length, 1);
@@ -553,11 +552,11 @@ describe('/admin/projects', () => {
   });
 
   it('GET /admin/projects?q=user:email filters by user', async () => {
-    const alice = seedUser('alice@org.com');
-    const bob = seedUser('bob@org.com');
-    seedProject('AliceProject', alice.id);
-    seedProject('BobProject', bob.id);
-    seedProject('Unowned');
+    const alice = await seedUser('alice@org.com');
+    const bob = await seedUser('bob@org.com');
+    await seedProject('AliceProject', alice.id);
+    await seedProject('BobProject', bob.id);
+    await seedProject('Unowned');
 
     const { body } = await adminGet('/admin/projects?q=user:alice@org.com');
     assert.equal(body.projects.length, 1);
@@ -565,9 +564,9 @@ describe('/admin/projects', () => {
   });
 
   it('GET /admin/projects?orgId= filters by org and includes orgName', async () => {
-    const user = seedUser('projorg@test.com', 'Proj Org');
-    const org = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Project Org', 'project-org', user.id);
-    createKey(db, { key: 'org-project-key', owner: 'Org Project', user_id: user.id, org_id: org.lastInsertRowid });
+    const user = await seedUser('projorg@test.com', 'Proj Org');
+    const org = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Project Org', 'project-org', user.id);
+    await createKey(db, { key: 'org-project-key', owner: 'Org Project', user_id: user.id, org_id: org.lastInsertRowid });
 
     const { body } = await adminGet(`/admin/projects?orgId=${org.lastInsertRowid}`);
     assert.equal(body.projects.length, 1);
@@ -576,19 +575,19 @@ describe('/admin/projects', () => {
   });
 
   it('GET /admin/projects?q= with multiple user: filters', async () => {
-    const alice = seedUser('alice2@org.com');
-    const bob = seedUser('bob2@org.com');
-    seedProject('AliceP', alice.id);
-    seedProject('BobP', bob.id);
-    seedProject('Unowned2');
+    const alice = await seedUser('alice2@org.com');
+    const bob = await seedUser('bob2@org.com');
+    await seedProject('AliceP', alice.id);
+    await seedProject('BobP', bob.id);
+    await seedProject('Unowned2');
 
     const { body } = await adminGet('/admin/projects?q=user:alice2 user:bob2');
     assert.equal(body.projects.length, 2);
   });
 
   it('GET /admin/projects/:key returns project detail', async () => {
-    const user = seedUser('detail@proj.com');
-    const project = seedProject('DetailProj', user.id);
+    const user = await seedUser('detail@proj.com');
+    const project = await seedProject('DetailProj', user.id);
 
     const { status, body } = await adminGet(`/admin/projects/${project.key}`);
     assert.equal(status, 200);
@@ -605,16 +604,16 @@ describe('/admin/projects', () => {
   });
 
   it('PATCH /admin/projects/:key updates project', async () => {
-    const project = seedProject('UpdateMe');
+    const project = await seedProject('UpdateMe');
     const { status } = await adminPatch(`/admin/projects/${project.key}`, { owner: 'Updated' });
     assert.equal(status, 200);
 
-    const updated = getKey(db, project.key);
+    const updated = await getKey(db, project.key);
     assert.equal(updated.owner, 'Updated');
   });
 
   it('PUT /admin/projects/:key/features updates features', async () => {
-    const project = seedProject('FeatureProj');
+    const project = await seedProject('FeatureProj');
     const { status, body } = await adminPut(`/admin/projects/${project.key}/features`, {
       features: { captions: true, 'graphics-client': true },
     });
@@ -628,16 +627,16 @@ describe('/admin/projects', () => {
 // ---------------------------------------------------------------------------
 
 describe('/admin/batch', () => {
-  beforeEach(() => {
-    db.prepare('DELETE FROM api_keys').run();
-    db.prepare('DELETE FROM users').run();
+  beforeEach(async () => {
+    await db.prepare('DELETE FROM api_keys').run();
+    await db.prepare('DELETE FROM users').run();
   });
 
   it('POST /admin/batch/users activates multiple users', async () => {
-    const u1 = seedUser('batch1@test.com');
-    const u2 = seedUser('batch2@test.com');
+    const u1 = await seedUser('batch1@test.com');
+    const u2 = await seedUser('batch2@test.com');
     // Deactivate them first
-    db.prepare('UPDATE users SET active = 0 WHERE id IN (?, ?)').run(u1.id, u2.id);
+    await db.prepare('UPDATE users SET active = 0 WHERE id IN (?, ?)').run(u1.id, u2.id);
 
     const { status, body } = await adminPost('/admin/batch/users', {
       ids: [u1.id, u2.id],
@@ -647,13 +646,13 @@ describe('/admin/batch', () => {
     assert.equal(body.succeeded, 2);
     assert.equal(body.failed, 0);
 
-    assert.equal(getUserById(db, u1.id).active, 1);
-    assert.equal(getUserById(db, u2.id).active, 1);
+    assert.equal((await getUserById(db, u1.id)).active, 1);
+    assert.equal((await getUserById(db, u2.id)).active, 1);
   });
 
   it('POST /admin/batch/users deactivates multiple users', async () => {
-    const u1 = seedUser('batchd1@test.com');
-    const u2 = seedUser('batchd2@test.com');
+    const u1 = await seedUser('batchd1@test.com');
+    const u2 = await seedUser('batchd2@test.com');
 
     const { status, body } = await adminPost('/admin/batch/users', {
       ids: [u1.id, u2.id],
@@ -662,8 +661,8 @@ describe('/admin/batch', () => {
     assert.equal(status, 200);
     assert.equal(body.succeeded, 2);
 
-    assert.equal(getUserById(db, u1.id).active, 0);
-    assert.equal(getUserById(db, u2.id).active, 0);
+    assert.equal((await getUserById(db, u1.id)).active, 0);
+    assert.equal((await getUserById(db, u2.id)).active, 0);
   });
 
   it('POST /admin/batch/users handles non-existent users', async () => {
@@ -677,8 +676,8 @@ describe('/admin/batch', () => {
   });
 
   it('POST /admin/batch/projects revokes multiple projects', async () => {
-    const p1 = seedProject('BatchP1');
-    const p2 = seedProject('BatchP2');
+    const p1 = await seedProject('BatchP1');
+    const p2 = await seedProject('BatchP2');
 
     const { status, body } = await adminPost('/admin/batch/projects', {
       keys: [p1.key, p2.key],
@@ -687,13 +686,13 @@ describe('/admin/batch', () => {
     assert.equal(status, 200);
     assert.equal(body.succeeded, 2);
 
-    assert.equal(getKey(db, p1.key).active, 0);
-    assert.equal(getKey(db, p2.key).active, 0);
+    assert.equal((await getKey(db, p1.key)).active, 0);
+    assert.equal((await getKey(db, p2.key)).active, 0);
   });
 
   it('POST /admin/batch/projects updates features for multiple projects', async () => {
-    const p1 = seedProject('FeatP1');
-    const p2 = seedProject('FeatP2');
+    const p1 = await seedProject('FeatP1');
+    const p2 = await seedProject('FeatP2');
 
     const { status, body } = await adminPost('/admin/batch/projects', {
       keys: [p1.key, p2.key],
@@ -725,19 +724,19 @@ describe('/admin/batch', () => {
 // ---------------------------------------------------------------------------
 
 describe('/admin/users — advanced filters', () => {
-  beforeEach(() => {
-    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
-    db.prepare('DELETE FROM api_keys').run();
-    db.prepare('DELETE FROM users').run();
+  beforeEach(async () => {
+    try { await db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    await db.prepare('DELETE FROM api_keys').run();
+    await db.prepare('DELETE FROM users').run();
   });
 
   it('GET /admin/users?active=1 returns only active users', async () => {
-    seedUser('active@test.com');
-    const inactive = seedUser('inactive@test.com');
-    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(inactive.id);
+    await seedUser('active@test.com');
+    const inactive = await seedUser('inactive@test.com');
+    await db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(inactive.id);
 
     const { body } = await adminGet('/admin/users?active=1');
     assert.ok(body.users.every(u => u.active), 'all returned users should be active');
@@ -745,9 +744,9 @@ describe('/admin/users — advanced filters', () => {
   });
 
   it('GET /admin/users?active=0 returns only inactive users', async () => {
-    seedUser('active2@test.com');
-    const inactive = seedUser('inactive2@test.com');
-    db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(inactive.id);
+    await seedUser('active2@test.com');
+    const inactive = await seedUser('inactive2@test.com');
+    await db.prepare('UPDATE users SET active = 0 WHERE id = ?').run(inactive.id);
 
     const { body } = await adminGet('/admin/users?active=0');
     assert.ok(body.users.every(u => !u.active));
@@ -755,7 +754,7 @@ describe('/admin/users — advanced filters', () => {
   });
 
   it('GET /admin/users?from= filters by creation date', async () => {
-    seedUser('datefilter@test.com');
+    await seedUser('datefilter@test.com');
 
     const past = '2000-01-01';
     const future = '2099-01-01';
@@ -769,15 +768,15 @@ describe('/admin/users — advanced filters', () => {
 });
 
 describe('/admin/projects — advanced filters', () => {
-  beforeEach(() => {
-    db.prepare('DELETE FROM api_keys').run();
-    db.prepare('DELETE FROM users').run();
+  beforeEach(async () => {
+    await db.prepare('DELETE FROM api_keys').run();
+    await db.prepare('DELETE FROM users').run();
   });
 
   it('GET /admin/projects?status=active returns only active projects', async () => {
-    const p1 = seedProject('ActiveP');
-    const p2 = seedProject('RevokedP');
-    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(p2.key);
+    const p1 = await seedProject('ActiveP');
+    const p2 = await seedProject('RevokedP');
+    await db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(p2.key);
 
     const { body } = await adminGet('/admin/projects?status=active');
     assert.ok(body.projects.every(p => p.active));
@@ -786,9 +785,9 @@ describe('/admin/projects — advanced filters', () => {
   });
 
   it('GET /admin/projects?status=revoked returns only revoked projects', async () => {
-    const p1 = seedProject('ActiveP2');
-    const p2 = seedProject('RevokedP2');
-    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(p2.key);
+    const p1 = await seedProject('ActiveP2');
+    const p2 = await seedProject('RevokedP2');
+    await db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(p2.key);
 
     const { body } = await adminGet('/admin/projects?status=revoked');
     assert.ok(body.projects.every(p => !p.active));
@@ -804,10 +803,10 @@ describe('/admin/projects — advanced filters', () => {
 describe('/admin/users/:id/features', () => {
   let testUser;
 
-  beforeEach(() => {
-    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
-    db.prepare('DELETE FROM users').run();
-    testUser = seedUser('featuser@test.com', 'Feature User');
+  beforeEach(async () => {
+    try { await db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    await db.prepare('DELETE FROM users').run();
+    testUser = await seedUser('featuser@test.com', 'Feature User');
   });
 
   it('GET /admin/users/:id/features returns feature list', async () => {
@@ -849,14 +848,14 @@ describe('/admin/users/:id/features', () => {
 // ---------------------------------------------------------------------------
 
 describe('/admin/audit-log', () => {
-  before(() => {
+  before(async () => {
     // Ensure clean audit log for this suite
-    try { db.prepare('DELETE FROM admin_audit_log').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM admin_audit_log').run(); } catch { /* */ }
   });
 
   it('GET /admin/audit-log returns entries list', async () => {
     // Trigger an auditable action first
-    const user = seedUser('audituser@test.com');
+    const user = await seedUser('audituser@test.com');
     await adminPost('/admin/users', { email: 'auditcreated@test.com', password: 'p' });
 
     const { status, body } = await adminGet('/admin/audit-log');
@@ -888,17 +887,17 @@ describe('/admin/audit-log', () => {
 // ---------------------------------------------------------------------------
 
 describe('/admin/export + /admin/import', () => {
-  beforeEach(() => {
-    try { db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
-    try { db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
-    db.prepare('DELETE FROM api_keys').run();
-    db.prepare('DELETE FROM users').run();
+  beforeEach(async () => {
+    try { await db.prepare('DELETE FROM project_member_permissions').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_members').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM project_features').run(); } catch { /* */ }
+    try { await db.prepare('DELETE FROM user_features').run(); } catch { /* */ }
+    await db.prepare('DELETE FROM api_keys').run();
+    await db.prepare('DELETE FROM users').run();
   });
 
   it('GET /admin/export/users returns users JSON', async () => {
-    seedUser('export1@test.com', 'Exported');
+    await seedUser('export1@test.com', 'Exported');
 
     const { status, body } = await adminGet('/admin/export/users');
     assert.equal(status, 200);
@@ -909,7 +908,7 @@ describe('/admin/export + /admin/import', () => {
   });
 
   it('GET /admin/export/projects returns projects JSON', async () => {
-    seedProject('ExportedProject');
+    await seedProject('ExportedProject');
 
     const { status, body } = await adminGet('/admin/export/projects');
     assert.equal(status, 200);
@@ -929,12 +928,12 @@ describe('/admin/export + /admin/import', () => {
     assert.equal(body.imported, 2);
     assert.equal(body.failed, 0);
 
-    const u1 = db.prepare('SELECT id FROM users WHERE email = ?').get('import1@test.com');
+    const u1 = await db.prepare('SELECT id FROM users WHERE email = ?').get('import1@test.com');
     assert.ok(u1);
   });
 
   it('POST /admin/import/users skips existing users by default', async () => {
-    seedUser('existing@test.com');
+    await seedUser('existing@test.com');
 
     const { body } = await adminPost('/admin/import/users', {
       users: [{ email: 'existing@test.com' }],
@@ -958,12 +957,12 @@ describe('/admin/export + /admin/import', () => {
     assert.equal(body.imported, 1);
     assert.equal(body.failed, 0);
 
-    const proj = db.prepare('SELECT key FROM api_keys WHERE key = ?').get('importkey-abc');
+    const proj = await db.prepare('SELECT key FROM api_keys WHERE key = ?').get('importkey-abc');
     assert.ok(proj);
   });
 
   it('POST /admin/import/projects skips existing keys by default', async () => {
-    const existing = seedProject('ExistingForImport');
+    const existing = await seedProject('ExistingForImport');
 
     const { body } = await adminPost('/admin/import/projects', {
       projects: [{ key: existing.key, owner: 'whatever' }],

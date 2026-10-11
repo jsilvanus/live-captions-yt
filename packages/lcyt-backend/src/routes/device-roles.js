@@ -38,8 +38,8 @@ import { writeAuditLog } from '../db/audit-log.js';
 
 const BCRYPT_ROUNDS = 10;
 
-function requireOwnerOrAdmin(db, apiKey, user) {
-  const level = getEffectiveProjectAccessLevel(db, apiKey, user.userId);
+async function requireOwnerOrAdmin(db, apiKey, user) {
+  const level = await getEffectiveProjectAccessLevel(db, apiKey, user.userId);
   return level === 'owner' || level === 'admin';
 }
 
@@ -51,51 +51,51 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
   const router = Router({ mergeParams: true });
 
   // GET /keys/:key/device-code
-  router.get('/device-code', (req, res) => {
+  router.get('/device-code', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      if (!requireOwnerOrAdmin(db, req.params.key, user)) {
+      if (!await requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
       }
     } else {
       // Admin path — still check key exists
-      const row = getKey(db, req.params.key);
+      const row = await getKey(db, req.params.key);
       if (!row) return res.status(404).json({ error: 'Project not found' });
     }
-    const row = getKey(db, req.params.key);
+    const row = await getKey(db, req.params.key);
     return res.json({ deviceCode: row?.device_code || null });
   });
 
   // POST /keys/:key/device-code — generate / regenerate
-  router.post('/device-code', (req, res) => {
+  router.post('/device-code', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      if (!requireOwnerOrAdmin(db, req.params.key, user)) {
+      if (!await requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
       }
     } else {
-      return adminMiddleware(req, res, () => _generateDeviceCode(db, req, res));
+      return adminMiddleware(req, res, async () => await _generateDeviceCode(db, req, res));
     }
-    return _generateDeviceCode(db, req, res);
+    return await _generateDeviceCode(db, req, res);
   });
 
   // GET /keys/:key/device-roles
-  router.get('/device-roles', (req, res) => {
+  router.get('/device-roles', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
+      const level = await getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (!level) return res.status(403).json({ error: 'Not a project member' });
     }
-    const roles = getDeviceRoles(db, req.params.key);
+    const roles = await getDeviceRoles(db, req.params.key);
     return res.json({ deviceRoles: roles });
   });
 
@@ -106,7 +106,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      if (!requireOwnerOrAdmin(db, req.params.key, user)) {
+      if (!await requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
       }
     }
@@ -119,7 +119,7 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
 
     const pin = generatePin();
     const pinHash = await bcrypt.hash(pin, BCRYPT_ROUNDS);
-    const role = createDeviceRole(db, req.params.key, {
+    const role = await createDeviceRole(db, req.params.key, {
       roleType,
       name: name.trim(),
       pinHash,
@@ -139,37 +139,37 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      if (!requireOwnerOrAdmin(db, req.params.key, user)) {
+      if (!await requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
       }
     }
     const id = Number(req.params.id);
-    const existing = getDeviceRole(db, id);
+    const existing = await getDeviceRole(db, id);
     if (!existing || existing.apiKey !== req.params.key) {
       return res.status(404).json({ error: 'Device role not found' });
     }
     const { name, permissions, config } = req.body || {};
-    updateDeviceRole(db, id, { name, permissions, config });
-    return res.json(getDeviceRole(db, id));
+    await updateDeviceRole(db, id, { name, permissions, config });
+    return res.json(await getDeviceRole(db, id));
   });
 
   // DELETE /keys/:key/device-roles/:id
-  router.delete('/device-roles/:id', (req, res) => {
+  router.delete('/device-roles/:id', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (!hasAdmin) {
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      if (!requireOwnerOrAdmin(db, req.params.key, user)) {
+      if (!await requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
       }
     }
     const id = Number(req.params.id);
-    const existing = getDeviceRole(db, id);
+    const existing = await getDeviceRole(db, id);
     if (!existing || existing.apiKey !== req.params.key) {
       return res.status(404).json({ error: 'Device role not found' });
     }
-    deactivateDeviceRole(db, id);
+    await deactivateDeviceRole(db, id);
     return res.json({ deactivated: true });
   });
 
@@ -180,18 +180,18 @@ export function createDeviceRolesRouter(db, { loginEnabled = false, jwtSecret = 
       if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
       const user = extractAndVerifyUserToken(jwtSecret, req);
       if (!user) return res.status(401).json({ error: 'Authentication required' });
-      if (!requireOwnerOrAdmin(db, req.params.key, user)) {
+      if (!await requireOwnerOrAdmin(db, req.params.key, user)) {
         return res.status(403).json({ error: 'owner or admin required' });
       }
     }
     const id = Number(req.params.id);
-    const existing = getDeviceRole(db, id);
+    const existing = await getDeviceRole(db, id);
     if (!existing || existing.apiKey !== req.params.key) {
       return res.status(404).json({ error: 'Device role not found' });
     }
     const pin = generatePin();
     const pinHash = await bcrypt.hash(pin, BCRYPT_ROUNDS);
-    resetDeviceRolePin(db, id, pinHash);
+    await resetDeviceRolePin(db, id, pinHash);
     return res.json({ pin });
   });
 
@@ -213,13 +213,13 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
 
   const deviceLoginIp = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket?.remoteAddress || null;
 
-  const keyRow = getKeyByDeviceCode(db, deviceCode);
+  const keyRow = await getKeyByDeviceCode(db, deviceCode);
   if (!keyRow) {
-    writeAuditLog(db, { actor: `device:${deviceCode}`, actorKind: 'device', action: 'auth.device_login_failed', targetType: 'device', details: { reason: 'invalid device code' }, ip: deviceLoginIp });
+    await writeAuditLog(db, { actor: `device:${deviceCode}`, actorKind: 'device', action: 'auth.device_login_failed', targetType: 'device', details: { reason: 'invalid device code' }, ip: deviceLoginIp });
     return res.status(401).json({ error: 'Invalid device code' });
   }
 
-  const candidates = getActiveDeviceRolesForKey(db, keyRow.key);
+  const candidates = await getActiveDeviceRolesForKey(db, keyRow.key);
   let matchedRole = null;
   for (const candidate of candidates) {
     const match = await bcrypt.compare(String(pin), candidate.pin_hash);
@@ -230,7 +230,7 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
   }
 
   if (!matchedRole) {
-    writeAuditLog(db, { actor: `device:${deviceCode}`, actorKind: 'device', apiKey: keyRow.key, action: 'auth.device_login_failed', targetType: 'device', details: { reason: 'invalid pin' }, ip: deviceLoginIp });
+    await writeAuditLog(db, { actor: `device:${deviceCode}`, actorKind: 'device', apiKey: keyRow.key, action: 'auth.device_login_failed', targetType: 'device', details: { reason: 'invalid pin' }, ip: deviceLoginIp });
     return res.status(401).json({ error: 'Invalid PIN' });
   }
 
@@ -254,7 +254,7 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
     { expiresIn: '1h' },
   );
 
-  writeAuditLog(db, {
+  await writeAuditLog(db, {
     actor: `device:${matchedRole.role_type}:${matchedRole.name}`,
     actorKind: 'device',
     actorId: String(matchedRole.id),
@@ -276,10 +276,10 @@ export async function deviceLoginHandler(db, jwtSecret, req, res) {
   });
 }
 
-function _generateDeviceCode(db, req, res) {
-  const row = getKey(db, req.params.key);
+async function _generateDeviceCode(db, req, res) {
+  const row = await getKey(db, req.params.key);
   if (!row) return res.status(404).json({ error: 'Project not found' });
   const code = generateDeviceCode();
-  setProjectDeviceCode(db, req.params.key, code);
+  await setProjectDeviceCode(db, req.params.key, code);
   return res.json({ deviceCode: code });
 }

@@ -39,10 +39,10 @@ export function createSessionRouters(db, store, jwtSecret, auth, { relayManager 
   router.use('/mic',      requireMicLock, createMicRouter(store, auth));
 
   // GET /features — return enabled feature codes for the authenticated session key
-  router.get('/features', auth, (req, res) => {
+  router.get('/features', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
-    const rows = getProjectFeatures(db, apiKey);
+    const rows = await getProjectFeatures(db, apiKey);
     const features = rows.filter(r => r.enabled).map(r => r.feature_code);
     return res.json({ features });
   });
