@@ -2,7 +2,7 @@
  * prisma/schema.prisma must describe exactly the tables the SQLite DDL creates (schema.js plus the
  * plugin init functions), and the PostgreSQL schema/migration must be derived from it.
  */
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -27,20 +27,32 @@ const require = createRequire(import.meta.url);
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const { Prisma } = require('../generated/sqlite');
 
+// The plugin init functions start background services (Chromium renderer, pollers, device registry);
+// collect them so the test process can exit.
+const services = [];
+
 async function buildFullSqlite(file) {
   const db = initSqliteSchema(file);
   runAiMigrations(db);
-  await initProductionControl(db, {});
+  services.push(await initProductionControl(db, {}));
   await initFilesControl(db, {});
   await initRtmpControl(db, null, {});
-  await initDskControl(db, { on() {}, emit() {} }, null, {});
+  services.push(await initDskControl(db, { on() {}, emit() {} }, null, {}));
   await initCueEngine(db);
   await initAgent(db, {});
   initConnectors(db, {});
   initActions(db);
-  initPlatforms(db, {});
+  services.push(initPlatforms(db, {}));
   await initMusicControl(db, null, {});
   return db;
+}
+
+async function stopServices() {
+  for (const s of services.splice(0)) {
+    for (const fn of [s?.stop, s?.registry?.stop, s?.poller?.stop]) {
+      try { await fn?.call(fn === s?.registry?.stop ? s.registry : fn === s?.poller?.stop ? s.poller : s); } catch { /* best effort */ }
+    }
+  }
 }
 
 test('schema.prisma matches the SQLite tables (names, columns, nullability, primary keys)', async () => {
@@ -75,3 +87,5 @@ test('PostgreSQL schema and initial migration are derived from schema.prisma', (
   assert.equal(readFileSync(join(root, 'prisma/postgres/migrations/0001_init.sql'), 'utf8'), sql,
     'prisma/postgres/migrations/0001_init.sql is stale: npm run db:pg:build -- --migration 0001_init');
 });
+
+after(stopServices);
