@@ -36,8 +36,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `REVOKED_KEY_CLEANUP_INTERVAL` | Revoked key cleanup interval (ms) | 86400000 (24h) |
 | `EVENT_LOG_RETENTION_DAYS` | Days before `bus_events` audit rows are purged (0 disables) | 30 |
 | `EVENT_LOG_CLEANUP_INTERVAL` | `bus_events` cleanup interval (ms) | 86400000 (24h) |
-| `METRICS_TOKEN` | Bearer token for `GET /api/v1/api/v1/metrics
- (Prometheus scrape); endpoint 404s when unset | unset (disabled) |
+| `METRICS_TOKEN` | Bearer token for `GET /api/v1/metrics` (Prometheus scrape); endpoint 404s when unset | unset (disabled) |
 | `METRICS_PROJECT_LABELS` | Set to `0` to drop the per-project label on Prometheus business series (bounded cardinality opt-out) | enabled |
 | `USAGE_FLUSH_INTERVAL_MS` | Usage-rollup buffer flush interval (ms) | 15000 |
 | `USAGE_ROLLUP_HOURLY_RETENTION_DAYS` | Days before hourly `usage_rollups` rows are compacted into daily rows (0 disables) | 90 |
@@ -88,13 +87,10 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `PLATFORM_OAUTH_REDIRECT_BASE` | Base URL the platform OAuth callback is reached at; must match the provider registration. Falls back to `BACKEND_URL`, then `PUBLIC_URL` | (falls back) |
 | `PLATFORM_CREDENTIAL_KEY` | Base64 32-byte AES-256-GCM key encrypting platform OAuth tokens at rest. Unset = accounts cannot be connected (warns at startup, refuses at write — never plaintext). Rotation is not built | none |
 | `PLATFORM_STATS_POLL_INTERVAL_S` | Live viewer-count poll interval; floored at 5s | 30 |
-| `CONTACT_EMAIL` | Contact info returned by `GET /api/v1/api/v1/contact
- | none |
-| `CONTACT_NAME` | Contact name returned by `GET /api/v1/api/v1/contact
- | none |
-| `CONTACT_PHONE` | Contact phone returned by `GET /api/v1/api/v1/contact
- | none |
-| `CONTACT_WEBSITE` | Contact website returned by `GET /api/v1/api/v1/contact
+| `CONTACT_EMAIL` | Contact info returned by `GET /api/v1/contact` | none |
+| `CONTACT_NAME` | Contact name returned by `GET /api/v1/contact` | none |
+| `CONTACT_PHONE` | Contact phone returned by `GET /api/v1/contact` | none |
+| `CONTACT_WEBSITE` | Contact website returned by `GET /api/v1/contact`
  | none |
 | `FILES_DIR` | Local directory for per-key caption files (local adapter) | `/data/files` |
 | `FILE_STORAGE` | Caption file storage backend: `local` (default) or `s3` | `local` |
@@ -134,38 +130,31 @@ GET  /contact             — server contact info (public)
 
 POST /api/v1/auth/register       — create user account (email + password)
 POST /api/v1/auth/login          — authenticate user → returns user JWT
-GET  /auth/me             — current user info (user Bearer token)
+GET  /api/v1/auth/me             — current user info (user Bearer token)
 PATCH /api/v1/auth/me            — update own profile (name) (user Bearer token)
-GET  /auth/me/export      — export user's own account data (user Bearer token)
+GET  /api/v1/auth/me/export      — export user's own account data (user Bearer token)
 DELETE /api/v1/auth/me/data      — delete user's owned projects, keep account (user Bearer token)
 DELETE /api/v1/auth/me           — full account deletion (user Bearer token)
 POST /api/v1/auth/change-password — change password (user Bearer token)
 
-POST /api/v1/live
-               — register session → returns session JWT
-GET  /live                — session status (Bearer token)
-DELETE /api/v1/live
-             — tear down session (Bearer token)
-POST /api/v1/captions
-           — queue caption(s) → 202 { ok, requestId } (Bearer token); per-caption fileFormats { original|<lang>: 'text'|'youtube'|'vtt' } selects the backend caption-file format per language (default 'youtube' plain text)
-GET  /events              — SSE stream of caption delivery results (Bearer token or ?token=)
-GET  /events/stream       — unified SSE over the shared EventBus; canonical envelopes { topic, projectId, ts, data }; ?topics=dsk.*,cue.fired filter; project-access auth (session/user/project/device JWT or scoped lcytmcp_ token; external tokens need an events:read scope, topics further narrowed by tokenAllowsTopic). Additive — the bespoke per-plugin SSE endpoints are unchanged.
-GET  /events/topics       — public catalog { baseScope, topics } of subscribable event-topic patterns; single source of truth for the Setup Hub scope picker (see routes/events-catalog.js). Includes per-variable topics: variable.<name>.changed (payload carries the new value); variable.* watches all.
-POST /api/v1/sync
-               — NTP clock sync (Bearer token)
-GET  /stats               — per-key usage stats (Bearer token)
-DELETE /api/v1/stats
-            — GDPR right-to-erasure: anonymise key and delete personal data (Bearer token)
-GET  /file                — list caption files saved for the authenticated key (Bearer token)
-GET  /file/:id            — download a caption file (Bearer token or ?token=); ?offsetMs=±N shifts VTT cue times on the fly for VOD alignment (vtt files only)
-DELETE /api/v1/file/:id
-         — delete a caption file (Bearer token)
-GET  /usage               — per-domain caption stats (public if USAGE_PUBLIC, else X-Admin-Key)
-POST /api/v1/mic
-                — claim/release soft mic lock for collaborative sessions (Bearer token)
+POST /api/v1/live                — register session → returns session JWT
+GET  /api/v1/live                — session status (Bearer token)
+DELETE /api/v1/live              — tear down session (Bearer token)
+POST /api/v1/captions            — queue caption(s) → 202 { ok, requestId } (Bearer token); per-caption fileFormats { original|<lang>: 'text'|'youtube'|'vtt' } selects the backend caption-file format per language (default 'youtube' plain text)
+GET  /api/v1/events              — SSE stream of caption delivery results (Bearer token or ?token=)
+GET  /api/v1/events/stream       — unified SSE over the shared EventBus; canonical envelopes { topic, projectId, ts, data }; ?topics=dsk.*,cue.fired filter; project-access auth (session/user/project/device JWT or scoped lcytmcp_ token; external tokens need an events:read scope, topics further narrowed by tokenAllowsTopic). Additive — the bespoke per-plugin SSE endpoints are unchanged.
+GET  /api/v1/events/topics       — public catalog { baseScope, topics } of subscribable event-topic patterns; single source of truth for the Setup Hub scope picker (see routes/events-catalog.js). Includes per-variable topics: variable.<name>.changed (payload carries the new value); variable.* watches all.
+POST /api/v1/sync                — NTP clock sync (Bearer token)
+GET  /api/v1/stats               — per-key usage stats (Bearer token)
+DELETE /api/v1/stats             — GDPR right-to-erasure: anonymise key and delete personal data (Bearer token)
+GET  /api/v1/file                — list caption files saved for the authenticated key (Bearer token)
+GET  /api/v1/file/:id            — download a caption file (Bearer token or ?token=); ?offsetMs=±N shifts VTT cue times on the fly for VOD alignment (vtt files only)
+DELETE /api/v1/file/:id          — delete a caption file (Bearer token)
+GET  /api/v1/usage               — per-domain caption stats (public if USAGE_PUBLIC, else X-Admin-Key)
+POST /api/v1/mic                 — claim/release soft mic lock for collaborative sessions (Bearer token)
 
 GET/POST/PATCH/DELETE /api/v1/admin/keys — admin CRUD (X-Admin-Key header) OR user project CRUD (user Bearer token)
-  POST   /keys?freetier   — self-service free-tier key sign-up (requires FREE_APIKEY_ACTIVE=1)
+  POST   /api/v1/admin/keys?freetier   — self-service free-tier key sign-up (requires FREE_APIKEY_ACTIVE=1)
 
 GET  /video/:key              — HLS.js player page (public, CORS *, iframe-embeddable)
 GET  /video/:key/master.m3u8  — HLS master manifest (video + subtitle tracks, public)
