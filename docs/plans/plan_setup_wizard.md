@@ -7,6 +7,8 @@ summary: "Adds a guided `/setup` wizard: feature selection, dependency auto-enab
 
 # Setup Wizard â€” Implementation Plan
 
+> **2026-10-11 refactor (implemented):** the wizard is now intent-first. New steps `intent` ("What are you producing?") and `questions` precede the old feature picker, which became "Fine-tune features". `lib/capabilities.js` resolves intents + answers into feature flags, steps, Hub cards and prerequisites; the review shows the production flow and what still needs configuring. Feature codes/labels/deps are kept in line with the backend by `test/featureInventoryParity.test.js`; the card map was fixed (`ingest` → egress + ingestion, `restream` → egress, `cea-captions` → caption-targets). Sections below describe the original feature-flag wizard, which still exists as the fine-tune step.
+
 ## Context
 
 The LCYT web app has a project feature system and session settings (targets, translation, relay)

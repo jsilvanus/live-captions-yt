@@ -4,6 +4,8 @@ import { useWizardState } from './hooks/useWizardState.js';
 import { WizardShell } from './WizardShell.jsx';
 import { StepFeatureSelection } from './StepFeatureSelection.jsx';
 import { StepReview } from './StepReview.jsx';
+import { IntentStep } from './IntentStep.jsx';
+import { QuestionsStep } from './QuestionsStep.jsx';
 import { TargetsPanel } from '../panels/TargetsPanel.jsx';
 import { TranslationPanel } from '../panels/TranslationPanel.jsx';
 import { RelayPanel } from '../panels/RelayPanel.jsx';
@@ -27,6 +29,7 @@ export function SetupWizardPage() {
   const state = useWizardState(backendUrl, token, apiKey);
 
   const {
+    intents, answers, setIntentAnswers,
     selectedFeatures, configs, localSettings, stepIndex, depNotices,
     saving, saveError, initialized, steps, currentStep,
     setConfigs, setLocalSettings, setDepNotices,
@@ -47,6 +50,12 @@ export function SetupWizardPage() {
     if (!currentStep) return null;
 
     switch (currentStep.id) {
+      case 'intent':
+        return <IntentStep intents={intents} onChange={next => setIntentAnswers(next, answers)} />;
+
+      case 'questions':
+        return <QuestionsStep intents={intents} answers={answers} onChange={next => setIntentAnswers(intents, next)} />;
+
       case 'features':
         return (
           <StepFeatureSelection
@@ -120,6 +129,8 @@ export function SetupWizardPage() {
           <StepReview
             steps={steps}
             selectedFeatures={selectedFeatures}
+            intents={intents}
+            answers={answers}
             localSettings={localSettings}
             configs={configs}
             onEditStep={handleEditStep}

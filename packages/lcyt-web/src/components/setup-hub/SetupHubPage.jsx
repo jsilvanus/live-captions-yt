@@ -23,7 +23,8 @@ import { useUserAuth } from '../../hooks/useUserAuth.js';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useProjectFeatures } from '../../hooks/useProjectFeatures.js';
 import { useProjectRequired } from '../../hooks/useProjectRequired.js';
-import { cardIdsForEnabledFeatures } from '../../lib/workflowFeatureMap.js';
+import { cardIdsForEnabledFeatures, cardReasons } from '../../lib/workflowFeatureMap.js';
+import { FEATURE_LABELS } from '../setup-wizard/lib/constants.js';
 import { GuidedActionProvider } from '../../hooks/useGuidedAction.jsx';
 import { RoleAssistantPanel } from '../agent/RoleAssistantPanel.jsx';
 
@@ -98,6 +99,16 @@ export function SetupHubPage() {
               </button>
             ))}
           </div>
+
+          {filter === 'workflow' && workflowCardIds.size > 0 && (
+            <ul className="setup-hub-page__desc" data-testid="workflow-reasons" style={{ margin: '0 0 12px', paddingLeft: 18 }}>
+              {[...cardReasons(features)].map(([cardId, codes]) => (
+                <li key={cardId}>
+                  <a href={`/setup/${cardId}`}>{cardId}</a>: needed for {codes.map(c => FEATURE_LABELS[c] || c).join(', ')}
+                </li>
+              ))}
+            </ul>
+          )}
 
           <div className="setup-hub-page__grid">
             {/* ── Production devices ── */}

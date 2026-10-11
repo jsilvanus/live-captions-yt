@@ -20,10 +20,12 @@ export async function createObjectStoreFromEnv({
       accessKeyId,
       secretAccessKey: (settings ? settings.get('storage.s3_secret_access_key') : process.env.S3_SECRET_ACCESS_KEY) || '',
     } : undefined;
+    const publicEndpoint = (settings ? settings.get('storage.s3_public_endpoint') : process.env.S3_PUBLIC_ENDPOINT) || undefined;
     return createS3ObjectStore({
       bucket,
       region,
       endpoint,
+      publicEndpoint,
       credentials,
       prefix: s3Prefix,
     });

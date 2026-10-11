@@ -124,6 +124,74 @@ describe('videos router', () => {
     }
   });
 
+  describe('redirect serving (storage.file_serve = redirect)', () => {
+    let mockS3, recordingsStore, redirectServer, redirectUrl;
+    const settingsFor = (mode) => ({ get: (key) => ({ 'storage.file_serve': mode, 'storage.redirect_ttl_seconds': 120 })[key] });
+
+    async function startRouter(mode) {
+      const app = express();
+      app.use('/videos', createVideosRouter(auth, db, { recordingsStore, settings: settingsFor(mode) }));
+      redirectServer = createServer(app);
+      await new Promise((resolve) => redirectServer.listen(0, resolve));
+      redirectUrl = `http://127.0.0.1:${redirectServer.address().port}`;
+    }
+
+    beforeEach(async () => {
+      mockS3 = await startMockS3Server();
+      recordingsStore = await createS3ObjectStore({
+        bucket: 'demo-bucket',
+        prefix: 'recordings',
+        region: 'auto',
+        endpoint: `http://127.0.0.1:${mockS3.port}`,
+        publicEndpoint: 'https://s3.example.test',
+        credentials: { accessKeyId: 'test', secretAccessKey: 'test' },
+      });
+      await recordingsStore.put('demo-prefix/playlist.m3u8', '#EXTM3U\n#EXTINF:1.0,x\nsegment0.ts\n');
+      await recordingsStore.put('demo-prefix/segment0.ts', 'segment-bytes');
+      db.prepare('INSERT INTO videos (id, api_key, title, status, storage_type, storage_key, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+        .run('s3-video', 'demo-key', 'S3 recording', 'completed', 's3', 'demo-prefix', new Date().toISOString());
+    });
+
+    afterEach(async () => {
+      recordingsStore.close?.();
+      await closeHttpServer(redirectServer);
+      await mockS3.stop();
+    });
+
+    it('answers segments with a short-lived signed URL for the public endpoint', async () => {
+      await startRouter('redirect');
+      const res = await fetch(`${redirectUrl}/videos/s3-video/segment0.ts`, { redirect: 'manual' });
+      assert.equal(res.status, 302);
+      const location = new URL(res.headers.get('location'));
+      assert.equal(location.origin, 'https://s3.example.test');
+      assert.equal(location.pathname, '/demo-bucket/recordings/demo-prefix/segment0.ts');
+      assert.equal(location.searchParams.get('X-Amz-Expires'), '120');
+      assert.ok(location.searchParams.get('X-Amz-Signature'));
+      assert.ok(!location.searchParams.has('x-amz-checksum-crc32'));
+      assert.match(res.headers.get('cache-control'), /no-store/);
+    });
+
+    it('keeps playlists proxied so their entries still point at the backend', async () => {
+      await startRouter('redirect');
+      const res = await fetch(`${redirectUrl}/videos/s3-video/playlist.m3u8`, { redirect: 'manual' });
+      assert.equal(res.status, 200);
+      assert.match(await res.text(), /videos\/s3-video\/segment0\.ts/);
+    });
+
+    it('answers 404, not a redirect, for a missing object', async () => {
+      await startRouter('redirect');
+      const res = await fetch(`${redirectUrl}/videos/s3-video/missing.ts`, { redirect: 'manual' });
+      assert.equal(res.status, 404);
+    });
+
+    it('proxies segments when the mode is proxy', async () => {
+      await startRouter('proxy');
+      const res = await fetch(`${redirectUrl}/videos/s3-video/segment0.ts`, { redirect: 'manual' });
+      assert.equal(res.status, 200);
+      assert.equal(await res.text(), 'segment-bytes');
+    });
+  });
+
   it('syncVideoRecordingToStorage uploads local recording artifacts to S3', async () => {
     const mockS3 = await startMockS3Server();
     process.env.S3_ENDPOINT = `http://127.0.0.1:${mockS3.port}`;
