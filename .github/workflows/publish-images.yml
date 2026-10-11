@@ -8,7 +8,7 @@ name: Publish images
 #
 # Base images (node:22-slim) are pulled from docker.io.
 # If you encounter docker.io rate limiting or access issues:
-#   - See DOCKER_BUILD_GUIDE.md for local build instructions
+#   - See docs/DOCKER_BUILD_GUIDE.md for local build instructions
 #   - Use locally-built images in your deployment stack
 #   - Build images in environments with docker.io access, then import into restricted environments
 

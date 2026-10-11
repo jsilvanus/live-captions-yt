@@ -33,6 +33,8 @@ Welcome to the LCYT documentation. This is your navigation hub for all guides, A
 ## ðŸ”§ Installation & Deployment
 
 - [**DEPLOY.md**](./DEPLOY.md) â€” Production deployment checklist
+- [**DOCKER_BUILD_GUIDE.md**](./DOCKER_BUILD_GUIDE.md) — Build the images locally
+- [**DOCKERFILE-MAINTENANCE.md**](./DOCKERFILE-MAINTENANCE.md) — Keep the Dockerfile workspace lists in sync
 - [**FIREWALL.md**](./FIREWALL.md) â€” Network and firewall setup
 - [**DB.md**](./DB.md) â€” Database schema and migrations
 - [**PORTS.md**](../PORTS.md) â€” Port assignment reference
