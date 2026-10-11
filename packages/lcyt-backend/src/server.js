@@ -114,7 +114,7 @@ import { createMetrics, setMetricsInstance } from './metrics/index.js';
 import { attachBusMetrics } from './metrics/bus-tap.js';
 import { setFfmpegAccountingSink } from './ffmpeg/index.js';
 import { startMetricsPollers } from './metrics/pollers.js';
-import { createMediaStores } from './storage/media-stores.js';
+import { createMediaStores, isMediaStorageS3 } from './storage/media-stores.js';
 
 // ---------------------------------------------------------------------------
 // JWT secret
@@ -286,7 +286,7 @@ const mediaStores = await createMediaStores(settings);
 // Always initialized, regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
 // Pass resolveStorage so HLS manager can publish segments/playlists to storage.
-const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings });
+const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings, hlsSubsStore: isMediaStorageS3(settings) ? mediaStores.hlsSubsStore : null });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer

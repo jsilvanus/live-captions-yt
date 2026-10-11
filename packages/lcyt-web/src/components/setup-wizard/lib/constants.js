@@ -1,5 +1,11 @@
 export const DRAFT_KEY = 'lcyt.wizard.draft';
 
+/**
+ * Draft format version. Drafts without a version (written before intents and
+ * answers existed) are still valid: they simply have no intents/answers.
+ */
+export const DRAFT_VERSION = 2;
+
 export const MAX_RELAY_SLOTS = 8;
 
 export const ALL_FEATURE_CODES = [
@@ -7,7 +13,17 @@ export const ALL_FEATURE_CODES = [
   'embed', 'stt-server', 'radio', 'hls-stream', 'preview', 'graphics-client',
   'graphics-server', 'restream', 'file-saving', 'mic-lock', 'stats',
   'collaboration', 'device-control', 'planning',
+  'crop', 'files-local', 'files-managed-bucket', 'files-custom-bucket',
+  'files-webdav', 'files-browser-local',
 ];
+
+/**
+ * Codes the wizard knows about that the backend does not (yet): shown by the
+ * feature picker as "coming soon". Kept explicit so test/featureInventoryParity
+ * fails on any other drift between this list and the backend's
+ * KNOWN_FEATURE_CODES.
+ */
+export const WEB_ONLY_FEATURE_CODES = ['planning'];
 
 export const FEATURE_LABELS = {
   'captions':         'Captions',
@@ -29,6 +45,12 @@ export const FEATURE_LABELS = {
   'collaboration':    'Collaboration',
   'device-control':   'Device control',
   'planning':         'Planning',
+  'crop':             'Vertical crop',
+  'files-local':          'Files: server storage',
+  'files-managed-bucket': 'Files: managed bucket',
+  'files-custom-bucket':  'Files: own bucket',
+  'files-webdav':         'Files: WebDAV',
+  'files-browser-local':  'Files: this computer',
 };
 
 export const DEPS = {
@@ -37,6 +59,12 @@ export const DEPS = {
   'radio':           ['ingest'],
   'hls-stream':      ['ingest'],
   'preview':         ['ingest'],
+  'crop':            ['ingest'],
+  'files-local':          ['file-saving'],
+  'files-managed-bucket': ['file-saving'],
+  'files-custom-bucket':  ['file-saving'],
+  'files-webdav':         ['file-saving'],
+  'files-browser-local':  [],
 };
 
 /**

@@ -1,5 +1,6 @@
-import { mkdir, writeFile, rm } from 'node:fs/promises';
-import { join, resolve as resolvePath, sep } from 'node:path';
+import { createReadStream } from 'node:fs';
+import { mkdir, writeFile, rm, stat } from 'node:fs/promises';
+import { join, basename, resolve as resolvePath, sep } from 'node:path';
 import logger from 'lcyt/logger';
 
 const DEFAULT_SUBS_ROOT      = process.env.HLS_SUBS_ROOT             || '/tmp/hls-subs';
@@ -7,6 +8,20 @@ const DEFAULT_SEG_DURATION   = Number(process.env.HLS_SUBS_SEGMENT_DURATION ?? 6
 const DEFAULT_WINDOW_SIZE    = Number(process.env.HLS_SUBS_WINDOW_SIZE       ?? 10);
 // Auto-stop after this many consecutive empty flushes (no cues). Default ≈ 2 h.
 const DEFAULT_MAX_IDLE_SEGS  = Math.ceil((Number(process.env.SESSION_TTL ?? 7_200_000) / 1000) / DEFAULT_SEG_DURATION);
+
+// Objects older than this are removed by sweepStaleDir() in shared-store mode.
+const DEFAULT_STALE_MS = Number(process.env.HLS_SUBS_STALE_MS ?? 6 * 3_600_000);
+
+function isNotFound(err) {
+  return err?.code === 'ENOENT' || err?.name === 'NoSuchKey' || err?.name === 'NotFound'
+    || err?.$metadata?.httpStatusCode === 404;
+}
+
+async function streamToString(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(Buffer.from(chunk));
+  return Buffer.concat(chunks).toString('utf8');
+}
 
 // BCP-47 → human-readable name for EXT-X-MEDIA NAME= attribute.
 const LANG_NAMES = {
@@ -146,8 +161,14 @@ export class HlsSubsManager {
    *   maxIdleSegments?: number,
    * }} [opts]
    */
-  constructor({ subsRoot, segmentDuration, windowSize, maxIdleSegments } = {}) {
+  constructor({ subsRoot, segmentDuration, windowSize, maxIdleSegments, store, staleMs } = {}) {
     this._subsRoot       = subsRoot        ?? DEFAULT_SUBS_ROOT;
+    // Optional shared object store ({ put, stream, deletePrefix, list, delete }).
+    // When set, segments, playlists and the language list live in the store so
+    // any backend instance can serve them; without it files stay on local disk
+    // and the playlist exists only in memory (single instance).
+    this._store          = store ?? null;
+    this._staleMs        = staleMs ?? DEFAULT_STALE_MS;
     this._segDuration    = (segmentDuration ?? DEFAULT_SEG_DURATION) * 1000; // ms
     this._windowSize     = windowSize      ?? DEFAULT_WINDOW_SIZE;
     this._maxIdle        = maxIdleSegments ?? DEFAULT_MAX_IDLE_SEGS;
@@ -223,6 +244,66 @@ export class HlsSubsManager {
     return buildPlaylist(langState, this._segDuration);
   }
 
+  /** True when segments are kept in a shared object store. */
+  get shared() {
+    return this._store !== null;
+  }
+
+  /**
+   * Languages of a viewer key. Reads the shared store when configured, so it
+   * works on instances that do not own the caption session.
+   * @param {string} viewerKey
+   * @returns {Promise<string[]>}
+   */
+  async readLanguages(viewerKey) {
+    if (!this._store) return this.getLanguages(viewerKey);
+    const meta = await this._readText(`${viewerKey}/meta.json`);
+    if (!meta) return [];
+    try {
+      const langs = JSON.parse(meta).langs;
+      return Array.isArray(langs) ? langs : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * HLS subtitle playlist for one language, or null when none exists yet.
+   * @param {string} viewerKey
+   * @param {string} lang
+   * @returns {Promise<string|null>}
+   */
+  async readPlaylist(viewerKey, lang) {
+    if (!this._store) return this.getPlaylist(viewerKey, lang);
+    return this._readText(`${viewerKey}/${lang}/playlist.m3u8`);
+  }
+
+  /**
+   * Open a WebVTT segment for streaming, or null when it does not exist.
+   * @param {string} viewerKey
+   * @param {string} lang
+   * @param {string} segment  Validated segment filename.
+   * @returns {Promise<import('node:stream').Readable|null>}
+   */
+  async openSegment(viewerKey, lang, segment) {
+    if (this._store) {
+      try {
+        return (await this._store.stream(`${viewerKey}/${lang}/${basename(segment)}`)).stream;
+      } catch (err) {
+        if (isNotFound(err)) return null;
+        throw err;
+      }
+    }
+    const file = join(this._subsRoot, viewerKey, lang, basename(segment));
+    if (!this._isPathSafe(file)) return null;
+    try {
+      await stat(file);
+    } catch {
+      return null;
+    }
+    return createReadStream(file);
+  }
+
   /**
    * Stop tracking a viewer key and remove its segment files from disk.
    * @param {string} viewerKey
@@ -253,6 +334,26 @@ export class HlsSubsManager {
    * @returns {Promise<void>}
    */
   async sweepStaleDir() {
+    if (this._store) {
+      // Shared storage: other instances may be mid-broadcast, so only remove
+      // objects nobody has touched for a long time (crash leftovers).
+      try {
+        const cutoff = Date.now() - this._staleMs;
+        let cursor = null;
+        do {
+          const page = await this._store.list('', { limit: 1000, cursor });
+          cursor = page.nextCursor;
+          for (const item of page.items) {
+            if (item.lastModified && item.lastModified < cutoff) {
+              await this._store.delete(item.key).catch(() => {});
+            }
+          }
+        } while (cursor);
+      } catch (err) {
+        logger.warn(`[hls-subs] Failed to sweep shared store: ${err.message}`);
+      }
+      return;
+    }
     try {
       await rm(this._subsRoot, { recursive: true, force: true });
     } catch {}
@@ -293,6 +394,17 @@ export class HlsSubsManager {
   async _flush(viewerKey) {
     const state = this._keys.get(viewerKey);
     if (!state) return;
+    // A slow store must not let two flushes of the same key overlap.
+    if (state.flushing) return;
+    state.flushing = true;
+    try {
+      await this._flushSegment(viewerKey, state);
+    } finally {
+      state.flushing = false;
+    }
+  }
+
+  async _flushSegment(viewerKey, state) {
 
     const segStartMs    = state.segmentStart;
     const segIndex      = state.segmentIndex;
@@ -311,9 +423,13 @@ export class HlsSubsManager {
 
       // Write segment file (best-effort — don't stop on failure)
       try {
-        const dir = join(this._subsRoot, viewerKey, lang);
-        await mkdir(dir, { recursive: true });
-        await writeFile(join(dir, filename), vttContent, 'utf8');
+        if (this._store) {
+          await this._store.put(`${viewerKey}/${lang}/${filename}`, vttContent, { contentType: 'text/vtt; charset=utf-8' });
+        } else {
+          const dir = join(this._subsRoot, viewerKey, lang);
+          await mkdir(dir, { recursive: true });
+          await writeFile(join(dir, filename), vttContent, 'utf8');
+        }
       } catch (err) {
         logger.warn(`[hls-subs] Failed to write segment ${filename} for ${viewerKey}/${lang}: ${err.message}`);
       }
@@ -328,6 +444,12 @@ export class HlsSubsManager {
         langState.segments.shift();
         langState.sequence++;
       }
+    }
+
+    // Shared store: publish playlists and the language list only after all
+    // segments are written, so a playlist never points at a missing segment.
+    if (this._store && this._keys.get(viewerKey) === state) {
+      await this._publishPlaylists(viewerKey, state);
     }
 
     // Advance state for next flush
@@ -364,11 +486,47 @@ export class HlsSubsManager {
    * @param {string} viewerKey
    */
   async _removeDir(viewerKey) {
+    if (this._store) {
+      try {
+        await this._store.deletePrefix(`${viewerKey}/`);
+      } catch (err) {
+        logger.warn(`[hls-subs] Failed to remove objects for "${viewerKey}": ${err.message}`);
+      }
+      return;
+    }
     try {
       const dir = join(this._subsRoot, viewerKey);
       await rm(dir, { recursive: true, force: true });
     } catch (err) {
       logger.warn(`[hls-subs] Failed to remove dir for "${viewerKey}": ${err.message}`);
+    }
+  }
+
+  async _publishPlaylists(viewerKey, state) {
+    try {
+      for (const [lang, langState] of state.langs) {
+        await this._store.put(
+          `${viewerKey}/${lang}/playlist.m3u8`,
+          buildPlaylist(langState, this._segDuration),
+          { contentType: 'application/vnd.apple.mpegurl' },
+        );
+      }
+      await this._store.put(
+        `${viewerKey}/meta.json`,
+        JSON.stringify({ langs: [...state.langs.keys()] }),
+        { contentType: 'application/json' },
+      );
+    } catch (err) {
+      logger.warn(`[hls-subs] Failed to publish playlists for ${viewerKey}: ${err.message}`);
+    }
+  }
+
+  async _readText(key) {
+    try {
+      return await streamToString((await this._store.stream(key)).stream);
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
     }
   }
 

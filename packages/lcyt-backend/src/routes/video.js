@@ -1,6 +1,4 @@
 import { Router } from 'express';
-import * as fs from 'node:fs';
-import { join, resolve as resolvePath, basename, sep } from 'node:path';
 import rateLimit from 'express-rate-limit';
 import { langName } from 'lcyt-rtmp/src/hls-subs-manager.js';
 
@@ -239,7 +237,7 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
     }
 
     const backendOrigin = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
-    const langs = hlsSubsManager.getLanguages(key);
+    const langs = await hlsSubsManager.readLanguages(key);
     const streamInfo = await hlsManager.probeStreamInfo(key);
     const manifest = buildMasterManifest(key, backendOrigin, langs, streamInfo);
 
@@ -251,7 +249,7 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
 
   // ── GET /video/:key/subs/:lang/playlist.m3u8 — subtitle playlist ──────────
 
-  router.get('/:key/subs/:lang/playlist.m3u8', videoRateLimit, (req, res) => {
+  router.get('/:key/subs/:lang/playlist.m3u8', videoRateLimit, async (req, res) => {
     const { key, lang } = req.params;
     if (!VIDEO_KEY_RE.test(key)) {
       return res.status(400).json({ error: 'Invalid key format' });
@@ -260,7 +258,12 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
       return res.status(400).json({ error: 'Invalid language tag' });
     }
 
-    const playlist = hlsSubsManager.getPlaylist(key, lang);
+    let playlist;
+    try {
+      playlist = await hlsSubsManager.readPlaylist(key, lang);
+    } catch {
+      return res.status(502).json({ error: 'Subtitle storage unavailable' });
+    }
     if (!playlist) {
       return res.status(404).json({ error: 'Subtitle track not found or no segments yet' });
     }
@@ -273,7 +276,7 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
 
   // ── GET /video/:key/subs/:lang/:segment — WebVTT segment file ─────────────
 
-  router.get('/:key/subs/:lang/:segment', videoRateLimit, (req, res) => {
+  router.get('/:key/subs/:lang/:segment', videoRateLimit, async (req, res) => {
     const { key, lang, segment } = req.params;
 
     if (!VIDEO_KEY_RE.test(key)) {
@@ -286,22 +289,21 @@ export function createVideoRouter(_db, hlsManager, hlsSubsManager) {
       return res.status(400).json({ error: 'Invalid segment filename' });
     }
 
-    const subsRoot = hlsSubsManager._subsRoot;
-    const file     = join(subsRoot, key, lang, basename(segment));
-
-    // Path traversal guard
-    if (!resolvePath(file).startsWith(resolvePath(subsRoot) + sep)) {
-      return res.status(400).json({ error: 'Invalid path' });
+    let stream;
+    try {
+      stream = await hlsSubsManager.openSegment(key, lang, segment);
+    } catch {
+      return res.status(502).json({ error: 'Subtitle storage unavailable' });
     }
-
-    if (!fs.existsSync(file)) {
+    if (!stream) {
       return res.status(404).json({ error: 'Segment not found' });
     }
 
     setCors(res);
     res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-    fs.createReadStream(file).pipe(res);
+    stream.on('error', () => res.destroy());
+    stream.pipe(res);
   });
 
   return router;

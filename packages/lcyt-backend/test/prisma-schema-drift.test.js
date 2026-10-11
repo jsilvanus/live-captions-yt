@@ -1,6 +1,5 @@
 /**
- * prisma/schema.prisma must describe exactly the tables the SQLite DDL creates (schema.js plus the
- * plugin init functions), and the PostgreSQL schema/migration must be derived from it.
+ * prisma/schema.prisma must describe exactly the tables the SQLite DDL creates (schema.js plus prisma/sqlite/schema.sql), and the PostgreSQL schema/migration must be derived from it.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
