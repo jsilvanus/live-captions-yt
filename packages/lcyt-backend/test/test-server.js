@@ -18,9 +18,10 @@ export function createTestServer(dbPath) {
   const app = express();
   app.use(bodyParser.json());
 
-  // Mount bridge router under /production/bridge
+  // Mount bridge router under /api/v1/production/bridge to match the bridge
+  // agent's expected path (packages/lcyt-bridge/src/bridge.js line 161)
   const prodRouter = createBridgeRouter(db, bridgeManager, 'http://localhost');
-  app.use('/production/bridge', prodRouter);
+  app.use('/api/v1/production/bridge', prodRouter);
 
   return { app, db, bridgeManager };
 }

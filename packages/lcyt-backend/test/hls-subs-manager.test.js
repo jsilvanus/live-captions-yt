@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { rm, readFile } from 'node:fs/promises';
+import { createLocalObjectStore } from 'lcyt-files';
 import { formatVttTime, buildWebVTT, buildPlaylist, HlsSubsManager } from 'lcyt-rtmp/src/hls-subs-manager.js';
 
 // ---------------------------------------------------------------------------
@@ -218,5 +219,65 @@ describe('HlsSubsManager', () => {
     mgr.addCue('safeguard', '../etc/passwd', 'evil', ts);
     mgr.addCue('safeguard', 'a'.repeat(31), 'too long', ts);
     assert.deepEqual(mgr.getLanguages('safeguard'), [], 'invalid langs not tracked');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared object store: two instances, one store
+// ---------------------------------------------------------------------------
+
+describe('HlsSubsManager with a shared store', () => {
+  const storeRoot = join(tmpdir(), `lcyt-hls-subs-shared-${process.pid}`);
+  let store, owner, other;
+
+  async function text(stream) {
+    const chunks = [];
+    for await (const c of stream) chunks.push(Buffer.from(c));
+    return Buffer.concat(chunks).toString('utf8');
+  }
+
+  before(() => {
+    store = createLocalObjectStore({ baseDir: storeRoot });
+    owner = new HlsSubsManager({ store, segmentDuration: 1, windowSize: 3 });
+    other = new HlsSubsManager({ store, segmentDuration: 1, windowSize: 3 });
+  });
+
+  after(async () => {
+    await owner.stopAll();
+    await rm(storeRoot, { recursive: true, force: true });
+  });
+
+  test('another instance serves playlist, languages and segments written by the owner', async () => {
+    owner.addCue('shared1', 'en', 'Hello', new Date().toISOString());
+    owner.addCue('shared1', 'fi', 'Moi', new Date().toISOString());
+    await new Promise(r => setTimeout(r, 1300));
+
+    assert.equal(other.getPlaylist('shared1', 'en'), null, 'no in-memory state on the other instance');
+    assert.deepEqual((await other.readLanguages('shared1')).sort(), ['en', 'fi']);
+
+    const playlist = await other.readPlaylist('shared1', 'en');
+    assert.ok(playlist.includes('#EXTM3U'));
+    const seg = playlist.split('\n').find(l => l.endsWith('.vtt'));
+    const vtt = await text(await other.openSegment('shared1', 'en', seg));
+    assert.ok(vtt.includes('Hello'));
+  });
+
+  test('unknown key, language and segment give empty results', async () => {
+    assert.deepEqual(await other.readLanguages('nope'), []);
+    assert.equal(await other.readPlaylist('nope', 'en'), null);
+    assert.equal(await other.openSegment('shared1', 'en', 'seg999999.vtt'), null);
+  });
+
+  test('stopSubs removes the key from the store but not other keys', async () => {
+    owner.addCue('shared2', 'en', 'Keep', new Date().toISOString());
+    await new Promise(r => setTimeout(r, 1300));
+    await owner.stopSubs('shared1');
+    assert.equal(await other.readPlaylist('shared1', 'en'), null);
+    assert.ok(await other.readPlaylist('shared2', 'en'));
+  });
+
+  test('sweepStaleDir in shared mode keeps fresh objects', async () => {
+    await other.sweepStaleDir();
+    assert.ok(await other.readPlaylist('shared2', 'en'), 'live key survives a sweep by another instance');
   });
 });

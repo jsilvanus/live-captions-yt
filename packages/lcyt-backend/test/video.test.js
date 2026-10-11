@@ -32,8 +32,9 @@ function makeMockHlsManager({ running = [], streamInfo = {} } = {}) {
 function makeMockSubsManager({ languages = {}, playlists = {}, subsRoot = '/tmp/subs' } = {}) {
   return {
     _subsRoot: subsRoot,
-    getLanguages: (key) => languages[key] || [],
-    getPlaylist: (key, lang) => playlists[`${key}:${lang}`] || null,
+    readLanguages: async (key) => languages[key] || [],
+    readPlaylist: async (key, lang) => playlists[`${key}:${lang}`] || null,
+    openSegment: async () => null,
   };
 }
 
