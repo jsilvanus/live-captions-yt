@@ -148,7 +148,7 @@ describe('videos router', () => {
       });
       await recordingsStore.put('demo-prefix/playlist.m3u8', '#EXTM3U\n#EXTINF:1.0,x\nsegment0.ts\n');
       await recordingsStore.put('demo-prefix/segment0.ts', 'segment-bytes');
-      db.prepare('INSERT INTO videos (id, api_key, title, status, storage_type, storage_key, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      await db.prepare('INSERT INTO videos (id, api_key, title, status, storage_type, storage_key, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run('s3-video', 'demo-key', 'S3 recording', 'completed', 's3', 'demo-prefix', new Date().toISOString());
     });
 
