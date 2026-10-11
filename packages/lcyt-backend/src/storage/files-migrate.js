@@ -1,0 +1,185 @@
+import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
+import { buildVideoStorageKey } from '../db/videos.js';
+
+/**
+ * Move stored files between the local filesystem and S3 (either direction).
+ *
+ * Every step is idempotent and resumable: an object is copied only when the
+ * destination is missing or differs in size, the copy is verified by size before
+ * anything refers to it, a database row is switched only after its files are
+ * verified, and the source is removed (with `deleteSource`) only after both.
+ * Missing source files are reported, never fatal.
+ *
+ * `from`/`to` are `{ stores, captions }`: `stores` maps the object-store areas
+ * (graphics, icons, dskThumbnails, cameraThumbnails, recordings, backups) to
+ * object stores that share the same key layout on both sides, `captions` is a
+ * caption-file storage adapter (`openRead`/`openAppend`/`deleteFile`).
+ */
+export const MIGRATE_AREAS = ['graphics', 'icons', 'dskThumbnails', 'cameraThumbnails', 'recordings', 'captions', 'backups'];
+
+const emptyStats = () => ({ copied: 0, skipped: 0, failed: 0, deleted: 0, bytes: 0 });
+
+async function copyObject(src, dst, key, stats, { dryRun, deleteSource, log }) {
+  let srcMeta;
+  try {
+    srcMeta = await src.stat(key);
+  } catch {
+    stats.failed++;
+    log(`missing source object ${key}`);
+    return false;
+  }
+  let dstMeta = null;
+  try { dstMeta = await dst.stat(key); } catch { /* not there yet */ }
+  if (dstMeta && dstMeta.size === srcMeta.size) {
+    stats.skipped++;
+  } else if (dryRun) {
+    stats.copied++;
+    stats.bytes += srcMeta.size;
+    return true;
+  } else {
+    try {
+      const opened = await src.stream(key);
+      const stored = await dst.put(key, opened.stream, { contentType: srcMeta.contentType });
+      const verified = stored && stored.size != null ? stored : await dst.stat(key);
+      if (verified.size !== srcMeta.size) throw new Error(`size mismatch (${srcMeta.size} vs ${verified.size})`);
+      stats.copied++;
+      stats.bytes += srcMeta.size;
+    } catch (err) {
+      stats.failed++;
+      log(`failed to copy ${key}: ${err?.message}`);
+      return false;
+    }
+  }
+  if (deleteSource && !dryRun) {
+    await src.delete(key).then(() => { stats.deleted++; }).catch((err) => log(`could not delete source ${key}: ${err?.message}`));
+  }
+  return true;
+}
+
+async function listAll(store, prefix = '') {
+  const keys = [];
+  let cursor = null;
+  do {
+    const page = await store.list(prefix, { limit: 1000, cursor });
+    for (const item of page.items) keys.push(item.key);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return keys;
+}
+
+async function migrateStoreArea(area, from, to, opts, stats) {
+  const src = from.stores[area];
+  const dst = to.stores[area];
+  if (!src || !dst) return;
+  for (const key of await listAll(src)) await copyObject(src, dst, key, stats, opts);
+}
+
+/** DSK thumbnail rows written before the object store hold absolute paths; store mode wants the key. */
+function fixThumbnailRows(db, baseDir, stats, { dryRun, log }) {
+  if (!baseDir) return;
+  const root = resolve(baseDir);
+  // The table belongs to the DSK plugin and exists once the backend has started once.
+  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dsk_thumbnails'").get()) return;
+  const rows = db.prepare('SELECT id, storage_path FROM dsk_thumbnails').all();
+  for (const row of rows) {
+    if (!row.storage_path || !isAbsolute(row.storage_path)) continue;
+    const rel = relative(root, resolve(row.storage_path));
+    if (rel.startsWith('..') || isAbsolute(rel)) {
+      log(`thumbnail ${row.id}: ${row.storage_path} is outside ${root}, left as is`);
+      continue;
+    }
+    if (!dryRun) db.prepare('UPDATE dsk_thumbnails SET storage_path = ? WHERE id = ?').run(rel.split(sep).join('/'), row.id);
+    stats.rowsUpdated = (stats.rowsUpdated || 0) + 1;
+  }
+}
+
+async function migrateRecordings(db, direction, from, to, opts, stats) {
+  const src = from.stores.recordings;
+  const dst = to.stores.recordings;
+  if (!src || !dst) return;
+  const wantType = direction === 's3' ? 'local' : 's3';
+  const videos = db.prepare('SELECT id, api_key, storage_key FROM videos WHERE storage_type = ?').all(wantType);
+  for (const video of videos) {
+    const prefix = buildVideoStorageKey(video.api_key, video.id, video.storage_key);
+    const keys = await listAll(src, `${prefix}/`);
+    if (keys.length === 0) {
+      opts.log(`recording ${video.id}: no files under ${prefix}, row left as is`);
+      stats.failed++;
+      continue;
+    }
+    let ok = true;
+    for (const key of keys) ok = (await copyObject(src, dst, key, stats, { ...opts, deleteSource: false })) && ok;
+    if (!ok) continue; // never switch a row whose files are not all verified
+    if (!opts.dryRun) {
+      db.prepare("UPDATE videos SET storage_type = ?, storage_key = ?, updated_at = datetime('now') WHERE id = ?")
+        .run(direction === 's3' ? 's3' : 'local', direction === 's3' ? prefix : null, video.id);
+    }
+    stats.rowsUpdated = (stats.rowsUpdated || 0) + 1;
+    if (opts.deleteSource && !opts.dryRun) {
+      for (const key of keys) await src.delete(key).then(() => { stats.deleted++; }).catch(() => {});
+    }
+  }
+}
+
+async function readAll(stream) {
+  const chunks = [];
+  for await (const chunk of stream) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  return Buffer.concat(chunks);
+}
+
+async function migrateCaptions(db, direction, from, to, opts, stats) {
+  const src = from.captions;
+  const dst = to.captions;
+  if (!src || !dst) return;
+  const rows = db.prepare('SELECT id, api_key, filename, format FROM caption_files').all();
+  for (const row of rows) {
+    // Local adapter stores absolute paths, the S3 adapter object keys.
+    const isLocalRow = isAbsolute(row.filename);
+    if ((direction === 's3') !== isLocalRow) { stats.skipped++; continue; }
+    if (opts.dryRun) { stats.copied++; continue; }
+    try {
+      const opened = await src.openRead(row.api_key, row.filename, row.format);
+      const body = await readAll(opened.stream);
+      const handle = dst.openAppend(row.api_key, basename(row.filename));
+      // The local adapter appends: a file already there (earlier run, kept source) must not be written twice.
+      const existing = handle.sizeBytes();
+      if (existing === 0) await handle.write(body);
+      await handle.close();
+      if (handle.sizeBytes() !== body.length) throw new Error(`size mismatch (${body.length} vs ${handle.sizeBytes()})`);
+      db.prepare("UPDATE caption_files SET filename = ?, updated_at = datetime('now') WHERE id = ?").run(handle.storedKey, row.id);
+      stats.copied++;
+      stats.bytes += body.length;
+      if (opts.deleteSource) {
+        await src.deleteFile(row.api_key, row.filename).then(() => { stats.deleted++; }).catch(() => {});
+      }
+    } catch (err) {
+      stats.failed++;
+      opts.log(`caption file ${row.id} (${row.filename}): ${err?.message}`);
+    }
+  }
+}
+
+/**
+ * @param {{ db: object, direction: 's3'|'local', from: object, to: object, areas?: string[],
+ *   dryRun?: boolean, deleteSource?: boolean, thumbnailsBaseDir?: string, log?: Function }} args
+ * @returns {Promise<Record<string, { copied: number, skipped: number, failed: number, deleted: number, bytes: number, rowsUpdated?: number }>>}
+ */
+export async function migrateFiles({
+  db, direction, from, to, areas = MIGRATE_AREAS, dryRun = false, deleteSource = false,
+  thumbnailsBaseDir = null, log = () => {},
+}) {
+  if (direction !== 's3' && direction !== 'local') throw new Error("direction must be 's3' or 'local'");
+  const opts = { dryRun, deleteSource, log };
+  const result = {};
+  for (const area of areas) {
+    if (!MIGRATE_AREAS.includes(area)) throw new Error(`Unknown area: ${area}`);
+    const stats = result[area] = emptyStats();
+    if (area === 'recordings') await migrateRecordings(db, direction, from, to, opts, stats);
+    else if (area === 'captions') await migrateCaptions(db, direction, from, to, opts, stats);
+    else {
+      await migrateStoreArea(area, from, to, opts, stats);
+      if (area === 'dskThumbnails') fixThumbnailRows(db, thumbnailsBaseDir, stats, opts);
+    }
+  }
+  return result;
+}

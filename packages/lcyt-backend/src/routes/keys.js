@@ -1,14 +1,11 @@
 import { Router } from 'express';
-import { join, resolve, basename } from 'node:path';
-import * as fs from 'node:fs';
-import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages, safeApiKey } from '../db.js';
+import { getAllKeys, getKey, getKeyByEmail, createKey, revokeKey, deleteKey, updateKey, formatKey, deleteAllImages } from '../db.js';
 import { provisionDefaultProjectFeatures, getEnabledFeatureSet } from '../db/project-features.js';
 import { addMember, getMemberAccessLevel, getMemberCount, getAccessibleProjectsForUser } from '../db/project-members.js';
 import { createAdminMiddleware } from '../middleware/admin.js';
 import { extractAndVerifyUserToken } from '../middleware/user-auth.js';
 import { hasProjectRole } from '../middleware/project-access.js';
-
-const GRAPHICS_BASE_DIR = resolve(process.env.GRAPHICS_DIR || '/data/images');
+import { purgeKeyFiles } from '../storage/purge-key-files.js';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -39,7 +36,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * @param {{ loginEnabled?: boolean, jwtSecret?: string, settings?: import('../settings/service.js').SettingsService }} [opts]
  * @returns {Router}
  */
-export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, settings = null } = {}) {
+export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, settings = null, mediaStores = null, resolveStorage = null } = {}) {
   const router = Router();
   const adminMiddleware = createAdminMiddleware(db, jwtSecret);
 
@@ -219,7 +216,7 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
     if (loginEnabled && !hasAdminKey) {
       return _userDeleteKey(db, jwtSecret, req, res);
     }
-    return adminMiddleware(req, res, () => {
+    return adminMiddleware(req, res, async () => {
       const existing = getKey(db, req.params.key);
       if (!existing) {
         return res.status(404).json({ error: 'API key not found' });
@@ -227,15 +224,8 @@ export function createKeysRouter(db, { loginEnabled = false, jwtSecret = null, s
 
       if (req.query.permanent === 'true') {
         const imageRows = deleteAllImages(db, req.params.key);
-        for (const row of imageRows) {
-          try {
-            const safe = safeApiKey(row.api_key);
-            const filepath = join(GRAPHICS_BASE_DIR, safe, basename(row.filename));
-            if (fs.existsSync(filepath)) fs.unlinkSync(filepath);
-          } catch (e) {
-            console.warn('[keys] Could not delete image file on key deletion:', e.message);
-          }
-        }
+        // Files live in the local or S3 object stores; remove them before the rows naming them go.
+        await purgeKeyFiles(db, req.params.key, { mediaStores, resolveStorage, imageRows });
         deleteKey(db, req.params.key);
         return res.status(200).json({ key: req.params.key, deleted: true });
       } else {

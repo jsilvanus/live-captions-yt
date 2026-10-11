@@ -35,6 +35,9 @@ export async function createS3ObjectStore({
     region,
     ...(endpoint ? { endpoint, forcePathStyle: true } : {}),
     ...(credentials ? { credentials } : {}),
+    // S3-compatible stores (versitygw, R2, Hetzner, MinIO) often reject the SDK's default trailing-checksum requests.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
   });
 
   function toStoredKey(key) {

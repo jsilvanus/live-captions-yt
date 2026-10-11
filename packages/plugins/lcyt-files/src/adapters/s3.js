@@ -30,7 +30,12 @@ export async function createS3Adapter({ bucket, prefix = 'captions', region = 'a
   const { S3Client, GetObjectCommand, DeleteObjectCommand, PutObjectCommand } = await import('@aws-sdk/client-s3');
   const { Upload } = await import('@aws-sdk/lib-storage');
 
-  const clientConfig = { region };
+  const clientConfig = {
+    region,
+    // S3-compatible stores (versitygw, R2, Hetzner, MinIO) often reject the SDK's default trailing-checksum requests.
+    requestChecksumCalculation: 'WHEN_REQUIRED',
+    responseChecksumValidation: 'WHEN_REQUIRED',
+  };
   if (endpoint) {
     clientConfig.endpoint = endpoint;
     clientConfig.forcePathStyle = true;
