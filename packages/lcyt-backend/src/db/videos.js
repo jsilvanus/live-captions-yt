@@ -216,9 +216,28 @@ function listLocalFilesRecursive(rootDir, currentDir = rootDir, out = []) {
   return out;
 }
 
+// MediaMTX may still be flushing its last segment when the upload starts. Wait until the
+// directory listing (names and sizes) is identical on two scans `settleMs` apart.
+async function waitForStableDirectory(dir, { settleMs, maxWaitMs }) {
+  const snapshot = () => {
+    if (!existsSync(dir)) return '';
+    return listLocalFilesRecursive(dir).map((f) => `${f.relativePath}:${f.size}`).sort().join('|');
+  };
+  let previous = snapshot();
+  const deadline = Date.now() + maxWaitMs;
+  while (settleMs > 0 && Date.now() < deadline) {
+    await new Promise((resolveWait) => setTimeout(resolveWait, settleMs));
+    const current = snapshot();
+    if (current === previous) return;
+    previous = current;
+  }
+}
+
 export async function syncVideoRecordingToStorage(db, apiKey, videoId, {
   recordingsStore = null,
   maxConcurrency = 4,
+  settleMs = 1000,
+  maxWaitMs = 30000,
 } = {}) {
   const video = getVideo(db, apiKey, videoId);
   if (!video || video.storageType !== 's3') return;
@@ -230,6 +249,7 @@ export async function syncVideoRecordingToStorage(db, apiKey, videoId, {
   const dir = getVideoStorageDir(apiKey, videoId);
   const prefix = video.storageKey || buildVideoStorageKey(apiKey, videoId);
   try {
+    await waitForStableDirectory(dir, { settleMs, maxWaitMs });
     const files = listLocalFilesRecursive(dir);
     let cursor = 0;
     let totalBytes = 0;
@@ -256,6 +276,8 @@ export async function syncVideoRecordingToStorage(db, apiKey, videoId, {
     if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   } catch (err) {
     logger.warn(`[videos] S3 upload failed for recording ${videoId}, falling back to local storage: ${err?.message}`);
+    // Do not leave a half-uploaded copy behind; the local files stay the source of truth.
+    try { await recordingsStore.deletePrefix?.(prefix); } catch { /* best effort */ }
     updateVideo(db, apiKey, videoId, { storageType: 'local' });
   }
 }

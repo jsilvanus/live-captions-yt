@@ -12,13 +12,15 @@ export async function createMediaStores(settings = null) {
   const dskThumbnailsDir = resolve(process.env.DSK_THUMBNAILS_DIR || join(process.cwd(), 'data', 'dsk-thumbnails'));
   const cameraThumbnailsDir = resolve(process.env.CAMERA_THUMBNAILS_DIR || '/data/camera-thumbnails');
   const recordingsDir = resolve(process.env.VIDEOS_STORAGE_DIR || join(process.cwd(), 'recordings'));
+  const backupsDir = resolve(process.env.BACKUP_DIR || '/backups');
 
-  const [graphicsStore, iconsStore, dskThumbnailsStore, cameraThumbnailsStore, recordingsStore] = await Promise.all([
+  const [graphicsStore, iconsStore, dskThumbnailsStore, cameraThumbnailsStore, recordingsStore, backupsStore] = await Promise.all([
     createObjectStoreFromEnv({ settings, localBaseDir: graphicsDir, s3Prefix: 'graphics' }),
     createObjectStoreFromEnv({ settings, localBaseDir: iconsDir, s3Prefix: 'icons' }),
     createObjectStoreFromEnv({ settings, localBaseDir: dskThumbnailsDir, s3Prefix: 'thumbnails/dsk' }),
     createObjectStoreFromEnv({ settings, localBaseDir: cameraThumbnailsDir, s3Prefix: 'thumbnails/camera' }),
     createObjectStoreFromEnv({ settings, localBaseDir: recordingsDir, s3Prefix: 'recordings' }),
+    createObjectStoreFromEnv({ settings, localBaseDir: backupsDir, s3Prefix: 'backups' }),
   ]);
 
   return {
@@ -27,5 +29,6 @@ export async function createMediaStores(settings = null) {
     dskThumbnailsStore,
     cameraThumbnailsStore,
     recordingsStore,
+    backupsStore,
   };
 }

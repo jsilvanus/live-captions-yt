@@ -1,11 +1,12 @@
 import logger from 'lcyt/logger';
-import { app, db, store, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics } from './server.js';
+import { app, db, store, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
 import { cleanRevokedKeys } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
 import { compactHourlyRollups } from './db/usage-rollups.js';
 import { kindForMetric } from './metrics/registry.js';
 import { isLocalMode, resolveLocalBind } from './local-mode.js';
+import { isMediaStorageS3 } from './storage/media-stores.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -55,14 +56,16 @@ function scheduleRearmable(getIntervalMs, fn) {
 
 const BACKUP_DAYS = parseBackupDays(settings.get('retention.backup_days')); // caps at MAX_BACKUP_DAYS
 const BACKUP_DIR = process.env.BACKUP_DIR || '/backups'; // Tier A path
+// FILE_STORAGE=s3: backups go to the bucket (backups/<date>/lcyt-backend.db); local keeps BACKUP_DIR.
+const BACKUP_TARGET = isMediaStorageS3(settings) ? mediaStores.backupsStore : BACKUP_DIR;
 
 if (BACKUP_DAYS > 0) {
   async function doBackup() {
     try {
-      const dir = await runBackup(db, BACKUP_DIR);
+      const dir = await runBackup(db, BACKUP_TARGET);
       logger.info(`[backup] Saved database to ${dir}`);
       const days = parseBackupDays(settings.get('retention.backup_days'));
-      const removed = await cleanOldBackups(BACKUP_DIR, days);
+      const removed = await cleanOldBackups(BACKUP_TARGET, days);
       if (removed > 0) logger.info(`[backup] Removed ${removed} backup(s) older than ${days} days`);
     } catch (err) {
       logger.error('[backup] Error:', err.message);

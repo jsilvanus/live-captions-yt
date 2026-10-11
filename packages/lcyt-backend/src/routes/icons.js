@@ -43,7 +43,7 @@ const ICONS_DIR = resolve(process.env.ICONS_DIR || '/data/icons');
  * @param {string} apiKey
  * @returns {string}
  */
-function iconKeySegment(apiKey) {
+export function iconKeySegment(apiKey) {
   const raw = String(apiKey ?? '');
   const safe = raw.replace(/[^a-zA-Z0-9-]/g, '_').slice(0, 40);
   if (safe === raw) return safe;
