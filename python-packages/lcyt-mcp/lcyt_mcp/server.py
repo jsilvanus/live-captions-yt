@@ -31,7 +31,7 @@ async def _backend_get(path: str, headers: dict) -> str:
     if not BACKEND_URL:
         return json.dumps({"error": "LCYT_BACKEND_URL is not configured"})
     async with httpx.AsyncClient() as client:
-        r = await client.get(f"{BACKEND_URL}{path}", headers=headers)
+        r = await client.get(f"{BACKEND_URL}/api/v1{path}", headers=headers)
         return r.text
 
 
@@ -40,7 +40,7 @@ async def _backend_post(path: str, headers: dict, body: dict | None = None) -> s
         return json.dumps({"error": "LCYT_BACKEND_URL is not configured"})
     async with httpx.AsyncClient() as client:
         r = await client.post(
-            f"{BACKEND_URL}{path}",
+            f"{BACKEND_URL}/api/v1{path}",
             headers={"Content-Type": "application/json", **headers},
             json=body,
         )

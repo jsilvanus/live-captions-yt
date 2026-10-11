@@ -6,12 +6,12 @@ def _auth(token):
 
 
 def test_sync_returns_200(client, session_token):
-    res = client.post("/sync/", headers=_auth(session_token))
+    res = client.post("/api/v1/sync/", headers=_auth(session_token))
     assert res.status_code == 200
 
 
 def test_sync_response_fields(client, session_token):
-    res = client.post("/sync/", headers=_auth(session_token))
+    res = client.post("/api/v1/sync/", headers=_auth(session_token))
     data = res.get_json()
     assert isinstance(data["syncOffset"], int)
     assert isinstance(data["roundTripTime"], int)
@@ -21,5 +21,5 @@ def test_sync_response_fields(client, session_token):
 
 
 def test_sync_no_auth(client):
-    res = client.post("/sync/")
+    res = client.post("/api/v1/sync/")
     assert res.status_code == 401

@@ -118,8 +118,8 @@ def create_app(testing: bool = False) -> Flask:
     # -------------------------------------------------------------------------
     # Blueprints
     # -------------------------------------------------------------------------
-    app.register_blueprint(live_bp, url_prefix="/live")
-    app.register_blueprint(captions_bp, url_prefix="/captions")
-    app.register_blueprint(sync_bp, url_prefix="/sync")
+    app.register_blueprint(live_bp, url_prefix="/api/v1/live")
+    app.register_blueprint(captions_bp, url_prefix="/api/v1/captions")
+    app.register_blueprint(sync_bp, url_prefix="/api/v1/sync")
 
     return app

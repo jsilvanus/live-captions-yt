@@ -20,7 +20,7 @@ sealed class SseEvent {
 }
 
 /**
- * JSON payload received on the `caption` SSE event from `GET /viewer/:key`.
+ * JSON payload received on the `caption` SSE event from `GET /api/v1/viewer/:key`.
  *
  * Fields mirror the backend's `broadcastToViewers()` call in captions.js:
  *   { text, composedText?, sequence, timestamp, translations?, codes? }
@@ -34,7 +34,7 @@ data class CaptionPayload(
 )
 
 /**
- * Connects to `GET {backendUrl}/viewer/{viewerKey}` and emits [SseEvent]s.
+ * Connects to `GET {backendUrl}/api/v1/viewer/{viewerKey}` and emits [SseEvent]s.
  *
  * The flow never completes on its own — it reconnects automatically with
  * exponential back-off (1 s → 2 s → 4 s … max 30 s) after any network error.
@@ -48,7 +48,7 @@ fun sseFlow(backendUrl: String, viewerKey: String): Flow<SseEvent> = flow {
         .readTimeout(60, TimeUnit.SECONDS) // must be > heartbeat interval (25 s)
         .build()
 
-    val url = "${backendUrl.trimEnd('/')}/viewer/${viewerKey.trim()}"
+    val url = "${backendUrl.trimEnd('/')}/api/v1/viewer/${viewerKey.trim()}"
     var backoffMs = 1_000L
 
     while (true) {

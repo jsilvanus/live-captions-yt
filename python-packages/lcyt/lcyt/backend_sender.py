@@ -7,6 +7,8 @@ from typing import Any
 
 from .errors import NetworkError
 
+API_PREFIX = "/api/v1"
+
 
 class BackendCaptionSender:
     """Send live captions via an lcyt-backend relay server.
@@ -89,7 +91,7 @@ class BackendCaptionSender:
         Raises:
             NetworkError: On non-2xx response or network failure.
         """
-        url = f"{self._backend_url}{path}"
+        url = f"{self._backend_url}{API_PREFIX}{path}"
         data = json.dumps(body).encode() if body is not None else None
 
         headers = {"Content-Type": "application/json"}

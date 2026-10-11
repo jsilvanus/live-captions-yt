@@ -59,19 +59,19 @@ export class ProjectAdminClient {
     const offset = options.offset || 0;
 
     const params = new URLSearchParams({ limit, offset });
-    return this._request('GET', `/admin/keys?${params.toString()}`);
+    return this._request('GET', `/api/v1/admin/keys?${params.toString()}`);
   }
 
   async getProject(apiKey) {
-    return this._request('GET', `/admin/projects/${apiKey}`);
+    return this._request('GET', `/api/v1/admin/projects/${apiKey}`);
   }
 
   async updateProject(apiKey, updates) {
-    return this._request('PUT', `/admin/projects/${apiKey}`, updates);
+    return this._request('PUT', `/api/v1/admin/projects/${apiKey}`, updates);
   }
 
   async deleteProject(apiKey) {
-    return this._request('DELETE', `/admin/projects/${apiKey}`);
+    return this._request('DELETE', `/api/v1/admin/projects/${apiKey}`);
   }
 
   async getProjectFeatures(apiKey) {
@@ -80,7 +80,7 @@ export class ProjectAdminClient {
   }
 
   async setProjectFeatures(apiKey, features) {
-    return this._request('PUT', `/admin/projects/${apiKey}/features`, { features });
+    return this._request('PUT', `/api/v1/admin/projects/${apiKey}/features`, { features });
   }
 
   async getProjectMembers(apiKey) {
@@ -89,7 +89,7 @@ export class ProjectAdminClient {
   }
 
   async getDeviceRoles(apiKey) {
-    return this._request('GET', `/admin/projects/${apiKey}/device-roles`);
+    return this._request('GET', `/api/v1/admin/projects/${apiKey}/device-roles`);
   }
 }
 

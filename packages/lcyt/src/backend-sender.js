@@ -1,5 +1,7 @@
 import { NetworkError } from './errors.js';
 
+const API_PREFIX = '/api/v1';
+
 /**
  * Client for sending live captions via an lcyt-backend relay.
  *
@@ -92,7 +94,7 @@ export class BackendCaptionSender {
     }
 
 
-    const res = await fetch(`${this.backendUrl}${path}`, {
+    const res = await fetch(`${this.backendUrl}${API_PREFIX}${path}`, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined

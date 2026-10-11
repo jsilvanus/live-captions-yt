@@ -44,7 +44,7 @@ def _make_urlopen_response(data: dict):
 def _make_http_error(code: int, body: dict | None = None):
     body_bytes = json.dumps(body or {}).encode() if body else b""
     err = urllib.error.HTTPError(
-        url="http://backend.test/live",
+        url="http://backend.test/api/v1/live",
         code=code,
         msg=f"HTTP {code}",
         hdrs=None,
@@ -173,6 +173,19 @@ class TestSend:
         with patch("urllib.request.urlopen", return_value=_make_urlopen_response(resp_data)):
             s.send("test")
         assert s._sequence == 3
+
+    def test_requests_use_api_v1_prefix(self):
+        s = self._started_sender()
+        urls = []
+
+        def capture_urlopen(req):
+            urls.append(req.full_url)
+            return _make_urlopen_response({"ok": True, "sequence": 0})
+
+        with patch("urllib.request.urlopen", side_effect=capture_urlopen):
+            s.send("hello")
+
+        assert urls == ["http://backend.test/api/v1/captions"]
 
     def test_send_with_timestamp(self):
         s = self._started_sender()
