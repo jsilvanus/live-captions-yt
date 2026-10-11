@@ -1,4 +1,5 @@
 import { WizardProgress } from './WizardProgress.jsx';
+import { useSetupT } from '../../lib/useSetupT.js';
 
 /**
  * WizardShell — card container with progress bar, title, nav, and error box.
@@ -33,6 +34,7 @@ export function WizardShell({
   isLastStep,
   children,
 }) {
+  const t = useSetupT();
   return (
     <div style={{
       minHeight: '100vh',
@@ -81,7 +83,7 @@ export function WizardShell({
             onClick={onBack}
             disabled={stepIndex === 0 || saving}
           >
-            Back
+            {t('back')}
           </button>
 
           {isConfigStep && (
@@ -91,7 +93,7 @@ export function WizardShell({
               onClick={onSkip}
               disabled={saving}
             >
-              Skip
+              {t('skip')}
             </button>
           )}
 
@@ -104,7 +106,7 @@ export function WizardShell({
               onClick={onFinish}
               disabled={saving}
             >
-              {saving ? 'Saving…' : 'Finish'}
+              {saving ? t('saving') : t('finish')}
             </button>
           ) : (
             <button
@@ -113,7 +115,7 @@ export function WizardShell({
               onClick={onNext}
               disabled={nextDisabled || saving}
             >
-              Next
+              {t('next')}
             </button>
           )}
         </div>

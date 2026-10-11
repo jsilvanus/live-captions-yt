@@ -1,5 +1,5 @@
 import { INTENTS } from './lib/capabilities.js';
-import { INTENT_TEXT } from './lib/wizardText.js';
+import { useSetupT } from '../../lib/useSetupT.js';
 
 /**
  * IntentStep — "What are you producing?" Multi-select cards.
@@ -9,6 +9,7 @@ import { INTENT_TEXT } from './lib/wizardText.js';
  *   onChange: (Set<string>) => void
  */
 export function IntentStep({ intents, onChange }) {
+  const t = useSetupT();
   function toggle(id) {
     const next = new Set(intents);
     if (next.has(id)) next.delete(id); else next.add(id);
@@ -18,7 +19,7 @@ export function IntentStep({ intents, onChange }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <p style={{ margin: 0, fontSize: 13, color: 'var(--color-text-muted)' }}>
-        Pick everything you want to set up. You can skip anything you don't need, and fine-tune the individual features later.
+        {t('intentHint')}
       </p>
       {INTENTS.map(id => {
         const on = intents.has(id);
@@ -40,8 +41,8 @@ export function IntentStep({ intents, onChange }) {
               border: `1px solid ${on ? 'var(--color-accent)' : 'var(--color-border)'}`,
             }}
           >
-            <div style={{ fontWeight: 600, fontSize: 14 }}>{on ? '✓ ' : ''}{INTENT_TEXT[id].title}</div>
-            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>{INTENT_TEXT[id].desc}</div>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{on ? '✓ ' : ''}{t(`intent.${id}.title`)}</div>
+            <div style={{ fontSize: 12, color: 'var(--color-text-muted)', marginTop: 2 }}>{t(`intent.${id}.desc`)}</div>
           </button>
         );
       })}

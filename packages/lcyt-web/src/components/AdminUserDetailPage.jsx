@@ -29,6 +29,9 @@ const FEATURE_LABELS = {
   'stt-server':          'STT (Server)',
   'device-control':      'Device Control',
   embed:                 'Embed',
+  'broadcast-platforms': 'Broadcast Platforms',
+  'ai-agent':            'AI Agent',
+  'mcp-access':          'MCP Access',
 };
 
 export function AdminUserDetailPage() {

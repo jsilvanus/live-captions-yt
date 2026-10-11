@@ -26,7 +26,7 @@
 // only until every /admin/feature-policies response includes `binaryOnly`.
 const BINARY_ONLY_FALLBACK = new Set([
   'ingest', 'radio', 'hls-stream', 'preview', 'stt-server', 'device-control',
-  'graphics-server', 'cea-captions',
+  'graphics-server', 'cea-captions', 'ai-agent',
 ]);
 
 const FEATURE_GROUPS = [
@@ -79,6 +79,7 @@ const FEATURE_GROUPS = [
     label: 'Intelligence',
     features: [
       { code: 'stt-server', label: 'Server-side STT' },
+      { code: 'ai-agent',   label: 'AI agent' },
     ],
   },
   {
@@ -91,6 +92,8 @@ const FEATURE_GROUPS = [
     label: 'Integration',
     features: [
       { code: 'embed', label: 'Embed widgets' },
+      { code: 'broadcast-platforms', label: 'Broadcast platforms' },
+      { code: 'mcp-access',          label: 'MCP access' },
     ],
   },
 ];

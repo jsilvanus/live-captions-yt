@@ -134,6 +134,9 @@ export function initDb(dbPath) {
     ['device-control', 'denied'],
     ['graphics-server', 'denied'],
     ['cea-captions', 'denied'],
+    ['broadcast-platforms', 'self_service'],
+    ['mcp-access', 'self_service'],
+    ['ai-agent', 'denied'],
   ];
   const insertPolicyStmt = db.prepare(`
     INSERT INTO site_feature_policies (feature_code, mode)

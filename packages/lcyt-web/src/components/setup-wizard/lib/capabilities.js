@@ -23,7 +23,9 @@ import { applyDeps } from './applyDeps.js';
 import { computeSteps } from './computeSteps.js';
 import { cardIdsForEnabledFeatures } from '../../../lib/workflowFeatureMap.js';
 
-export const INTENTS = ['captions', 'video', 'production', 'graphics', 'devices'];
+export const PREREQUISITE_KINDS = ['configuration', 'operational', 'optional'];
+
+export const INTENTS = ['captions', 'video', 'production', 'graphics', 'devices', 'broadcast', 'ai', 'integrations'];
 
 /**
  * Questions, in display order. `showIf(answers, intents)` decides visibility;
@@ -36,6 +38,7 @@ export const QUESTIONS = [
     showIf: a => a.captionSource === 'transcribe' },
   { id: 'translate', intent: 'captions', type: 'bool' },
   { id: 'viewerPage', intent: 'captions', type: 'bool' },
+  { id: 'brandedViewer', intent: 'captions', type: 'bool', showIf: a => a.viewerPage === true },
   { id: 'broadcastCaptions', intent: 'captions', type: 'bool' },
   { id: 'saveCaptionFiles', intent: 'captions', type: 'bool' },
   // Video
@@ -54,6 +57,16 @@ export const QUESTIONS = [
   { id: 'graphicsSeparateDisplay', intent: 'graphics', type: 'bool' },
   // Operator devices
   { id: 'operatorDevices', intent: 'devices', type: 'bool' },
+  // Publishing to a platform
+  { id: 'publishYoutube', intent: 'broadcast', type: 'bool' },
+  { id: 'scheduleBroadcasts', intent: 'broadcast', type: 'bool', showIf: a => a.publishYoutube === true },
+  { id: 'viewerStats', intent: 'broadcast', type: 'bool', showIf: a => a.publishYoutube === true },
+  { id: 'publishViewerStream', intent: 'broadcast', type: 'bool' },
+  // AI and assistants
+  { id: 'aiRoles', intent: 'ai', type: 'bool' },
+  { id: 'outsideAssistant', intent: 'ai', type: 'bool' },
+  // Data from other systems
+  { id: 'externalData', intent: 'integrations', type: 'bool' },
 ];
 
 /**
@@ -79,9 +92,25 @@ export const FEATURE_RULES = [
   // Production equipment and operator devices (device roles live under device-control)
   { enable: ['device-control'], when: (i, a) => has(i, 'production') && (a.controlCameras || a.controlMixers || a.controlEncoders) },
   { enable: ['device-control'], when: (i, a) => has(i, 'devices') && a.operatorDevices === true },
+  // Publishing: YouTube channel management, or our own viewer stream (no platform account)
+  { enable: ['broadcast-platforms'], when: (i, a) => has(i, 'broadcast') && a.publishYoutube === true && (a.scheduleBroadcasts === true || a.viewerStats === true) },
+  { enable: ['hls-stream'], when: (i, a) => has(i, 'broadcast') && a.publishViewerStream === true },
+  // AI and assistants
+  { enable: ['ai-agent'], when: (i, a) => has(i, 'ai') && a.aiRoles === true },
+  { enable: ['mcp-access'], when: (i, a) => has(i, 'ai') && a.outsideAssistant === true },
   // Graphics
   { enable: ['graphics-client'], when: (i, a) => has(i, 'graphics') && (a.graphicsOnVideo || a.graphicsSeparateDisplay) },
   { enable: ['graphics-server'], when: (i, a) => has(i, 'graphics') && a.graphicsOnVideo === true },
+];
+
+/**
+ * Topic rules: Setup Hub cards some answers point at that have no feature flag
+ * of their own (viewer icons, API connectors). They only add cards and
+ * prerequisites; nothing is written to the project's features.
+ */
+export const TOPIC_RULES = [
+  { cards: ['icons'], when: (i, a) => has(i, 'captions') && a.viewerPage === true && a.brandedViewer === true },
+  { cards: ['connectors'], when: (i, a) => has(i, 'integrations') && a.externalData === true },
 ];
 
 /**
@@ -114,6 +143,19 @@ export const PREREQUISITES = [
     when: (i, a) => has(i, 'graphics') && (a.graphicsOnVideo || a.graphicsSeparateDisplay) },
   { id: 'dsk-video-path', kind: 'operational', feature: 'graphics-server', link: '/setup/ingestion',
     when: (i, a) => has(i, 'graphics') && a.graphicsOnVideo === true },
+  { id: 'platform-connection', kind: 'configuration', feature: 'broadcast-platforms', link: '/setup/broadcast-platforms',
+    when: (i, a) => has(i, 'broadcast') && a.publishYoutube === true },
+  { id: 'viewer-stream-video', kind: 'operational', feature: 'hls-stream', link: '/setup/ingestion',
+    when: (i, a) => has(i, 'broadcast') && a.publishViewerStream === true },
+  { id: 'ai-role-model', kind: 'configuration', feature: 'ai-agent', link: '/setup/ai-roles',
+    when: (i, a) => has(i, 'ai') && a.aiRoles === true },
+  { id: 'mcp-token', kind: 'configuration', feature: 'mcp-access', link: '/setup/mcp-access',
+    when: (i, a) => has(i, 'ai') && a.outsideAssistant === true },
+  // Topic prerequisites carry no feature flag: `feature` is null
+  { id: 'connector', kind: 'configuration', feature: null, link: '/setup/connectors',
+    when: (i, a) => has(i, 'integrations') && a.externalData === true },
+  { id: 'viewer-icon', kind: 'optional', feature: null, link: '/setup/icons',
+    when: (i, a) => has(i, 'captions') && a.viewerPage === true && a.brandedViewer === true },
 ];
 
 /**
@@ -161,38 +203,36 @@ export function resolveIntent(intents, answers = {}) {
   }
   const autoEnabled = applyDeps(features);
   const prerequisites = PREREQUISITES
-    .filter(p => p.when(set, answers) && features.has(p.feature))
+    .filter(p => p.when(set, answers) && (p.feature === null || features.has(p.feature)))
     .map(({ id, kind, feature, link }) => ({ id, kind, feature, link }));
   return {
     features,
     autoEnabled,
     steps: computeSteps(features, set),
-    hubCards: cardIdsForEnabledFeatures([...features].map(code => ({ code, enabled: true }))),
+    hubCards: new Set([
+      ...cardIdsForEnabledFeatures([...features].map(code => ({ code, enabled: true }))),
+      ...TOPIC_RULES.filter(r => r.when(set, answers)).flatMap(r => r.cards),
+    ]),
     prerequisites,
     questions: visibleQuestions(set, answers),
   };
 }
 
 /**
- * Plain-language lines describing the production flow the enabled features make.
+ * Ids of the production-flow lines (`setupWizard.flow.<id>` in the locales) the enabled features make.
  * @param {Set<string>} features
  * @returns {string[]}
  */
 export function describeFlow(features) {
   const f = c => features.has(c);
-  const lines = [];
-  if (f('ingest')) lines.push('Live video comes into LCYT.');
-  if (f('device-control')) lines.push('LCYT controls your production equipment and/or dedicated operator devices.');
-  if (f('stt-server')) lines.push('Audio from the live stream is transcribed on the server.');
-  if (f('captions')) lines.push('Captions are delivered to your caption targets.');
-  if (f('translations')) lines.push('Captions are also translated.');
-  if (f('graphics-server')) lines.push('Graphics are rendered and composited onto the live video.');
-  else if (f('graphics-client')) lines.push('Graphics are shown on a separate display.');
-  if (f('restream')) lines.push('The video is relayed to your destinations.');
-  if (f('hls-stream')) lines.push('An HLS video stream is published.');
-  if (f('radio')) lines.push('An audio-only stream is published.');
-  if (f('crop')) lines.push('A vertical crop of the video is produced.');
-  if (f('preview')) lines.push('A live preview thumbnail is generated.');
-  if (f('file-saving')) lines.push('Caption files are saved.');
-  return lines;
+  const ids = [];
+  if (f('ingest')) ids.push('ingest');
+  if (f('device-control')) ids.push('device-control');
+  if (f('stt-server')) ids.push('stt-server');
+  if (f('captions')) ids.push('captions');
+  if (f('translations')) ids.push('translations');
+  if (f('graphics-server')) ids.push('graphics-server');
+  else if (f('graphics-client')) ids.push('graphics-client');
+  for (const c of ['restream', 'hls-stream', 'radio', 'crop', 'preview', 'file-saving', 'broadcast-platforms', 'ai-agent', 'mcp-access']) if (f(c)) ids.push(c);
+  return ids;
 }
