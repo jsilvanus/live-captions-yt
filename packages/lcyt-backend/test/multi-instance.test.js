@@ -70,12 +70,12 @@ describe('two instances on one PostgreSQL', () => {
   let db;
   const nodes = [];
 
-  async function node(id) {
+  async function node(id, sendLock = null) {
     const eventBus = new EventBus();
     const relay = startPgBus({ eventBus, db, connectionString: process.env.DATABASE_URL, instanceId: id, channel, log: silent });
     const leases = createLeases(db, { instanceId: id, enforce: true });
     const cluster = { shared: true, leases, instanceId: id };
-    const store = new SessionStore({ db, eventBus, cluster, restore: restoreSessionRuntime, cleanupInterval: 0, sessionTtl: 60_000 });
+    const store = new SessionStore({ db, eventBus, cluster, restore: restoreSessionRuntime, sendLock, cleanupInterval: 0, sessionTtl: 60_000 });
     const auth = createAuthMiddleware(SECRET);
     const app = express();
     app.use(express.json());
@@ -190,6 +190,49 @@ describe('two instances on one PostgreSQL', () => {
     assert.equal(A.store.has(sessionId), false);
     assert.equal(await db.sessions.count({ where: { session_id: sessionId } }), 0);
     assert.ok(await until(() => !B.store.has(sessionId)), 'B dropped its copy');
+  });
+
+  for (const mode of ['atomic', 'lease']) {
+    it(`never reuses a sequence number when two instances send at the same time (${mode})`, async (t) => {
+      if (!PG()) return t.skip('needs PostgreSQL');
+      const X = await node(`inst-x-${mode}`, mode);
+      const Y = await node(`inst-y-${mode}`, mode);
+      const start = await fetch(`${X.url}/live`, { method: 'POST', headers: json(), body: JSON.stringify({ apiKey: 'multi-key', domain: `https://race-${mode}.example`, targets: [{ id: 't1', type: 'viewer', viewerKey: `race-${mode}` }] }) });
+      const { token } = await start.json();
+      await fetch(`${Y.url}/live`, { headers: json(token) }); // load it on Y
+      const sse = await openSse(`${X.url}/events?token=${token}`);
+      assert.ok(await until(() => sse.events.some((e) => e.event === 'connected')));
+      const total = 20;
+      await Promise.all(Array.from({ length: total }, (_, i) => {
+        const n = i % 2 ? X : Y;
+        return fetch(`${n.url}/captions`, { method: 'POST', headers: json(token), body: JSON.stringify({ captions: [{ text: `race ${i}` }] }) });
+      }));
+      assert.ok(await until(() => sse.events.filter((e) => e.event === 'caption_result' || e.event === 'caption_error').length === total, 10000));
+      const seqs = sse.events.filter((e) => e.event === 'caption_result').map((e) => e.data.sequence);
+      assert.equal(seqs.length, total, 'no send failed');
+      assert.equal(new Set(seqs).size, total, `all numbers distinct: ${seqs}`);
+      const sorted = [...seqs].sort((a, b) => a - b);
+      assert.equal(sorted[total - 1] - sorted[0], total - 1, 'and contiguous');
+      sse.close();
+    });
+  }
+
+  it('reserveSequence puts the reserved number on the session and every YouTube sender', async (t) => {
+    if (!PG()) return t.skip('needs PostgreSQL');
+    const A = nodes.find((n) => n.id === 'inst-a');
+    const start = await fetch(`${A.url}/live`, { method: 'POST', headers: json(), body: JSON.stringify({ apiKey: 'multi-key', domain: 'https://reserve.example', targets: [{ id: 't1', type: 'viewer', viewerKey: 'reserve-v' }] }) });
+    const { sessionId, sequence: first } = await start.json();
+    const session = A.store.get(sessionId);
+    session.sender = { sequence: 0 };
+    session.extraTargets = [{ type: 'youtube', sender: { sequence: 0 } }, { type: 'viewer' }];
+    await A.store.reserveSequence(session);
+    assert.equal(session.sequence, first);
+    assert.equal(session.sender.sequence, first);
+    assert.equal(session.extraTargets[0].sender.sequence, first);
+    await A.store.reserveSequence(session);
+    assert.equal(session.sender.sequence, first + 1, 'each reservation takes the next number');
+    assert.equal((await db.sessions.findUnique({ where: { session_id: sessionId } })).sequence, first + 2, 'stored value is the next free number');
+    session.sender = null; session.extraTargets = [];
   });
 
   it('relays viewer captions to viewers connected to another instance', async (t) => {
