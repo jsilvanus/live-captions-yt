@@ -23,3 +23,9 @@ Each ingest key (stream key resolved by `resolveApiKeyFromIngestStreamKey`) is a
 
 ## Not before
 Real MediaMTX and fleet runs of L4 on two hosts.
+
+## Other managers (decided 2026-10-12)
+Not wrapped by L4 on purpose; revisit together with this plan:
+- **HLS, radio, preview:** served from the local MediaMTX of the key. They stay on the relay instance until keys are assigned to servers (step 2); then the owner of a key is the instance next to its server, and the public HLS/radio/preview routes resolve the server per key.
+- **Perception and music detection:** run per stream on the instance that sees it. They need the same per-key lease and forwarding as relay/crop/STT (one more `withOwnership` spec); worth doing when more than one instance runs them.
+- **DSK overlay images:** the forwarded call works, but the image files sit in `GRAPHICS_DIR` of the storing instance. Storing graphics in S3 (like caption files) would remove the shared-volume requirement.

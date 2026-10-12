@@ -1302,7 +1302,13 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   async setDskOverlay(apiKey, names, imagePaths) {
-    const effective = imagePaths.filter(Boolean);
+    // Paths are under GRAPHICS_DIR, which must be the same shared volume on every instance when a
+    // call is forwarded here by another instance (shared mode); a file this host lacks is skipped.
+    const effective = imagePaths.filter(Boolean).filter((p) => {
+      if (fs.existsSync(p)) return true;
+      logger.warn(`[rtmp] DSK overlay image not found on this host, skipped: ${p}`);
+      return false;
+    });
     if (effective.length === 0) {
       this._dskState.delete(apiKey);
     } else {

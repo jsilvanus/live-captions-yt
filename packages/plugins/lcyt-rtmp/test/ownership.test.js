@@ -20,6 +20,7 @@ class FakeManager extends EventEmitter {
   async applyPosition(key, pos) { this.calls.push(['applyPosition', key]); return { ok: true, pos }; }
   async applyForSource(db, key, src) { this.calls.push(['applyForSource', db, key, src]); return 'applied'; }
   async setDskRtmpSource() { return 'dsk'; }
+  async setDskOverlay(key, names, paths) { this.calls.push(['setDskOverlay', key, names, paths]); }
   markPublishing(key) { this.publishing.add(key); }
   markNotPublishing(key) { this.publishing.delete(key); }
   isPublishing(key) { return this.publishing.has(key); }
@@ -133,6 +134,14 @@ describe('withOwnership', () => {
     // Not owned by anyone: runs locally.
     assert.equal(await b.wrapped.writeCaption('other', 'x'), false);
     assert.deepEqual(b.manager.calls.at(-1), ['writeCaption', 'other', 'x']);
+  });
+
+  test('setDskOverlay goes to the owner with names and paths', async () => {
+    const { a, b } = cluster();
+    await a.wrapped.start('k1', [{ slot: 1 }]);
+    await b.wrapped.setDskOverlay('k1', ['logo'], ['/data/images/k1/logo.png']);
+    assert.deepEqual(a.manager.calls.at(-1), ['setDskOverlay', 'k1', ['logo'], ['/data/images/k1/logo.png']]);
+    assert.equal(b.manager.calls.some((c) => c[0] === 'setDskOverlay'), false);
   });
 
   test('applyForSource keeps its db argument local and forwards the rest', async () => {
