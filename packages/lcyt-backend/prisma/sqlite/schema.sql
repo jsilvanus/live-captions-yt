@@ -298,6 +298,13 @@ CREATE TABLE IF NOT EXISTS "bus_events" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "bus_payloads" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "created_at" BIGINT NOT NULL,
+    "payload" TEXT NOT NULL
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "caption_errors" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "api_key" TEXT NOT NULL,
@@ -519,6 +526,15 @@ CREATE TABLE IF NOT EXISTS "icons" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "instances" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "hostname" TEXT NOT NULL,
+    "url" TEXT,
+    "started_at" BIGINT NOT NULL,
+    "heartbeat_at" BIGINT NOT NULL
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "key_storage_config" (
     "api_key" TEXT NOT NULL PRIMARY KEY,
     "storage_type" TEXT NOT NULL DEFAULT 's3',
@@ -529,6 +545,13 @@ CREATE TABLE IF NOT EXISTS "key_storage_config" (
     "access_key_id" TEXT,
     "secret_access_key" TEXT,
     "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "leases" (
+    "name" TEXT NOT NULL PRIMARY KEY,
+    "owner" TEXT NOT NULL,
+    "expires_at" BIGINT NOT NULL
 );
 
 -- CreateTable
@@ -1148,6 +1171,9 @@ CREATE INDEX IF NOT EXISTS "idx_bus_events_ts" ON "bus_events"("ts");
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_bus_events_project" ON "bus_events"("project_id");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_bus_payloads_created" ON "bus_payloads"("created_at");
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_caption_targets_api_key" ON "caption_targets"("api_key");

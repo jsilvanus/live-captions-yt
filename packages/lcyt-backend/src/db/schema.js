@@ -739,6 +739,35 @@ export function initSqliteSchema(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_project ON bus_events(project_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_bus_events_ts ON bus_events(ts)');
 
+  // ── Multi-instance coordination (plan multi-instance, L1) ─────────────────
+  // leases: named lock so one instance runs a shared chore. instances: one row per
+  // running process. bus_payloads: bus events too big for a PostgreSQL NOTIFY.
+  // SQLite installs are single-process; the tables exist so both dialects share a schema.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS leases (
+      name       TEXT PRIMARY KEY,
+      owner      TEXT NOT NULL,
+      expires_at BIGINT NOT NULL
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS instances (
+      id           TEXT PRIMARY KEY,
+      hostname     TEXT NOT NULL,
+      url          TEXT,
+      started_at   BIGINT NOT NULL,
+      heartbeat_at BIGINT NOT NULL
+    )
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS bus_payloads (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at BIGINT NOT NULL,
+      payload    TEXT NOT NULL
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_bus_payloads_created ON bus_payloads(created_at)');
+
   // ── Server settings (plan_env_to_ui_settings.md) ──────────────────────────
   // Site-scope, one row per explicitly-saved setting. Absence of a row means
   // "fall through to env/default" — this table never mirrors defaults, so a

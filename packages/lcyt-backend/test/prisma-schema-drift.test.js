@@ -4,7 +4,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,12 +46,19 @@ test('schema.prisma matches the SQLite tables (names, columns, nullability, prim
   }
 });
 
-test('PostgreSQL schema and initial migration are derived from schema.prisma', () => {
+test('PostgreSQL schema and migrations are derived from schema.prisma', () => {
   execFileSync('node', ['scripts/prisma-pg.mjs', '--check'], { cwd: root });
   const sql = execFileSync('npx', ['prisma', 'migrate', 'diff', '--from-empty', '--to-schema-datamodel',
     'prisma/schema.postgresql.prisma', '--script'], { cwd: root, encoding: 'utf8' });
-  assert.equal(readFileSync(join(root, 'prisma/postgres/migrations/0001_init.sql'), 'utf8'), sql,
-    'prisma/postgres/migrations/0001_init.sql is stale: npm run db:pg:build -- --migration 0001_init');
+  // 0001_init.sql is the full schema as of the first release; later migrations add tables by hand.
+  // Together their DDL (CREATE statements, order ignored) must equal the schema's.
+  const ddl = (text) => text.split(/;\s*\n/).map((st) => st.replace(/--[^\n]*\n/g, '').replace(/\s+/g, ' ').trim())
+    .filter((st) => /^CREATE /.test(st)).sort();
+  const dir = join(root, 'prisma/postgres/migrations');
+  const migrated = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
+    .flatMap((f) => ddl(readFileSync(join(dir, f), 'utf8'))).sort();
+  assert.deepEqual(migrated, ddl(sql),
+    'prisma/postgres/migrations/*.sql no longer add up to schema.postgresql.prisma: add a migration (prisma migrate diff --from-schema-datamodel <old> --to-schema-datamodel prisma/schema.postgresql.prisma --script)');
 });
 
 test('prisma/sqlite/schema.sql matches schema.prisma', async () => {

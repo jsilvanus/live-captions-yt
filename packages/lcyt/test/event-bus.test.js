@@ -220,3 +220,40 @@ describe('EventBus taps (audit sink hook)', () => {
     assert.equal(res.frames.length, 1);
   });
 });
+
+describe('EventBus cross-instance hooks', () => {
+  it('forward() sees local publishes only; publishRemote() reaches SSE and opted-in listeners but not taps, forwarders or plain listeners', () => {
+    const bus = new EventBus();
+    const forwarded = [];
+    const tapped = [];
+    const plain = [];
+    const remoteAware = [];
+    const frames = [];
+    bus.forward((e) => forwarded.push(e.topic));
+    bus.tap((e) => tapped.push(e.topic));
+    bus.subscribe('p1', null, (e) => plain.push(e.topic));
+    bus.subscribe('p1', null, (e) => remoteAware.push(e.topic), { remote: true });
+    bus.subscribeSse('p1', null, { write: (f) => frames.push(f) });
+
+    bus.publish('p1', 'local.one', { a: 1 });
+    bus.publishRemote({ topic: 'remote.one', projectId: 'p1', ts: 5, data: { b: 2 } });
+
+    assert.deepEqual(forwarded, ['local.one']);
+    assert.deepEqual(tapped, ['local.one']);
+    assert.deepEqual(plain, ['local.one']);
+    assert.deepEqual(remoteAware, ['local.one', 'remote.one']);
+    assert.equal(frames.length, 2);
+    assert.match(frames[1], /^event: remote\.one\n/);
+  });
+
+  it('publishRemote ignores malformed envelopes and a throwing forwarder does not break publish', () => {
+    const bus = new EventBus();
+    const seen = [];
+    bus.forward(() => { throw new Error('boom'); });
+    bus.subscribe('p1', null, (e) => seen.push(e.topic));
+    bus.publishRemote(null);
+    bus.publishRemote({ topic: 1, projectId: 'p1' });
+    bus.publish('p1', 'x.y', {});
+    assert.deepEqual(seen, ['x.y']);
+  });
+});

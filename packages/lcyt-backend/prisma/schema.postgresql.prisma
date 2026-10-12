@@ -358,6 +358,15 @@ model bus_events {
   @@index([project_id], map: "idx_bus_events_project")
 }
 
+/// Large event-bus payloads that do not fit in a NOTIFY message (multi-instance); pruned after minutes.
+model bus_payloads {
+  id         Int    @id @default(autoincrement())
+  created_at BigInt
+  payload    String
+
+  @@index([created_at], map: "idx_bus_payloads_created")
+}
+
 model caption_errors {
   id         Int     @id @default(autoincrement())
   api_key    String
@@ -587,6 +596,15 @@ model icons {
   size_bytes    BigInt @default(0)
 }
 
+/// One row per running backend process (multi-instance); heartbeat_at is epoch ms.
+model instances {
+  id           String  @id
+  hostname     String
+  url          String?
+  started_at   BigInt
+  heartbeat_at BigInt
+}
+
 model key_storage_config {
   api_key           String  @id
   storage_type      String  @default("s3")
@@ -597,6 +615,13 @@ model key_storage_config {
   access_key_id     String?
   secret_access_key String?
   updated_at        String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+}
+
+/// Named lock so exactly one instance runs a shared chore; expires_at is epoch ms.
+model leases {
+  name       String @id
+  owner      String
+  expires_at BigInt
 }
 
 model mcp_tokens {

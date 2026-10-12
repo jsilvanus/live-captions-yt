@@ -1,5 +1,5 @@
 import logger from 'lcyt/logger';
-import { app, db, store, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
+import { app, db, store, cluster, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
 import { cleanRevokedKeys, getDialect } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
@@ -180,6 +180,7 @@ async function shutdown() {
     try { await session.sender.end(); } catch {}
   }
   store.stopCleanup();
+  try { await cluster.stop(); } catch {}
   // Drain buffered usage rollups before the DB handle goes away.
   try { metrics.flushNow(); } catch {}
   metrics.stop();
