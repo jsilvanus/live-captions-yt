@@ -422,3 +422,13 @@ addition to the role-picker card.
 The ~120 ms (4 frame) stdin-command delay was measured on a local `-re` lavfi source with the `spawn` runner. A live RTSP input has its own jitter buffer, so the real delay will be larger and is not measured. The fleet path (`FleetFfmpegRunner.stdin` -> `job.write`) relies on the fffleet worker leaving ffmpeg's stdin open for `kind: 'stream'` jobs without `-nostdin`; not exercised here. `DockerFfmpegRunner` starts the container with stdin ignored, so docker is restart-only (could be done with `docker run -i` + piping `proc.stdin` instead of host stdin).
 
 Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpRelayManager.writeCaption()` (CEA-708 stdin path, `proc.stdin`) only works through the fleet runner or `spawnFfmpeg`; `test/rtmp-manager.unit.test.js` asserts that. Adding a `stdin` getter to the local runner would silently change that path, so the crop manager reads `handle.proc.stdin` instead.
+
+---
+
+## Multi-instance: per-session counters and `getByApiKey` listeners only know the instance that holds the session
+
+**Where:** `packages/lcyt-backend/src/store.js` (`captionsSent`/`captionsFailed`, `getByApiKey`), users of `getByApiKey` (cue, sound and tracker listeners, perception ingest), `docs/DEPLOY.md` "Several backend instances".
+
+**Found:** With PostgreSQL a caption session is served by any instance (L2), but the counters in the session object are per instance, and code that looks a session up by api key (not by session id) only sees sessions loaded on its own instance.
+
+**Skipped because:** Persisting counters per request would add a write to the hot caption path, and the `getByApiKey` users are event listeners that would each need their own cross-instance story. Single-instance behaviour is unaffected. Documented as a known gap; revisit with L4 (relay ownership), which has to pin those features to an owner anyway.
