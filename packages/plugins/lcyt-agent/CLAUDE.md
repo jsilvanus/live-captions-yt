@@ -1,5 +1,8 @@
 # `packages/plugins/lcyt-agent` — AI Agent Plugin (v0.1.0)
 
+
+> **Database access:** every function takes the async Prisma client (`db`, from `initDb()` in lcyt-backend; it carries `db.$dialect` and `db.$util = { sqlNow, num }`) and returns a Promise, so callers must `await`. Works on SQLite and PostgreSQL. Tables come from the backend Prisma schema; the plugin's `run*Migrations` functions are no-ops. Tests use `initDb(':memory:')` with `LCYT_DB_SQL_COMPAT=1` and `await db.close()` in `after`.
+
 Central AI service for LCYT. Owns AI configuration (per-user embedding/LLM provider settings), embedding computation, context window management, LLM-based event cue evaluation, the AI model provider registry (`plan_ai_model_registry.md`), and the AI Roles Framework (`plan_ai_roles_framework.md`) — role catalog, the shared `agentic_chat` turn loop, Production Assistant's suggestion queue, and the Tracker/Describer continuous-vision roles. Other plugins delegate AI calls to the agent. Imported by `lcyt-backend` as `lcyt-agent`.
 
 **Main entry:** `src/api.js`
@@ -42,12 +45,12 @@ app.use('/scene', createSceneRouter(auth, sceneState));
 ```
 
 **Source files (`src/`):**
-- `api.js` — `initAgent(db)` (runs every migration, constructs `AgentEngine`/`RolesBus`/`ProductionAssistantManager`/`VisionRoleManager`, returns a small `providerRegistry` handle) + all route factories. Re-exports AI config, embedding, provider-registry, ai-roles, and agentic-turn utilities.
+- `api.js` — `initAgent(db)` (async; seeds the role catalog, constructs `AgentEngine`/`RolesBus`/`ProductionAssistantManager`/`VisionRoleManager`, returns a small `providerRegistry` handle) + all route factories. Re-exports AI config, embedding, provider-registry, ai-roles, and agentic-turn utilities.
 - `agent-engine.js` — `AgentEngine`: context window management (per-API-key, max 50 entries), `evaluateEventCue()`/`generateTemplate()`/`editTemplate()`/`suggestStyles()` (still resolve settings from `ai_config` — explicitly out of scope for the roles migration), `generateRundown()`/`editRundown()` (now take an already-resolved `apiSettings` object instead of an `apiKey` — Planner resolves via the roles framework, see `routes/planner.js`), `analyseImage()` stub (superseded by the vision roles below, not filled in).
 - `ai-config.js` — Per-API-key AI model settings DB helpers (`ai_config` table). Provider modes: `none`, `server`, `openai`, `custom`. Still the source of settings for the four `AgentEngine` methods above.
 - `embeddings.js` — OpenAI-compatible `/v1/embeddings` API client. `computeEmbeddings()`, `cosineSimilarity()`, `isServerEmbeddingAvailable()`.
 - `deer-embeddings.js` — client for a local `@jsilvanus/embedeer` model server (gRPC, `autoStartServer: false`): `computeDeerEmbeddings(texts, { apiUrl, model })`, cached per address+model, reconnects after a failed call. Selected per project with `ai_config.embedding_provider = 'deer'` (`embedding_api_url` = gRPC address, `embedding_model` optional; no API key); `AgentEngine.computeEmbeddings` routes to it, so semantic cues use it with no other change. Server defaults (settings registry `ai.deer_embed_address` / `ai.deer_embed_model`, env `DEER_EMBED_ADDRESS` default `localhost:50051`, `DEER_EMBED_MODEL` default `onnx-community/gte-multilingual-base`). `@jsilvanus/embedeer` is deliberately not a dependency (it pulls onnxruntime); it is imported lazily and a missing package gives an actionable error. Run the server where wanted with `npm run server` in the deer repo's `packages/embedeer`. Not wired for the `ai_providers` registry `deer` kind (chat), which stays a no-op until chattydeer.
-- `db.js` — `agent_events` and `agent_context` table migrations.
+- `db.js` — `agent_events` helpers (`runMigrations` is a no-op).
 
 **AI Model Registry (`plan_ai_model_registry.md`):**
 - `provider-registry.js` — `ai_providers`/`ai_provider_models`/`ai_provider_grants` migrations + CRUD. `createProvider`/`updateProvider`/`deleteProvider`/`getProvider` (raw, includes `api_key_ref`) + `maskProvider()` (strips it, exposes `credentialConfigured`, derives `reachability: 'direct'|'bridge'` from `bridge_instance_id`). `listSiteProviders`/`listVisibleProviders`/`isProviderVisible` implement default-deny grant-based visibility (site-scope providers invisible to a project until granted via `setGrant`; project-scope providers always private to their owner). Model catalog: `listProviderModels`/`addManualModel`/`updateModel`/`deleteModel` — only ever populated for `kind: 'ollama'` providers.

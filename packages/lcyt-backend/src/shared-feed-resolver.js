@@ -25,7 +25,7 @@
 
 /**
  * @param {{
- *   db: import('better-sqlite3').Database,
+ *   db: import('./db/connection.js').Db,
  *   registry: import('lcyt-production').DeviceRegistry,
  *   aggregator: { ingest: (apiKey: string, detection: object) => void },
  *   attributor?: ReturnType<typeof import("./feed-attributor.js").createFeedAttributor>,
@@ -48,13 +48,13 @@ export function createSharedFeedResolver({ db, registry, aggregator, attributor 
   // the camera has one; only fall back to an unscoped (mixer_id IS NULL)
   // match for legacy cameras created before that column existed, and only
   // when no mixer_id-scoped match exists at all.
-  function _cameraForMixerInput(mixerId, inputNumber) {
+  async function _cameraForMixerInput(mixerId, inputNumber) {
     if (inputNumber == null) return null;
     if (mixerId != null) {
-      const scoped = db.prepare('SELECT id FROM prod_cameras WHERE mixer_input = ? AND mixer_id = ?').get(inputNumber, mixerId);
+      const scoped = await db.prod_cameras.findFirst({ where: { mixer_input: inputNumber, mixer_id: mixerId }, select: { id: true } });
       if (scoped) return scoped.id;
     }
-    const legacy = db.prepare('SELECT id FROM prod_cameras WHERE mixer_input = ? AND mixer_id IS NULL').get(inputNumber);
+    const legacy = await db.prod_cameras.findFirst({ where: { mixer_input: inputNumber, mixer_id: null }, select: { id: true } });
     return legacy ? legacy.id : null;
   }
 
@@ -72,9 +72,13 @@ export function createSharedFeedResolver({ db, registry, aggregator, attributor 
     _setActiveCamera(apiKey, next.cameraId ?? null);
   }) ?? null;
 
-  const unsubscribeProgramChanged = attributor ? null : registry?.onProgramChanged?.(({ apiKey, mixerId, inputNumber }) => {
+  const unsubscribeProgramChanged = attributor ? null : registry?.onProgramChanged?.(async ({ apiKey, mixerId, inputNumber }) => {
     if (!apiKey) return;
-    _setActiveCamera(apiKey, _cameraForMixerInput(mixerId, inputNumber));
+    try {
+      _setActiveCamera(apiKey, await _cameraForMixerInput(mixerId, inputNumber));
+    } catch (err) {
+      console.warn(`[shared-feed-resolver] program change lookup failed: ${err.message}`);
+    }
   }) ?? null;
 
   const unsubscribePresetRecalled = attributor ? null : registry?.onCameraPresetRecalled?.(({ apiKey, cameraId }) => {

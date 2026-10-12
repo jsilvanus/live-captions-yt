@@ -9,17 +9,16 @@ import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import express from 'express';
 
-import { runMigrations } from '../src/db.js';
 import { createEncodersRouter } from '../src/routes/encoders.js';
 
 let server, baseUrl, db;
 
-function insertEncoder(overrides = {}) {
+async function insertEncoder(overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_encoders (id, name, type, connection_config, connection_source, bridge_instance_id)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
@@ -33,8 +32,8 @@ function insertEncoder(overrides = {}) {
   return id;
 }
 
-function insertBridgeInstance(id = 'bridge-1') {
-  db.prepare('INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
+async function insertBridgeInstance(id = 'bridge-1') {
+  await db.prepare('INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
     .run(id, 'Bridge 1', `tok-${id}`);
   return id;
 }
@@ -60,12 +59,11 @@ function startApp(bridgeManager = null, opts = {}) {
   });
 }
 
-before(() => {
-  db = new Database(':memory:');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 
 afterEach(() => {
   if (server) { server.close(); server = null; }
@@ -73,14 +71,14 @@ afterEach(() => {
 
 describe('encoders router — auth wiring (previously unauthenticated)', () => {
   it('no opts.auth: routes stay fully open (historical behavior)', async () => {
-    const id = insertEncoder();
+    const id = await insertEncoder();
     await startApp();
     const res = await fetch(`${baseUrl}/production/encoders/${id}`);
     assert.equal(res.status, 200);
   });
 
   it('opts.auth configured: GET requires it', async () => {
-    const id = insertEncoder();
+    const id = await insertEncoder();
     await startApp(null, { auth: fakeAuth });
     const unauth = await fetch(`${baseUrl}/production/encoders/${id}`);
     assert.equal(unauth.status, 401);
@@ -104,8 +102,8 @@ describe('encoders router — bridge-relayed start/stop status mapping', () => {
       isConnected: () => true,
       sendCommand: async () => { throw new Error('Blocked by bridge security policy: Blocked by deny rule (10.0.0.9:80)'); },
     };
-    insertBridgeInstance('bridge-1');
-    const id = insertEncoder({ connection_source: 'bridge', bridge_instance_id: 'bridge-1' });
+    await insertBridgeInstance('bridge-1');
+    const id = await insertEncoder({ connection_source: 'bridge', bridge_instance_id: 'bridge-1' });
     await startApp(bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
 
     const res = await fetch(`${baseUrl}/production/encoders/${id}/start`, {
@@ -119,8 +117,8 @@ describe('encoders router — bridge-relayed start/stop status mapping', () => {
       isConnected: () => true,
       sendCommand: async () => { throw new Error('ECONNREFUSED'); },
     };
-    insertBridgeInstance('bridge-1');
-    const id = insertEncoder({ connection_source: 'bridge', bridge_instance_id: 'bridge-1' });
+    await insertBridgeInstance('bridge-1');
+    const id = await insertEncoder({ connection_source: 'bridge', bridge_instance_id: 'bridge-1' });
     await startApp(bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
 
     const res = await fetch(`${baseUrl}/production/encoders/${id}/start`, {
@@ -161,7 +159,7 @@ describe('encoders Setup/Production tier gate', () => {
   });
 
   it('PUT /:id 403s when checkProjectRole rejects the setup tier', async () => {
-    const id = insertEncoder();
+    const id = await insertEncoder();
     await startApp(null, { auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const res = await fetch(`${baseUrl}/production/encoders/${id}`, {
       method: 'PUT', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
@@ -171,14 +169,14 @@ describe('encoders Setup/Production tier gate', () => {
   });
 
   it('DELETE /:id 403s when checkProjectRole rejects the setup tier', async () => {
-    const id = insertEncoder();
+    const id = await insertEncoder();
     await startApp(null, { auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const res = await fetch(`${baseUrl}/production/encoders/${id}`, { method: 'DELETE', headers: { 'x-api-key': 'proj-a' } });
     assert.equal(res.status, 403);
   });
 
   it('POST /:id/start|stop|test 403 when checkProjectRole rejects, requesting the production tier', async () => {
-    const id = insertEncoder();
+    const id = await insertEncoder();
     const seen = [];
     await startApp(null, { auth: fakeAuth, deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } } });
     for (const verb of ['start', 'stop', 'test']) {

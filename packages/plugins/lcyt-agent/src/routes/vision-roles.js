@@ -25,7 +25,7 @@ import { resolveRoleProviderSettings } from '../agentic-turn.js';
 const VISION_ROLES = new Set(['tracker', 'describer']);
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth
  * @param {import('../vision-role-manager.js').VisionRoleManager} manager
  * @returns {import('express').Router}
@@ -34,14 +34,14 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
   const router = Router();
   router.use(auth);
 
-  function loadConfigOr503(req, res) {
+  async function loadConfigOr503(req, res) {
     const apiKey = req.session?.apiKey;
     if (!apiKey) { res.status(401).json({ error: 'No API key in session' }); return null; }
     const { roleCode } = req.params;
-    if (!VISION_ROLES.has(roleCode) || !getRole(db, roleCode)) { res.status(404).json({ error: 'Unknown role' }); return null; }
-    const config = getRoleConfig(db, apiKey, roleCode);
+    if (!VISION_ROLES.has(roleCode) || !await getRole(db, roleCode)) { res.status(404).json({ error: 'Unknown role' }); return null; }
+    const config = await getRoleConfig(db, apiKey, roleCode);
     if (!config.enabled) { res.status(503).json({ error: 'Role is not enabled for this project' }); return null; }
-    const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
+    const providerRow = config.providerId ? await getProvider(db, config.providerId) : null;
     if (!providerRow || !providerRow.enabled || providerRow.kind === 'deer') {
       res.status(503).json({ error: 'AI provider not configured or unsupported' });
       return null;
@@ -55,14 +55,14 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     return typeof raw === 'string' && raw ? raw : null;
   }
 
-  router.get('/sessions', (req, res) => {
+  router.get('/sessions', async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     res.json({ ok: true, sessions: manager.listSessions(apiKey) });
   });
 
-  router.post('/:roleCode/start', (req, res) => {
-    const loaded = loadConfigOr503(req, res);
+  router.post('/:roleCode/start', async (req, res) => {
+    const loaded = await loadConfigOr503(req, res);
     if (!loaded) return;
     const { apiKey, roleCode, config, providerRow } = loaded;
     const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
@@ -79,7 +79,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     res.json(result);
   });
 
-  router.post('/:roleCode/stop', (req, res) => {
+  router.post('/:roleCode/stop', async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
@@ -88,7 +88,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     res.json({ ok: true, wasRunning: stopped });
   });
 
-  router.get('/:roleCode/status', (req, res) => {
+  router.get('/:roleCode/status', async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
@@ -96,7 +96,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     res.json({ ok: true, ...manager.status(apiKey, roleCode, cameraIdOf(req)) });
   });
 
-  router.get('/:roleCode/captures', (req, res) => {
+  router.get('/:roleCode/captures', async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode } = req.params;
@@ -104,7 +104,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
     res.json({ ok: true, captures: manager.getCaptures(apiKey, roleCode, cameraIdOf(req)) });
   });
 
-  router.get('/:roleCode/captures/:id/frame', (req, res) => {
+  router.get('/:roleCode/captures/:id/frame', async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { roleCode, id } = req.params;
@@ -117,7 +117,7 @@ export function createVisionRolesRouter(db, auth, manager, bridgeManager = null)
   });
 
   router.post('/:roleCode/captures/:id/replay', async (req, res) => {
-    const loaded = loadConfigOr503(req, res);
+    const loaded = await loadConfigOr503(req, res);
     if (!loaded) return;
     const { apiKey, roleCode, config, providerRow } = loaded;
     const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });

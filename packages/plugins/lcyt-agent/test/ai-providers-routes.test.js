@@ -6,11 +6,11 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -51,9 +51,8 @@ function adminAuth(req, res, next) {
   res.status(401).json({ error: 'Admin authentication required' });
 }
 
-before(() => new Promise((resolve) => {
-  db = new Database(':memory:');
-  runProviderRegistryMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -64,16 +63,14 @@ before(() => new Promise((resolve) => {
   tokenB = jwt.sign({ sessionId: 'sB', apiKey: 'keyB', userId: 2 }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
-  server.listen(0, () => {
-    baseUrl = `http://localhost:${server.address().port}`;
-    resolve();
-  });
-}));
+  await new Promise((resolve) => server.listen(0, resolve));
+  baseUrl = `http://localhost:${server.address().port}`;
+});
 
-after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
-}));
+after(async () => {
+  await db.close();
+  await new Promise((resolve) => server.close(resolve));
+});
 
 function req(path, { method = 'GET', token, admin = false, body } = {}) {
   return fetch(`${baseUrl}${path}`, {
@@ -115,8 +112,8 @@ describe('project /ai/providers', () => {
   });
 
   it('a granted site provider is visible but read-only (403 on write)', async () => {
-    const site = createProvider(db, { scope: 'site', kind: 'ollama', name: 'Shared box', baseUrl: 'http://s:11434' });
-    setGrant(db, site.id, 'keyA', true);
+    const site = await createProvider(db, { scope: 'site', kind: 'ollama', name: 'Shared box', baseUrl: 'http://s:11434' });
+    await setGrant(db, site.id, 'keyA', true);
 
     const list = await (await req('/ai/providers', { token: tokenA })).json();
     assert.ok(list.providers.some((p) => p.id === site.id));
@@ -201,10 +198,10 @@ describe('admin /admin/ai-providers', () => {
     await req(`/admin/ai-providers/${provider.id}/grants/keyB`, { method: 'PUT', admin: true, body: { enabled: true } });
     const grants = await (await req(`/admin/ai-providers/${provider.id}/grants`, { admin: true })).json();
     assert.deepEqual(grants.grants, [{ apiKey: 'keyB', enabled: true }]);
-    assert.ok(getProvider(db, provider.id));
+    assert.ok(await getProvider(db, provider.id));
 
     assert.equal((await req(`/admin/ai-providers/${provider.id}`, { method: 'DELETE', admin: true })).status, 200);
-    assert.equal(getProvider(db, provider.id), null);
+    assert.equal(await getProvider(db, provider.id), null);
   });
 
   it('manual model add is rejected for api-kind providers', async () => {
@@ -219,7 +216,7 @@ describe('admin /admin/ai-providers', () => {
   });
 
   it('project-scope providers are invisible to the admin site list', async () => {
-    createProvider(db, { scope: 'project', ownerApiKey: 'keyA', kind: 'api', vendor: 'openai', name: 'ProjOnly', baseUrl: 'https://api.openai.com' });
+    await createProvider(db, { scope: 'project', ownerApiKey: 'keyA', kind: 'api', vendor: 'openai', name: 'ProjOnly', baseUrl: 'https://api.openai.com' });
     const { providers } = await (await req('/admin/ai-providers', { admin: true })).json();
     assert.equal(providers.some((p) => p.name === 'ProjOnly'), false);
   });

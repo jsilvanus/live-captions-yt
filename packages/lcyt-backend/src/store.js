@@ -44,6 +44,8 @@ export class SessionStore {
     this._cleanupInterval = cleanupInterval;
     this._timer = null;
     this.db = db;
+    /** Serialised write-behind queue for session rows (create/touch/remove stay synchronous). */
+    this._writes = Promise.resolve();
     /** @type {import('lcyt/event-bus').EventBus} Shared pub/sub bus; every
      *  session's emitter is mirrored onto it (see _bridgeEmitterToBus). A
      *  private bus is created when none is injected (keeps isolated tests
@@ -134,24 +136,19 @@ export class SessionStore {
     };
     this._bridgeEmitterToBus(session);
     this._sessions.set(sessionId, session);
-    if (this.db) {
-      try {
-        saveSession(this.db, {
-          sessionId: session.sessionId,
-          apiKey: session.apiKey,
-          streamKey: session.streamKey,
-          domain: session.domain,
-          sequence: session.sequence,
-          startedAt: new Date(session.startedAt).toISOString(),
-          lastActivity: new Date(session.lastActivityAt).toISOString(),
-          syncOffset: session.syncOffset,
-          micHolder: null,
-          data: {}
-        });
-      } catch (e) {
-        // Don't fail session create if DB persist fails; log upstream instead
-      }
-    }
+    // Persistence is write-behind: a DB failure never fails session create.
+    this._persist(async () => await saveSession(this.db, {
+      sessionId: session.sessionId,
+      apiKey: session.apiKey,
+      streamKey: session.streamKey,
+      domain: session.domain,
+      sequence: session.sequence,
+      startedAt: new Date(session.startedAt).toISOString(),
+      lastActivity: new Date(session.lastActivityAt).toISOString(),
+      syncOffset: session.syncOffset,
+      micHolder: null,
+      data: {}
+    }));
     // Plugin hook (lcyt-cues' createSoundCueListener/createTrackerCueListener
     // monkey-patch this to attach per-session listeners — without this call
     // neither ever attaches to a session created after server startup, so
@@ -166,10 +163,10 @@ export class SessionStore {
    * that reconnect should resume using the same `sessionId` so sequence
    * continuity is preserved.
    */
-  rehydrate() {
+  async rehydrate() {
     if (!this.db) return;
     try {
-      const rows = listSessions(this.db);
+      const rows = await listSessions(this.db);
       for (const r of rows) {
         // Skip if already in memory
         if (this._sessions.has(r.sessionId)) continue;
@@ -255,9 +252,7 @@ export class SessionStore {
       session.emitter.emit('session:closed');
       session.emitter.removeAllListeners();
       this._sessions.delete(sessionId);
-      if (this.db) {
-        try { deleteSession(this.db, sessionId); } catch(_) {}
-      }
+      this._persist(async () => await deleteSession(this.db, sessionId));
       // Clean up secondary YouTube senders
       for (const target of (session.extraTargets || [])) {
         if (target.type === 'youtube' && target.sender) {
@@ -291,19 +286,17 @@ export class SessionStore {
   touch(sessionId) {
     const session = this._sessions.get(sessionId);
     if (session) session.lastActivityAt = new Date();
-    if (session && this.db) {
-      try {
-        saveSession(this.db, {
-          sessionId: session.sessionId,
-          apiKey: session.apiKey,
-          streamKey: session.streamKey,
-          domain: session.domain,
-          sequence: session.sequence,
-          startedAt: typeof session.startedAt === 'string' ? session.startedAt : new Date(session.startedAt).toISOString(),
-          lastActivity: new Date(session.lastActivityAt).toISOString(),
-          syncOffset: session.syncOffset,
-        });
-      } catch (_) {}
+    if (session) {
+      this._persist(async () => await saveSession(this.db, {
+        sessionId: session.sessionId,
+        apiKey: session.apiKey,
+        streamKey: session.streamKey,
+        domain: session.domain,
+        sequence: session.sequence,
+        startedAt: typeof session.startedAt === 'string' ? session.startedAt : new Date(session.startedAt).toISOString(),
+        lastActivity: new Date(session.lastActivityAt).toISOString(),
+        syncOffset: session.syncOffset,
+      }));
     }
   }
 
@@ -312,12 +305,12 @@ export class SessionStore {
    * @param {string} sessionId
    * @returns {number}
    */
-  nextSequence(sessionId) {
+  async nextSequence(sessionId) {
     const session = this._sessions.get(sessionId);
     if (!session) return null;
     if (this.db) {
       try {
-        const next = incSessionSequence(this.db, sessionId);
+        const next = await incSessionSequence(this.db, sessionId);
         if (typeof next === 'number') {
           session.sequence = next;
           return next;
@@ -328,11 +321,7 @@ export class SessionStore {
     }
     // In-memory fallback (not atomic across processes)
     session.sequence = (session.sequence || 0) + 1;
-    if (this.db) {
-      try {
-        saveSession(this.db, { sessionId: session.sessionId, sequence: session.sequence });
-      } catch (_) {}
-    }
+    this._persist(async () => await saveSession(this.db, { sessionId: session.sessionId, sequence: session.sequence }));
     return session.sequence;
   }
 
@@ -355,6 +344,16 @@ export class SessionStore {
     if (this._timer.unref) this._timer.unref();
   }
 
+  _persist(fn) {
+    if (!this.db) return;
+    this._writes = this._writes.then(fn).catch(() => {});
+  }
+
+  /** Resolves when every queued session write has been attempted (tests, shutdown). */
+  flush() {
+    return this._writes;
+  }
+
   async _sweep() {
     const cutoff = Date.now() - this._sessionTtl;
     for (const [sessionId, session] of this._sessions) {
@@ -363,9 +362,7 @@ export class SessionStore {
         session.emitter.emit('session:closed');
         session.emitter.removeAllListeners();
         this._sessions.delete(sessionId);
-        if (this.db) {
-          try { deleteSession(this.db, sessionId); } catch (_) {}
-        }
+        this._persist(async () => await deleteSession(this.db, sessionId));
         if (session.sender) {
           try {
             session.sender.end();

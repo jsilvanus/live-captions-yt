@@ -5,18 +5,18 @@
  */
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 
-let Database, express;
+let express;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
 } catch {
-  console.log('# better-sqlite3/express not available — skipping lcyt-platforms broadcast route tests');
+  console.log('# express not available — skipping lcyt-platforms broadcast route tests');
   process.exit(0);
 }
 
 const {
-  runMigrations, upsertCredential, getLink, listStats, insertStats,
+  upsertCredential, getLink, listStats, insertStats,
   STATS_LIVE_SNAPSHOT, STATS_POST_SUMMARY,
 } = await import('../src/db.js');
 const { createBroadcastPlatformsRouter } = await import('../src/routes/broadcast-platforms.js');
@@ -54,15 +54,8 @@ describe('broadcast platform routes', () => {
   let server, baseUrl, db, ref;
 
   before(async () => {
-    db = new Database(':memory:');
-    db.exec('CREATE TABLE api_keys (key TEXT PRIMARY KEY)');
-    db.exec(`CREATE TABLE broadcasts (
-      id TEXT PRIMARY KEY, api_key TEXT, title TEXT, description TEXT,
-      scheduled_start TEXT, youtube_broadcast_id TEXT,
-      privacy_status TEXT NOT NULL DEFAULT 'unlisted'
-    )`);
-    runMigrations(db);
-    for (const k of ['key1', 'key2']) db.prepare('INSERT INTO api_keys (key) VALUES (?)').run(k);
+    db = await initDb(':memory:');
+    for (const k of ['key1', 'key2']) await db.api_keys.create({ data: { key: k, owner: 'test' } });
 
     ref = {
       adapter: makeAdapter(),
@@ -75,18 +68,20 @@ describe('broadcast platform routes', () => {
     // The injected broadcasts interface — the plugin never reaches into
     // lcyt-backend's db modules directly.
     const broadcastsApi = {
-      getBroadcast: (database, apiKey, id) => {
-        const row = database.prepare('SELECT * FROM broadcasts WHERE id = ? AND api_key = ?').get(id, apiKey);
+      getBroadcast: async (database, apiKey, id) => {
+        const row = await database.broadcasts.findFirst({ where: { id, api_key: apiKey } });
         return row ? {
           id: row.id, title: row.title, description: row.description,
           scheduledStart: row.scheduled_start, youtubeBroadcastId: row.youtube_broadcast_id,
           privacyStatus: row.privacy_status,
         } : null;
       },
-      updateBroadcast: (database, apiKey, id, patch) => {
+      updateBroadcast: async (database, apiKey, id, patch) => {
         if (patch.youtubeBroadcastId !== undefined) {
-          database.prepare('UPDATE broadcasts SET youtube_broadcast_id = ? WHERE id = ? AND api_key = ?')
-            .run(patch.youtubeBroadcastId, id, apiKey);
+          await database.broadcasts.updateMany({
+            where: { id, api_key: apiKey },
+            data: { youtube_broadcast_id: patch.youtubeBroadcastId },
+          });
         }
       },
     };
@@ -122,24 +117,31 @@ describe('broadcast platform routes', () => {
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => new Promise((r) => server.close(r)));
+  after(async () => {
+    await new Promise((r) => server.close(r));
+    await db.close();
+  });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     ref.adapter = makeAdapter();
     ref.accessToken = async () => 'token';
     ref.startSession = null;
     ref.captionTargets = [];
     ref.events = [];
-    db.exec('DELETE FROM broadcast_platform_stats');
-    db.exec('DELETE FROM broadcast_platform_links');
-    db.exec('DELETE FROM platform_credentials');
-    db.exec('DELETE FROM broadcasts');
-    db.prepare("INSERT INTO broadcasts (id, api_key, title, description, scheduled_start, privacy_status) VALUES (?,?,?,?,?,'unlisted')")
-      .run('b1', 'key1', 'Sunday Service', 'Weekly', '2026-08-02T09:00:00');
+    await db.broadcast_platform_stats.deleteMany({});
+    await db.broadcast_platform_links.deleteMany({});
+    await db.platform_credentials.deleteMany({});
+    await db.broadcasts.deleteMany({});
+    await db.broadcasts.create({
+      data: {
+        id: 'b1', api_key: 'key1', title: 'Sunday Service', description: 'Weekly',
+        scheduled_start: '2026-08-02T09:00:00', privacy_status: 'unlisted',
+      },
+    });
   });
 
-  function seedCredential(apiKey = 'key1', externalAccountId = 'UC-a') {
-    return upsertCredential(db, apiKey, {
+  async function seedCredential(apiKey = 'key1', externalAccountId = 'UC-a') {
+    return await upsertCredential(db, apiKey, {
       platform: 'youtube', externalAccountId, accountLabel: externalAccountId,
       accessTokenEnc: 'enc', refreshTokenEnc: 'enc', expiresAt: iso(Date.now() + 3600_000),
     });
@@ -158,7 +160,7 @@ describe('broadcast platform routes', () => {
   // ── Credential resolution ───────────────────────────────────────────────
   describe('credential resolution', () => {
     test('resolves implicitly when exactly one account is connected', async () => {
-      seedCredential();
+      await seedCredential();
       const { status } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(status, 200);
     });
@@ -166,8 +168,8 @@ describe('broadcast platform routes', () => {
     test('409s with a candidate list when several are connected', async () => {
       // The multi-channel UX contract: enough for a client to render a picker
       // without a second round-trip.
-      seedCredential('key1', 'UC-a');
-      seedCredential('key1', 'UC-b');
+      await seedCredential('key1', 'UC-a');
+      await seedCredential('key1', 'UC-b');
       const { status, body } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(status, 409);
       assert.equal(body.code, 'ambiguous_credential');
@@ -176,11 +178,11 @@ describe('broadcast platform routes', () => {
     });
 
     test('an explicit credentialId disambiguates', async () => {
-      seedCredential('key1', 'UC-a');
-      const b = seedCredential('key1', 'UC-b');
+      await seedCredential('key1', 'UC-a');
+      const b = await seedCredential('key1', 'UC-b');
       const { status } = await post('/broadcasts/b1/platforms/youtube/schedule', { credentialId: b.id });
       assert.equal(status, 200);
-      assert.equal(getLink(db, 'b1', 'youtube').credential_id, b.id);
+      assert.equal((await getLink(db, 'b1', 'youtube')).credential_id, b.id);
     });
 
     test('409s with not_connected when no account is connected', async () => {
@@ -190,20 +192,20 @@ describe('broadcast platform routes', () => {
     });
 
     test("rejects another project's credentialId", async () => {
-      const other = seedCredential('key2', 'UC-other');
+      const other = await seedCredential('key2', 'UC-other');
       const { status } = await post('/broadcasts/b1/platforms/youtube/schedule', { credentialId: other.id });
       assert.equal(status, 404);
     });
 
     test('404s on an unsupported platform', async () => {
-      seedCredential();
+      await seedCredential();
       const { status, body } = await post('/broadcasts/b1/platforms/facebook/schedule');
       assert.equal(status, 404);
       assert.deepEqual(body.supported, ['youtube']);
     });
 
     test("404s on another project's broadcast", async () => {
-      seedCredential('key2');
+      await seedCredential('key2');
       const { status } = await post('/broadcasts/b1/platforms/youtube/schedule', {}, {
         headers: { 'x-test-api-key': 'key2' },
       });
@@ -214,7 +216,7 @@ describe('broadcast platform routes', () => {
   // ── Schedule ────────────────────────────────────────────────────────────
   describe('schedule', () => {
     test('creates the external broadcast from the LCYT broadcast fields', async () => {
-      seedCredential();
+      await seedCredential();
       const { status, body } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(status, 200);
       const [name, fields] = ref.adapter.calls[0];
@@ -228,14 +230,14 @@ describe('broadcast platform routes', () => {
     test('mirrors the id onto the legacy youtube_broadcast_id column', async () => {
       // Not a dead column: db/broadcasts.js surfaces it via formatRow() and the
       // broadcasts routes accept it on create and update.
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
-      const row = db.prepare('SELECT youtube_broadcast_id FROM broadcasts WHERE id = ?').get('b1');
+      const row = await db.broadcasts.findUnique({ where: { id: 'b1' } });
       assert.equal(row.youtube_broadcast_id, 'yt-bc-1');
     });
 
     test('updates in place instead of creating a second external broadcast', async () => {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       ref.adapter.calls.length = 0;
       await post('/broadcasts/b1/platforms/youtube/schedule', { title: 'Renamed' });
@@ -246,20 +248,20 @@ describe('broadcast platform routes', () => {
     });
 
     test('passes the broadcast\'s stored visibility to the adapter', async () => {
-      seedCredential();
-      db.prepare('UPDATE broadcasts SET privacy_status = ? WHERE id = ?').run('public', 'b1');
+      await seedCredential();
+      await db.broadcasts.updateMany({ where: { id: 'b1' }, data: { privacy_status: 'public' } });
       await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(ref.adapter.calls[0][1].privacyStatus, 'public');
     });
 
     test('defaults to unlisted when the broadcast has none', async () => {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(ref.adapter.calls[0][1].privacyStatus, 'unlisted');
     });
 
     test('a request-body privacyStatus overrides the stored one', async () => {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule', { privacyStatus: 'private' });
       assert.equal(ref.adapter.calls[0][1].privacyStatus, 'private');
     });
@@ -267,7 +269,7 @@ describe('broadcast platform routes', () => {
     test('carries visibility through on a re-schedule', async () => {
       // Otherwise editing a broadcast after scheduling would leave the
       // platform on the old visibility with no way to correct it.
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       ref.adapter.calls.length = 0;
       await post('/broadcasts/b1/platforms/youtube/schedule', { privacyStatus: 'public' });
@@ -276,22 +278,22 @@ describe('broadcast platform routes', () => {
     });
 
     test('refuses a broadcast with no scheduled start', async () => {
-      seedCredential();
-      db.prepare('UPDATE broadcasts SET scheduled_start = NULL WHERE id = ?').run('b1');
+      await seedCredential();
+      await db.broadcasts.updateMany({ where: { id: 'b1' }, data: { scheduled_start: null } });
       const { status, body } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(status, 400);
       assert.match(body.error, /no scheduled start time/);
     });
 
     test('records the upstream error on the link when the provider fails', async () => {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       ref.adapter = makeAdapter({
         updateSchedule: async () => { throw new NetworkError('YouTube said no', 500); },
       });
       const { status } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(status, 502);
-      assert.match(getLink(db, 'b1', 'youtube').last_sync_error, /YouTube said no/);
+      assert.match((await getLink(db, 'b1', 'youtube')).last_sync_error, /YouTube said no/);
     });
   });
 
@@ -300,7 +302,7 @@ describe('broadcast platform routes', () => {
     test('creates a youtube caption target when none exists', async () => {
       // The "connect the dots" gap: getStreamKey existed but nothing ever wrote
       // its result into caption_targets.
-      seedCredential();
+      await seedCredential();
       const { body } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(body.captionTarget.bound, true);
       assert.equal(body.captionTarget.created, true);
@@ -308,7 +310,7 @@ describe('broadcast platform routes', () => {
     });
 
     test('never silently overwrites an existing hand-entered key', async () => {
-      seedCredential();
+      await seedCredential();
       ref.captionTargets.push({ id: 't-existing', type: 'youtube', streamKey: 'typed-by-hand' });
       const { body } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(body.captionTarget.bound, false);
@@ -318,7 +320,7 @@ describe('broadcast platform routes', () => {
     });
 
     test('overwrites only on an explicit bindStreamKey', async () => {
-      seedCredential();
+      await seedCredential();
       ref.captionTargets.push({ id: 't-existing', type: 'youtube', streamKey: 'typed-by-hand' });
       const { body } = await post('/broadcasts/b1/platforms/youtube/schedule', { bindStreamKey: true });
       assert.equal(body.captionTarget.bound, true);
@@ -326,7 +328,7 @@ describe('broadcast platform routes', () => {
     });
 
     test('a stream-key lookup failure does not fail the schedule', async () => {
-      seedCredential();
+      await seedCredential();
       ref.adapter = makeAdapter({ getStreamKey: async () => { throw new NetworkError('nope', 500); } });
       const { status, body } = await post('/broadcasts/b1/platforms/youtube/schedule');
       assert.equal(status, 200, 'the broadcast is scheduled; the key is a bonus');
@@ -340,7 +342,7 @@ describe('broadcast platform routes', () => {
     const png = () => Buffer.from('fake-png').toString('base64');
 
     async function scheduled() {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       ref.adapter.calls.length = 0;
     }
@@ -357,11 +359,11 @@ describe('broadcast platform routes', () => {
       assert.equal(id, 'yt-bc-1');
       assert.equal(length, 8);
       assert.equal(mime, 'image/png');
-      assert.equal(getLink(db, 'b1', 'youtube').thumbnail_url, 'https://i.ytimg.com/t.jpg');
+      assert.equal((await getLink(db, 'b1', 'youtube')).thumbnail_url, 'https://i.ytimg.com/t.jpg');
     });
 
     test('requires the broadcast to be scheduled first', async () => {
-      seedCredential();
+      await seedCredential();
       const { status, body } = await post('/broadcasts/b1/platforms/youtube/thumbnail', {
         data: png(), mimeType: 'image/png',
       });
@@ -406,7 +408,7 @@ describe('broadcast platform routes', () => {
   // ── Go live ─────────────────────────────────────────────────────────────
   describe('go-live', () => {
     async function scheduled() {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       ref.adapter.calls.length = 0;
       ref.events.length = 0;
@@ -422,7 +424,7 @@ describe('broadcast platform routes', () => {
       assert.equal(body.status, 'live');
       assert.equal(body.captionSessionStarted, true);
       assert.deepEqual(started, { apiKey: 'key1', broadcastId: 'b1' });
-      assert.equal(getLink(db, 'b1', 'youtube').last_status, 'live');
+      assert.equal((await getLink(db, 'b1', 'youtube')).last_status, 'live');
       assert.equal(ref.events.at(-1).topic, 'platform.status_changed');
     });
 
@@ -437,7 +439,7 @@ describe('broadcast platform routes', () => {
       assert.equal(body.partial, true);
       assert.equal(body.captionSessionStarted, false);
       assert.match(body.warning, /live on youtube.*caption session did not start/i);
-      assert.equal(getLink(db, 'b1', 'youtube').last_status, 'live', 'it really is live');
+      assert.equal((await getLink(db, 'b1', 'youtube')).last_status, 'live', 'it really is live');
     });
 
     test('does not start a session when the transition itself fails', async () => {
@@ -449,11 +451,11 @@ describe('broadcast platform routes', () => {
       const { status } = await post('/broadcasts/b1/platforms/youtube/go-live');
       assert.equal(status, 502);
       assert.equal(called, false);
-      assert.notEqual(getLink(db, 'b1', 'youtube').last_status, 'live');
+      assert.notEqual((await getLink(db, 'b1', 'youtube')).last_status, 'live');
     });
 
     test('requires a link', async () => {
-      seedCredential();
+      await seedCredential();
       const { status, body } = await post('/broadcasts/b1/platforms/youtube/go-live');
       assert.equal(status, 409);
       assert.equal(body.code, 'not_linked');
@@ -476,7 +478,7 @@ describe('broadcast platform routes', () => {
   // ── End + summary ───────────────────────────────────────────────────────
   describe('end', () => {
     async function live() {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       await post('/broadcasts/b1/platforms/youtube/go-live');
       ref.adapter.calls.length = 0;
@@ -489,15 +491,15 @@ describe('broadcast platform routes', () => {
       assert.equal(body.status, 'complete');
       assert.equal(body.summary.views, 500);
       assert.equal(body.summary.averageWatchTimeSec, 120);
-      assert.equal(getLink(db, 'b1', 'youtube').last_status, 'complete');
-      assert.equal(listStats(db, 'b1', 'youtube', { kind: STATS_POST_SUMMARY }).length, 1);
+      assert.equal((await getLink(db, 'b1', 'youtube')).last_status, 'complete');
+      assert.equal((await listStats(db, 'b1', 'youtube', { kind: STATS_POST_SUMMARY })).length, 1);
     });
 
     test('derives peak concurrent from our own snapshots', async () => {
       // YouTube Analytics exposes no peak-concurrent metric at all.
       await live();
       for (const n of [4, 91, 12]) {
-        insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: n });
+        await insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: n });
       }
       const { body } = await post('/broadcasts/b1/platforms/youtube/end');
       assert.equal(body.summary.peakConcurrentViewers, 91);
@@ -507,7 +509,7 @@ describe('broadcast platform routes', () => {
       // Analytics lags; a summary fetched seconds after the stream ends can
       // legitimately fail or come back empty.
       await live();
-      insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: 55 });
+      await insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: 55 });
       ref.adapter = makeAdapter({
         getPostBroadcastStats: async () => { throw new NetworkError('not processed yet', 400); },
       });
@@ -521,9 +523,9 @@ describe('broadcast platform routes', () => {
   // ── Stats ───────────────────────────────────────────────────────────────
   describe('stats', () => {
     test('returns the latest snapshot and omits history by default', async () => {
-      seedCredential();
+      await seedCredential();
       for (const n of [1, 2, 3]) {
-        insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: n });
+        await insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: n });
       }
       const { status, body } = await call('/broadcasts/b1/platforms/youtube/stats');
       assert.equal(status, 200);
@@ -533,16 +535,16 @@ describe('broadcast platform routes', () => {
     });
 
     test('?history=1 returns the full series oldest-first for charting', async () => {
-      seedCredential();
+      await seedCredential();
       for (const n of [5, 9, 3]) {
-        insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: n });
+        await insertStats(db, { broadcastId: 'b1', platform: 'youtube', kind: STATS_LIVE_SNAPSHOT, concurrentViewers: n });
       }
       const { body } = await call('/broadcasts/b1/platforms/youtube/stats?history=1');
       assert.deepEqual(body.history.map(h => h.concurrentViewers), [5, 9, 3]);
     });
 
     test('returns nulls rather than 404 for a broadcast with no stats', async () => {
-      seedCredential();
+      await seedCredential();
       const { status, body } = await call('/broadcasts/b1/platforms/youtube/stats');
       assert.equal(status, 200);
       assert.equal(body.latest, null);
@@ -560,7 +562,7 @@ describe('broadcast platform routes', () => {
   // ── Links listing ───────────────────────────────────────────────────────
   describe('GET /broadcasts/:id/platforms', () => {
     test('lists the links for a broadcast', async () => {
-      seedCredential();
+      await seedCredential();
       await post('/broadcasts/b1/platforms/youtube/schedule');
       const { status, body } = await call('/broadcasts/b1/platforms');
       assert.equal(status, 200);

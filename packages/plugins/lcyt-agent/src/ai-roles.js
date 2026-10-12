@@ -90,54 +90,24 @@ export const BUILTIN_ROLES = [
 ];
 
 /**
- * Run migrations and seed the role catalog (idempotent).
- * @param {import('better-sqlite3').Database} db
+ * Seed the role catalog (idempotent upsert). The tables themselves come from the backend schema.
+ * @param {import('lcyt-backend/db').Db} db
  */
-export function runAiRolesMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ai_roles (
-      role_code       TEXT PRIMARY KEY,
-      name            TEXT NOT NULL,
-      description     TEXT NOT NULL DEFAULT '',
-      input_types     TEXT NOT NULL DEFAULT '[]',
-      output_type     TEXT NOT NULL,
-      runtime_kind    TEXT NOT NULL,
-      available_tools TEXT NOT NULL DEFAULT '[]',
-      is_builtin      INTEGER NOT NULL DEFAULT 1,
-      created_at      TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-
-    CREATE TABLE IF NOT EXISTS project_ai_role_configs (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      api_key         TEXT    NOT NULL,
-      role_code       TEXT    NOT NULL REFERENCES ai_roles(role_code),
-      enabled         INTEGER NOT NULL DEFAULT 0,
-      provider_id     TEXT,
-      model_name      TEXT    NOT NULL DEFAULT '',
-      harness_config  TEXT    NOT NULL DEFAULT '{}',
-      updated_at      INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-      UNIQUE (api_key, role_code)
-    );
-    CREATE INDEX IF NOT EXISTS idx_project_ai_role_configs_key ON project_ai_role_configs(api_key);
-  `);
-
-  const upsert = db.prepare(`
-    INSERT INTO ai_roles (role_code, name, description, input_types, output_type, runtime_kind, available_tools)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT (role_code) DO UPDATE SET
-      name = excluded.name,
-      description = excluded.description,
-      input_types = excluded.input_types,
-      output_type = excluded.output_type,
-      runtime_kind = excluded.runtime_kind,
-      available_tools = excluded.available_tools
-  `);
+export async function runAiRolesMigrations(db) {
   for (const role of BUILTIN_ROLES) {
-    upsert.run(
-      role.role_code, role.name, role.description,
-      JSON.stringify(role.input_types), role.output_type, role.runtime_kind,
-      JSON.stringify(role.available_tools),
-    );
+    const data = {
+      name: role.name,
+      description: role.description,
+      input_types: JSON.stringify(role.input_types),
+      output_type: role.output_type,
+      runtime_kind: role.runtime_kind,
+      available_tools: JSON.stringify(role.available_tools),
+    };
+    await db.ai_roles.upsert({
+      where: { role_code: role.role_code },
+      create: { role_code: role.role_code, ...data },
+      update: data,
+    });
   }
 }
 
@@ -159,12 +129,13 @@ function formatRole(row) {
   };
 }
 
-export function listRoles(db) {
-  return db.prepare('SELECT * FROM ai_roles ORDER BY role_code').all().map(formatRole);
+export async function listRoles(db) {
+  const rows = await db.ai_roles.findMany({ orderBy: { role_code: 'asc' } });
+  return rows.map(formatRole);
 }
 
-export function getRole(db, roleCode) {
-  return formatRole(db.prepare('SELECT * FROM ai_roles WHERE role_code = ?').get(roleCode));
+export async function getRole(db, roleCode) {
+  return formatRole(await db.ai_roles.findUnique({ where: { role_code: roleCode } }));
 }
 
 function formatConfig(row) {
@@ -189,10 +160,10 @@ export function defaultRoleConfig(roleCode) {
 /**
  * Get a project's config for a role, or the default when none is stored.
  */
-export function getRoleConfig(db, apiKey, roleCode) {
-  const row = db.prepare(
-    'SELECT * FROM project_ai_role_configs WHERE api_key = ? AND role_code = ?'
-  ).get(apiKey, roleCode);
+export async function getRoleConfig(db, apiKey, roleCode) {
+  const row = await db.project_ai_role_configs.findUnique({
+    where: { api_key_role_code: { api_key: apiKey, role_code: roleCode } },
+  });
   return row ? formatConfig(row) : defaultRoleConfig(roleCode);
 }
 
@@ -200,35 +171,33 @@ export function getRoleConfig(db, apiKey, roleCode) {
  * Upsert a project's config for a role. Only provided fields change.
  * @param {object} input — { enabled?, providerId?, modelName?, harnessConfig? }
  */
-export function setRoleConfig(db, apiKey, roleCode, input) {
-  const existing = db.prepare(
-    'SELECT id FROM project_ai_role_configs WHERE api_key = ? AND role_code = ?'
-  ).get(apiKey, roleCode);
+export async function setRoleConfig(db, apiKey, roleCode, input) {
+  const existing = await db.project_ai_role_configs.findUnique({
+    where: { api_key_role_code: { api_key: apiKey, role_code: roleCode } },
+    select: { id: true },
+  });
 
   if (!existing) {
-    db.prepare(`
-      INSERT INTO project_ai_role_configs (api_key, role_code, enabled, provider_id, model_name, harness_config)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      apiKey, roleCode,
-      input.enabled ? 1 : 0,
-      input.providerId ?? null,
-      input.modelName ?? '',
-      JSON.stringify(input.harnessConfig ?? {}),
-    );
+    await db.project_ai_role_configs.create({
+      data: {
+        api_key: apiKey,
+        role_code: roleCode,
+        enabled: input.enabled ? 1 : 0,
+        provider_id: input.providerId ?? null,
+        model_name: input.modelName ?? '',
+        harness_config: JSON.stringify(input.harnessConfig ?? {}),
+        updated_at: Math.floor(Date.now() / 1000),
+      },
+    });
   } else {
-    const sets = [];
-    const vals = [];
-    if (input.enabled !== undefined) { sets.push('enabled = ?'); vals.push(input.enabled ? 1 : 0); }
-    if (input.providerId !== undefined) { sets.push('provider_id = ?'); vals.push(input.providerId || null); }
-    if (input.modelName !== undefined) { sets.push('model_name = ?'); vals.push(input.modelName); }
-    if (input.harnessConfig !== undefined) { sets.push('harness_config = ?'); vals.push(JSON.stringify(input.harnessConfig)); }
-    if (sets.length > 0) {
-      sets.push("updated_at = strftime('%s','now')");
-      vals.push(apiKey, roleCode);
-      db.prepare(
-        `UPDATE project_ai_role_configs SET ${sets.join(', ')} WHERE api_key = ? AND role_code = ?`
-      ).run(...vals);
+    const data = {};
+    if (input.enabled !== undefined) data.enabled = input.enabled ? 1 : 0;
+    if (input.providerId !== undefined) data.provider_id = input.providerId || null;
+    if (input.modelName !== undefined) data.model_name = input.modelName;
+    if (input.harnessConfig !== undefined) data.harness_config = JSON.stringify(input.harnessConfig);
+    if (Object.keys(data).length > 0) {
+      data.updated_at = Math.floor(Date.now() / 1000);
+      await db.project_ai_role_configs.updateMany({ where: { api_key: apiKey, role_code: roleCode }, data });
     }
   }
   return getRoleConfig(db, apiKey, roleCode);

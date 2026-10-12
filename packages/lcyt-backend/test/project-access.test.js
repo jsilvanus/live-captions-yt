@@ -15,11 +15,11 @@ const JWT_SECRET = 'test-project-access-secret';
 
 let server, baseUrl, db, projectKey;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  const user = createUser(db, { email: 'project-access@example.com', passwordHash: 'hash', name: 'Project Access' });
-  projectKey = createKey(db, { owner: 'Project Access', user_id: user.id }).key;
-  addMember(db, projectKey, user.id, 'owner');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
+  const user = await createUser(db, { email: 'project-access@example.com', passwordHash: 'hash', name: 'Project Access' });
+  projectKey = (await createKey(db, { owner: 'Project Access', user_id: user.id })).key;
+  await addMember(db, projectKey, user.id, 'owner');
 
   const projectAuth = createProjectAccessMiddleware(db, JWT_SECRET);
   const scopedAuth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'cue:write' });
@@ -48,10 +48,10 @@ before(() => new Promise((resolve) => {
   });
 }));
 
-after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
-}));
+after(async () => {
+  await new Promise((resolve) => server.close(resolve));
+  await db.close();
+});
 
 describe('project access middleware', () => {
   it('accepts a project-scoped user token with an explicit project id', async () => {
@@ -71,7 +71,7 @@ describe('project access middleware', () => {
   });
 
   it('accepts an external token and records its project and scope metadata', async () => {
-    const token = createMcpToken(db, projectKey, { label: 'Scope token', userId: 1, projectId: projectKey, scopes: ['dsk:read'] }).token;
+    const token = (await createMcpToken(db, projectKey, { label: 'Scope token', userId: 1, projectId: projectKey, scopes: ['dsk:read'] })).token;
     const res = await fetch(`${baseUrl}/check`, {
       headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey },
     });
@@ -83,7 +83,7 @@ describe('project access middleware', () => {
   });
 
   it('rejects external tokens that lack a required scope', async () => {
-    const token = createMcpToken(db, projectKey, { label: 'No scope', userId: 1, projectId: projectKey, scopes: ['dsk:read'] }).token;
+    const token = (await createMcpToken(db, projectKey, { label: 'No scope', userId: 1, projectId: projectKey, scopes: ['dsk:read'] })).token;
     const res = await fetch(`${baseUrl}/scoped`, {
       headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey },
     });
@@ -99,7 +99,7 @@ describe('device JWT active-role check (Item 4 — Phase 4)', () => {
   );
 
   it('accepts a device JWT whose role is active', async () => {
-    const role = createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 1', pinHash: 'hash' });
+    const role = await createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 1', pinHash: 'hash' });
     const res = await fetch(`${baseUrl}/check`, {
       headers: { Authorization: `Bearer ${deviceToken(role.id)}`, 'X-Project-Id': projectKey },
     });
@@ -109,10 +109,10 @@ describe('device JWT active-role check (Item 4 — Phase 4)', () => {
   });
 
   it('rejects a device JWT once its role is deactivated, before the 1h TTL expires', async () => {
-    const role = createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 2', pinHash: 'hash' });
+    const role = await createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 2', pinHash: 'hash' });
     const token = deviceToken(role.id);
     // Token still has 1h left on its TTL, but the role is deactivated server-side.
-    deactivateDeviceRole(db, role.id);
+    await deactivateDeviceRole(db, role.id);
     const res = await fetch(`${baseUrl}/check`, {
       headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey },
     });
@@ -121,7 +121,7 @@ describe('device JWT active-role check (Item 4 — Phase 4)', () => {
 
   it('rejects a device JWT once its role has time-expired', async () => {
     const past = new Date(Date.now() - 1000).toISOString();
-    const role = createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 3', pinHash: 'hash', expiresAt: past });
+    const role = await createDeviceRole(db, projectKey, { roleType: 'camera', name: 'Cam 3', pinHash: 'hash', expiresAt: past });
     const res = await fetch(`${baseUrl}/check`, {
       headers: { Authorization: `Bearer ${deviceToken(role.id)}`, 'X-Project-Id': projectKey },
     });
@@ -140,8 +140,8 @@ describe('jwtOnly gating (legacy SSE / our-UI-only resources)', () => {
   const H = (token) => ({ headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey } });
 
   it('rejects any external token, even a full-access one', async () => {
-    const full = createMcpToken(db, projectKey, { label: 'jwtonly-full', userId: 1, projectId: projectKey }).token;
-    const scoped = createMcpToken(db, projectKey, { label: 'jwtonly-scoped', userId: 1, projectId: projectKey, scopes: ['events:read', 'variable.*'] }).token;
+    const full = (await createMcpToken(db, projectKey, { label: 'jwtonly-full', userId: 1, projectId: projectKey })).token;
+    const scoped = (await createMcpToken(db, projectKey, { label: 'jwtonly-scoped', userId: 1, projectId: projectKey, scopes: ['events:read', 'variable.*'] })).token;
     assert.equal((await fetch(`${baseUrl}/jwt-only`, H(full))).status, 403);
     assert.equal((await fetch(`${baseUrl}/jwt-only`, H(scoped))).status, 403);
   });
@@ -156,28 +156,28 @@ describe('jwtOnly gating (legacy SSE / our-UI-only resources)', () => {
 
 describe('resource-mode scope gating (colon-less requiredScope, verb from method)', () => {
   const H = (token) => ({ headers: { Authorization: `Bearer ${token}`, 'X-Project-Id': projectKey, 'Content-Type': 'application/json' } });
-  const extToken = (scopes) => createMcpToken(db, projectKey, { label: `t-${Math.random()}`, userId: 1, projectId: projectKey, scopes }).token;
+  const extToken = async (scopes) => (await createMcpToken(db, projectKey, { label: `t-${Math.random()}`, userId: 1, projectId: projectKey, scopes })).token;
 
   it('dsk:read → GET allowed, POST (write) forbidden', async () => {
-    const token = extToken(['dsk:read']);
+    const token = await extToken(['dsk:read']);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, H(token))).status, 200);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, { method: 'POST', ...H(token) })).status, 403);
   });
 
   it('dsk:* → both GET and POST allowed', async () => {
-    const token = extToken(['dsk:*']);
+    const token = await extToken(['dsk:*']);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, H(token))).status, 200);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, { method: 'POST', ...H(token) })).status, 200);
   });
 
   it('a topic scope does NOT grant REST (event and REST scopes are independent)', async () => {
-    const token = extToken(['events:read', 'dsk.*']);
+    const token = await extToken(['events:read', 'dsk.*']);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, H(token))).status, 403);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, { method: 'POST', ...H(token) })).status, 403);
   });
 
   it('a full-access (unscoped) external token has full delegation', async () => {
-    const token = extToken(undefined); // NULL scopes
+    const token = await extToken(undefined); // NULL scopes
     assert.equal((await fetch(`${baseUrl}/dsk-res`, H(token))).status, 200);
     assert.equal((await fetch(`${baseUrl}/dsk-res`, { method: 'POST', ...H(token) })).status, 200);
   });
@@ -191,16 +191,16 @@ describe('resource-mode scope gating (colon-less requiredScope, verb from method
 
 describe('revoked project key (api_keys.active = 0)', () => {
   it('rejects project, session and external tokens once the key is revoked, while another key still works', async () => {
-    const user = createUser(db, { email: 'revoked@example.com', passwordHash: 'hash', name: 'Revoked' });
-    const key = createKey(db, { owner: 'Revoked', user_id: user.id }).key;
-    addMember(db, key, user.id, 'owner');
+    const user = await createUser(db, { email: 'revoked@example.com', passwordHash: 'hash', name: 'Revoked' });
+    const key = (await createKey(db, { owner: 'Revoked', user_id: user.id })).key;
+    await addMember(db, key, user.id, 'owner');
     const H = (t) => ({ headers: { Authorization: `Bearer ${t}`, 'X-Project-Id': key } });
     const projectToken = jwt.sign({ kind: 'project', type: 'user', userId: user.id, email: 'revoked@example.com', projectId: key, projectRole: 'editor' }, JWT_SECRET, { expiresIn: '1h' });
     const sessionToken = jwt.sign({ sessionId: 's1', apiKey: key }, JWT_SECRET, { expiresIn: '1h' });
     assert.equal((await fetch(`${baseUrl}/check`, H(projectToken))).status, 200);
     assert.equal((await fetch(`${baseUrl}/check`, H(sessionToken))).status, 200);
 
-    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(key);
+    await db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(key);
 
     for (const t of [projectToken, sessionToken]) {
       const res = await fetch(`${baseUrl}/check`, H(t));

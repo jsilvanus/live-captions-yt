@@ -64,10 +64,7 @@ const { MusicManager } = await import('../src/music-manager.js');
 
 function makeMockDb() {
   return {
-    prepare() {
-      return { get() { return undefined; }, run() { return {}; }, all() { return []; } };
-    },
-    exec() {},
+    music_config: { findUnique: async () => null },
   };
 }
 

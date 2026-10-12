@@ -17,11 +17,11 @@ import { getRunningFfmpegCounts } from '../ffmpeg/index.js';
 export function createAdminMetricsRouter(db, { store = null, metrics = null, metricsPollers = {} } = {}) {
   const router = Router();
 
-  router.get('/rollups', (req, res) => {
+  router.get('/rollups', async (req, res) => {
     const grain = req.query.grain === 'day' ? 'day' : 'hour';
     const groupBy = ['metric', 'project', 'org'].includes(req.query.groupBy) ? req.query.groupBy : 'metric';
     const metricsFilter = (req.query.metrics || '').split(',').map(s => s.trim()).filter(Boolean);
-    const series = queryRollupSeries(db, {
+    const series = await queryRollupSeries(db, {
       from: (req.query.from || '').trim(),
       to: (req.query.to || '').trim(),
       grain,

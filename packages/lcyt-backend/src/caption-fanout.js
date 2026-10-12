@@ -24,7 +24,7 @@ import { broadcastToViewers, registerViewerKeyOwner } from './routes/viewer.js';
  * }>) => void}
  */
 export function createCaptionFanout({ db }) {
-  return function fanOutToTargets(session, captions) {
+  return async function fanOutToTargets(session, captions) {
     if (!session?.extraTargets || session.extraTargets.length === 0) return;
     if (!Array.isArray(captions) || captions.length === 0) return;
     const source = session.domain;
@@ -32,7 +32,7 @@ export function createCaptionFanout({ db }) {
     // Phase 5: Load per-target routed translations for per-target-aware caption composition
     let translationsByTargetId = {};
     try {
-      const allTranslations = getTranslationTargets(db, session.apiKey);
+      const allTranslations = await getTranslationTargets(db, session.apiKey);
       for (const tr of allTranslations) {
         if (tr.enabled && tr.target === 'captions' && tr.captionTargetId) {
           if (!translationsByTargetId[tr.captionTargetId]) {

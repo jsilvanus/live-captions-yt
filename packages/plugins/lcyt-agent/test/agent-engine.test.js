@@ -1,46 +1,42 @@
-import { test, describe, before } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
+
+const opened = [];
+after(async () => { for (const d of opened) await d.close(); });
 
 // ---------------------------------------------------------------------------
-// In-memory SQLite for realistic testing
+// In-memory database (initDb) for realistic testing
 // ---------------------------------------------------------------------------
 
-let Database;
-try {
-  Database = (await import('better-sqlite3')).default;
-} catch {
-  console.log('# better-sqlite3 not available — skipping AgentEngine tests');
-  process.exit(0);
-}
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 describe('AgentEngine', () => {
-  let AgentEngine, runMigrations, runAiMigrations, setAiConfig, insertAgentEvent, getRecentAgentEvents;
+  let AgentEngine, setAiConfig, insertAgentEvent, getRecentAgentEvents;
 
   before(async () => {
     ({ AgentEngine } = await import('../src/agent-engine.js'));
-    ({ runMigrations, insertAgentEvent, getRecentAgentEvents } = await import('../src/db.js'));
-    ({ runAiMigrations, setAiConfig } = await import('../src/ai-config.js'));
+    ({ insertAgentEvent, getRecentAgentEvents } = await import('../src/db.js'));
+    ({ setAiConfig } = await import('../src/ai-config.js'));
   });
 
-  function createDb() {
-    const db = new Database(':memory:');
-    runMigrations(db);
-    runAiMigrations(db);
+  async function createDb() {
+    const db = await initDb(':memory:');
+    opened.push(db);
     return db;
   }
 
-  test('context window starts empty', () => {
-    const db = createDb();
+  test('context window starts empty', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     assert.deepEqual(agent.getContext('key1'), []);
   });
 
-  test('addContext adds entries to the context window', () => {
-    const db = createDb();
+  test('addContext adds entries to the context window', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     agent.addContext('key1', 'transcript', 'Hello world');
     agent.addContext('key1', 'explanation', 'Speaker is greeting the audience');
@@ -51,8 +47,8 @@ describe('AgentEngine', () => {
     assert.equal(ctx[1].type, 'explanation');
   });
 
-  test('context window per API key is isolated', () => {
-    const db = createDb();
+  test('context window per API key is isolated', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     agent.addContext('key1', 'transcript', 'Hello');
     agent.addContext('key2', 'transcript', 'World');
@@ -62,8 +58,8 @@ describe('AgentEngine', () => {
     assert.equal(agent.getContext('key2')[0].text, 'World');
   });
 
-  test('clearContext removes all entries for a key', () => {
-    const db = createDb();
+  test('clearContext removes all entries for a key', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     agent.addContext('key1', 'transcript', 'Hello');
     agent.addContext('key1', 'transcript', 'World');
@@ -72,8 +68,8 @@ describe('AgentEngine', () => {
     assert.deepEqual(agent.getContext('key1'), []);
   });
 
-  test('context window trims to max entries', () => {
-    const db = createDb();
+  test('context window trims to max entries', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     agent._maxContextEntries = 5;
     for (let i = 0; i < 10; i++) {
@@ -86,7 +82,7 @@ describe('AgentEngine', () => {
   });
 
   test('analyseImage returns stub result', async () => {
-    const db = createDb();
+    const db = await createDb();
     const agent = new AgentEngine(db);
     const result = await agent.analyseImage('key1', Buffer.from('fake-jpeg'));
     assert.equal(result.description, '');
@@ -94,7 +90,7 @@ describe('AgentEngine', () => {
   });
 
   test('evaluateEventCue returns not-configured when no AI config', async () => {
-    const db = createDb();
+    const db = await createDb();
     const agent = new AgentEngine(db);
     const result = await agent.evaluateEventCue('key1', 'speaker stands up');
     assert.equal(result.matched, false);
@@ -103,8 +99,8 @@ describe('AgentEngine', () => {
   });
 
   test('evaluateEventCue returns not-configured when provider is none', async () => {
-    const db = createDb();
-    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    const db = await createDb();
+    await setAiConfig(db, 'key1', { embeddingProvider: 'none' });
     const agent = new AgentEngine(db);
     const result = await agent.evaluateEventCue('key1', 'speaker stands up');
     assert.equal(result.matched, false);
@@ -112,8 +108,8 @@ describe('AgentEngine', () => {
   });
 
   test('evaluateEventCue returns no context when context window is empty', async () => {
-    const db = createDb();
-    setAiConfig(db, 'key1', {
+    const db = await createDb();
+    await setAiConfig(db, 'key1', {
       embeddingProvider: 'openai',
       embeddingApiKey: 'sk-test',
     });
@@ -123,8 +119,8 @@ describe('AgentEngine', () => {
     assert.ok(result.reasoning.includes('No context'));
   });
 
-  test('_resolveApiSettings uses env vars for server provider', () => {
-    const db = createDb();
+  test('_resolveApiSettings uses env vars for server provider', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     const origUrl = process.env.EMBEDDING_API_URL;
     const origKey = process.env.EMBEDDING_API_KEY;
@@ -144,8 +140,8 @@ describe('AgentEngine', () => {
     }
   });
 
-  test('_resolveApiSettings uses user config for custom provider', () => {
-    const db = createDb();
+  test('_resolveApiSettings uses user config for custom provider', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     const settings = agent._resolveApiSettings({
       embeddingProvider: 'custom',
@@ -159,36 +155,36 @@ describe('AgentEngine', () => {
   });
 
   test('getAiConfig returns null when no config exists', async () => {
-    const db = createDb();
+    const db = await createDb();
     const agent = new AgentEngine(db);
-    assert.equal(agent.getAiConfig('key1'), null);
+    assert.equal(await agent.getAiConfig('key1'), null);
   });
 
   test('getAiConfig returns config after setAiConfig', async () => {
-    const db = createDb();
-    setAiConfig(db, 'key1', {
+    const db = await createDb();
+    await setAiConfig(db, 'key1', {
       embeddingProvider: 'openai',
       embeddingModel: 'text-embedding-3-small',
       embeddingApiKey: 'sk-test-123',
     });
     const agent = new AgentEngine(db);
-    const cfg = agent.getAiConfig('key1');
+    const cfg = await agent.getAiConfig('key1');
     assert.equal(cfg.embeddingProvider, 'openai');
     assert.equal(cfg.embeddingModel, 'text-embedding-3-small');
     assert.equal(cfg.embeddingApiKey, 'sk-test-123');
   });
 
   test("computeEmbeddings routes the 'deer' provider to the deer client", async () => {
-    const db = createDb();
-    setAiConfig(db, 'key1', { embeddingProvider: 'deer', embeddingApiUrl: 'deer.local:50055' });
+    const db = await createDb();
+    await setAiConfig(db, 'key1', { embeddingProvider: 'deer', embeddingApiUrl: 'deer.local:50055' });
     const agent = new AgentEngine(db);
     // @jsilvanus/embedeer is not installed in the test environment, so reaching
     // its loader proves the call took the deer path rather than the OpenAI one.
     await assert.rejects(agent.computeEmbeddings(['x'], 'key1'), /@jsilvanus\/embedeer/);
   });
 
-  test('isServerEmbeddingAvailable reflects env', () => {
-    const db = createDb();
+  test('isServerEmbeddingAvailable reflects env', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     const orig = process.env.EMBEDDING_API_KEY;
     try {
@@ -199,14 +195,14 @@ describe('AgentEngine', () => {
     }
   });
 
-  test('cosineSimilarity returns 1 for identical vectors', () => {
-    const db = createDb();
+  test('cosineSimilarity returns 1 for identical vectors', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     assert.equal(agent.cosineSimilarity([1, 0, 0], [1, 0, 0]), 1);
   });
 
-  test('cosineSimilarity returns 0 for orthogonal vectors', () => {
-    const db = createDb();
+  test('cosineSimilarity returns 0 for orthogonal vectors', async () => {
+    const db = await createDb();
     const agent = new AgentEngine(db);
     assert.equal(agent.cosineSimilarity([1, 0], [0, 1]), 0);
   });
@@ -219,63 +215,58 @@ describe('agent DB helpers', () => {
     ({ runMigrations, insertAgentEvent, getRecentAgentEvents } = await import('../src/db.js'));
   });
 
-  function createDb() {
-    const db = new Database(':memory:');
-    runMigrations(db);
+  async function createDb() {
+    const db = await initDb(':memory:');
+    opened.push(db);
     return db;
   }
 
-  test('insertAgentEvent and retrieve', () => {
-    const db = createDb();
-    insertAgentEvent(db, 'key1', {
+  test('insertAgentEvent and retrieve', async () => {
+    const db = await createDb();
+    await insertAgentEvent(db, 'key1', {
       event_type: 'scene_description',
       description: 'Speaker at podium',
       confidence: 0.95,
       context: { source: 'preview' },
     });
-    const events = getRecentAgentEvents(db, 'key1');
+    const events = await getRecentAgentEvents(db, 'key1');
     assert.equal(events.length, 1);
     assert.equal(events[0].event_type, 'scene_description');
     assert.equal(events[0].description, 'Speaker at podium');
   });
 
-  test('getRecentAgentEvents respects limit', () => {
-    const db = createDb();
+  test('getRecentAgentEvents respects limit', async () => {
+    const db = await createDb();
     for (let i = 0; i < 10; i++) {
-      insertAgentEvent(db, 'key1', {
+      await insertAgentEvent(db, 'key1', {
         event_type: 'test',
         description: `Event ${i}`,
       });
     }
-    const events = getRecentAgentEvents(db, 'key1', 3);
+    const events = await getRecentAgentEvents(db, 'key1', 3);
     assert.equal(events.length, 3);
   });
 
-  test('migrations are idempotent', () => {
-    const db = createDb();
-    runMigrations(db);
-    const events = getRecentAgentEvents(db, 'key1');
+  test('migrations are idempotent', async () => {
+    const db = await createDb();
+    const events = await getRecentAgentEvents(db, 'key1');
     assert.deepEqual(events, []);
   });
 
-  test('events are isolated by API key', () => {
-    const db = createDb();
-    insertAgentEvent(db, 'key1', { event_type: 'test', description: 'A' });
-    insertAgentEvent(db, 'key2', { event_type: 'test', description: 'B' });
-    assert.equal(getRecentAgentEvents(db, 'key1').length, 1);
-    assert.equal(getRecentAgentEvents(db, 'key2').length, 1);
+  test('events are isolated by API key', async () => {
+    const db = await createDb();
+    await insertAgentEvent(db, 'key1', { event_type: 'test', description: 'A' });
+    await insertAgentEvent(db, 'key2', { event_type: 'test', description: 'B' });
+    assert.equal((await getRecentAgentEvents(db, 'key1')).length, 1);
+    assert.equal((await getRecentAgentEvents(db, 'key2')).length, 1);
   });
 });
 
 // Phase 5 & 6 tests
 describe('AgentEngine — Phase 5 & 6', () => {
   async function createDb() {
-    const Database = (await import('better-sqlite3')).default;
-    const db = new Database(':memory:');
-    const { runMigrations } = await import('../src/db.js');
-    const { runAiMigrations } = await import('../src/ai-config.js');
-    runMigrations(db);
-    runAiMigrations(db);
+    const db = await initDb(':memory:');
+    opened.push(db);
     return db;
   }
 
@@ -292,7 +283,7 @@ describe('AgentEngine — Phase 5 & 6', () => {
     const db = await createDb();
     const { AgentEngine } = await import('../src/agent-engine.js');
     const { setAiConfig } = await import('../src/ai-config.js');
-    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    await setAiConfig(db, 'key1', { embeddingProvider: 'none' });
     const agent = new AgentEngine(db);
     const tpl = await agent.generateTemplate('key1', 'Lower third');
     assert.ok(tpl && Array.isArray(tpl.layers));
@@ -312,7 +303,7 @@ describe('AgentEngine — Phase 5 & 6', () => {
     const db = await createDb();
     const { AgentEngine } = await import('../src/agent-engine.js');
     const { setAiConfig } = await import('../src/ai-config.js');
-    setAiConfig(db, 'key1', { embeddingProvider: 'none' });
+    await setAiConfig(db, 'key1', { embeddingProvider: 'none' });
     const agent = new AgentEngine(db);
     const original = { background: 'transparent', width: 1920, height: 1080, groups: [], layers: [] };
     const out = await agent.editTemplate('key1', original, 'Change color');

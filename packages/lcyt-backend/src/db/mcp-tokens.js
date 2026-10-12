@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { topicMatches } from 'lcyt/event-bus';
+import { sqlNow } from './helpers.js';
 
 /**
  * External access tokens (formerly MCP access tokens).
@@ -106,12 +107,12 @@ export function tokenHasScope(scopes, scope) {
 
 /**
  * Create a new external token for a project.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {{ label: string, active?: boolean, createdByName?: string, createdByEmail?: string, createdByUserId?: number|null, userId?: number|null, projectId?: string|null, scopes?: string[]|string|null }} opts
- * @returns {{ id: number, token: string, label: string, active: boolean, createdByName: string, scopes: string[]|null }} — raw token, shown once
+ * @returns {Promise<{ id: number, token: string, label: string, active: boolean, createdByName: string, scopes: string[]|null }>} — raw token, shown once
  */
-export function createMcpToken(db, apiKey, opts = {}) {
+export async function createMcpToken(db, apiKey, opts = {}) {
   const label = (opts.label || '').trim();
   if (!label) throw new Error('label is required');
   const token = `lcytmcp_${randomBytes(32).toString('hex')}`;
@@ -122,28 +123,39 @@ export function createMcpToken(db, apiKey, opts = {}) {
   const projectId = opts.projectId ?? apiKey ?? null;
   const scopes = serializeScopes(opts.scopes);
 
-  const info = db.prepare(`
-    INSERT INTO mcp_tokens (api_key, label, token_hash, active, created_by_user_id, created_by_name, user_id, project_id, scopes)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(apiKey, label, hashToken(token), active, createdByUserId, createdByName, userId, projectId, scopes);
+  const created = await db.mcp_tokens.create({
+    data: {
+      api_key: apiKey,
+      label,
+      token_hash: hashToken(token),
+      active,
+      created_by_user_id: createdByUserId,
+      created_by_name: createdByName,
+      user_id: userId,
+      project_id: projectId,
+      scopes,
+      created_at: sqlNow(),
+    },
+    select: { id: true },
+  });
 
-  return { id: Number(info.lastInsertRowid), token, label, active: active === 1, createdByName, scopes: parseScopes(scopes) };
+  return { id: created.id, token, label, active: active === 1, createdByName, scopes: parseScopes(scopes) };
 }
 
 /**
  * List a project's non-revoked external tokens (both active and deactivated).
  * Never returns the hash or raw token.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {Array<{ id, label, active, createdByName, createdAt, lastUsedAt, revokedAt }>}
+ * @returns {Promise<Array<{ id, label, active, createdByName, createdAt, lastUsedAt, revokedAt }>>}
  */
-export function listMcpTokens(db, apiKey) {
-  return db.prepare(`
-    SELECT id, label, active, created_by_name, created_at, last_used_at, revoked_at
-    FROM mcp_tokens
-    WHERE api_key = ? AND revoked_at IS NULL
-    ORDER BY id
-  `).all(apiKey).map((row) => ({
+export async function listMcpTokens(db, apiKey) {
+  const rows = await db.mcp_tokens.findMany({
+    where: { api_key: apiKey, revoked_at: null },
+    select: { id: true, label: true, active: true, created_by_name: true, created_at: true, last_used_at: true, revoked_at: true },
+    orderBy: { id: 'asc' },
+  });
+  return rows.map((row) => ({
     id: row.id,
     label: row.label,
     active: row.active === 1,
@@ -156,44 +168,43 @@ export function listMcpTokens(db, apiKey) {
 
 /**
  * Update an external token's label, soft active/inactive state, or creator attribution.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey — owning project; a token can only be updated by its owner
  * @param {number} id
  * @param {{ label?: string, active?: boolean, createdByName?: string, userId?: number|null, projectId?: string|null, scopes?: string[]|string|null }} opts
- * @returns {object|null} — the updated token row, or null when not found/already revoked
+ * @returns {Promise<object|null>} — the updated token row, or null when not found/already revoked
  */
-export function updateMcpToken(db, apiKey, id, opts = {}) {
-  const existing = db.prepare('SELECT id FROM mcp_tokens WHERE api_key = ? AND id = ? AND revoked_at IS NULL').get(apiKey, id);
+export async function updateMcpToken(db, apiKey, id, opts = {}) {
+  const existing = await db.mcp_tokens.findFirst({ where: { api_key: apiKey, id, revoked_at: null }, select: { id: true } });
   if (!existing) return null;
 
-  const parts = [];
-  const values = [];
-  if (opts.label !== undefined) { parts.push('label = ?'); values.push((opts.label || '').trim()); }
-  if (opts.active !== undefined) { parts.push('active = ?'); values.push(opts.active ? 1 : 0); }
-  if (opts.createdByName !== undefined) { parts.push('created_by_name = ?'); values.push((opts.createdByName || '').trim()); }
-  if (opts.userId !== undefined) { parts.push('user_id = ?'); values.push(opts.userId ?? null); }
-  if (opts.projectId !== undefined) { parts.push('project_id = ?'); values.push(opts.projectId ?? null); }
-  if (opts.scopes !== undefined) { parts.push('scopes = ?'); values.push(serializeScopes(opts.scopes)); }
-  if (parts.length === 0) return listMcpTokens(db, apiKey).find((t) => t.id === id) || null;
-
-  values.push(apiKey, id);
-  db.prepare(`UPDATE mcp_tokens SET ${parts.join(', ')} WHERE api_key = ? AND id = ?`).run(...values);
-  return listMcpTokens(db, apiKey).find((t) => t.id === id) || null;
+  const data = {};
+  if (opts.label !== undefined) data.label = (opts.label || '').trim();
+  if (opts.active !== undefined) data.active = opts.active ? 1 : 0;
+  if (opts.createdByName !== undefined) data.created_by_name = (opts.createdByName || '').trim();
+  if (opts.userId !== undefined) data.user_id = opts.userId ?? null;
+  if (opts.projectId !== undefined) data.project_id = opts.projectId ?? null;
+  if (opts.scopes !== undefined) data.scopes = serializeScopes(opts.scopes);
+  if (Object.keys(data).length > 0) {
+    await db.mcp_tokens.updateMany({ where: { api_key: apiKey, id }, data });
+  }
+  return (await listMcpTokens(db, apiKey)).find((t) => t.id === id) || null;
 }
 
 /**
  * Permanently revoke an external token (sets revoked_at + active=0; the row stays
  * in the table for audit purposes but drops out of listMcpTokens).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey — owning project; a token can only be revoked by its owner
  * @param {number} id
- * @returns {boolean} — false when no matching non-revoked token exists
+ * @returns {Promise<boolean>} — false when no matching non-revoked token exists
  */
-export function revokeMcpToken(db, apiKey, id) {
-  const info = db.prepare(
-    "UPDATE mcp_tokens SET revoked_at = datetime('now'), active = 0 WHERE id = ? AND api_key = ? AND revoked_at IS NULL"
-  ).run(id, apiKey);
-  return info.changes > 0;
+export async function revokeMcpToken(db, apiKey, id) {
+  const info = await db.mcp_tokens.updateMany({
+    where: { id, api_key: apiKey, revoked_at: null },
+    data: { revoked_at: sqlNow(), active: 0 },
+  });
+  return info.count > 0;
 }
 
 /**
@@ -202,17 +213,18 @@ export function revokeMcpToken(db, apiKey, id) {
  * still validate the resolved api_key itself (active/expiry) via
  * validateApiKey().
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} rawToken
- * @returns {{ apiKey: string, id: number, label: string, userId: number|null, projectId: string|null, scopes: string[]|null } | null}
+ * @returns {Promise<{ apiKey: string, id: number, label: string, userId: number|null, projectId: string|null, scopes: string[]|null } | null>}
  */
-export function verifyMcpToken(db, rawToken) {
+export async function verifyMcpToken(db, rawToken) {
   if (!rawToken || typeof rawToken !== 'string') return null;
-  const row = db.prepare(
-    'SELECT id, api_key, label, user_id, project_id, scopes FROM mcp_tokens WHERE token_hash = ? AND active = 1 AND revoked_at IS NULL'
-  ).get(hashToken(rawToken));
+  const row = await db.mcp_tokens.findFirst({
+    where: { token_hash: hashToken(rawToken), active: 1, revoked_at: null },
+    select: { id: true, api_key: true, label: true, user_id: true, project_id: true, scopes: true },
+  });
   if (!row) return null;
-  db.prepare("UPDATE mcp_tokens SET last_used_at = datetime('now') WHERE id = ?").run(row.id);
+  await db.mcp_tokens.updateMany({ where: { id: row.id }, data: { last_used_at: sqlNow() } });
   return {
     apiKey: row.api_key,
     id: row.id,

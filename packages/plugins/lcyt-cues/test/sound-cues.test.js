@@ -1,90 +1,88 @@
-import { test, describe, before } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 
-// ---------------------------------------------------------------------------
-// In-memory SQLite for testing sound/silence cue rules
-// ---------------------------------------------------------------------------
+// One database for the whole file (a PostgreSQL schema per initDb is slow); createDb() empties the cue tables.
+let sharedDb;
+before(async () => {
+  const { initDb } = await import('lcyt-backend/db');
+  sharedDb = await initDb(':memory:');
+});
+after(async () => { await sharedDb?.close(); });
 
-let Database;
-try {
-  Database = (await import('better-sqlite3')).default;
-} catch {
-  console.log('# better-sqlite3 not available — skipping sound cue tests');
-  process.exit(0);
+async function createDb() {
+  await sharedDb.cue_events.deleteMany({});
+  await sharedDb.cue_rules.deleteMany({});
+  await sharedDb.cue_named_conditions.deleteMany({});
+  return sharedDb;
 }
 
+
 describe('CueEngine — sound detection cues', () => {
-  let CueEngine, runMigrations, insertCueRule;
+  let CueEngine, insertCueRule;
 
   before(async () => {
     ({ CueEngine } = await import('../src/cue-engine.js'));
-    ({ runMigrations, insertCueRule } = await import('../src/db.js'));
+    ({ insertCueRule } = await import('../src/db.js'));
   });
 
-  function createDb() {
-    const db = new Database(':memory:');
-    runMigrations(db);
-    return db;
-  }
-
-  test('music_start fires on transition from speech to music', () => {
-    const db = createDb();
-    insertCueRule(db, {
+  test('music_start fires on transition from speech to music', async () => {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'ms1', api_key: 'key1', name: 'music-on',
       match_type: 'music_start', pattern: '',
       action: { type: 'event', label: 'music_start' },
     });
     const engine = new CueEngine(db);
     // Start with speech
-    engine.evaluateSoundEvent('key1', 'speech');
+    await engine.evaluateSoundEvent('key1', 'speech');
     // Transition to music
-    const fired = engine.evaluateSoundEvent('key1', 'music');
+    const fired = await engine.evaluateSoundEvent('key1', 'music');
     assert.equal(fired.length, 1);
     assert.equal(fired[0].matched, 'music_start');
   });
 
-  test('music_start does not fire when already in music', () => {
-    const db = createDb();
-    insertCueRule(db, {
+  test('music_start does not fire when already in music', async () => {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'ms1', api_key: 'key1', name: 'music-on',
       match_type: 'music_start', pattern: '',
     });
     const engine = new CueEngine(db);
-    engine.evaluateSoundEvent('key1', 'music');
+    await engine.evaluateSoundEvent('key1', 'music');
     // Second music label — no transition
-    const fired = engine.evaluateSoundEvent('key1', 'music');
+    const fired = await engine.evaluateSoundEvent('key1', 'music');
     assert.equal(fired.length, 0);
   });
 
-  test('music_stop fires on transition from music to speech', () => {
-    const db = createDb();
-    insertCueRule(db, {
+  test('music_stop fires on transition from music to speech', async () => {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'ms1', api_key: 'key1', name: 'music-off',
       match_type: 'music_stop', pattern: '',
       action: { type: 'event', label: 'music_stop' },
     });
     const engine = new CueEngine(db);
-    engine.evaluateSoundEvent('key1', 'music');
-    const fired = engine.evaluateSoundEvent('key1', 'speech');
+    await engine.evaluateSoundEvent('key1', 'music');
+    const fired = await engine.evaluateSoundEvent('key1', 'speech');
     assert.equal(fired.length, 1);
     assert.equal(fired[0].matched, 'music_stop');
   });
 
-  test('music_stop does not fire when not coming from music', () => {
-    const db = createDb();
-    insertCueRule(db, {
+  test('music_stop does not fire when not coming from music', async () => {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'ms1', api_key: 'key1', name: 'music-off',
       match_type: 'music_stop', pattern: '',
     });
     const engine = new CueEngine(db);
-    engine.evaluateSoundEvent('key1', 'speech');
-    const fired = engine.evaluateSoundEvent('key1', 'silence');
+    await engine.evaluateSoundEvent('key1', 'speech');
+    const fired = await engine.evaluateSoundEvent('key1', 'silence');
     assert.equal(fired.length, 0);
   });
 
   test('silence cue fires after minimum duration', async () => {
-    const db = createDb();
-    insertCueRule(db, {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'sl1', api_key: 'key1', name: 'silence-5s',
       match_type: 'silence', pattern: '0.05', // 50ms for test
       action: { type: 'event', label: 'silence_detected' },
@@ -93,7 +91,7 @@ describe('CueEngine — sound detection cues', () => {
 
     let callbackFired = false;
     let callbackResults = [];
-    engine.evaluateSoundEvent('key1', 'silence', (results) => {
+    await engine.evaluateSoundEvent('key1', 'silence', (results) => {
       callbackFired = true;
       callbackResults = results;
     });
@@ -109,20 +107,20 @@ describe('CueEngine — sound detection cues', () => {
   });
 
   test('silence cue cancels when silence is broken', async () => {
-    const db = createDb();
-    insertCueRule(db, {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'sl1', api_key: 'key1', name: 'silence-long',
       match_type: 'silence', pattern: '1', // 1 second
     });
     const engine = new CueEngine(db);
 
     let callbackFired = false;
-    engine.evaluateSoundEvent('key1', 'silence', () => {
+    await engine.evaluateSoundEvent('key1', 'silence', () => {
       callbackFired = true;
     });
 
     // Break silence immediately
-    engine.evaluateSoundEvent('key1', 'speech');
+    await engine.evaluateSoundEvent('key1', 'speech');
 
     // Wait past the silence duration
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -132,40 +130,40 @@ describe('CueEngine — sound detection cues', () => {
     engine.clearSilenceTimers();
   });
 
-  test('clearSilenceTimers cleans up state', () => {
-    const db = createDb();
-    insertCueRule(db, {
+  test('clearSilenceTimers cleans up state', async () => {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'sl1', api_key: 'key1', name: 'silence-test',
       match_type: 'silence', pattern: '10',
     });
     const engine = new CueEngine(db);
-    engine.evaluateSoundEvent('key1', 'silence');
+    await engine.evaluateSoundEvent('key1', 'silence');
     engine.clearSilenceTimers();
     assert.equal(engine._silenceState.size, 0);
   });
 
-  test('evaluateSoundEvent returns empty array when no matching rules', () => {
-    const db = createDb();
+  test('evaluateSoundEvent returns empty array when no matching rules', async () => {
+    const db = await createDb();
     const engine = new CueEngine(db);
-    const fired = engine.evaluateSoundEvent('key1', 'music');
+    const fired = await engine.evaluateSoundEvent('key1', 'music');
     assert.deepEqual(fired, []);
   });
 
-  test('cooldown prevents repeated music_start firing', () => {
-    const db = createDb();
-    insertCueRule(db, {
+  test('cooldown prevents repeated music_start firing', async () => {
+    const db = await createDb();
+    await insertCueRule(db, {
       id: 'ms1', api_key: 'key1', name: 'music-on',
       match_type: 'music_start', pattern: '',
       cooldown_ms: 60000,
     });
     const engine = new CueEngine(db);
-    engine.evaluateSoundEvent('key1', 'speech');
-    const fired1 = engine.evaluateSoundEvent('key1', 'music');
+    await engine.evaluateSoundEvent('key1', 'speech');
+    const fired1 = await engine.evaluateSoundEvent('key1', 'music');
     assert.equal(fired1.length, 1);
 
     // Quick transition back and forth
-    engine.evaluateSoundEvent('key1', 'speech');
-    const fired2 = engine.evaluateSoundEvent('key1', 'music');
+    await engine.evaluateSoundEvent('key1', 'speech');
+    const fired2 = await engine.evaluateSoundEvent('key1', 'music');
     assert.equal(fired2.length, 0); // cooldown blocks it
   });
 });

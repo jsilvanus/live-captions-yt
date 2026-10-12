@@ -173,7 +173,7 @@ export function isValidCommandPattern(pattern) {
  * rules exist for it, switches that rule kind to default-deny.
  * @param {Array<{rule_type: 'allow'|'deny', pattern: string, description?: string}>} rules
  * @param {(pattern: string) => boolean} matches
- * @returns {{ allowed: boolean, reason?: string }}
+ * @returns {Promise<{ allowed: boolean, reason?: string }>}
  */
 function evaluate(rules, matches) {
   const denyMatch = rules.find((r) => r.rule_type === 'deny' && matches(r.pattern));
@@ -192,25 +192,25 @@ function evaluate(rules, matches) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} bridgeInstanceId
  * @param {string} host
  * @param {number} port
- * @returns {{ allowed: boolean, reason?: string }}
+ * @returns {Promise<{ allowed: boolean, reason?: string }>}
  */
-export function checkIpAllowed(db, bridgeInstanceId, host, port) {
-  const rules = listBridgeSecurityRules(db, bridgeInstanceId, 'ip');
+export async function checkIpAllowed(db, bridgeInstanceId, host, port) {
+  const rules = await listBridgeSecurityRules(db, bridgeInstanceId, 'ip');
   return evaluate(rules, (pattern) => matchesHostPattern(pattern, host, port));
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} bridgeInstanceId
  * @param {string} payload
- * @returns {{ allowed: boolean, reason?: string }}
+ * @returns {Promise<{ allowed: boolean, reason?: string }>}
  */
-export function checkCommandAllowed(db, bridgeInstanceId, payload) {
-  const rules = listBridgeSecurityRules(db, bridgeInstanceId, 'command');
+export async function checkCommandAllowed(db, bridgeInstanceId, payload) {
+  const rules = await listBridgeSecurityRules(db, bridgeInstanceId, 'command');
   return evaluate(rules, (pattern) => matchesCommandPattern(pattern, payload));
 }
 

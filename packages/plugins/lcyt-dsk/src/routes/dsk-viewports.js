@@ -9,7 +9,7 @@
  * PUT    /dsk/:apikey/viewports/:name     — update viewport label/type/dimensions
  * DELETE /dsk/:apikey/viewports/:name     — delete viewport
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('express').RequestHandler} auth
  */
 import { Router } from 'express';
@@ -47,29 +47,27 @@ export function createDskViewportsRouter(db, auth, deps = {}) {
    * caption-session token) still 403s here, same as every other Setup-tier
    * route in this codebase.
    */
-  function requireSetup(req, res, next) {
+  async function requireSetup(req, res, next) {
     const apiKey = req.session?.apiKey;
-    if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !deps.checkProjectRole('setup', apiKey, req.user.userId)) {
+    if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !await deps.checkProjectRole('setup', apiKey, req.user.userId)) {
       return res.status(403).json({ error: 'Explicit project admin/owner access required' });
     }
     next();
   }
 
   // GET /dsk/:apikey/viewports
-  router.get('/:apikey/viewports', auth, (req, res) => {
+  router.get('/:apikey/viewports', auth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const rows = listViewports(db, req.params.apikey);
+    const rows = await listViewports(db, req.params.apikey);
     // projectSlug (when set) lets the Viewports page build slug-form display
     // URLs (/dsk/<slug>/<viewport>) without a separate lookup.
     let projectSlug = null;
-    try {
-      projectSlug = db.prepare('SELECT public_slug FROM api_keys WHERE key = ?').get(req.params.apikey)?.public_slug ?? null;
-    } catch { /* pre-migration schema */ }
+    projectSlug = (await db.api_keys.findUnique({ where: { key: req.params.apikey }, select: { public_slug: true } }))?.public_slug ?? null;
     res.json({ viewports: rows.map(formatViewport), projectSlug });
   });
 
   // POST /dsk/:apikey/viewports
-  router.post('/:apikey/viewports', auth, requireSetup, (req, res) => {
+  router.post('/:apikey/viewports', auth, requireSetup, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name, label, viewportType, width, height, textLayers, displaySettings } = req.body ?? {};
 
@@ -89,7 +87,7 @@ export function createDskViewportsRouter(db, auth, deps = {}) {
     const w = parseInt(width, 10) || (vt === 'vertical' ? 1080 : 1920);
     const h = parseInt(height, 10) || (vt === 'vertical' ? 1920 : 1080);
 
-    const existing = getViewport(db, req.params.apikey, name);
+    const existing = await getViewport(db, req.params.apikey, name);
     if (existing) {
       return res.status(409).json({ error: 'Viewport with this name already exists' });
     }
@@ -97,16 +95,16 @@ export function createDskViewportsRouter(db, auth, deps = {}) {
     const textLayersJson = Array.isArray(textLayers) ? JSON.stringify(textLayers) : null;
     const cleanSettings = sanitizeDisplaySettings(displaySettings);
     const displaySettingsJson = cleanSettings ? JSON.stringify(cleanSettings) : null;
-    const row = upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h, textLayersJson, displaySettingsJson });
-    if (cleanSettings?.stream?.mode === 'composite') demoteOtherCompositeViewports(db, req.params.apikey, name);
+    const row = await upsertViewport(db, req.params.apikey, { name, label, viewportType: vt, width: w, height: h, textLayersJson, displaySettingsJson });
+    if (cleanSettings?.stream?.mode === 'composite') await demoteOtherCompositeViewports(db, req.params.apikey, name);
     res.status(201).json({ viewport: formatViewport(row) });
   });
 
   // PUT /dsk/:apikey/viewports/:name
-  router.put('/:apikey/viewports/:name', auth, requireSetup, (req, res) => {
+  router.put('/:apikey/viewports/:name', auth, requireSetup, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { name } = req.params;
-    const existing = getViewport(db, req.params.apikey, name);
+    const existing = await getViewport(db, req.params.apikey, name);
     if (!existing) return res.status(404).json({ error: 'Viewport not found' });
 
     const { label, viewportType, width, height, textLayers, displaySettings } = req.body ?? {};
@@ -131,7 +129,7 @@ export function createDskViewportsRouter(db, auth, deps = {}) {
       displaySettingsJson = clean ? JSON.stringify(clean) : null;
     }
 
-    const row = upsertViewport(db, req.params.apikey, {
+    const row = await upsertViewport(db, req.params.apikey, {
       name,
       label:           label        !== undefined ? label        : existing.label,
       viewportType:    vt,
@@ -143,14 +141,14 @@ export function createDskViewportsRouter(db, auth, deps = {}) {
     // Enforce the single-composite invariant when this viewport is now composite.
     let savedStreamMode = null;
     try { savedStreamMode = JSON.parse(displaySettingsJson || 'null')?.stream?.mode ?? null; } catch {}
-    if (savedStreamMode === 'composite') demoteOtherCompositeViewports(db, req.params.apikey, name);
+    if (savedStreamMode === 'composite') await demoteOtherCompositeViewports(db, req.params.apikey, name);
     res.json({ viewport: formatViewport(row) });
   });
 
   // DELETE /dsk/:apikey/viewports/:name
-  router.delete('/:apikey/viewports/:name', auth, requireSetup, (req, res) => {
+  router.delete('/:apikey/viewports/:name', auth, requireSetup, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const deleted = deleteViewport(db, req.params.apikey, req.params.name);
+    const deleted = await deleteViewport(db, req.params.apikey, req.params.name);
     if (!deleted) return res.status(404).json({ error: 'Viewport not found' });
     res.json({ ok: true });
   });

@@ -34,11 +34,11 @@ const SOUND_PATTERN = /<!--\s*sound\s*:\s*(music|speech|silence)\s*(?::\s*([01](
 const BPM_PATTERN    = /<!--\s*bpm\s*:\s*(\d+)\s*-->/gi;
 
 /**
- * @param {{ store: import('../../lcyt-backend/src/store.js').SessionStore|null, db: import('better-sqlite3').Database }} opts
- * @returns {(apiKey: string, text: string) => string}
+ * @param {{ store: import('../../lcyt-backend/src/store.js').SessionStore|null, db: object }} opts
+ * @returns {(apiKey: string, text: string) => Promise<string>}
  */
 export function createSoundCaptionProcessor({ store, db }) {
-  return function processSoundCaption(apiKey, text) {
+  return async function processSoundCaption(apiKey, text) {
     if (!text) return text;
 
     // matchAll() on a 'g' regex never mutates a shared lastIndex, so a fresh
@@ -61,21 +61,21 @@ export function createSoundCaptionProcessor({ store, db }) {
 
     // Persist to DB. Write a separate row per event type so the DB log mirrors
     // the SSE events emitted below 1:1 (a caption carrying both a label and a
-    // bpm value produces two rows, not one combined row).
+    // bpm value produces two rows, not one combined row). The writes are started
+    // first but the SSE events below are emitted without waiting for them.
+    const writes = [];
     if (db && label) {
-      try {
-        insertMusicEvent(db, apiKey, { event_type: 'label_change', label, bpm: bpm ?? null, confidence });
-      } catch (err) {
-        // Non-fatal — DB write failure should not block caption delivery
-        console.warn('[music] Failed to insert music_event:', err?.message);
-      }
+      writes.push(
+        insertMusicEvent(db, apiKey, { event_type: 'label_change', label, bpm: bpm ?? null, confidence })
+          // Non-fatal — DB write failure should not block caption delivery
+          .catch((err) => { console.warn('[music] Failed to insert music_event:', err?.message); }),
+      );
     }
     if (db && bpm != null) {
-      try {
-        insertMusicEvent(db, apiKey, { event_type: 'bpm_update', label: null, bpm, confidence });
-      } catch (err) {
-        console.warn('[music] Failed to insert music_event (bpm):', err?.message);
-      }
+      writes.push(
+        insertMusicEvent(db, apiKey, { event_type: 'bpm_update', label: null, bpm, confidence })
+          .catch((err) => { console.warn('[music] Failed to insert music_event (bpm):', err?.message); }),
+      );
     }
 
     // Emit SSE events on the existing session /events stream
@@ -95,6 +95,7 @@ export function createSoundCaptionProcessor({ store, db }) {
       }
     }
 
+    await Promise.all(writes);
     return cleanText;
   };
 }

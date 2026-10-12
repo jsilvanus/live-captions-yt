@@ -4,11 +4,11 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -42,9 +42,9 @@ function checkProjectRole(tier, apiKey, userId) {
   return (apiKey === 'keyA' && userId === 1) || (apiKey === 'keyB' && userId === 2);
 }
 
-before(() => new Promise((resolve) => {
-  db = new Database(':memory:');
-  runAiRolesMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
+  await runAiRolesMigrations(db);
 
   const app = express();
   app.use(express.json());
@@ -54,16 +54,14 @@ before(() => new Promise((resolve) => {
   tokenB = jwt.sign({ sessionId: 'sB', apiKey: 'keyB', userId: 2 }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
-  server.listen(0, () => {
-    baseUrl = `http://localhost:${server.address().port}`;
-    resolve();
-  });
-}));
+  await new Promise((resolve) => server.listen(0, resolve));
+  baseUrl = `http://localhost:${server.address().port}`;
+});
 
-after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
-}));
+after(async () => {
+  await db.close();
+  await new Promise((resolve) => server.close(resolve));
+});
 
 function req(path, { method = 'GET', token, body } = {}) {
   return fetch(`${baseUrl}${path}`, {
@@ -136,7 +134,7 @@ describe('PUT /roles/:roleCode/config', () => {
   });
 
   it('is isolated per project — keyB never sees keyA\'s config', async () => {
-    setRoleConfig(db, 'keyA', 'setup_assistant', { enabled: true, providerId: 'prov-x' });
+    await setRoleConfig(db, 'keyA', 'setup_assistant', { enabled: true, providerId: 'prov-x' });
     const res = await req('/roles/setup_assistant/config', { token: tokenB });
     const { config } = await res.json();
     assert.equal(config.enabled, false);

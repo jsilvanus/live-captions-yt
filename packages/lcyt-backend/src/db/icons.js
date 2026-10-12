@@ -1,55 +1,76 @@
+import { num } from './helpers.js';
+
 // ─── Icons (user-uploaded PNG/SVG for viewer branding) ────────────────────────
+
+function toRow(row) {
+  return row ? { ...row, size_bytes: num(row.size_bytes) } : row;
+}
 
 /**
  * Register a new icon in the database.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {{ apiKey: string, filename: string, diskFilename: string, mimeType: string, sizeBytes: number }} data
- * @returns {number} row id
+ * @returns {Promise<number>} row id
  */
-export function registerIcon(db, { apiKey, filename, diskFilename, mimeType, sizeBytes }) {
-  const result = db.prepare(
-    'INSERT INTO icons (api_key, filename, disk_filename, mime_type, size_bytes) VALUES (?, ?, ?, ?, ?)'
-  ).run(apiKey, filename, diskFilename, mimeType ?? 'image/png', sizeBytes ?? 0);
-  return result.lastInsertRowid;
+export async function registerIcon(db, { apiKey, filename, diskFilename, mimeType, sizeBytes }) {
+  const row = await db.icons.create({
+    data: {
+      api_key: apiKey,
+      filename,
+      disk_filename: diskFilename,
+      mime_type: mimeType ?? 'image/png',
+      size_bytes: Math.round(Number(sizeBytes ?? 0)) || 0,
+    },
+  });
+  return row.id;
 }
 
 /**
  * List all icons for an API key, newest first.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {Array}
+ * @returns {Promise<Array>}
  */
-export function listIcons(db, apiKey) {
-  return db.prepare('SELECT * FROM icons WHERE api_key = ? ORDER BY created_at DESC').all(apiKey);
+export async function listIcons(db, apiKey) {
+  const rows = await db.icons.findMany({
+    where: { api_key: apiKey },
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
+  return rows.map(toRow);
 }
 
 /**
  * Get a single icon row by id (no API key scoping — for public serving).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getIcon(db, id) {
-  return db.prepare('SELECT * FROM icons WHERE id = ?').get(id) ?? null;
+export async function getIcon(db, id) {
+  const n = Number(id);
+  if (!Number.isInteger(n)) return null;
+  return toRow(await db.icons.findUnique({ where: { id: n } })) ?? null;
 }
 
 /**
  * Delete an icon row by id, scoped to an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} id
  * @param {string} apiKey
- * @returns {boolean} true if a row was deleted
+ * @returns {Promise<boolean>} true if a row was deleted
  */
-export function deleteIcon(db, id, apiKey) {
-  const result = db.prepare('DELETE FROM icons WHERE id = ? AND api_key = ?').run(id, apiKey);
-  return result.changes > 0;
+export async function deleteIcon(db, id, apiKey) {
+  const n = Number(id);
+  if (!Number.isInteger(n)) return false;
+  const r = await db.icons.deleteMany({ where: { id: n, api_key: apiKey } });
+  return r.count > 0;
 }
 
 /**
  * Delete all icon rows for an API key (for GDPR erasure).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
+ * @returns {Promise<void>}
  */
-export function deleteAllIcons(db, apiKey) {
-  db.prepare('DELETE FROM icons WHERE api_key = ?').run(apiKey);
+export async function deleteAllIcons(db, apiKey) {
+  await db.icons.deleteMany({ where: { api_key: apiKey } });
 }

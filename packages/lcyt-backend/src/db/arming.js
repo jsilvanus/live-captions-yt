@@ -8,66 +8,78 @@
  * either way. Every change is published on the bus as
  * `production.arming_changed`.
  */
+import { sqlNow } from './helpers.js';
+
+const ARMING_FIELDS = { id: true, armed: true, status: true };
 
 /**
  * The broadcast that carries the arming flag: the newest live one, else the
  * project's active (non-archived) one, else none.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {{ id: string, armed: number, status: string }|null}
+ * @returns {Promise<{ id: string, armed: number, status: string }|null>}
  */
-export function getArmingBroadcast(db, apiKey) {
-  const live = db.prepare(
-    "SELECT id, armed, status FROM broadcasts WHERE api_key = ? AND status = 'live' ORDER BY actual_start DESC, created_at DESC LIMIT 1",
-  ).get(apiKey);
+export async function getArmingBroadcast(db, apiKey) {
+  // NULL actual_start sorts last on both dialects (PostgreSQL would put NULLs first on DESC).
+  const live = await db.broadcasts.findFirst({
+    where: { api_key: apiKey, status: 'live' },
+    orderBy: [{ actual_start: { sort: 'desc', nulls: 'last' } }, { created_at: 'desc' }],
+    select: ARMING_FIELDS,
+  });
   if (live) return live;
-  return db.prepare(`
-    SELECT b.id, b.armed, b.status FROM broadcasts b
-    JOIN api_keys k ON k.active_broadcast_id = b.id
-    WHERE k.key = ? AND b.api_key = ? AND b.status != 'archived'
-  `).get(apiKey, apiKey) ?? null;
+  const key = await db.api_keys.findUnique({ where: { key: apiKey }, select: { active_broadcast_id: true } });
+  if (!key?.active_broadcast_id) return null;
+  return (await db.broadcasts.findFirst({
+    where: { id: key.active_broadcast_id, api_key: apiKey, status: { not: 'archived' } },
+    select: ARMING_FIELDS,
+  })) ?? null;
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {{ armed: boolean, broadcastId: string|null, status: string|null }}
+ * @returns {Promise<{ armed: boolean, broadcastId: string|null, status: string|null }>}
  */
-export function getArming(db, apiKey) {
-  const b = getArmingBroadcast(db, apiKey);
+export async function getArming(db, apiKey) {
+  const b = await getArmingBroadcast(db, apiKey);
   return { armed: Boolean(b?.armed), broadcastId: b?.id ?? null, status: b?.status ?? null };
 }
 
-/** @param {import('better-sqlite3').Database} db @param {string} apiKey */
-export function isArmed(db, apiKey) {
-  return getArming(db, apiKey).armed;
+/** @param {import('./connection.js').Db} db @param {string} apiKey @returns {Promise<boolean>} */
+export async function isArmed(db, apiKey) {
+  return (await getArming(db, apiKey)).armed;
 }
 
 /**
  * Operator override. Fails with 409 when the project has no live or active
  * broadcast to hold the flag.
- * @returns {{ ok: true, armed: boolean, broadcastId: string, changed: boolean }|{ ok: false, status: number, error: string }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, armed: boolean, broadcastId: string, changed: boolean }|{ ok: false, status: number, error: string }>}
  */
-export function setArmed(db, apiKey, armed) {
-  const b = getArmingBroadcast(db, apiKey);
+export async function setArmed(db, apiKey, armed) {
+  const b = await getArmingBroadcast(db, apiKey);
   if (!b) return { ok: false, status: 409, error: 'No live or active broadcast to arm' };
   const next = armed ? 1 : 0;
   const changed = b.armed !== next;
   if (changed) {
-    db.prepare("UPDATE broadcasts SET armed = ?, updated_at = datetime('now') WHERE api_key = ? AND id = ?").run(next, apiKey, b.id);
+    await db.broadcasts.updateMany({ where: { api_key: apiKey, id: b.id }, data: { armed: next, updated_at: sqlNow() } });
   }
   return { ok: true, armed: Boolean(next), broadcastId: b.id, changed };
 }
 
 /**
  * Set the flag on a specific broadcast (go-live auto-arm, session-end disarm).
- * @returns {boolean} true when the value changed
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<boolean>} true when the value changed
  */
-export function setBroadcastArmed(db, apiKey, broadcastId, armed) {
+export async function setBroadcastArmed(db, apiKey, broadcastId, armed) {
   if (!broadcastId) return false;
   const next = armed ? 1 : 0;
-  return db.prepare("UPDATE broadcasts SET armed = ?, updated_at = datetime('now') WHERE api_key = ? AND id = ? AND armed != ?")
-    .run(next, apiKey, broadcastId, next).changes > 0;
+  const res = await db.broadcasts.updateMany({
+    where: { api_key: apiKey, id: broadcastId, armed: { not: next } },
+    data: { armed: next, updated_at: sqlNow() },
+  });
+  return res.count > 0;
 }
 
 /**
@@ -85,10 +97,11 @@ export function publishArmingChange(eventBus, apiKey, { armed, broadcastId, reas
 
 /**
  * Arm a broadcast that just went live and announce it.
- * @returns {boolean} whether the state changed
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<boolean>} whether the state changed
  */
-export function armOnGoLive(db, eventBus, apiKey, broadcastId) {
-  const changed = setBroadcastArmed(db, apiKey, broadcastId, true);
+export async function armOnGoLive(db, eventBus, apiKey, broadcastId) {
+  const changed = await setBroadcastArmed(db, apiKey, broadcastId, true);
   if (changed) publishArmingChange(eventBus, apiKey, { armed: true, broadcastId, reason: 'go_live' });
   return changed;
 }
@@ -96,10 +109,11 @@ export function armOnGoLive(db, eventBus, apiKey, broadcastId) {
 /**
  * Disarm a broadcast whose session ended and announce it. Call before
  * completeBroadcast (which clears the flag too, as a safety net).
- * @returns {boolean} whether the state changed
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<boolean>} whether the state changed
  */
-export function disarmOnEnd(db, eventBus, apiKey, broadcastId) {
-  const changed = setBroadcastArmed(db, apiKey, broadcastId, false);
+export async function disarmOnEnd(db, eventBus, apiKey, broadcastId) {
+  const changed = await setBroadcastArmed(db, apiKey, broadcastId, false);
   if (changed) publishArmingChange(eventBus, apiKey, { armed: false, broadcastId, reason: 'session_end' });
   return changed;
 }

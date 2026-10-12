@@ -24,7 +24,7 @@ import { requireApiKey, isValidSlug } from './helpers.js';
 import { createAuthoringGuard } from '../authoring-guard.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('express').RequestHandler} auth
  */
 export function createActionsRouter(db, auth, opts = {}) {
@@ -34,18 +34,18 @@ export function createActionsRouter(db, auth, opts = {}) {
 
   // Saved definitions keep camera/mixer/preset ids so a rename cannot break
   // them; responses show the current labels again (executor.rewriteDeviceRefs).
-  const toIds = (apiKey, expr) => executor?.rewriteDeviceRefs?.(apiKey, expr, 'ids') ?? expr;
-  const present = (apiKey, row) => {
+  const toIds = async (apiKey, expr) => (await executor?.rewriteDeviceRefs?.(apiKey, expr, 'ids')) ?? expr;
+  const present = async (apiKey, row) => {
     const out = serializeActionDef(row);
-    if (out && executor?.rewriteDeviceRefs) out.definition = executor.rewriteDeviceRefs(apiKey, out.definition, 'labels');
+    if (out && executor?.rewriteDeviceRefs) out.definition = await executor.rewriteDeviceRefs(apiKey, out.definition, 'labels');
     return out;
   };
 
   // Same operator+ gate as the DSK activate routes: session/device callers pass,
   // user JWT callers need the 'production' tier.
-  function requireProduction(req, res, next) {
+  async function requireProduction(req, res, next) {
     if (!req.user?.userId) return next();
-    if (typeof checkProjectRole !== 'function' || !checkProjectRole('production', req.session?.apiKey, req.user.userId)) {
+    if (typeof checkProjectRole !== 'function' || !(await checkProjectRole('production', req.session?.apiKey, req.user.userId))) {
       return res.status(403).json({ error: 'Explicit project operator+ access required' });
     }
     next();
@@ -65,55 +65,55 @@ export function createActionsRouter(db, auth, opts = {}) {
     res.json(result);
   });
 
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    res.json({ actions: listActionDefs(db, apiKey).map((r) => present(apiKey, r)) });
+    res.json({ actions: await Promise.all((await listActionDefs(db, apiKey)).map((r) => present(apiKey, r))) });
   });
 
-  router.post('/', auth, (req, res) => {
+  router.post('/', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const { name, slug, definition, description } = req.body || {};
-    const denied = guard(req, apiKey, definition);
+    const denied = await guard(req, apiKey, definition);
     if (denied) return res.status(denied.status).json({ error: denied.error });
     if (!name) return res.status(400).json({ error: 'name is required' });
     if (!isValidSlug(slug)) return res.status(400).json({ error: 'slug must be lowercase alphanumeric with hyphens' });
-    if (getActionDefBySlug(db, apiKey, slug)) return res.status(409).json({ error: `Action slug already in use: ${slug}` });
-    const row = createActionDef(db, apiKey, { id: crypto.randomUUID(), name, slug, definition: toIds(apiKey, definition), description });
-    res.status(201).json({ action: present(apiKey, row) });
+    if (await getActionDefBySlug(db, apiKey, slug)) return res.status(409).json({ error: `Action slug already in use: ${slug}` });
+    const row = await createActionDef(db, apiKey, { id: crypto.randomUUID(), name, slug, definition: await toIds(apiKey, definition), description });
+    res.status(201).json({ action: await present(apiKey, row) });
   });
 
-  router.get('/:slug', auth, (req, res) => {
+  router.get('/:slug', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const row = getActionDefBySlug(db, apiKey, req.params.slug);
+    const row = await getActionDefBySlug(db, apiKey, req.params.slug);
     if (!row) return res.status(404).json({ error: 'Not found' });
-    res.json({ action: present(apiKey, row) });
+    res.json({ action: await present(apiKey, row) });
   });
 
-  router.put('/:slug', auth, (req, res) => {
+  router.put('/:slug', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const existing = getActionDefBySlug(db, apiKey, req.params.slug);
+    const existing = await getActionDefBySlug(db, apiKey, req.params.slug);
     if (!existing) return res.status(404).json({ error: 'Not found' });
     const { name, slug, definition, description } = req.body || {};
-    const denied = guard(req, apiKey, definition);
+    const denied = await guard(req, apiKey, definition);
     if (denied) return res.status(denied.status).json({ error: denied.error });
     if (slug !== undefined && !isValidSlug(slug)) return res.status(400).json({ error: 'slug must be lowercase alphanumeric with hyphens' });
-    if (slug !== undefined && slug !== existing.slug && getActionDefBySlug(db, apiKey, slug)) {
+    if (slug !== undefined && slug !== existing.slug && await getActionDefBySlug(db, apiKey, slug)) {
       return res.status(409).json({ error: `Action slug already in use: ${slug}` });
     }
-    const row = updateActionDef(db, existing.id, { name, slug, definition: toIds(apiKey, definition), description });
-    res.json({ action: present(apiKey, row) });
+    const row = await updateActionDef(db, existing.id, { name, slug, definition: await toIds(apiKey, definition), description });
+    res.json({ action: await present(apiKey, row) });
   });
 
-  router.delete('/:slug', auth, (req, res) => {
+  router.delete('/:slug', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const existing = getActionDefBySlug(db, apiKey, req.params.slug);
+    const existing = await getActionDefBySlug(db, apiKey, req.params.slug);
     if (!existing) return res.status(404).json({ error: 'Not found' });
-    deleteActionDef(db, existing.id);
+    await deleteActionDef(db, existing.id);
     res.json({ ok: true });
   });
 

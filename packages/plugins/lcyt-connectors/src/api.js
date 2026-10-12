@@ -6,7 +6,7 @@
  *     initConnectors, createConnectorsRouter, createVariablesRouter,
  *     createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
  *   } from 'lcyt-connectors';
- *   const { bus, engine } = initConnectors(db, { filesControl });
+ *   const { bus, engine } = await initConnectors(db, { filesControl });
  *   app.use('/connectors', createConnectorsRouter(db, auth));
  *   app.use('/variables', createVariablesRouter(db, auth, bus, engine));
  *   app.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
@@ -24,7 +24,6 @@
  * default, with admin-managed global and org-managed enforced overrides —
  * see this plugin's CLAUDE.md "Network policy" section).
  */
-import { runMigrations } from './db.js';
 import { VariablesBus } from './variables-bus.js';
 import { createResolutionEngine } from './resolution-engine.js';
 import { createTtlScheduler } from './ttl-scheduler.js';
@@ -43,17 +42,17 @@ export { interpolate, interpolatePairs, extractVariableNames } from 'varfetch';
 export { parseValueTtl } from './ttl.js';
 
 /**
- * Run migrations and wire up the bus + resolution engine.
- * @param {import('better-sqlite3').Database} db
+ * Wire up the bus + resolution engine and restore persisted TTL timers and constant polls.
+ * @param {import('lcyt-backend/db').Db} db
  * @param {{ filesControl?: object, eventBus?: import('lcyt/event-bus').EventBus }} [opts]
+ * @returns {Promise<{ bus, engine, scheduler, pollScheduler }>}
  */
-export function initConnectors(db, opts = {}) {
-  runMigrations(db);
+export async function initConnectors(db, opts = {}) {
   const bus = new VariablesBus(opts.eventBus);
   const engine = createResolutionEngine({ db, bus, filesControl: opts.filesControl || null });
   const scheduler = createTtlScheduler({ db, bus });
-  scheduler.restore();
+  await scheduler.restore();
   const pollScheduler = createPollScheduler({ db, engine });
-  pollScheduler.restore();
+  await pollScheduler.restore();
   return { bus, engine, scheduler, pollScheduler };
 }

@@ -13,7 +13,6 @@ import { SessionStore } from '../src/store.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createArmingRouter } from '../src/routes/arming.js';
 import { createLiveRouter } from '../src/routes/live.js';
-import { runMigrations as runRtmpMigrations } from 'lcyt-rtmp/src/db.js';
 import {
   createBroadcast, getBroadcast, bindSessionStart, completeBroadcast, activateBroadcast,
   getArming, setArmed, armOnGoLive, disarmOnEnd,
@@ -22,10 +21,9 @@ import {
 const SECRET = 'arming-secret';
 let db, key, server, baseUrl, bus, events, store;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  runRtmpMigrations(db);
-  key = createKey(db, { owner: 'Arming' }).key;
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
+  key = (await createKey(db, { owner: 'Arming' })).key;
   bus = new EventBus();
   events = [];
   bus.subscribe(key, ['production.arming_changed'], (e) => events.push(e.data));
@@ -38,52 +36,52 @@ before(() => new Promise((resolve) => {
   server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
 }));
 after(() => new Promise((resolve) => { store.stopCleanup(); db.close(); server.close(resolve); }));
-beforeEach(() => {
-  db.prepare('UPDATE api_keys SET active_broadcast_id = NULL WHERE key = ?').run(key);
-  db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(key);
+beforeEach(async () => {
+  await db.prepare('UPDATE api_keys SET active_broadcast_id = NULL WHERE key = ?').run(key);
+  await db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(key);
   events.length = 0;
 });
 
-const mk = (status = 'draft') => createBroadcast(db, key, { title: 't', status }).broadcast ?? createBroadcast(db, key, { title: 't', status });
+const mk = async (status = 'draft') => (await createBroadcast(db, key, { title: 't', status })).broadcast;
 
 describe('arming db', () => {
-  it('is disarmed with no broadcast and cannot be armed', () => {
-    assert.deepEqual(getArming(db, key), { armed: false, broadcastId: null, status: null });
-    assert.equal(setArmed(db, key, true).status, 409);
+  it('is disarmed with no broadcast and cannot be armed', async () => {
+    assert.deepEqual(await getArming(db, key), { armed: false, broadcastId: null, status: null });
+    assert.equal((await setArmed(db, key, true)).status, 409);
   });
 
-  it('lives on the active broadcast, defaults to disarmed, and toggles', () => {
-    const b = mk();
-    activateBroadcast(db, key, b.id);
-    assert.equal(getArming(db, key).armed, false);
-    assert.equal(getBroadcast(db, key, b.id).armed, false);
-    const r = setArmed(db, key, true);
+  it('lives on the active broadcast, defaults to disarmed, and toggles', async () => {
+    const b = await mk();
+    await activateBroadcast(db, key, b.id);
+    assert.equal((await getArming(db, key)).armed, false);
+    assert.equal((await getBroadcast(db, key, b.id)).armed, false);
+    const r = await setArmed(db, key, true);
     assert.deepEqual([r.ok, r.armed, r.changed, r.broadcastId], [true, true, true, b.id]);
-    assert.equal(setArmed(db, key, true).changed, false);
-    assert.equal(getArming(db, key).armed, true);
-    assert.equal(getBroadcast(db, key, b.id).armed, true);
+    assert.equal((await setArmed(db, key, true)).changed, false);
+    assert.equal((await getArming(db, key)).armed, true);
+    assert.equal((await getBroadcast(db, key, b.id)).armed, true);
   });
 
-  it('a live broadcast takes precedence over the active one', () => {
-    const active = mk();
-    activateBroadcast(db, key, active.id);
-    const live = mk();
-    bindSessionStart(db, key, live.id);
-    assert.equal(getArming(db, key).broadcastId, live.id);
-    assert.equal(getArming(db, key).status, 'live');
+  it('a live broadcast takes precedence over the active one', async () => {
+    const active = await mk();
+    await activateBroadcast(db, key, active.id);
+    const live = await mk();
+    await bindSessionStart(db, key, live.id);
+    assert.equal((await getArming(db, key)).broadcastId, live.id);
+    assert.equal((await getArming(db, key)).status, 'live');
   });
 
-  it('armOnGoLive / disarmOnEnd publish only on change; completeBroadcast clears the flag', () => {
-    const b = mk();
-    bindSessionStart(db, key, b.id);
-    assert.equal(armOnGoLive(db, bus, key, b.id), true);
-    assert.equal(armOnGoLive(db, bus, key, b.id), false);
+  it('armOnGoLive / disarmOnEnd publish only on change; completeBroadcast clears the flag', async () => {
+    const b = await mk();
+    await bindSessionStart(db, key, b.id);
+    assert.equal(await armOnGoLive(db, bus, key, b.id), true);
+    assert.equal(await armOnGoLive(db, bus, key, b.id), false);
     assert.deepEqual(events, [{ armed: true, broadcastId: b.id, reason: 'go_live' }]);
-    assert.equal(disarmOnEnd(db, bus, key, b.id), true);
+    assert.equal(await disarmOnEnd(db, bus, key, b.id), true);
     assert.equal(events.at(-1).reason, 'session_end');
-    setArmed(db, key, true);
-    completeBroadcast(db, b.id);
-    assert.equal(getBroadcast(db, key, b.id).armed, false);
+    await setArmed(db, key, true);
+    await completeBroadcast(db, b.id);
+    assert.equal((await getBroadcast(db, key, b.id)).armed, false);
   });
 });
 
@@ -94,8 +92,8 @@ describe('/production/arming route', () => {
   });
 
   it('GET reports SAFE by default; PUT arms, publishes once, and disarms', async () => {
-    const b = mk();
-    activateBroadcast(db, key, b.id);
+    const b = await mk();
+    await activateBroadcast(db, key, b.id);
     assert.deepEqual(await (await call('GET')).json(), { armed: false, broadcastId: b.id, status: 'draft' });
     let res = await call('PUT', { armed: true });
     assert.equal(res.status, 200);
@@ -122,7 +120,7 @@ describe('go-live and session end', () => {
     const body = await res.json();
     assert.equal(res.status, 200, JSON.stringify(body));
     const { token } = body;
-    const live = getArming(db, key);
+    const live = await getArming(db, key);
     assert.equal(live.armed, true);
     assert.equal(live.status, 'live');
     assert.equal(events[0].reason, 'go_live');
@@ -130,6 +128,6 @@ describe('go-live and session end', () => {
     assert.equal(del.status, 200);
     assert.equal(events.at(-1).reason, 'session_end');
     assert.equal(events.at(-1).armed, false);
-    assert.equal(db.prepare('SELECT armed FROM broadcasts WHERE api_key = ?').get(key).armed, 0);
+    assert.equal((await db.prepare('SELECT armed FROM broadcasts WHERE api_key = ?').get(key)).armed, 0);
   });
 });

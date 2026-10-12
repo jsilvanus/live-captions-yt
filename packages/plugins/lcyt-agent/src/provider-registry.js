@@ -22,53 +22,8 @@ export const PROVIDER_VENDORS = ['openai', 'google', 'anthropic', 'ollama', 'dee
 export const PROVIDER_SCOPES = ['site', 'project'];
 export const MODEL_CAPABILITIES = ['embedding', 'vision', 'chat', 'translation'];
 
-/**
- * Run DB migrations for the provider registry tables.
- * @param {import('better-sqlite3').Database} db
- */
-export function runProviderRegistryMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ai_providers (
-      id                   TEXT PRIMARY KEY,
-      scope                TEXT NOT NULL,
-      owner_api_key        TEXT,
-      kind                 TEXT NOT NULL,
-      vendor               TEXT NOT NULL DEFAULT 'custom',
-      name                 TEXT NOT NULL,
-      base_url             TEXT NOT NULL DEFAULT '',
-      api_key_ref          TEXT NOT NULL DEFAULT '',
-      bridge_instance_id   TEXT,
-      enabled              INTEGER NOT NULL DEFAULT 1,
-      last_discovery_at    TEXT,
-      last_discovery_error TEXT,
-      created_at           TEXT NOT NULL DEFAULT (datetime('now'))
-    );
-    CREATE INDEX IF NOT EXISTS idx_ai_providers_owner ON ai_providers(owner_api_key);
-
-    CREATE TABLE IF NOT EXISTS ai_provider_models (
-      id              INTEGER PRIMARY KEY AUTOINCREMENT,
-      provider_id     TEXT    NOT NULL REFERENCES ai_providers(id),
-      model_name      TEXT    NOT NULL,
-      capabilities    TEXT    NOT NULL DEFAULT '[]',
-      source          TEXT    NOT NULL DEFAULT 'manual',
-      enabled         INTEGER NOT NULL DEFAULT 1,
-      parameter_size  TEXT,
-      quantization    TEXT,
-      discovered_at   TEXT,
-      last_seen_at    TEXT,
-      UNIQUE (provider_id, model_name)
-    );
-    CREATE INDEX IF NOT EXISTS idx_ai_provider_models_provider ON ai_provider_models(provider_id);
-
-    CREATE TABLE IF NOT EXISTS ai_provider_grants (
-      api_key      TEXT    NOT NULL,
-      provider_id  TEXT    NOT NULL REFERENCES ai_providers(id),
-      enabled      INTEGER NOT NULL DEFAULT 1,
-      UNIQUE (api_key, provider_id)
-    );
-    CREATE INDEX IF NOT EXISTS idx_ai_provider_grants_key ON ai_provider_grants(api_key);
-  `);
-}
+/** No-op kept for old callers: the tables come from the backend schema. */
+export async function runProviderRegistryMigrations() {}
 
 /**
  * Validate provider fields shared by create and update.
@@ -100,74 +55,68 @@ export function validateProviderInput(input, { partial = false } = {}) {
 
 /**
  * Create a provider. Caller is responsible for validation (validateProviderInput).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {object} input — { scope, ownerApiKey?, kind, vendor?, name, baseUrl?, apiKeyRef?, bridgeInstanceId?, enabled? }
- * @returns {object} — the created row, masked
+ * @returns {Promise<object>} — the created row, masked
  */
-export function createProvider(db, input) {
+export async function createProvider(db, input) {
   const id = randomUUID();
-  db.prepare(`
-    INSERT INTO ai_providers (id, scope, owner_api_key, kind, vendor, name, base_url, api_key_ref, bridge_instance_id, enabled)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    input.scope,
-    input.scope === 'project' ? input.ownerApiKey : null,
-    input.kind,
-    input.vendor || 'custom',
-    input.name.trim(),
-    input.baseUrl?.trim() || '',
-    input.apiKeyRef || '',
-    input.bridgeInstanceId || null,
-    input.enabled === false ? 0 : 1,
-  );
-  return maskProvider(getProvider(db, id));
+  await db.ai_providers.create({
+    data: {
+      id,
+      scope: input.scope,
+      owner_api_key: input.scope === 'project' ? input.ownerApiKey : null,
+      kind: input.kind,
+      vendor: input.vendor || 'custom',
+      name: input.name.trim(),
+      base_url: input.baseUrl?.trim() || '',
+      api_key_ref: input.apiKeyRef || '',
+      bridge_instance_id: input.bridgeInstanceId || null,
+      enabled: input.enabled === false ? 0 : 1,
+    },
+  });
+  return maskProvider(await getProvider(db, id));
 }
 
 /**
  * Get the raw provider row (includes api_key_ref — internal use only).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} id
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getProvider(db, id) {
-  return db.prepare('SELECT * FROM ai_providers WHERE id = ?').get(id) ?? null;
+export async function getProvider(db, id) {
+  return (await db.ai_providers.findUnique({ where: { id } })) ?? null;
 }
 
 /**
  * Update a provider. Only provided fields change. Scope/owner never change.
- * @returns {object|null} — updated masked row, or null when not found
+ * @returns {Promise<object|null>} — updated masked row, or null when not found
  */
-export function updateProvider(db, id, input) {
-  const existing = getProvider(db, id);
+export async function updateProvider(db, id, input) {
+  const existing = await getProvider(db, id);
   if (!existing) return null;
-  const sets = [];
-  const vals = [];
-  if (input.kind !== undefined) { sets.push('kind = ?'); vals.push(input.kind); }
-  if (input.vendor !== undefined) { sets.push('vendor = ?'); vals.push(input.vendor); }
-  if (input.name !== undefined) { sets.push('name = ?'); vals.push(String(input.name).trim()); }
-  if (input.baseUrl !== undefined) { sets.push('base_url = ?'); vals.push(String(input.baseUrl).trim()); }
-  if (input.apiKeyRef !== undefined) { sets.push('api_key_ref = ?'); vals.push(input.apiKeyRef); }
-  if (input.bridgeInstanceId !== undefined) { sets.push('bridge_instance_id = ?'); vals.push(input.bridgeInstanceId || null); }
-  if (input.enabled !== undefined) { sets.push('enabled = ?'); vals.push(input.enabled ? 1 : 0); }
-  if (sets.length > 0) {
-    vals.push(id);
-    db.prepare(`UPDATE ai_providers SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-  }
-  return maskProvider(getProvider(db, id));
+  const data = {};
+  if (input.kind !== undefined) data.kind = input.kind;
+  if (input.vendor !== undefined) data.vendor = input.vendor;
+  if (input.name !== undefined) data.name = String(input.name).trim();
+  if (input.baseUrl !== undefined) data.base_url = String(input.baseUrl).trim();
+  if (input.apiKeyRef !== undefined) data.api_key_ref = input.apiKeyRef;
+  if (input.bridgeInstanceId !== undefined) data.bridge_instance_id = input.bridgeInstanceId || null;
+  if (input.enabled !== undefined) data.enabled = input.enabled ? 1 : 0;
+  if (Object.keys(data).length > 0) await db.ai_providers.updateMany({ where: { id }, data });
+  return maskProvider(await getProvider(db, id));
 }
 
 /**
  * Delete a provider and its catalog/grant rows.
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function deleteProvider(db, id) {
-  const tx = db.transaction(() => {
-    db.prepare('DELETE FROM ai_provider_models WHERE provider_id = ?').run(id);
-    db.prepare('DELETE FROM ai_provider_grants WHERE provider_id = ?').run(id);
-    return db.prepare('DELETE FROM ai_providers WHERE id = ?').run(id).changes > 0;
+export async function deleteProvider(db, id) {
+  return db.$transaction(async (tx) => {
+    await tx.ai_provider_models.deleteMany({ where: { provider_id: id } });
+    await tx.ai_provider_grants.deleteMany({ where: { provider_id: id } });
+    return (await tx.ai_providers.deleteMany({ where: { id } })).count > 0;
   });
-  return tx();
 }
 
 /**
@@ -201,59 +150,61 @@ export function maskProvider(row) {
 /**
  * List all site-scope providers (admin view).
  */
-export function listSiteProviders(db) {
-  return db.prepare("SELECT * FROM ai_providers WHERE scope = 'site' ORDER BY created_at").all()
-    .map(maskProvider);
+export async function listSiteProviders(db) {
+  const rows = await db.ai_providers.findMany({ where: { scope: 'site' }, orderBy: { created_at: 'asc' } });
+  return rows.map(maskProvider);
 }
 
 /**
  * Providers visible to a project: its own project-scope rows plus any
  * site-scope rows granted to it (default-deny).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
  */
-export function listVisibleProviders(db, apiKey) {
-  return db.prepare(`
-    SELECT p.* FROM ai_providers p
-      WHERE p.scope = 'project' AND p.owner_api_key = ?
-    UNION
-    SELECT p.* FROM ai_providers p
-      JOIN ai_provider_grants g ON g.provider_id = p.id
-      WHERE p.scope = 'site' AND g.api_key = ? AND g.enabled = 1
-    ORDER BY created_at
-  `).all(apiKey, apiKey).map(maskProvider);
+export async function listVisibleProviders(db, apiKey) {
+  const rows = await db.ai_providers.findMany({
+    where: {
+      OR: [
+        { scope: 'project', owner_api_key: apiKey },
+        { scope: 'site', ai_provider_grants: { some: { api_key: apiKey, enabled: 1 } } },
+      ],
+    },
+    orderBy: { created_at: 'asc' },
+  });
+  return rows.map(maskProvider);
 }
 
 /**
  * Is this provider visible to this project (own project-scope, or granted site-scope)?
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isProviderVisible(db, providerRow, apiKey) {
+export async function isProviderVisible(db, providerRow, apiKey) {
   if (!providerRow) return false;
   if (providerRow.scope === 'project') return providerRow.owner_api_key === apiKey;
-  const grant = db.prepare(
-    'SELECT enabled FROM ai_provider_grants WHERE provider_id = ? AND api_key = ?'
-  ).get(providerRow.id, apiKey);
+  const grant = await db.ai_provider_grants.findUnique({
+    where: { api_key_provider_id: { api_key: apiKey, provider_id: providerRow.id } },
+  });
   return grant?.enabled === 1;
 }
 
 /**
  * Grant or revoke a project's visibility into a site-scope provider.
  */
-export function setGrant(db, providerId, apiKey, enabled) {
-  db.prepare(`
-    INSERT INTO ai_provider_grants (api_key, provider_id, enabled) VALUES (?, ?, ?)
-    ON CONFLICT (api_key, provider_id) DO UPDATE SET enabled = excluded.enabled
-  `).run(apiKey, providerId, enabled ? 1 : 0);
+export async function setGrant(db, providerId, apiKey, enabled) {
+  const value = enabled ? 1 : 0;
+  await db.ai_provider_grants.upsert({
+    where: { api_key_provider_id: { api_key: apiKey, provider_id: providerId } },
+    create: { api_key: apiKey, provider_id: providerId, enabled: value },
+    update: { enabled: value },
+  });
 }
 
 /**
  * List grants for a provider (admin view: which projects can see it).
  */
-export function listGrants(db, providerId) {
-  return db.prepare(
-    'SELECT api_key, enabled FROM ai_provider_grants WHERE provider_id = ? ORDER BY api_key'
-  ).all(providerId).map((row) => ({ apiKey: row.api_key, enabled: row.enabled === 1 }));
+export async function listGrants(db, providerId) {
+  const rows = await db.ai_provider_grants.findMany({ where: { provider_id: providerId }, orderBy: { api_key: 'asc' } });
+  return rows.map((row) => ({ apiKey: row.api_key, enabled: row.enabled === 1 }));
 }
 
 // ---------------------------------------------------------------------------
@@ -277,53 +228,45 @@ function formatModel(row) {
   };
 }
 
-export function listProviderModels(db, providerId) {
-  return db.prepare(
-    'SELECT * FROM ai_provider_models WHERE provider_id = ? ORDER BY model_name'
-  ).all(providerId).map(formatModel);
+export async function listProviderModels(db, providerId) {
+  const rows = await db.ai_provider_models.findMany({ where: { provider_id: providerId }, orderBy: { model_name: 'asc' } });
+  return rows.map(formatModel);
 }
 
 /**
  * Manually add a model row (ollama providers only — pre-register a model
  * before it's pulled; api providers have no catalog by design).
- * @returns {object|null} — the created model, or null on duplicate
+ * @returns {Promise<object|null>} — the created model, or null on duplicate
  */
-export function addManualModel(db, providerId, { modelName, capabilities = [] }) {
+export async function addManualModel(db, providerId, { modelName, capabilities = [] }) {
   try {
-    const info = db.prepare(`
-      INSERT INTO ai_provider_models (provider_id, model_name, capabilities, source)
-      VALUES (?, ?, ?, 'manual')
-    `).run(providerId, modelName, JSON.stringify(capabilities));
-    return formatModel(db.prepare('SELECT * FROM ai_provider_models WHERE id = ?').get(info.lastInsertRowid));
+    const row = await db.ai_provider_models.create({
+      data: { provider_id: providerId, model_name: modelName, capabilities: JSON.stringify(capabilities), source: 'manual' },
+    });
+    return formatModel(row);
   } catch (err) {
-    if (String(err.message).includes('UNIQUE')) return null;
+    if (err?.code === 'P2002' || String(err.message).includes('UNIQUE')) return null;
     throw err;
   }
 }
 
 /**
  * Edit a model's capabilities / enabled flag.
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function updateModel(db, providerId, modelId, { capabilities, enabled }) {
-  const sets = [];
-  const vals = [];
-  if (capabilities !== undefined) { sets.push('capabilities = ?'); vals.push(JSON.stringify(capabilities)); }
-  if (enabled !== undefined) { sets.push('enabled = ?'); vals.push(enabled ? 1 : 0); }
-  if (sets.length === 0) {
-    const row = db.prepare('SELECT * FROM ai_provider_models WHERE id = ? AND provider_id = ?').get(modelId, providerId);
+export async function updateModel(db, providerId, modelId, { capabilities, enabled }) {
+  const data = {};
+  if (capabilities !== undefined) data.capabilities = JSON.stringify(capabilities);
+  if (enabled !== undefined) data.enabled = enabled ? 1 : 0;
+  if (Object.keys(data).length === 0) {
+    const row = await db.ai_provider_models.findFirst({ where: { id: modelId, provider_id: providerId } });
     return row ? formatModel(row) : null;
   }
-  vals.push(modelId, providerId);
-  const info = db.prepare(
-    `UPDATE ai_provider_models SET ${sets.join(', ')} WHERE id = ? AND provider_id = ?`
-  ).run(...vals);
-  if (info.changes === 0) return null;
-  return formatModel(db.prepare('SELECT * FROM ai_provider_models WHERE id = ?').get(modelId));
+  const info = await db.ai_provider_models.updateMany({ where: { id: modelId, provider_id: providerId }, data });
+  if (info.count === 0) return null;
+  return formatModel(await db.ai_provider_models.findUnique({ where: { id: modelId } }));
 }
 
-export function deleteModel(db, providerId, modelId) {
-  return db.prepare(
-    'DELETE FROM ai_provider_models WHERE id = ? AND provider_id = ?'
-  ).run(modelId, providerId).changes > 0;
+export async function deleteModel(db, providerId, modelId) {
+  return (await db.ai_provider_models.deleteMany({ where: { id: modelId, provider_id: providerId } })).count > 0;
 }

@@ -29,8 +29,8 @@ const FILES_BASE_DIR = resolve(process.env.FILES_DIR || '/data/files');
 let server, baseUrl, store, db, resolveStorage;
 
 before(async () => {
-  db = initDb(':memory:');
-  createKey(db, { key: 'files-test-key', owner: 'File User', backend_file_enabled: 1 });
+  db = await initDb(':memory:');
+  await createKey(db, { key: 'files-test-key', owner: 'File User', backend_file_enabled: 1 });
 
   // Ensure the base directory exists for the test suite
   await mkdir(FILES_BASE_DIR, { recursive: true });
@@ -107,7 +107,7 @@ async function registerTestFile(session, { content = 'Hello caption', lang = 'or
   await writeFile(filepath, content, 'utf8');
 
   // Store the full filepath as `filename` — matches what writeToBackendFile stores via openAppend()
-  const fileId = registerCaptionFile(db, {
+  const fileId = await registerCaptionFile(db, {
     apiKey: session.apiKey,
     sessionId: session.sessionId,
     filename: filepath,
@@ -141,13 +141,13 @@ describe('POST /file', () => {
     assert.strictEqual(res.status, 201);
     const body = await res.json();
     try {
-      const row = db.prepare('SELECT session_id FROM caption_files WHERE id = ?').get(body.file.id);
+      const row = await db.prepare('SELECT session_id FROM caption_files WHERE id = ?').get(body.file.id);
       assert.strictEqual(row.session_id, session.sessionId);
     } finally {
       // GET /file below relies on a clean caption_files table per apiKey —
       // remove the row this test creates so it doesn't leak into later
       // list-count assertions regardless of describe-block ordering.
-      db.prepare('DELETE FROM caption_files WHERE id = ?').run(body.file.id);
+      await db.prepare('DELETE FROM caption_files WHERE id = ?').run(body.file.id);
     }
   });
 
@@ -420,7 +420,7 @@ describe('GET /file/:id', () => {
     const filepath = join(dir, filename);
     await writeFile(filepath, 'WEBVTT\n\n1\n00:00:00.000 --> 00:00:02.000\nHello\n', 'utf8');
 
-    const fileId = registerCaptionFile(db, {
+    const fileId = await registerCaptionFile(db, {
       apiKey: session.apiKey,
       sessionId: session.sessionId,
       filename: filepath,
@@ -454,7 +454,7 @@ describe('GET /file/:id', () => {
     const token = makeToken(session.sessionId);
 
     // Register a file in DB that doesn't actually exist on disk
-    const fileId = registerCaptionFile(db, {
+    const fileId = await registerCaptionFile(db, {
       apiKey: session.apiKey,
       sessionId: session.sessionId,
       filename: '/nonexistent/path/ghost.txt',
@@ -476,7 +476,7 @@ describe('GET /file/:id', () => {
     await mkdir(dir, { recursive: true });
     const filepath = join(dir, `2026-01-01-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-original.vtt`);
     await writeFile(filepath, content, 'utf8');
-    return registerCaptionFile(db, {
+    return await registerCaptionFile(db, {
       apiKey: session.apiKey,
       sessionId: session.sessionId,
       filename: filepath,
@@ -655,8 +655,8 @@ describe('GET/PUT/DELETE /file/storage-config', () => {
   let cfgDb, cfgServer, cfgBaseUrl, sessionToken, ownerToken;
 
   before(async () => {
-    cfgDb = initDb(':memory:');
-    createKey(cfgDb, { key: CONFIG_API_KEY, owner: 'ConfigUser' });
+    cfgDb = await initDb(':memory:');
+    await createKey(cfgDb, { key: CONFIG_API_KEY, owner: 'ConfigUser' });
 
     const auth = createProjectAccessMiddleware(cfgDb, JWT_SECRET, { requiredScope: 'file' });
     const app = express();
@@ -664,8 +664,8 @@ describe('GET/PUT/DELETE /file/storage-config', () => {
     app.use('/file', createFilesRouter(cfgDb, auth, null, JWT_SECRET, async () => null, () => {}, requireProjectRole(cfgDb, 'setup')));
 
     sessionToken = jwt.sign({ sessionId: 'cfg-session', apiKey: CONFIG_API_KEY }, JWT_SECRET);
-    const owner = createUser(cfgDb, { email: 'storage-config-owner@example.com', passwordHash: 'x' });
-    addMember(cfgDb, CONFIG_API_KEY, owner.id, 'owner');
+    const owner = await createUser(cfgDb, { email: 'storage-config-owner@example.com', passwordHash: 'x' });
+    await addMember(cfgDb, CONFIG_API_KEY, owner.id, 'owner');
     ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: CONFIG_API_KEY }, JWT_SECRET, { expiresIn: '1h' });
 
     await new Promise((resolve) => {

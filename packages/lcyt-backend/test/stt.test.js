@@ -16,8 +16,7 @@ import { createUser } from '../src/db/users.js';
 import { addMember } from '../src/db/project-members.js';
 import { createProjectAccessMiddleware } from '../src/middleware/project-access.js';
 import { createSttRouter } from '../src/routes/stt.js';
-import { setSttConfig, getSttConfig } from 'lcyt-rtmp';
-import { runMigrations } from '../../plugins/lcyt-rtmp/src/db.js';
+import { setSttConfig, getSttConfig } from '../src/db/stt.js';
 
 const JWT_SECRET = 'test-stt-secret';
 const API_KEY    = 'test-api-key-stt';
@@ -52,13 +51,12 @@ function makeMockSttManager() {
 
 let server, baseUrl, db, sttManager, token, ownerToken;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  runMigrations(db);
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
 
   // Real API key row (needed so getKey()/getEffectiveProjectAccessLevel() —
   // used by requireProjectRole('setup') on PUT /stt/config — can resolve it).
-  createKey(db, { key: API_KEY, owner: 'SttUser' });
+  await createKey(db, { key: API_KEY, owner: 'SttUser' });
 
   sttManager = makeMockSttManager();
 
@@ -77,8 +75,8 @@ before(() => new Promise((resolve) => {
   // every real session-authenticated caption client.
   token = jwt.sign({ sessionId: 'test-session-id', apiKey: API_KEY }, JWT_SECRET);
   // Explicit project owner — required for PUT /stt/config now.
-  const owner = createUser(db, { email: 'stt-owner@example.com', passwordHash: 'x' });
-  addMember(db, API_KEY, owner.id, 'owner');
+  const owner = await createUser(db, { email: 'stt-owner@example.com', passwordHash: 'x' });
+  await addMember(db, API_KEY, owner.id, 'owner');
   ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: API_KEY }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
@@ -198,7 +196,7 @@ describe('/stt routes', () => {
   describe('GET /stt/config', () => {
     it('returns defaults when no config stored', async () => {
       // Remove any existing config for this key
-      try { db.prepare('DELETE FROM stt_config WHERE api_key = ?').run('config-test-key'); } catch {}
+      try { await db.prepare('DELETE FROM stt_config WHERE api_key = ?').run('config-test-key'); } catch {}
 
       const configToken = jwt.sign({ sessionId: 'cfg-session', apiKey: 'config-test-key' }, JWT_SECRET);
       const res = await get('/stt/config', configToken);
@@ -210,7 +208,7 @@ describe('/stt routes', () => {
     });
 
     it('returns stored config', async () => {
-      setSttConfig(db, API_KEY, { provider: 'google', language: 'fi-FI', autoStart: true });
+      await setSttConfig(db, API_KEY, { provider: 'google', language: 'fi-FI', autoStart: true });
       const res = await get('/stt/config');
       assert.equal(res.status, 200);
       const body = await res.json();
@@ -226,7 +224,7 @@ describe('/stt routes', () => {
       const body = await res.json();
       assert.equal(body.ok, true);
 
-      const cfg = getSttConfig(db, API_KEY);
+      const cfg = await getSttConfig(db, API_KEY);
       assert.equal(cfg.language, 'sv-SE');
       assert.equal(cfg.autoStart, false);
     });

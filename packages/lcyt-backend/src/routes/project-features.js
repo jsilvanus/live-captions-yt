@@ -31,16 +31,16 @@ function formatFeatures(rows) {
   });
 }
 
-function getFeaturePolicyError(db, projectKey, featureCode, user) {
+async function getFeaturePolicyError(db, projectKey, featureCode, user) {
   if (!user) return null;
-  const entitled = getUserFeatureSet(db, user.userId);
+  const entitled = await getUserFeatureSet(db, user.userId);
   if (!entitled.has(featureCode)) {
     return {
       status: 403,
       body: { error: `You are not entitled to enable feature '${featureCode}'` },
     };
   }
-  const policyMode = resolveFeaturePolicy(db, projectKey, featureCode);
+  const policyMode = await resolveFeaturePolicy(db, projectKey, featureCode);
   if (policyMode === 'denied') {
     return {
       status: 403,
@@ -62,77 +62,77 @@ export function createProjectFeaturesRouter(db, { loginEnabled = false, jwtSecre
   const router = Router({ mergeParams: true });
 
   // GET /keys/:key/features
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) {
-      return adminMiddleware(req, res, () => _listFeatures(db, req, res));
+      return adminMiddleware(req, res, async () => await _listFeatures(db, req, res));
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
-    const row = getKey(db, req.params.key);
+    const row = await getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
 
-    const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
+    const level = await getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
     if (!level) return res.status(403).json({ error: 'Not a project member' });
 
-    return _listFeatures(db, req, res);
+    return await _listFeatures(db, req, res);
   });
 
   // PUT /keys/:key/features — batch update
-  router.put('/', (req, res) => {
+  router.put('/', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) {
-      return adminMiddleware(req, res, () => _batchUpdateFeatures(db, null, req, res));
+      return adminMiddleware(req, res, async () => await _batchUpdateFeatures(db, null, req, res));
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
-    const row = getKey(db, req.params.key);
+    const row = await getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
     if (row.user_id !== user.userId) {
-      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
+      const level = await getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (level !== 'owner' && level !== 'admin') {
         return res.status(403).json({ error: 'settings-manager permission required' });
       }
     }
 
-    return _batchUpdateFeatures(db, user, req, res);
+    return await _batchUpdateFeatures(db, user, req, res);
   });
 
   // PATCH /keys/:key/features/:code — single feature update
-  router.patch('/:code', (req, res) => {
+  router.patch('/:code', async (req, res) => {
     const hasAdmin = !!req.headers['x-admin-key'];
     if (hasAdmin) {
-      return adminMiddleware(req, res, () => _patchFeature(db, null, req, res));
+      return adminMiddleware(req, res, async () => await _patchFeature(db, null, req, res));
     }
     if (!loginEnabled) return res.status(404).json({ error: 'Not found' });
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
-    const row = getKey(db, req.params.key);
+    const row = await getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
     if (row.user_id !== user.userId) {
-      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
+      const level = await getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (level !== 'owner' && level !== 'admin') {
         return res.status(403).json({ error: 'settings-manager permission required' });
       }
     }
 
-    return _patchFeature(db, user, req, res);
+    return await _patchFeature(db, user, req, res);
   });
 
   return router;
 }
 
-function _listFeatures(db, req, res) {
-  const rows = getProjectFeatures(db, req.params.key);
+async function _listFeatures(db, req, res) {
+  const rows = await getProjectFeatures(db, req.params.key);
   return res.json({ features: formatFeatures(rows) });
 }
 
-function _batchUpdateFeatures(db, user, req, res) {
+async function _batchUpdateFeatures(db, user, req, res) {
   const { features } = req.body || {};
   if (!features || typeof features !== 'object' || Array.isArray(features)) {
     return res.status(400).json({ error: 'features must be an object mapping code → boolean or { enabled, config }' });
@@ -144,18 +144,18 @@ function _batchUpdateFeatures(db, user, req, res) {
       const val = features[code];
       const enabling = typeof val === 'boolean' ? val : val?.enabled;
       if (!enabling) continue;
-      const policyError = getFeaturePolicyError(db, req.params.key, code, user);
+      const policyError = await getFeaturePolicyError(db, req.params.key, code, user);
       if (policyError) return res.status(policyError.status).json(policyError.body);
     }
   }
 
   const autoEnabled = applyFeatureDeps(features);
-  setProjectFeatures(db, req.params.key, features, user?.userId ?? null);
-  const rows = getProjectFeatures(db, req.params.key);
+  await setProjectFeatures(db, req.params.key, features, user?.userId ?? null);
+  const rows = await getProjectFeatures(db, req.params.key);
   return res.json({ features: formatFeatures(rows), autoEnabled });
 }
 
-function _patchFeature(db, user, req, res) {
+async function _patchFeature(db, user, req, res) {
   const code = req.params.code;
   const body = req.body || {};
   if (body.enabled === undefined) {
@@ -164,7 +164,7 @@ function _patchFeature(db, user, req, res) {
 
   // If acting as user, check entitlement when enabling
   if (user && body.enabled) {
-    const policyError = getFeaturePolicyError(db, req.params.key, code, user);
+    const policyError = await getFeaturePolicyError(db, req.params.key, code, user);
     if (policyError) return res.status(policyError.status).json(policyError.body);
   }
 
@@ -174,9 +174,9 @@ function _patchFeature(db, user, req, res) {
   for (const [fc, val] of Object.entries(featureMap)) {
     const en = typeof val === 'boolean' ? val : val.enabled;
     const cfg = typeof val === 'object' && val !== null ? (val.config ?? null) : null;
-    setProjectFeature(db, req.params.key, fc, en, cfg, user?.userId ?? null);
+    await setProjectFeature(db, req.params.key, fc, en, cfg, user?.userId ?? null);
   }
-  const rows = getProjectFeatures(db, req.params.key);
+  const rows = await getProjectFeatures(db, req.params.key);
   const updated = formatFeatures(rows).find(f => f.code === code);
   return res.json({ ...(updated || { code, enabled: !!body.enabled, config: body.config ?? null }), autoEnabled });
 }

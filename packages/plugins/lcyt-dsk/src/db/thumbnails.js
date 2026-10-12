@@ -9,82 +9,89 @@
  *   storage_path  TEXT NOT NULL
  *   width         INTEGER NOT NULL
  *   height        INTEGER NOT NULL
- *   size_bytes    INTEGER NOT NULL DEFAULT 0
+ *   size_bytes    BIGINT NOT NULL DEFAULT 0
  *   created_at    TEXT NOT NULL DEFAULT (datetime('now'))
  *   updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
  */
 
+const num = (v) => (typeof v === 'bigint' ? Number(v) : v);
+const THUMB_FIELDS = { id: true, template_id: true, name: true, storage_path: true, width: true, height: true, size_bytes: true, created_at: true, updated_at: true };
+const shape = (r) => (r ? { ...r, size_bytes: num(r.size_bytes) } : null);
+
 /**
  * Create a thumbnail row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {{ apiKey: string, templateId?: number|null, name: string, storagePath: string, width: number, height: number, sizeBytes?: number }} opts
- * @returns {number}
+ * @returns {Promise<number>}
  */
-export function createThumbnail(db, { apiKey, templateId = null, name, storagePath, width, height, sizeBytes = 0 }) {
-  const { lastInsertRowid } = db.prepare(
-    `INSERT INTO dsk_thumbnails (api_key, template_id, name, storage_path, width, height, size_bytes, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))`
-  ).run(apiKey, templateId ?? null, name, storagePath, width, height, sizeBytes);
-  return Number(lastInsertRowid);
+export async function createThumbnail(db, { apiKey, templateId = null, name, storagePath, width, height, sizeBytes = 0 }) {
+  const now = db.$util.sqlNow();
+  const row = await db.dsk_thumbnails.create({
+    data: {
+      api_key: apiKey, template_id: templateId ?? null, name, storage_path: storagePath,
+      width, height, size_bytes: sizeBytes, created_at: now, updated_at: now,
+    },
+    select: { id: true },
+  });
+  return row.id;
 }
 
 /**
  * List thumbnails for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
- * @returns {Array<object>}
+ * @returns {Promise<Array<object>>}
  */
-export function listThumbnails(db, apiKey) {
-  return db.prepare(
-    'SELECT id, template_id, name, storage_path, width, height, size_bytes, created_at, updated_at FROM dsk_thumbnails WHERE api_key = ? ORDER BY created_at DESC'
-  ).all(apiKey);
+export async function listThumbnails(db, apiKey) {
+  const rows = await db.dsk_thumbnails.findMany({
+    where: { api_key: apiKey },
+    select: THUMB_FIELDS,
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
+  return rows.map(shape);
 }
 
 /**
  * Get a thumbnail row for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getThumbnail(db, id, apiKey) {
-  return db.prepare(
-    'SELECT id, template_id, name, storage_path, width, height, size_bytes, created_at, updated_at FROM dsk_thumbnails WHERE id = ? AND api_key = ?'
-  ).get(id, apiKey) ?? null;
+export async function getThumbnail(db, id, apiKey) {
+  return shape(await db.dsk_thumbnails.findFirst({ where: { id, api_key: apiKey }, select: THUMB_FIELDS }));
 }
 
 /**
  * Update a thumbnail row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
  * @param {{ name?: string, templateId?: number|null, width?: number, height?: number, sizeBytes?: number, storagePath?: string }} patch
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function updateThumbnail(db, id, apiKey, patch = {}) {
-  const fields = [];
-  const values = [];
-  if (patch.name != null) { fields.push('name = ?'); values.push(patch.name); }
-  if (patch.templateId != null) { fields.push('template_id = ?'); values.push(patch.templateId ?? null); }
-  if (patch.width != null) { fields.push('width = ?'); values.push(patch.width); }
-  if (patch.height != null) { fields.push('height = ?'); values.push(patch.height); }
-  if (patch.sizeBytes != null) { fields.push('size_bytes = ?'); values.push(patch.sizeBytes); }
-  if (patch.storagePath != null) { fields.push('storage_path = ?'); values.push(patch.storagePath); }
-  if (fields.length === 0) return false;
-  fields.push('updated_at = datetime(\'now\')');
-  values.push(id, apiKey);
-  const { changes } = db.prepare(`UPDATE dsk_thumbnails SET ${fields.join(', ')} WHERE id = ? AND api_key = ?`).run(...values);
-  return changes > 0;
+export async function updateThumbnail(db, id, apiKey, patch = {}) {
+  const data = {};
+  if (patch.name != null) data.name = patch.name;
+  if (patch.templateId != null) data.template_id = patch.templateId;
+  if (patch.width != null) data.width = patch.width;
+  if (patch.height != null) data.height = patch.height;
+  if (patch.sizeBytes != null) data.size_bytes = patch.sizeBytes;
+  if (patch.storagePath != null) data.storage_path = patch.storagePath;
+  if (Object.keys(data).length === 0) return false;
+  data.updated_at = db.$util.sqlNow();
+  const res = await db.dsk_thumbnails.updateMany({ where: { id, api_key: apiKey }, data });
+  return res.count > 0;
 }
 
 /**
  * Delete a thumbnail row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function deleteThumbnail(db, id, apiKey) {
-  const { changes } = db.prepare('DELETE FROM dsk_thumbnails WHERE id = ? AND api_key = ?').run(id, apiKey);
-  return changes > 0;
+export async function deleteThumbnail(db, id, apiKey) {
+  const res = await db.dsk_thumbnails.deleteMany({ where: { id, api_key: apiKey } });
+  return res.count > 0;
 }

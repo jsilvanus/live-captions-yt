@@ -6,18 +6,13 @@ import { EventEmitter } from 'node:events';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Minimal mock DB — tracks inserts without real SQLite. */
+/** Minimal mock Prisma client — tracks cue_events inserts without a real database. */
 function makeMockDb() {
   const inserts = [];
-  function makeStmt() {
-    return {
-      run(...args) { inserts.push(args); return { lastInsertRowid: inserts.length }; },
-      all() { return []; },
-    };
-  }
   return {
-    exec() {},
-    prepare() { return makeStmt(); },
+    cue_events: {
+      async create({ data }) { inserts.push([data.api_key, data.rule_id, data.rule_name, data.matched, data.action]); return data; },
+    },
     inserts,
   };
 }
@@ -58,64 +53,64 @@ describe('createCueProcessor', () => {
     ({ createCueProcessor } = await import('../src/cue-processor.js'));
   });
 
-  test('strips cue metacode and returns clean text', () => {
+  test('strips cue metacode and returns clean text', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    const result = proc('test-key', 'Hello <!-- cue:prayer-start --> world');
+    const result = await proc('test-key', 'Hello <!-- cue:prayer-start --> world');
     assert.equal(result, 'Hello  world');
   });
 
-  test('strips multiple cue metacodes', () => {
+  test('strips multiple cue metacodes', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    const result = proc('test-key', '<!-- cue:start --> text <!-- cue:end -->');
+    const result = await proc('test-key', '<!-- cue:start --> text <!-- cue:end -->');
     assert.equal(result, 'text');
   });
 
-  test('returns unchanged text when no metacodes present', () => {
+  test('returns unchanged text when no metacodes present', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    const result = proc('test-key', 'Normal caption text');
+    const result = await proc('test-key', 'Normal caption text');
     assert.equal(result, 'Normal caption text');
   });
 
-  test('returns empty string for pure-metacode captions', () => {
+  test('returns empty string for pure-metacode captions', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    const result = proc('test-key', '<!-- cue:prayer-start -->');
+    const result = await proc('test-key', '<!-- cue:prayer-start -->');
     assert.equal(result, '');
   });
 
-  test('returns empty string for null/undefined input', () => {
+  test('returns empty string for null/undefined input', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    assert.equal(proc('test-key', null), '');
-    assert.equal(proc('test-key', undefined), '');
-    assert.equal(proc('test-key', ''), '');
+    assert.equal(await proc('test-key', null), '');
+    assert.equal(await proc('test-key', undefined), '');
+    assert.equal(await proc('test-key', ''), '');
   });
 
-  test('emits cue_fired SSE event for explicit cue metacode', () => {
+  test('emits cue_fired SSE event for explicit cue metacode', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    proc('test-key', '<!-- cue:prayer-start -->');
+    await proc('test-key', '<!-- cue:prayer-start -->');
 
     const evt = store.emitted.find(e => e.type === 'cue_fired');
     assert.ok(evt, 'cue_fired event should be emitted');
@@ -123,13 +118,13 @@ describe('createCueProcessor', () => {
     assert.equal(evt.data.source, 'explicit');
   });
 
-  test('emits cue_fired SSE event for each explicit cue', () => {
+  test('emits cue_fired SSE event for each explicit cue', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    proc('test-key', '<!-- cue:start --> <!-- cue:lights -->');
+    await proc('test-key', '<!-- cue:start --> <!-- cue:lights -->');
 
     const cueEvents = store.emitted.filter(e => e.type === 'cue_fired');
     assert.equal(cueEvents.length, 2);
@@ -137,7 +132,7 @@ describe('createCueProcessor', () => {
     assert.equal(cueEvents[1].data.label, 'lights');
   });
 
-  test('emits cue_fired SSE events for auto rules', () => {
+  test('emits cue_fired SSE events for auto rules', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine([
@@ -145,7 +140,7 @@ describe('createCueProcessor', () => {
     ]);
     const proc = createCueProcessor({ store, db, engine });
 
-    proc('test-key', 'And all the people said amen');
+    await proc('test-key', 'And all the people said amen');
 
     const autoEvt = store.emitted.find(e => e.type === 'cue_fired' && e.data.source === 'auto');
     assert.ok(autoEvt, 'auto cue_fired event should be emitted');
@@ -153,83 +148,83 @@ describe('createCueProcessor', () => {
     assert.equal(autoEvt.data.matched, 'amen');
   });
 
-  test('does not emit SSE events for unknown session key', () => {
+  test('does not emit SSE events for unknown session key', async () => {
     const db = makeMockDb();
     const store = makeMockStore('other-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    proc('unknown-key', '<!-- cue:test -->');
+    await proc('unknown-key', '<!-- cue:test -->');
 
     assert.equal(store.emitted.length, 0);
   });
 
-  test('persists explicit cue events to DB', () => {
+  test('persists explicit cue events to DB', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    proc('test-key', '<!-- cue:offering -->');
+    await proc('test-key', '<!-- cue:offering -->');
 
     assert.ok(db.inserts.length > 0, 'DB insert should have been called');
     assert.equal(db.inserts[0][0], 'test-key');
   });
 
-  test('handles gracefully when store is null', () => {
+  test('handles gracefully when store is null', async () => {
     const db = makeMockDb();
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store: null, db, engine });
 
-    const result = proc('any-key', '<!-- cue:test -->');
+    const result = await proc('any-key', '<!-- cue:test -->');
     assert.equal(result, '');
   });
 
-  test('handles gracefully when db is null', () => {
+  test('handles gracefully when db is null', async () => {
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db: null, engine });
 
-    const result = proc('test-key', '<!-- cue:test -->');
+    const result = await proc('test-key', '<!-- cue:test -->');
     assert.equal(result, '');
     // SSE event should still be emitted
     const evt = store.emitted.find(e => e.type === 'cue_fired');
     assert.ok(evt);
   });
 
-  test('handles gracefully when engine is null', () => {
+  test('handles gracefully when engine is null', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const proc = createCueProcessor({ store, db, engine: null });
 
-    const result = proc('test-key', 'Normal text');
+    const result = await proc('test-key', 'Normal text');
     assert.equal(result, 'Normal text');
   });
 
-  test('case-insensitive: CUE in caps', () => {
+  test('case-insensitive: CUE in caps', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    const result = proc('test-key', '<!-- CUE:OFFERING --> text');
+    const result = await proc('test-key', '<!-- CUE:OFFERING --> text');
     assert.equal(result, 'text');
     const evt = store.emitted.find(e => e.type === 'cue_fired');
     assert.ok(evt);
     assert.equal(evt.data.label, 'OFFERING');
   });
 
-  test('preserves surrounding text after stripping metacodes', () => {
+  test('preserves surrounding text after stripping metacodes', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     const engine = makeMockEngine();
     const proc = createCueProcessor({ store, db, engine });
 
-    const result = proc('test-key', 'Before <!-- cue:mid --> After');
+    const result = await proc('test-key', 'Before <!-- cue:mid --> After');
     assert.equal(result, 'Before  After');
   });
 
-  test('passes codes to engine.evaluate', () => {
+  test('passes codes to engine.evaluate', async () => {
     const db = makeMockDb();
     const store = makeMockStore('test-key');
     let receivedCodes = null;
@@ -243,7 +238,7 @@ describe('createCueProcessor', () => {
     };
     const proc = createCueProcessor({ store, db, engine });
 
-    proc('test-key', 'text', { section: 'Intro' });
+    await proc('test-key', 'text', { section: 'Intro' });
     assert.deepEqual(receivedCodes, { section: 'Intro' });
   });
 });

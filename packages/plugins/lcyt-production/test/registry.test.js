@@ -6,11 +6,10 @@
  * and a minimal mock adapter for mixers to avoid real network connections.
  */
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, beforeEach, after } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { randomUUID } from 'node:crypto';
-import { runMigrations } from '../src/db.js';
 import {
   getCameraAdapter,
   getMixerAdapter,
@@ -23,15 +22,18 @@ import {
 // Setup helper
 // ---------------------------------------------------------------------------
 
-function makeDb() {
-  const db = new Database(':memory:');
-  runMigrations(db);
+const openDbs = [];
+async function makeDb() {
+  const db = await initDb(':memory:');
+  openDbs.push(db);
   return db;
 }
 
-function insertCamera(db, overrides = {}) {
+after(async () => { for (const d of openDbs) await d.close(); });
+
+async function insertCamera(db, overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
@@ -45,9 +47,9 @@ function insertCamera(db, overrides = {}) {
   return id;
 }
 
-function insertMixer(db, overrides = {}) {
+async function insertMixer(db, overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_mixers (id, name, type, connection_config)
     VALUES (?, ?, ?, ?)
   `).run(
@@ -65,7 +67,7 @@ function insertMixer(db, overrides = {}) {
 
 describe('getCameraAdapter', () => {
   for (const type of ['amx', 'none', 'visca-ip', 'webcam', 'mobile']) {
-    it(`returns adapter for controlType '${type}'`, () => {
+    it(`returns adapter for controlType '${type}'`, async () => {
       const adapter = getCameraAdapter({ controlType: type });
       assert.equal(typeof adapter.connect, 'function');
       assert.equal(typeof adapter.disconnect, 'function');
@@ -73,7 +75,7 @@ describe('getCameraAdapter', () => {
     });
   }
 
-  it('throws for unknown controlType', () => {
+  it('throws for unknown controlType', async () => {
     assert.throws(
       () => getCameraAdapter({ controlType: 'unknown-xyz' }),
       /unknown camera controlType/,
@@ -87,7 +89,7 @@ describe('getCameraAdapter', () => {
 
 describe('getMixerAdapter', () => {
   for (const type of ['roland', 'amx', 'atem', 'obs', 'monarch_hdx', 'lcyt']) {
-    it(`returns adapter for mixer type '${type}'`, () => {
+    it(`returns adapter for mixer type '${type}'`, async () => {
       const adapter = getMixerAdapter({ type });
       assert.equal(typeof adapter.connect, 'function');
       assert.equal(typeof adapter.disconnect, 'function');
@@ -95,7 +97,7 @@ describe('getMixerAdapter', () => {
     });
   }
 
-  it('throws for unknown mixer type', () => {
+  it('throws for unknown mixer type', async () => {
     assert.throws(
       () => getMixerAdapter({ type: 'unknown-xyz' }),
       /unknown mixer type/,
@@ -108,7 +110,7 @@ describe('getMixerAdapter', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseCamera', () => {
-  it('maps snake_case columns and parses control_config JSON', () => {
+  it('maps snake_case columns and parses control_config JSON', async () => {
     const row = {
       id: 'c1',
       name: 'Wide',
@@ -129,7 +131,7 @@ describe('parseCamera', () => {
     assert.equal(cam.connectionSource, 'backend');
   });
 
-  it('defaults connectionSource to backend when null', () => {
+  it('defaults connectionSource to backend when null', async () => {
     const row = {
       id: 'c1', name: 'Cam', mixer_input: 1, control_type: 'none',
       control_config: '{}', connection_source: null,
@@ -139,7 +141,7 @@ describe('parseCamera', () => {
     assert.equal(cam.connectionSource, 'backend');
   });
 
-  it('handles empty control_config gracefully', () => {
+  it('handles empty control_config gracefully', async () => {
     const row = {
       id: 'c1', name: 'Cam', mixer_input: 1, control_type: 'none',
       control_config: '', connection_source: 'backend',
@@ -156,7 +158,7 @@ describe('parseCamera', () => {
 // ---------------------------------------------------------------------------
 
 describe('parseMixer', () => {
-  it('maps snake_case columns and parses connection_config JSON', () => {
+  it('maps snake_case columns and parses connection_config JSON', async () => {
     const row = {
       id: 'm1',
       name: 'Roland',
@@ -173,7 +175,7 @@ describe('parseMixer', () => {
     assert.equal(mixer.outputKey, null);
   });
 
-  it('defaults connectionSource to backend when null', () => {
+  it('defaults connectionSource to backend when null', async () => {
     const row = {
       id: 'm1', name: 'Mixer', type: 'roland',
       connection_config: '{}', connection_source: null,
@@ -190,15 +192,15 @@ describe('parseMixer', () => {
 
 describe('DeviceRegistry', () => {
   it('start() with no cameras or mixers completes without error', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     await assert.doesNotReject(() => registry.start());
     await registry.stop();
   });
 
   it('start() connects a none-type camera without throwing', async () => {
-    const db = makeDb();
-    const camId = insertCamera(db, { control_type: 'none' });
+    const db = await makeDb();
+    const camId = await insertCamera(db, { control_type: 'none' });
     const registry = new DeviceRegistry(db);
     await registry.start();
     // none-type adapter always succeeds; connection should be tracked
@@ -207,7 +209,7 @@ describe('DeviceRegistry', () => {
   });
 
   it('callPreset throws for unknown cameraId', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     await registry.start();
     await assert.rejects(
@@ -218,8 +220,8 @@ describe('DeviceRegistry', () => {
   });
 
   it('callPreset throws when camera has no active connection (connect failed)', async () => {
-    const db = makeDb();
-    const camId = insertCamera(db, { control_type: 'none' });
+    const db = await makeDb();
+    const camId = await insertCamera(db, { control_type: 'none' });
     const registry = new DeviceRegistry(db);
     // Do NOT call start() — no connection in map
     await assert.rejects(
@@ -229,8 +231,8 @@ describe('DeviceRegistry', () => {
   });
 
   it('removeCamera disconnects and removes from connections map', async () => {
-    const db = makeDb();
-    const camId = insertCamera(db, { control_type: 'none' });
+    const db = await makeDb();
+    const camId = await insertCamera(db, { control_type: 'none' });
     const registry = new DeviceRegistry(db);
     await registry.start();
     await registry.removeCamera(camId);
@@ -242,13 +244,13 @@ describe('DeviceRegistry', () => {
   });
 
   it('removeCamera is a no-op for unknown cameraId', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     await assert.doesNotReject(() => registry.removeCamera('no-such-camera'));
   });
 
   it('switchSource throws for unknown mixerId', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     await registry.start();
     await assert.rejects(
@@ -259,7 +261,7 @@ describe('DeviceRegistry', () => {
   });
 
   it('isMixerConnected returns false for unknown mixerId', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     await registry.start();
     assert.equal(registry.isMixerConnected('no-such-id'), false);
@@ -267,28 +269,28 @@ describe('DeviceRegistry', () => {
   });
 
   it('getActiveSource returns null for unconnected mixer', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     assert.equal(registry.getActiveSource('no-such-id'), null);
   });
 
   it('removeMixer is a no-op for unknown mixerId', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const registry = new DeviceRegistry(db);
     await assert.doesNotReject(() => registry.removeMixer('no-such-mixer'));
   });
 
   it('stop() clears all connections without throwing', async () => {
-    const db = makeDb();
-    insertCamera(db, { control_type: 'none' });
+    const db = await makeDb();
+    await insertCamera(db, { control_type: 'none' });
     const registry = new DeviceRegistry(db);
     await registry.start();
     await assert.doesNotReject(() => registry.stop());
   });
 
   it('reloadCamera reconnects without throwing (none adapter)', async () => {
-    const db = makeDb();
-    const camId = insertCamera(db, { control_type: 'none' });
+    const db = await makeDb();
+    const camId = await insertCamera(db, { control_type: 'none' });
     const registry = new DeviceRegistry(db);
     await registry.start();
     await assert.doesNotReject(() => registry.reloadCamera(camId));
@@ -301,8 +303,8 @@ describe('DeviceRegistry', () => {
 // ---------------------------------------------------------------------------
 
 describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
-  it('onProgramChanged: fires every subscriber with the switch payload', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('onProgramChanged: fires every subscriber with the switch payload', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     const calls = [];
     registry.onProgramChanged(data => calls.push(data));
     registry.onProgramChanged(data => calls.push({ second: true, ...data }));
@@ -314,8 +316,8 @@ describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
     assert.equal(calls[1].second, true);
   });
 
-  it('onProgramChanged: unsubscribe stops further notifications', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('onProgramChanged: unsubscribe stops further notifications', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     const calls = [];
     const unsubscribe = registry.onProgramChanged(data => calls.push(data));
 
@@ -326,8 +328,8 @@ describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
     assert.equal(calls.length, 1);
   });
 
-  it('onProgramChanged: a throwing listener does not stop other listeners or throw', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('onProgramChanged: a throwing listener does not stop other listeners or throw', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     const calls = [];
     registry.onProgramChanged(() => { throw new Error('boom'); });
     registry.onProgramChanged(data => calls.push(data));
@@ -336,13 +338,13 @@ describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
     assert.equal(calls.length, 1);
   });
 
-  it('notifyProgramChanged with no subscribers is a silent no-op', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('notifyProgramChanged with no subscribers is a silent no-op', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     assert.doesNotThrow(() => registry.notifyProgramChanged({ apiKey: 'k', mixerId: 'm', inputNumber: 1 }));
   });
 
-  it('onCameraPresetRecalled: fires subscribers with the recall payload', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('onCameraPresetRecalled: fires subscribers with the recall payload', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     const calls = [];
     registry.onCameraPresetRecalled(data => calls.push(data));
 
@@ -352,8 +354,8 @@ describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
     assert.deepEqual(calls[0], { apiKey: 'key1', cameraId: 'cam1', preset: 'wide' });
   });
 
-  it('onCameraPresetRecalled: unsubscribe stops further notifications', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('onCameraPresetRecalled: unsubscribe stops further notifications', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     const calls = [];
     const unsubscribe = registry.onCameraPresetRecalled(data => calls.push(data));
 
@@ -363,8 +365,8 @@ describe('DeviceRegistry — onProgramChanged / onCameraPresetRecalled', () => {
     assert.equal(calls.length, 0);
   });
 
-  it('onCameraPresetRecalled: a throwing listener does not stop other listeners or throw', () => {
-    const registry = new DeviceRegistry(makeDb());
+  it('onCameraPresetRecalled: a throwing listener does not stop other listeners or throw', async () => {
+    const registry = new DeviceRegistry(await makeDb());
     const calls = [];
     registry.onCameraPresetRecalled(() => { throw new Error('boom'); });
     registry.onCameraPresetRecalled(data => calls.push(data));

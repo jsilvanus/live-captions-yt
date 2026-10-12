@@ -18,10 +18,10 @@ const JWT_SECRET = 'test-jwt-secret-settings';
 
 let server, baseUrl, db, settings;
 
-before(() => new Promise((resolve) => {
+before(() => new Promise(async (resolve) => {
   process.env.ADMIN_KEY = ADMIN_KEY;
-  db = initDb(':memory:');
-  settings = new SettingsService(db);
+  db = await initDb(':memory:');
+  settings = await SettingsService.create(db);
 
   const app = express();
   app.use(express.json());
@@ -36,8 +36,7 @@ before(() => new Promise((resolve) => {
 
 after(() => new Promise((resolve) => {
   delete process.env.ADMIN_KEY;
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
 beforeEach(() => {

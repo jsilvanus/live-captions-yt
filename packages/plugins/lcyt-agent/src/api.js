@@ -85,28 +85,17 @@ export {
 } from './embeddings.js';
 
 /**
- * Run DB migrations and create the AgentEngine instance.
+ * Seed the AI role catalog and create the AgentEngine instance.
  * Call once at backend startup before mounting any routes.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {object} [opts]
  * @returns {Promise<{ agent, providerRegistry, rolesBus, assistantManager, visionRoleManager, sceneState }>}
  */
 export async function initAgent(db, opts = {}) {
-  const { runMigrations } = await import('./db.js');
-  runMigrations(db);
-
-  // AI config table migrations (embedding provider config per user)
-  const { runAiMigrations } = await import('./ai-config.js');
-  runAiMigrations(db);
-
-  // AI model registry migrations (ai_providers / ai_provider_models / ai_provider_grants)
-  const { runProviderRegistryMigrations } = await import('./provider-registry.js');
-  runProviderRegistryMigrations(db);
-
-  // AI Roles Framework migrations (ai_roles catalog seed + project_ai_role_configs)
+  // Tables come from the backend schema; only the AI role catalog needs seeding.
   const { runAiRolesMigrations } = await import('./ai-roles.js');
-  runAiRolesMigrations(db);
+  await runAiRolesMigrations(db);
 
   const { AgentEngine } = await import('./agent-engine.js');
   const agent = new AgentEngine(db, opts);

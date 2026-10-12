@@ -28,9 +28,9 @@ function authed(user) {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${makeToken(user)}` };
 }
 
-before(() => new Promise(resolve => {
+before(() => new Promise(async resolve => {
   process.env.ADMIN_KEY = ADMIN_KEY;
-  db = initDb(':memory:');
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -49,18 +49,18 @@ after(() => new Promise(resolve => {
   server.close(resolve);
 }));
 
-beforeEach(() => {
+beforeEach(async () => {
   // FK-safe order: api_keys references organizations and users
-  db.prepare('DELETE FROM api_keys').run();
-  db.prepare('DELETE FROM org_members').run();
-  db.prepare('DELETE FROM organizations').run();
-  db.prepare('DELETE FROM users').run();
-  owner = createUser(db, { email: 'owner@example.com', passwordHash: 'hash', name: 'Owner' });
-  outsider = createUser(db, { email: 'other@example.com', passwordHash: 'hash', name: 'Other' });
+  await db.prepare('DELETE FROM api_keys').run();
+  await db.prepare('DELETE FROM org_members').run();
+  await db.prepare('DELETE FROM organizations').run();
+  await db.prepare('DELETE FROM users').run();
+  owner = await createUser(db, { email: 'owner@example.com', passwordHash: 'hash', name: 'Owner' });
+  outsider = await createUser(db, { email: 'other@example.com', passwordHash: 'hash', name: 'Other' });
 });
 
-function makeProject({ orgId = null } = {}) {
-  return createKey(db, { key: `proj-${Math.random().toString(36).slice(2, 10)}`, owner: 'P', user_id: owner.id, org_id: orgId });
+async function makeProject({ orgId = null } = {}) {
+  return await createKey(db, { key: `proj-${Math.random().toString(36).slice(2, 10)}`, owner: 'P', user_id: owner.id, org_id: orgId });
 }
 
 describe('validatePublicSlugFormat', () => {
@@ -77,16 +77,16 @@ describe('validatePublicSlugFormat', () => {
 
 describe('GET /keys/:key/slug', () => {
   it('returns null slug and no prefix for a plain project', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, { headers: authed(owner) });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { slug: null, requiredPrefix: null });
   });
 
   it('returns the org-policy prefix when the org enforces one', async () => {
-    const org = createOrganization(db, { name: 'Team One', slug: 'team1', ownerUserId: owner.id });
-    updateOrganization(db, org.id, { projectSlugPolicy: 'prefix' });
-    const proj = makeProject({ orgId: org.id });
+    const org = await createOrganization(db, { name: 'Team One', slug: 'team1', ownerUserId: owner.id });
+    await updateOrganization(db, org.id, { projectSlugPolicy: 'prefix' });
+    const proj = await makeProject({ orgId: org.id });
 
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, { headers: authed(owner) });
     const data = await res.json();
@@ -94,13 +94,13 @@ describe('GET /keys/:key/slug', () => {
   });
 
   it('rejects users without project access', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, { headers: authed(outsider) });
     assert.equal(res.status, 403);
   });
 
   it('accepts a user token via ?token= query param or the lcyt_identity cookie, not just an Authorization header', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     const token = makeToken(owner);
 
     const viaQuery = await fetch(`${baseUrl}/keys/${proj.key}/slug?token=${token}`);
@@ -115,26 +115,26 @@ describe('GET /keys/:key/slug', () => {
 
 describe('PUT /keys/:key/slug', () => {
   it('sets a valid slug and makes it resolvable', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, {
       method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'sunday-service' }),
     });
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { ok: true, slug: 'sunday-service' });
-    assert.equal(resolveKeyByPublicSlug(db, 'sunday-service'), proj.key);
+    assert.equal(await resolveKeyByPublicSlug(db, 'sunday-service'), proj.key);
   });
 
   it('clears the slug with null', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     await fetch(`${baseUrl}/keys/${proj.key}/slug`, { method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'to-clear' }) });
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, { method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: null }) });
     assert.equal(res.status, 200);
-    assert.equal(resolveKeyByPublicSlug(db, 'to-clear'), null);
+    assert.equal(await resolveKeyByPublicSlug(db, 'to-clear'), null);
   });
 
   it('rejects reserved words, bad formats, and taken slugs with reasons', async () => {
-    const projA = makeProject();
-    const projB = makeProject();
+    const projA = await makeProject();
+    const projB = await makeProject();
     await fetch(`${baseUrl}/keys/${projA.key}/slug`, { method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'taken-slug' }) });
 
     for (const [slug, fragment] of [['events', 'reserved'], ['Bad Slug', 'lowercase'], ['taken-slug', 'taken']]) {
@@ -148,16 +148,16 @@ describe('PUT /keys/:key/slug', () => {
   });
 
   it('re-setting the same slug on the same project is idempotent', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     await fetch(`${baseUrl}/keys/${proj.key}/slug`, { method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'same-slug' }) });
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, { method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'same-slug' }) });
     assert.equal(res.status, 200);
   });
 
   it('enforces the org prefix policy for users but not for admin', async () => {
-    const org = createOrganization(db, { name: 'Team One', slug: 'team1', ownerUserId: owner.id });
-    updateOrganization(db, org.id, { projectSlugPolicy: 'prefix' });
-    const proj = makeProject({ orgId: org.id });
+    const org = await createOrganization(db, { name: 'Team One', slug: 'team1', ownerUserId: owner.id });
+    await updateOrganization(db, org.id, { projectSlugPolicy: 'prefix' });
+    const proj = await makeProject({ orgId: org.id });
 
     const denied = await fetch(`${baseUrl}/keys/${proj.key}/slug`, {
       method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'freeform' }),
@@ -179,7 +179,7 @@ describe('PUT /keys/:key/slug', () => {
   });
 
   it('rejects writes from non-managing users', async () => {
-    const proj = makeProject();
+    const proj = await makeProject();
     const res = await fetch(`${baseUrl}/keys/${proj.key}/slug`, {
       method: 'PUT', headers: authed(outsider), body: JSON.stringify({ slug: 'nope-slug' }),
     });
@@ -189,8 +189,8 @@ describe('PUT /keys/:key/slug', () => {
 
 describe('GET /keys/:key/slug/check', () => {
   it('reports availability with a reason when unavailable', async () => {
-    const projA = makeProject();
-    const projB = makeProject();
+    const projA = await makeProject();
+    const projB = await makeProject();
     await fetch(`${baseUrl}/keys/${projA.key}/slug`, { method: 'PUT', headers: authed(owner), body: JSON.stringify({ slug: 'claimed' }) });
 
     const free = await fetch(`${baseUrl}/keys/${projB.key}/slug/check?slug=unclaimed`, { headers: authed(owner) });

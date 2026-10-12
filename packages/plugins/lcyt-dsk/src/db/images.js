@@ -30,132 +30,149 @@ export function safeApiKey(apiKey) {
   return `${safe}-${suffix}`;
 }
 
+const num = (v) => (typeof v === 'bigint' ? Number(v) : v);
+
+/** Prisma returns size_bytes as BigInt; callers want plain numbers. */
+function shapeImage(row) {
+  return row ? { ...row, size_bytes: num(row.size_bytes) } : null;
+}
+
 /**
  * Check whether graphics upload is enabled for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isGraphicsEnabled(db, apiKey) {
-  const row = db.prepare('SELECT graphics_enabled FROM api_keys WHERE key = ?').get(apiKey);
+export async function isGraphicsEnabled(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { graphics_enabled: true } });
   return row ? row.graphics_enabled === 1 : false;
 }
 
 /**
  * Register an uploaded image in caption_files.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {{ apiKey: string, filename: string, shorthand: string, mimeType: string, sizeBytes: number }} data
- * @returns {number} row id
+ * @returns {Promise<number>} row id
  */
-export function registerImage(db, { apiKey, filename, shorthand, mimeType, sizeBytes }) {
-  const result = db.prepare(
-    "INSERT INTO caption_files (api_key, filename, shorthand, mime_type, size_bytes, type, format) VALUES (?, ?, ?, ?, ?, 'image', 'image')"
-  ).run(apiKey, filename, shorthand, mimeType, sizeBytes ?? 0);
-  return result.lastInsertRowid;
+export async function registerImage(db, { apiKey, filename, shorthand, mimeType, sizeBytes }) {
+  const row = await db.caption_files.create({
+    data: {
+      api_key: apiKey, filename, shorthand, mime_type: mimeType,
+      size_bytes: sizeBytes ?? 0, type: 'image', format: 'image',
+      created_at: db.$util.sqlNow(), updated_at: db.$util.sqlNow(),
+    },
+    select: { id: true },
+  });
+  return row.id;
 }
 
 /**
  * List all images for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
- * @returns {Array}
+ * @returns {Promise<Array>}
  */
-export function listImages(db, apiKey) {
-  return db.prepare("SELECT * FROM caption_files WHERE api_key = ? AND type = 'image' ORDER BY created_at DESC").all(apiKey);
+export async function listImages(db, apiKey) {
+  const rows = await db.caption_files.findMany({
+    where: { api_key: apiKey, type: 'image' },
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
+  return rows.map(shapeImage);
 }
 
 /**
  * Get a single image row by id (no api_key filter — for public DSK page serving).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getImage(db, id) {
-  return db.prepare("SELECT * FROM caption_files WHERE id = ? AND type = 'image'").get(id) ?? null;
+export async function getImage(db, id) {
+  return shapeImage(await db.caption_files.findFirst({ where: { id, type: 'image' } }));
 }
 
 /**
  * Get a single image row by id, scoped to an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getImageByKey(db, id, apiKey) {
-  return db.prepare("SELECT * FROM caption_files WHERE id = ? AND api_key = ? AND type = 'image'").get(id, apiKey) ?? null;
+export async function getImageByKey(db, id, apiKey) {
+  return shapeImage(await db.caption_files.findFirst({ where: { id, api_key: apiKey, type: 'image' } }));
 }
 
 /**
  * Get an image by shorthand name for a specific API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
  * @param {string} shorthand
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getImageByShorthand(db, apiKey, shorthand) {
-  return db.prepare("SELECT * FROM caption_files WHERE api_key = ? AND shorthand = ? AND type = 'image'").get(apiKey, shorthand) ?? null;
+export async function getImageByShorthand(db, apiKey, shorthand) {
+  return shapeImage(await db.caption_files.findFirst({ where: { api_key: apiKey, shorthand, type: 'image' } }));
 }
 
 /**
  * Check whether a shorthand name is already taken for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
  * @param {string} shorthand
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function isShorthandTaken(db, apiKey, shorthand) {
-  const row = db.prepare("SELECT id FROM caption_files WHERE api_key = ? AND shorthand = ? AND type = 'image'").get(apiKey, shorthand);
+export async function isShorthandTaken(db, apiKey, shorthand) {
+  const row = await db.caption_files.findFirst({ where: { api_key: apiKey, shorthand, type: 'image' }, select: { id: true } });
   return !!row;
 }
 
 /**
  * Delete an image row scoped to an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
- * @returns {object|null} the deleted row (for disk cleanup), or null if not found
+ * @returns {Promise<object|null>} the deleted row (for disk cleanup), or null if not found
  */
-export function deleteImage(db, id, apiKey) {
-  const row = getImageByKey(db, id, apiKey);
+export async function deleteImage(db, id, apiKey) {
+  const row = await getImageByKey(db, id, apiKey);
   if (!row) return null;
-  db.prepare('DELETE FROM caption_files WHERE id = ?').run(id);
+  await db.caption_files.deleteMany({ where: { id } });
   return row;
 }
 
 /**
  * Update the settings_json column for an image scoped to an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
  * @param {object} settingsJson  parsed JS object — will be JSON-stringified
- * @returns {boolean} true if a row was updated
+ * @returns {Promise<boolean>} true if a row was updated
  */
-export function updateImageSettings(db, id, apiKey, settingsJson) {
-  const result = db.prepare(
-    "UPDATE caption_files SET settings_json = ? WHERE id = ? AND api_key = ? AND type = 'image'"
-  ).run(JSON.stringify(settingsJson), id, apiKey);
-  return result.changes > 0;
+export async function updateImageSettings(db, id, apiKey, settingsJson) {
+  const result = await db.caption_files.updateMany({
+    where: { id, api_key: apiKey, type: 'image' },
+    data: { settings_json: JSON.stringify(settingsJson) },
+  });
+  return result.count > 0;
 }
 
 /**
  * Delete all image rows for an API key (for hard-delete cascade).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
- * @returns {Array} deleted rows (for disk cleanup)
+ * @returns {Promise<Array>} deleted rows (for disk cleanup)
  */
-export function deleteAllImages(db, apiKey) {
-  const rows = listImages(db, apiKey);
-  db.prepare("DELETE FROM caption_files WHERE api_key = ? AND type = 'image'").run(apiKey);
+export async function deleteAllImages(db, apiKey) {
+  const rows = await listImages(db, apiKey);
+  await db.caption_files.deleteMany({ where: { api_key: apiKey, type: 'image' } });
   return rows;
 }
 
 /**
  * Get total image storage in bytes for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
- * @returns {number}
+ * @returns {Promise<number>}
  */
-export function getTotalImageStorageBytes(db, apiKey) {
-  const row = db.prepare("SELECT COALESCE(SUM(size_bytes),0) AS total FROM caption_files WHERE api_key = ? AND type = 'image'").get(apiKey);
-  return row ? row.total : 0;
+export async function getTotalImageStorageBytes(db, apiKey) {
+  const agg = await db.caption_files.aggregate({ where: { api_key: apiKey, type: 'image' }, _sum: { size_bytes: true } });
+  return num(agg._sum.size_bytes) ?? 0;
 }

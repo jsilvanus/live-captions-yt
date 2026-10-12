@@ -1,17 +1,12 @@
 import express from 'express';
 import bodyParser from 'body-parser';
-import Database from 'better-sqlite3';
-import { runMigrations } from '../../plugins/lcyt-production/src/db.js';
+import { initDb } from '../src/db/index.js';
 import { BridgeManager } from '../../plugins/lcyt-production/src/bridge-manager.js';
 import { createBridgeRouter } from '../../plugins/lcyt-production/src/routes/bridge.js';
 
-export function createTestServer(dbPath) {
-  const db = new Database(dbPath || ':memory:');
-
-  // Real migrations, not a hand-rolled subset — routes/bridge.js's security-
-  // rules endpoints need bridge_security_rules to exist too, not just
-  // prod_bridge_instances.
-  runMigrations(db);
+export async function createTestServer(dbPath) {
+  // The production tables (prod_bridge_instances, bridge_security_rules, ...) come from the backend schema.
+  const db = await initDb(dbPath || ':memory:');
 
   const bridgeManager = new BridgeManager(db);
 

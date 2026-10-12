@@ -12,10 +12,9 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import express from 'express';
 
-import { runMigrations } from '../src/db.js';
 import { createCamerasRouter } from '../src/routes/cameras.js';
 
 const realFetch = global.fetch;
@@ -30,9 +29,9 @@ function makeRegistryStub(activeSourceByMixer = {}) {
   };
 }
 
-function insertCamera(overrides = {}) {
+async function insertCamera(overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key, owner_api_key)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -48,9 +47,9 @@ function insertCamera(overrides = {}) {
   return id;
 }
 
-function insertMixer(overrides = {}) {
+async function insertMixer(overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_mixers (id, name, type, connection_config)
     VALUES (?, ?, ?, ?)
   `).run(id, overrides.name ?? 'Mixer 1', overrides.type ?? 'lcyt', JSON.stringify({}));
@@ -98,12 +97,11 @@ function fakeAuth(req, res, next) {
 // block near the end of this file for that).
 const permissiveDeps = { checkProjectRole: () => true };
 
-before(() => {
-  db = new Database(':memory:');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 
 afterEach(() => {
   global.fetch = realFetch;
@@ -121,7 +119,7 @@ describe('camera thumbnail routes', () => {
   it('capture with no camera_key and no apiKey -> 400', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera({ control_type: 'amx', camera_key: null });
+    const id = await insertCamera({ control_type: 'amx', camera_key: null });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail/capture`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
     });
@@ -131,7 +129,7 @@ describe('camera thumbnail routes', () => {
   it('GET .../thumbnail before any capture -> 404', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera();
+    const id = await insertCamera();
     const res = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail`);
     assert.equal(res.status, 404);
   });
@@ -139,7 +137,7 @@ describe('camera thumbnail routes', () => {
   it('capture happy path (webcam camera_key) then GET .../thumbnail serves the JPEG', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera({ camera_key: 'cam-key-1' });
+    const id = await insertCamera({ camera_key: 'cam-key-1' });
 
     mockPreview();
 
@@ -159,7 +157,7 @@ describe('camera thumbnail routes', () => {
   it('per-preset capture stores a separate image and lists it on the camera', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera({ camera_key: 'cam-key-1' });
+    const id = await insertCamera({ camera_key: 'cam-key-1' });
     mockPreview();
 
     const cap = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail/capture`, {
@@ -185,8 +183,8 @@ describe('camera thumbnail routes', () => {
 
   it('program-feed capture (amx camera) requires the camera to be the active mixer source', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    const mixerId = insertMixer();
-    const id = insertCamera({ control_type: 'amx', camera_key: null, mixer_input: 2 });
+    const mixerId = await insertMixer();
+    const id = await insertCamera({ control_type: 'amx', camera_key: null, mixer_input: 2 });
     await startApp(makeRegistryStub({ [mixerId]: 1 })); // input 1 is live, camera is input 2
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail/capture`, {
@@ -198,7 +196,7 @@ describe('camera thumbnail routes', () => {
   it('DELETE /:id removes the thumbnail file from disk', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera({ camera_key: 'cam-key-1' });
+    const id = await insertCamera({ camera_key: 'cam-key-1' });
 
     mockPreview();
     const captureRes = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail/capture`, { method: 'POST' });
@@ -215,7 +213,7 @@ describe('camera thumbnail routes', () => {
   it('GET / shows thumbnailUrl: null before capture and a URL after', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera({ camera_key: 'cam-key-1' });
+    const id = await insertCamera({ camera_key: 'cam-key-1' });
 
     const beforeRes = await fetch(`${baseUrl}/production/cameras`);
     const beforeList = await beforeRes.json();
@@ -234,7 +232,7 @@ describe('camera thumbnail routes', () => {
   it('GET / and GET /:id show live: null with no mediamtxClient configured', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera({ camera_key: 'cam-key-2' });
+    const id = await insertCamera({ camera_key: 'cam-key-2' });
 
     const listRes = await fetch(`${baseUrl}/production/cameras`);
     const list = await listRes.json();
@@ -248,9 +246,9 @@ describe('camera thumbnail routes', () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const mtx = { isPathPublishing: async (key) => key === 'live-cam' };
     await startApp(makeRegistryStub(), mtx);
-    const liveId = insertCamera({ camera_key: 'live-cam', control_type: 'rtmp' });
-    const offlineId = insertCamera({ camera_key: 'offline-cam', control_type: 'rtmp' });
-    const noKeyId = insertCamera({ camera_key: null, control_type: 'none' });
+    const liveId = await insertCamera({ camera_key: 'live-cam', control_type: 'rtmp' });
+    const offlineId = await insertCamera({ camera_key: 'offline-cam', control_type: 'rtmp' });
+    const noKeyId = await insertCamera({ camera_key: null, control_type: 'none' });
 
     const list = await (await fetch(`${baseUrl}/production/cameras`)).json();
     assert.equal(list.find(c => c.id === liveId).live, true);
@@ -266,7 +264,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
   it('with no auth configured, an unowned camera is fully visible/editable (legacy behavior preserved)', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = insertCamera();
+    const id = await insertCamera();
     const res = await fetch(`${baseUrl}/production/cameras/${id}`);
     assert.equal(res.status, 200);
   });
@@ -281,7 +279,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
   it('owner can read/update/delete their own camera', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({ owner_api_key: 'proj-a' });
+    const id = await insertCamera({ owner_api_key: 'proj-a' });
 
     const getRes = await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(getRes.status, 200);
@@ -296,7 +294,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
   it("a different project cannot read, update, or delete another project's owned camera (404, not leaked)", async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({ owner_api_key: 'proj-a' });
+    const id = await insertCamera({ owner_api_key: 'proj-a' });
 
     const getRes = await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'proj-b' } });
     assert.equal(getRes.status, 404);
@@ -314,9 +312,9 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
   it("GET / filters out other projects' owned cameras but keeps unowned (legacy) ones visible", async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const ownedId = insertCamera({ owner_api_key: 'proj-a', name: 'Owned by A' });
-    const otherOwnedId = insertCamera({ owner_api_key: 'proj-b', name: 'Owned by B' });
-    const legacyId = insertCamera({ owner_api_key: null, name: 'Legacy unowned' });
+    const ownedId = await insertCamera({ owner_api_key: 'proj-a', name: 'Owned by A' });
+    const otherOwnedId = await insertCamera({ owner_api_key: 'proj-b', name: 'Owned by B' });
+    const legacyId = await insertCamera({ owner_api_key: null, name: 'Legacy unowned' });
 
     const list = await (await fetch(`${baseUrl}/production/cameras`, { headers: { 'x-api-key': 'proj-a' } })).json();
     const ids = list.map((c) => c.id);
@@ -337,14 +335,14 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
     assert.equal(body.isOwned, true);
     assert.equal(body.owner_api_key, undefined, 'owner_api_key must never be serialized back to the client');
 
-    const row = db.prepare('SELECT owner_api_key FROM prod_cameras WHERE id = ?').get(body.id);
+    const row = await db.prepare('SELECT owner_api_key FROM prod_cameras WHERE id = ?').get(body.id);
     assert.equal(row.owner_api_key, 'proj-a');
   });
 
   it('WHIP routes remain unauthenticated even when auth is configured', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
+    const id = await insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
     // No x-api-key header at all — a real kiosk page sends none of these routes any auth.
     const res = await fetch(`${baseUrl}/production/cameras/${id}/whip-url`);
     assert.notEqual(res.status, 401);
@@ -357,7 +355,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
     // credentialed request, not silently bypass ownership.
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
+    const id = await insertCamera({ owner_api_key: 'proj-a', control_type: 'webcam', camera_key: 'cam-key-whip' });
 
     const own = await fetch(`${baseUrl}/production/cameras/${id}/whip-url`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(own.status, 200);
@@ -369,7 +367,7 @@ describe('camera CRUD auth + ownership (code-review follow-up: cross-tenant sour
   it('thumbnail-serving routes remain unauthenticated even when auth is configured', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({ owner_api_key: 'proj-a', camera_key: 'cam-key-thumb' });
+    const id = await insertCamera({ owner_api_key: 'proj-a', camera_key: 'cam-key-thumb' });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/thumbnail`);
     assert.notEqual(res.status, 401);
   });
@@ -400,7 +398,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
     await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
+    const id = await insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -413,7 +411,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
     await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertCamera({
+    const id = await insertCamera({
       control_type: 'visca-ip',
       control_config: { presets: [
         { id: 'home', name: 'Home', presetNumber: 0 },
@@ -430,7 +428,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
 
   it('bridge-relayed recall also notifies, after the bridge command succeeds', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    db.prepare(`INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)`)
+    await db.prepare(`INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)`)
       .run('bridge-1', 'Bridge 1', 'tok-bridge-1');
     const registry = makePresetRegistryStub();
     const bridgeManager = {
@@ -446,13 +444,13 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
       server = createServer(app);
       server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
     });
-    const id = insertCamera({
+    const id = await insertCamera({
       control_type: 'amx',
       control_config: { host: 'h', port: 1, presets: [{ id: 'wide', name: 'Wide', command: 'X' }] },
     });
-    // insertCamera()'s column list doesn't cover bridge_instance_id — set it
+    // await insertCamera()'s column list doesn't cover bridge_instance_id — set it
     // directly so the route takes the bridge-relay branch.
-    db.prepare('UPDATE prod_cameras SET bridge_instance_id = ? WHERE id = ?').run('bridge-1', id);
+    await db.prepare('UPDATE prod_cameras SET bridge_instance_id = ? WHERE id = ?').run('bridge-1', id);
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
       method: 'POST', headers: { 'x-api-key': 'proj-b' },
@@ -463,7 +461,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
 
   it('maps a bridge-relayed security-policy block to 403, not the generic 400', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
-    db.prepare(`INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)`)
+    await db.prepare(`INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)`)
       .run('bridge-1', 'Bridge 1', 'tok-bridge-1');
     const registry = makePresetRegistryStub();
     const bridgeManager = {
@@ -479,11 +477,11 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
       server = createServer(app);
       server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
     });
-    const id = insertCamera({
+    const id = await insertCamera({
       control_type: 'amx',
       control_config: { host: 'h', port: 1, presets: [{ id: 'wide', name: 'Wide', command: 'X' }] },
     });
-    db.prepare('UPDATE prod_cameras SET bridge_instance_id = ? WHERE id = ?').run('bridge-1', id);
+    await db.prepare('UPDATE prod_cameras SET bridge_instance_id = ? WHERE id = ?').run('bridge-1', id);
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
@@ -508,7 +506,7 @@ describe('POST /:id/preset/:presetId — production-follow notification', () => 
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const registry = makePresetRegistryStub();
     await startApp(registry); // no auth opt
-    const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
+    const id = await insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
 
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, { method: 'POST' });
     assert.equal(res.status, 200);
@@ -563,7 +561,7 @@ describe('Setup/Production tier gate', () => {
       auth: fakeAuth,
       deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } },
     });
-    const id = insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
+    const id = await insertCamera({ control_type: 'amx', control_config: { presets: [{ id: 'wide', name: 'Wide', command: 'X' }] } });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/preset/wide`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a' },
     });

@@ -11,6 +11,7 @@
 import { randomUUID } from 'node:crypto';
 import { getCaptionFile } from './files.js';
 import { getActiveBroadcastId, setActiveBroadcastId } from './keys.js';
+import { sqlNow, num } from './helpers.js';
 
 export const BROADCAST_STATUSES = new Set([
   'draft', 'scheduled', 'live', 'completed', 'archived',
@@ -86,77 +87,94 @@ function formatBroadcastFile(row) {
     lang:      row.lang ?? null,
     format:    row.format,
     type:      row.type,
-    sizeBytes: row.size_bytes ?? null,
+    sizeBytes: num(row.size_bytes) ?? null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
 }
 
-function clearActiveBroadcastIfMatches(db, apiKey, id) {
-  if (getActiveBroadcastId(db, apiKey) === id) setActiveBroadcastId(db, apiKey, null);
+/** Files linked to a broadcast (newest link first), in the formatBroadcastFile row shape. */
+async function queryBroadcastFiles(db, apiKey, id) {
+  const links = await db.broadcast_files.findMany({
+    where: { broadcast_id: id, caption_files: { api_key: apiKey } },
+    include: { caption_files: true },
+    orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
+  return links.map((bf) => formatBroadcastFile({
+    link_id: bf.id, file_id: bf.file_id,
+    filename: bf.caption_files.filename, lang: bf.caption_files.lang, format: bf.caption_files.format,
+    type: bf.caption_files.type, size_bytes: bf.caption_files.size_bytes,
+    created_at: bf.caption_files.created_at, updated_at: bf.caption_files.updated_at,
+  }));
+}
+
+async function clearActiveBroadcastIfMatches(db, apiKey, id) {
+  if (await getActiveBroadcastId(db, apiKey) === id) await setActiveBroadcastId(db, apiKey, null);
+}
+
+function isUnique(e) {
+  return e?.code === 'P2002';
 }
 
 /**
  * List broadcasts for a project.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {{ status?: string, includeArchived?: boolean, from?: string, to?: string }} [opts]
- * @returns {object[]}
+ * @returns {Promise<object[]>}
  */
-export function listBroadcasts(db, apiKey, { status, includeArchived = false, from, to } = {}) {
-  const clauses = ['api_key = ?'];
-  const params = [apiKey];
+export async function listBroadcasts(db, apiKey, { status, includeArchived = false, from, to } = {}) {
+  const and = [{ api_key: apiKey }];
   if (status) {
-    clauses.push('status = ?');
-    params.push(status);
+    and.push({ status });
   } else if (!includeArchived) {
-    clauses.push("status != 'archived'");
+    and.push({ status: { not: 'archived' } });
   }
   // Calendar range filter on the scheduled window (overlap semantics).
-  if (from) { clauses.push('(scheduled_start IS NOT NULL AND COALESCE(scheduled_end, scheduled_start) >= ?)'); params.push(from); }
-  if (to)   { clauses.push('(scheduled_start IS NOT NULL AND scheduled_start <= ?)'); params.push(to); }
+  if (from) {
+    and.push({ scheduled_start: { not: null } });
+    and.push({ OR: [{ scheduled_end: { gte: from } }, { scheduled_end: null, scheduled_start: { gte: from } }] });
+  }
+  if (to) and.push({ scheduled_start: { not: null, lte: to } });
 
-  const rows = db.prepare(
-    `SELECT * FROM broadcasts WHERE ${clauses.join(' AND ')}
-     ORDER BY COALESCE(scheduled_start, created_at) DESC`
-  ).all(...params);
+  const rows = await db.broadcasts.findMany({ where: { AND: and } });
+  // ORDER BY COALESCE(scheduled_start, created_at) DESC (done here so collation is the same on both databases)
+  const key = (r) => r.scheduled_start ?? r.created_at;
+  rows.sort((a, b) => (key(a) < key(b) ? 1 : key(a) > key(b) ? -1 : 0));
   return rows.map(formatRow);
 }
 
 /**
  * Get the raw row for a broadcast, scoped to a project (internal use).
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-function getRow(db, apiKey, id) {
-  return db.prepare('SELECT * FROM broadcasts WHERE api_key = ? AND id = ?').get(apiKey, id) ?? null;
+async function getRow(db, apiKey, id) {
+  return (await db.broadcasts.findFirst({ where: { api_key: apiKey, id } })) ?? null;
 }
 
 /**
  * Get one broadcast + its linked assets.
- * @returns {object|null}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object|null>}
  */
-export function getBroadcast(db, apiKey, id) {
-  const row = getRow(db, apiKey, id);
+export async function getBroadcast(db, apiKey, id) {
+  const row = await getRow(db, apiKey, id);
   if (!row) return null;
-  const assets = db.prepare(
-    'SELECT * FROM broadcast_assets WHERE broadcast_id = ? ORDER BY sort_order, id'
-  ).all(id).map(formatAsset);
-  const files = db.prepare(`
-    SELECT bf.id AS link_id, bf.file_id, cf.filename, cf.lang, cf.format, cf.type, cf.size_bytes, cf.created_at, cf.updated_at
-    FROM broadcast_files bf
-    JOIN caption_files cf ON cf.id = bf.file_id
-    WHERE bf.broadcast_id = ? AND cf.api_key = ?
-    ORDER BY bf.created_at DESC, bf.id DESC
-  `).all(id, apiKey).map(formatBroadcastFile);
+  const assets = (await db.broadcast_assets.findMany({
+    where: { broadcast_id: id },
+    orderBy: [{ sort_order: 'asc' }, { id: 'asc' }],
+  })).map(formatAsset);
+  const files = await queryBroadcastFiles(db, apiKey, id);
   return { ...formatRow(row), assets, files };
 }
 
 /**
  * Create a broadcast.
+ * @param {import('./connection.js').Db} db
  * @param {{ title?, description?, status?, scheduledStart?, scheduledEnd?, id?, actualStart?, youtubeBroadcastId?, rundownFileId?, recordEnabled?, privacyStatus? }} fields
- * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string }}
+ * @returns {Promise<{ ok: true, broadcast: object }|{ ok: false, error: string }>}
  */
-export function createBroadcast(db, apiKey, fields = {}) {
+export async function createBroadcast(db, apiKey, fields = {}) {
   const {
     id = randomUUID(),
     title = '', description = null,
@@ -173,16 +191,15 @@ export function createBroadcast(db, apiKey, fields = {}) {
     return { ok: false, error: `Invalid privacyStatus: ${privacyStatus}` };
   }
 
-  db.prepare(`
-    INSERT INTO broadcasts
-      (id, api_key, title, description, status, scheduled_start, scheduled_end, actual_start, youtube_broadcast_id, rundown_file_id, record_enabled, privacy_status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, apiKey, title, description, status,
-    scheduledStart, scheduledEnd, actualStart,
-    youtubeBroadcastId, rundownFileId, recordEnabled ? 1 : 0, privacyStatus,
-  );
-  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+  await db.broadcasts.create({
+    data: {
+      id, api_key: apiKey, title, description, status,
+      scheduled_start: scheduledStart, scheduled_end: scheduledEnd, actual_start: actualStart,
+      youtube_broadcast_id: youtubeBroadcastId, rundown_file_id: rundownFileId,
+      record_enabled: recordEnabled ? 1 : 0, privacy_status: privacyStatus,
+    },
+  });
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
 }
 
 const UPDATABLE = {
@@ -199,10 +216,11 @@ const UPDATABLE = {
 
 /**
  * Update editable fields on a broadcast. Only provided keys change.
- * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }>}
  */
-export function updateBroadcast(db, apiKey, id, patch = {}) {
-  const existing = getRow(db, apiKey, id);
+export async function updateBroadcast(db, apiKey, id, patch = {}) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
 
   if (patch.privacyStatus !== undefined && !PRIVACY_STATUSES.has(patch.privacyStatus)) {
@@ -212,53 +230,55 @@ export function updateBroadcast(db, apiKey, id, patch = {}) {
     return { ok: false, error: `Invalid status: ${patch.status}` };
   }
 
-  const sets = [];
-  const params = [];
+  const data = {};
   for (const [key, col] of Object.entries(UPDATABLE)) {
     if (patch[key] !== undefined) {
-      sets.push(`${col} = ?`);
-      params.push(key === 'recordEnabled' ? (patch[key] ? 1 : 0) : patch[key]);
+      data[col] = key === 'recordEnabled' ? (patch[key] ? 1 : 0) : patch[key];
     }
   }
-  if (sets.length === 0) return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+  if (Object.keys(data).length === 0) return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
 
-  sets.push("updated_at = datetime('now')");
-  params.push(apiKey, id);
-  db.prepare(`UPDATE broadcasts SET ${sets.join(', ')} WHERE api_key = ? AND id = ?`).run(...params);
-  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+  data.updated_at = sqlNow();
+  await db.broadcasts.updateMany({ where: { api_key: apiKey, id }, data });
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
 }
 
 /**
  * Archive (soft-delete) a broadcast.
- * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }>}
  */
-export function archiveBroadcast(db, apiKey, id) {
-  const existing = getRow(db, apiKey, id);
+export async function archiveBroadcast(db, apiKey, id) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
   if (existing.status === 'live') {
     return { ok: false, error: 'Cannot archive a live broadcast', status: 409 };
   }
-  db.prepare(
-    "UPDATE broadcasts SET status = 'archived', archived_at = datetime('now'), updated_at = datetime('now') WHERE api_key = ? AND id = ?"
-  ).run(apiKey, id);
-  clearActiveBroadcastIfMatches(db, apiKey, id);
-  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+  const now = sqlNow();
+  await db.broadcasts.updateMany({
+    where: { api_key: apiKey, id },
+    data: { status: 'archived', archived_at: now, updated_at: now },
+  });
+  await clearActiveBroadcastIfMatches(db, apiKey, id);
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
 }
 
 /**
  * Restore an archived broadcast back to draft.
- * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }>}
  */
-export function restoreBroadcast(db, apiKey, id) {
-  const existing = getRow(db, apiKey, id);
+export async function restoreBroadcast(db, apiKey, id) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
   if (existing.status !== 'archived') {
     return { ok: false, error: 'Broadcast is not archived', status: 409 };
   }
-  db.prepare(
-    "UPDATE broadcasts SET status = 'draft', archived_at = NULL, updated_at = datetime('now') WHERE api_key = ? AND id = ?"
-  ).run(apiKey, id);
-  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+  await db.broadcasts.updateMany({
+    where: { api_key: apiKey, id },
+    data: { status: 'draft', archived_at: null, updated_at: sqlNow() },
+  });
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
 }
 
 /**
@@ -266,15 +286,16 @@ export function restoreBroadcast(db, apiKey, id) {
  * at least archiveMinAgeDays(); otherwise blocked. Produced content survives —
  * broadcast_id is nulled on sessions / session_stats / caption_files, and
  * broadcast_assets cascade-drop via FK.
- * @returns {{ ok: true }|{ ok: false, error: string, status?: number, archive?: object }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true }|{ ok: false, error: string, status?: number, archive?: object }>}
  */
-export function deleteBroadcast(db, apiKey, id) {
-  const existing = getRow(db, apiKey, id);
+export async function deleteBroadcast(db, apiKey, id) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
 
   if (existing.status !== 'archived') {
     // First delete archives instead of hard-deleting.
-    const archived = archiveBroadcast(db, apiKey, id);
+    const archived = await archiveBroadcast(db, apiKey, id);
     return archived.ok
       ? { ok: false, error: 'Broadcast archived; delete again after the cooling-off window to remove permanently', status: 202, archive: archived.broadcast }
       : archived;
@@ -282,21 +303,18 @@ export function deleteBroadcast(db, apiKey, id) {
 
   // Already archived — enforce cooling-off window before permanent delete.
   const minDays = archiveMinAgeDays();
-  const eligible = db.prepare(
-    "SELECT (archived_at IS NOT NULL AND archived_at <= datetime('now', ?)) AS ok FROM broadcasts WHERE api_key = ? AND id = ?"
-  ).get(`-${minDays} days`, apiKey, id);
-  if (!eligible || eligible.ok !== 1) {
+  const cutoff = sqlNow(new Date(Date.now() - minDays * 86400000));
+  if (!existing.archived_at || existing.archived_at > cutoff) {
     return { ok: false, error: `Archived broadcast cannot be permanently deleted until ${minDays} days after archiving`, status: 409 };
   }
 
-  const tx = db.transaction(() => {
-    clearActiveBroadcastIfMatches(db, apiKey, id);
-    db.prepare('UPDATE sessions       SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
-    db.prepare('UPDATE session_stats  SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
-    db.prepare('UPDATE caption_files  SET broadcast_id = NULL WHERE broadcast_id = ?').run(id);
-    db.prepare('DELETE FROM broadcasts WHERE api_key = ? AND id = ?').run(apiKey, id);
+  await db.$transaction(async (tx) => {
+    await clearActiveBroadcastIfMatches(tx, apiKey, id);
+    await tx.sessions.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
+    await tx.session_stats.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
+    await tx.caption_files.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
+    await tx.broadcasts.deleteMany({ where: { api_key: apiKey, id } });
   });
-  tx();
   return { ok: true };
 }
 
@@ -304,26 +322,22 @@ export function deleteBroadcast(db, apiKey, id) {
 
 /**
  * List files linked to a broadcast.
- * @returns {object[]|null} null if the broadcast does not exist for this project.
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object[]|null>} null if the broadcast does not exist for this project.
  */
-export function listBroadcastFiles(db, apiKey, id) {
-  const existing = getRow(db, apiKey, id);
+export async function listBroadcastFiles(db, apiKey, id) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return null;
-  return db.prepare(`
-    SELECT bf.id AS link_id, bf.file_id, cf.filename, cf.lang, cf.format, cf.type, cf.size_bytes, cf.created_at, cf.updated_at
-    FROM broadcast_files bf
-    JOIN caption_files cf ON cf.id = bf.file_id
-    WHERE bf.broadcast_id = ? AND cf.api_key = ?
-    ORDER BY bf.created_at DESC, bf.id DESC
-  `).all(id, apiKey).map(formatBroadcastFile);
+  return queryBroadcastFiles(db, apiKey, id);
 }
 
 /**
  * Link a file to a broadcast.
- * @returns {{ ok: true, file: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, file: object }|{ ok: false, error: string, status?: number }>}
  */
-export function linkBroadcastFile(db, apiKey, id, fileId) {
-  const existing = getRow(db, apiKey, id);
+export async function linkBroadcastFile(db, apiKey, id, fileId) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
 
   const parsedFileId = Number(fileId);
@@ -331,20 +345,21 @@ export function linkBroadcastFile(db, apiKey, id, fileId) {
     return { ok: false, error: 'fileId must be a positive integer', status: 400 };
   }
 
-  const file = getCaptionFile(db, parsedFileId, apiKey);
+  const file = await getCaptionFile(db, parsedFileId, apiKey);
   if (!file) return { ok: false, error: 'File not found', status: 404 };
 
   try {
-    db.prepare('INSERT INTO broadcast_files (broadcast_id, file_id) VALUES (?, ?)').run(id, parsedFileId);
-    const row = db.prepare(`
-      SELECT bf.id AS link_id, bf.file_id, cf.filename, cf.lang, cf.format, cf.type, cf.size_bytes, cf.created_at, cf.updated_at
-      FROM broadcast_files bf
-      JOIN caption_files cf ON cf.id = bf.file_id
-      WHERE bf.broadcast_id = ? AND bf.file_id = ?
-    `).get(id, parsedFileId);
-    return { ok: true, file: formatBroadcastFile(row) };
+    const link = await db.broadcast_files.create({ data: { broadcast_id: id, file_id: parsedFileId } });
+    return {
+      ok: true,
+      file: formatBroadcastFile({
+        link_id: link.id, file_id: parsedFileId,
+        filename: file.filename, lang: file.lang, format: file.format, type: file.type,
+        size_bytes: file.size_bytes, created_at: file.created_at, updated_at: file.updated_at,
+      }),
+    };
   } catch (e) {
-    if (String(e.message).includes('UNIQUE')) {
+    if (isUnique(e)) {
       return { ok: false, error: 'File already linked to this broadcast', status: 409 };
     }
     throw e;
@@ -353,10 +368,11 @@ export function linkBroadcastFile(db, apiKey, id, fileId) {
 
 /**
  * Unlink a file from a broadcast.
- * @returns {{ ok: true }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true }|{ ok: false, error: string, status?: number }>}
  */
-export function unlinkBroadcastFile(db, apiKey, id, fileId) {
-  const existing = getRow(db, apiKey, id);
+export async function unlinkBroadcastFile(db, apiKey, id, fileId) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
 
   const parsedFileId = Number(fileId);
@@ -364,17 +380,18 @@ export function unlinkBroadcastFile(db, apiKey, id, fileId) {
     return { ok: false, error: 'fileId must be a positive integer', status: 400 };
   }
 
-  const result = db.prepare('DELETE FROM broadcast_files WHERE broadcast_id = ? AND file_id = ?').run(id, parsedFileId);
-  if (result.changes === 0) return { ok: false, error: 'Linked file not found', status: 404 };
+  const result = await db.broadcast_files.deleteMany({ where: { broadcast_id: id, file_id: parsedFileId } });
+  if (result.count === 0) return { ok: false, error: 'Linked file not found', status: 404 };
   return { ok: true };
 }
 
 /**
  * Link a reusable asset to a broadcast.
- * @returns {{ ok: true, asset: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, asset: object }|{ ok: false, error: string, status?: number }>}
  */
-export function linkAsset(db, apiKey, id, { assetType, assetRef, sortOrder } = {}) {
-  const existing = getRow(db, apiKey, id);
+export async function linkAsset(db, apiKey, id, { assetType, assetRef, sortOrder } = {}) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
   if (!BROADCAST_ASSET_TYPES.has(assetType)) {
     return { ok: false, error: `Invalid asset type: ${assetType}` };
@@ -383,17 +400,20 @@ export function linkAsset(db, apiKey, id, { assetType, assetRef, sortOrder } = {
     return { ok: false, error: 'assetRef is required' };
   }
   const ref = String(assetRef);
-  const order = Number.isFinite(Number(sortOrder))
-    ? Number(sortOrder)
-    : (db.prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM broadcast_assets WHERE broadcast_id = ?').get(id).m + 1);
+  let order;
+  if (Number.isFinite(Number(sortOrder))) {
+    order = Math.trunc(Number(sortOrder));
+  } else {
+    const agg = await db.broadcast_assets.aggregate({ where: { broadcast_id: id }, _max: { sort_order: true } });
+    order = (agg._max.sort_order ?? -1) + 1;
+  }
   try {
-    const info = db.prepare(
-      'INSERT INTO broadcast_assets (broadcast_id, asset_type, asset_ref, sort_order) VALUES (?, ?, ?, ?)'
-    ).run(id, assetType, ref, order);
-    const asset = db.prepare('SELECT * FROM broadcast_assets WHERE id = ?').get(info.lastInsertRowid);
+    const asset = await db.broadcast_assets.create({
+      data: { broadcast_id: id, asset_type: assetType, asset_ref: ref, sort_order: order },
+    });
     return { ok: true, asset: formatAsset(asset) };
   } catch (e) {
-    if (String(e.message).includes('UNIQUE')) {
+    if (isUnique(e)) {
       return { ok: false, error: 'Asset already linked to this broadcast', status: 409 };
     }
     throw e;
@@ -402,17 +422,46 @@ export function linkAsset(db, apiKey, id, { assetType, assetRef, sortOrder } = {
 
 /**
  * Unlink an asset from a broadcast.
- * @returns {{ ok: true }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true }|{ ok: false, error: string, status?: number }>}
  */
-export function unlinkAsset(db, apiKey, id, assetRowId) {
-  const existing = getRow(db, apiKey, id);
+export async function unlinkAsset(db, apiKey, id, assetRowId) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
-  const result = db.prepare('DELETE FROM broadcast_assets WHERE broadcast_id = ? AND id = ?').run(id, assetRowId);
-  if (result.changes === 0) return { ok: false, error: 'Linked asset not found', status: 404 };
+  const rowId = Number(assetRowId);
+  const count = Number.isInteger(rowId)
+    ? (await db.broadcast_assets.deleteMany({ where: { broadcast_id: id, id: rowId } })).count
+    : 0;
+  if (count === 0) return { ok: false, error: 'Linked asset not found', status: 404 };
   return { ok: true };
 }
 
 // ── Duplication ──────────────────────────────────────────────────────────
+
+/**
+ * The project's currently active broadcast, or null.
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object|null>}
+ */
+export async function getActiveBroadcast(db, apiKey) {
+  const id = await getActiveBroadcastId(db, apiKey);
+  return id ? getBroadcast(db, apiKey, id) : null;
+}
+
+/** @param {import('./connection.js').Db} db */
+export async function activateBroadcast(db, apiKey, id) {
+  const existing = await getRow(db, apiKey, id);
+  if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
+  if (existing.status === 'archived') return { ok: false, error: 'Cannot activate an archived broadcast', status: 409 };
+  await setActiveBroadcastId(db, apiKey, id);
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
+}
+
+/** @param {import('./connection.js').Db} db */
+export async function deactivateBroadcast(db, apiKey) {
+  await setActiveBroadcastId(db, apiKey, null);
+  return { ok: true };
+}
 
 /**
  * Duplicate a broadcast within the same project. Copies title (suffixed
@@ -420,47 +469,33 @@ export function unlinkAsset(db, apiKey, id, assetRowId) {
  * content (youtube ids, actual_start/end, session records, caption files). The
  * clone starts as a fresh draft. Cross-project deep-copy (targetApiKey) is a
  * follow-up — see plan_broadcasts.md.
- * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }>}
  */
-export function getActiveBroadcast(db, apiKey) {
-  const id = getActiveBroadcastId(db, apiKey);
-  return id ? getBroadcast(db, apiKey, id) : null;
-}
-
-export function activateBroadcast(db, apiKey, id) {
-  const existing = getRow(db, apiKey, id);
-  if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
-  if (existing.status === 'archived') return { ok: false, error: 'Cannot activate an archived broadcast', status: 409 };
-  setActiveBroadcastId(db, apiKey, id);
-  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
-}
-
-export function deactivateBroadcast(db, apiKey) {
-  setActiveBroadcastId(db, apiKey, null);
-  return { ok: true };
-}
-
-export function duplicateBroadcast(db, apiKey, id) {
-  const source = getRow(db, apiKey, id);
+export async function duplicateBroadcast(db, apiKey, id) {
+  const source = await getRow(db, apiKey, id);
   if (!source) return { ok: false, error: 'Broadcast not found', status: 404 };
 
   const newId = randomUUID();
-  const tx = db.transaction(() => {
-    db.prepare(`
-      INSERT INTO broadcasts (id, api_key, title, description, status)
-      VALUES (?, ?, ?, ?, 'draft')
-    `).run(newId, apiKey, `${source.title || 'Broadcast'} (copy)`, source.description ?? null);
-
-    const links = db.prepare('SELECT asset_type, asset_ref, sort_order FROM broadcast_assets WHERE broadcast_id = ?').all(id);
-    const ins = db.prepare('INSERT INTO broadcast_assets (broadcast_id, asset_type, asset_ref, sort_order) VALUES (?, ?, ?, ?)');
-    for (const l of links) ins.run(newId, l.asset_type, l.asset_ref, l.sort_order);
-
-    const fileLinks = db.prepare('SELECT file_id FROM broadcast_files WHERE broadcast_id = ?').all(id);
-    const insFile = db.prepare('INSERT INTO broadcast_files (broadcast_id, file_id) VALUES (?, ?)');
-    for (const l of fileLinks) insFile.run(newId, l.file_id);
+  await db.$transaction(async (tx) => {
+    await tx.broadcasts.create({
+      data: {
+        id: newId, api_key: apiKey, status: 'draft',
+        title: `${source.title || 'Broadcast'} (copy)`, description: source.description ?? null,
+      },
+    });
+    const links = await tx.broadcast_assets.findMany({ where: { broadcast_id: id }, orderBy: { id: 'asc' } });
+    for (const l of links) {
+      await tx.broadcast_assets.create({
+        data: { broadcast_id: newId, asset_type: l.asset_type, asset_ref: l.asset_ref, sort_order: l.sort_order },
+      });
+    }
+    const fileLinks = await tx.broadcast_files.findMany({ where: { broadcast_id: id }, orderBy: { id: 'asc' } });
+    for (const l of fileLinks) {
+      await tx.broadcast_files.create({ data: { broadcast_id: newId, file_id: l.file_id } });
+    }
   });
-  tx();
-  return { ok: true, broadcast: getBroadcast(db, apiKey, newId) };
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, newId) };
 }
 
 // ── Session-lifecycle binding ────────────────────────────────────────────
@@ -468,26 +503,30 @@ export function duplicateBroadcast(db, apiKey, id) {
 /**
  * Auto-create a `live` broadcast for an ad-hoc session (POST /live without a
  * broadcastId). Title is a timestamp (editable later).
- * @returns {object} the created broadcast (formatted)
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object>} the created broadcast (formatted)
  */
-export function autoCreateForSession(db, apiKey, { startedAt, recordEnabled = false } = {}) {
+export async function autoCreateForSession(db, apiKey, { startedAt, recordEnabled = false } = {}) {
   const id = randomUUID();
   const when = startedAt ? new Date(startedAt) : new Date();
   const title = `Broadcast ${when.toISOString().slice(0, 16).replace('T', ' ')}`;
-  db.prepare(`
-    INSERT INTO broadcasts (id, api_key, title, status, actual_start, record_enabled)
-    VALUES (?, ?, ?, 'live', ?, ?)
-  `).run(id, apiKey, title, when.toISOString(), recordEnabled ? 1 : 0);
+  await db.broadcasts.create({
+    data: {
+      id, api_key: apiKey, title, status: 'live',
+      actual_start: when.toISOString(), record_enabled: recordEnabled ? 1 : 0,
+    },
+  });
   return getBroadcast(db, apiKey, id);
 }
 
 /**
  * Bind a starting session to an existing broadcast: transition to `live` and
  * stamp actual_start. Rejects if the broadcast is already live (1:1 per run).
- * @returns {{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, broadcast: object }|{ ok: false, error: string, status?: number }>}
  */
-export function bindSessionStart(db, apiKey, id, { startedAt, recordEnabled } = {}) {
-  const existing = getRow(db, apiKey, id);
+export async function bindSessionStart(db, apiKey, id, { startedAt, recordEnabled } = {}) {
+  const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
   if (existing.status === 'live') {
     return { ok: false, error: 'Broadcast already has a live session', status: 409 };
@@ -495,15 +534,14 @@ export function bindSessionStart(db, apiKey, id, { startedAt, recordEnabled } = 
   if (existing.status !== 'draft' && existing.status !== 'scheduled') {
     return { ok: false, error: `Cannot bind a session to a ${existing.status} broadcast`, status: 409 };
   }
-  const sets = ["status = 'live'", "actual_start = COALESCE(actual_start, ?)", "updated_at = datetime('now')"];
-  const params = [(startedAt ? new Date(startedAt) : new Date()).toISOString()];
-  if (recordEnabled !== undefined) {
-    sets.push('record_enabled = ?');
-    params.push(recordEnabled ? 1 : 0);
-  }
-  params.push(apiKey, id);
-  db.prepare(`UPDATE broadcasts SET ${sets.join(', ')} WHERE api_key = ? AND id = ?`).run(...params);
-  return { ok: true, broadcast: getBroadcast(db, apiKey, id) };
+  const data = {
+    status: 'live',
+    actual_start: existing.actual_start ?? (startedAt ? new Date(startedAt) : new Date()).toISOString(),
+    updated_at: sqlNow(),
+  };
+  if (recordEnabled !== undefined) data.record_enabled = recordEnabled ? 1 : 0;
+  await db.broadcasts.updateMany({ where: { api_key: apiKey, id }, data });
+  return { ok: true, broadcast: await getBroadcast(db, apiKey, id) };
 }
 
 /**
@@ -511,22 +549,22 @@ export function bindSessionStart(db, apiKey, id, { startedAt, recordEnabled } = 
  * actual_end, and record the YouTube video id(s) the cast produced. Best-effort
  * and id-only (no apiKey scope) since the session end path already trusts its
  * own session record.
+ * @param {import('./connection.js').Db} db
  * @param {string[]} [youtubeVideoIds]
+ * @returns {Promise<void>}
  */
-export function completeBroadcast(db, id, { youtubeVideoIds, endedAt } = {}) {
+export async function completeBroadcast(db, id, { youtubeVideoIds, endedAt } = {}) {
   if (!id) return;
-  const row = db.prepare("SELECT status FROM broadcasts WHERE id = ?").get(id);
+  const row = await db.broadcasts.findUnique({ where: { id }, select: { status: true } });
   if (!row) return;
-  const ids = Array.isArray(youtubeVideoIds) && youtubeVideoIds.length
-    ? JSON.stringify(youtubeVideoIds)
-    : null;
-  db.prepare(`
-    UPDATE broadcasts
-    SET status = CASE WHEN status = 'archived' THEN status ELSE 'completed' END,
-        armed = 0,
-        actual_end = ?,
-        youtube_video_ids = COALESCE(?, youtube_video_ids),
-        updated_at = datetime('now')
-    WHERE id = ?
-  `).run((endedAt ? new Date(endedAt) : new Date()).toISOString(), ids, id);
+  const data = {
+    armed: 0,
+    actual_end: (endedAt ? new Date(endedAt) : new Date()).toISOString(),
+    updated_at: sqlNow(),
+  };
+  if (row.status !== 'archived') data.status = 'completed';
+  if (Array.isArray(youtubeVideoIds) && youtubeVideoIds.length) {
+    data.youtube_video_ids = JSON.stringify(youtubeVideoIds);
+  }
+  await db.broadcasts.updateMany({ where: { id }, data });
 }

@@ -22,22 +22,22 @@ const JWT_SECRET = 'test-targets-secret';
 // (plan_project_roles.md, decided 2026-07-26), which needs a real userId.
 let server, baseUrl, db, apiKey, token, ownerToken;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   const auth = createProjectAccessMiddleware(db, JWT_SECRET, { requiredScope: 'target' });
   const app = express();
   app.use(express.json());
   app.use('/targets', createTargetsRouter(auth, db));
 
-  const k = createKey(db, { owner: 'TargetsUser' });
+  const k = await createKey(db, { owner: 'TargetsUser' });
   apiKey = k.key;
   // Plain session token — no explicit owner needed for read, matches every
   // real session-authenticated client (no requireProjectRole write access).
   token = jwt.sign({ sessionId: 'targets-session', apiKey }, JWT_SECRET, { expiresIn: '1h' });
   // Explicit project owner — the token every write (POST/PUT/DELETE) test
   // below uses, since those now require 'setup' tier.
-  const owner = createUser(db, { email: 'targets-owner@example.com', passwordHash: 'x' });
-  addMember(db, apiKey, owner.id, 'owner');
+  const owner = await createUser(db, { email: 'targets-owner@example.com', passwordHash: 'x' });
+  await addMember(db, apiKey, owner.id, 'owner');
   ownerToken = jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
 
   server = createServer(app);
@@ -191,7 +191,7 @@ describe('/targets', () => {
   });
 
   it('targets are scoped per api_key', async () => {
-    const otherKey = createKey(db, { owner: 'OtherProject' });
+    const otherKey = await createKey(db, { owner: 'OtherProject' });
     const otherToken = jwt.sign({ sessionId: 'other-session', apiKey: otherKey.key }, JWT_SECRET, { expiresIn: '1h' });
     const res = await fetch(`${baseUrl}/targets`, { headers: bearer(otherToken, otherKey.key) });
     const body = await res.json();

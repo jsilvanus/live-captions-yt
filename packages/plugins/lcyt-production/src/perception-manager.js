@@ -38,7 +38,7 @@ export function isPerceptionDispatchAvailable(env = process.env) {
  *   callbackBaseUrl: string,  // base URL this backend is reachable at for the ingest callback (usually the same host)
  *   fetchImpl?: typeof fetch,
  *   env?: object,
- *   db?: import('better-sqlite3').Database,  // optional: records dispatched jobs so adopt() can re-attach after a restart
+ *   db?: import('lcyt-backend/db').Db,  // optional: records dispatched jobs so adopt() can re-attach after a restart
  * }} opts
  */
 export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetchImpl = fetch, env = process.env, getFleetImpl = null, db = null, tokenSecret = env.PERCEPTION_INGEST_SECRET || null } = {}) {
@@ -102,23 +102,22 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     const { id, type: _type, ...payload } = plan;
     const spec = { id, kind: 'stream', type: 'perception', owner: apiKey, labels: { purpose: 'perception' }, perception: { ...payload, jobId: id } };
     await _attachFleet(key, apiKey, spec);
-    _persist(key, apiKey, id, 'fleet', spec);
+    await _persist(key, apiKey, id, 'fleet', spec);
     return { jobId: id };
   }
 
   // ── persistence + re-adoption ────────────────────────────────────────────
-  function _persist(key, apiKey, jobId, mode, spec) {
+  async function _persist(key, apiKey, jobId, mode, spec) {
     if (!db) return;
     try {
-      db.prepare(`INSERT INTO prod_perception_jobs (job_key, api_key, job_id, mode, spec, started_at) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(job_key) DO UPDATE SET api_key = excluded.api_key, job_id = excluded.job_id, mode = excluded.mode, spec = excluded.spec, started_at = excluded.started_at`)
-        .run(key, apiKey, jobId, mode, JSON.stringify(spec), new Date().toISOString());
+      const data = { api_key: apiKey, job_id: jobId, mode, spec: JSON.stringify(spec), started_at: new Date().toISOString() };
+      await db.prod_perception_jobs.upsert({ where: { job_key: key }, create: { job_key: key, ...data }, update: data });
     } catch (err) { console.warn(`[perception] could not record job ${jobId}: ${err.message}`); }
   }
 
-  function _forget(key) {
+  async function _forget(key) {
     if (!db) return;
-    try { db.prepare('DELETE FROM prod_perception_jobs WHERE job_key = ?').run(key); } catch { /* ignore */ }
+    try { await db.prod_perception_jobs.deleteMany({ where: { job_key: key } }); } catch { /* ignore */ }
   }
 
   /** Submit (or re-attach to) a fleet job and track it under `key`. */
@@ -130,7 +129,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
     // A job that ends by itself (cancelled elsewhere, worker lost) frees the key and its record. A rejection means
     // we stopped following it (shutdown, lost connection): the record stays so adopt() can re-attach after a restart.
     job.done.then(
-      () => { if (running.get(key) === entry) { running.delete(key); _forget(key); } },
+      () => { if (running.get(key) === entry) { running.delete(key); void _forget(key); } },
       () => { if (running.get(key) === entry) running.delete(key); },
     );
     return entry;
@@ -146,16 +145,16 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
   async function adopt() {
     if (!db) return { adopted: 0, dropped: 0 };
     let adopted = 0; let dropped = 0;
-    for (const row of db.prepare('SELECT * FROM prod_perception_jobs').all()) {
+    for (const row of await db.prod_perception_jobs.findMany()) {
       if (running.has(row.job_key)) continue;
       let spec;
-      try { spec = JSON.parse(row.spec); } catch { _forget(row.job_key); dropped += 1; continue; }
+      try { spec = JSON.parse(row.spec); } catch { await _forget(row.job_key); dropped += 1; continue; }
       if (row.mode === 'fleet' && fleetUrl) {
         try { await _attachFleet(row.job_key, row.api_key, spec); adopted += 1; } catch (err) {
           console.warn(`[perception] could not re-attach job ${row.job_id}: ${err.message}`);
         }
       } else {
-        _forget(row.job_key); dropped += 1;
+        await _forget(row.job_key); dropped += 1;
       }
     }
     return { adopted, dropped };
@@ -179,7 +178,7 @@ export function createPerceptionManager({ previewBaseUrl, callbackBaseUrl, fetch
         return false;
       }
       running.delete(key);
-      _forget(key);
+      await _forget(key);
       return true;
     }
     return false;

@@ -32,7 +32,7 @@ const THUMBNAIL_MIME_TYPES = new Set(['image/png', 'image/jpeg']);
 const THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth
  * @param {object} deps
  * @param {(platform: string) => object|null} [deps.getAdapter]
@@ -61,13 +61,13 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     const adapter = resolveAdapter(req, res);
     if (!adapter) return null;
 
-    const broadcast = broadcastsApi.getBroadcast(db, apiKey, req.params.id);
+    const broadcast = await broadcastsApi.getBroadcast(db, apiKey, req.params.id);
     if (!broadcast) {
       res.status(404).json({ error: 'Broadcast not found' });
       return null;
     }
 
-    const credential = resolveCredential(req, res, db, apiKey, adapter.platform);
+    const credential = await resolveCredential(req, res, db, apiKey, adapter.platform);
     if (!credential) return null;
 
     if (!requireToken) return { apiKey, adapter, broadcast, credential, accessToken: null };
@@ -82,12 +82,12 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
   }
 
   // ── List this broadcast's platform links ───────────────────────────────
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
-    const broadcast = broadcastsApi.getBroadcast(db, apiKey, req.params.id);
+    const broadcast = await broadcastsApi.getBroadcast(db, apiKey, req.params.id);
     if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
-    res.json({ links: listLinks(db, req.params.id).map(formatLink) });
+    res.json({ links: (await listLinks(db, req.params.id)).map(formatLink) });
   });
 
   // ── Schedule (create or update the external broadcast) ─────────────────
@@ -109,7 +109,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
       });
     }
 
-    const existing = getLink(db, broadcast.id, adapter.platform);
+    const existing = await getLink(db, broadcast.id, adapter.platform);
 
     try {
       let link;
@@ -119,7 +119,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
         await adapter.updateSchedule(accessToken, existing.external_broadcast_id, {
           title, description, scheduledStart, privacyStatus,
         });
-        link = upsertLink(db, {
+        link = await upsertLink(db, {
           broadcastId: broadcast.id,
           platform: adapter.platform,
           credentialId: credential.id,
@@ -128,7 +128,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
         });
       } else {
         const created = await adapter.createScheduled(accessToken, { title, description, scheduledStart, privacyStatus });
-        link = upsertLink(db, {
+        link = await upsertLink(db, {
           broadcastId: broadcast.id,
           platform: adapter.platform,
           credentialId: credential.id,
@@ -141,7 +141,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
         // broadcasts routes accept it on create and update.
         if (adapter.platform === 'youtube') {
           try {
-            broadcastsApi.updateBroadcast(db, apiKey, broadcast.id, {
+            await broadcastsApi.updateBroadcast(db, apiKey, broadcast.id, {
               youtubeBroadcastId: created.externalBroadcastId,
             });
           } catch (err) {
@@ -157,11 +157,11 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
       });
 
       res.json({
-        link: formatLink(getLink(db, broadcast.id, adapter.platform)),
+        link: formatLink(await getLink(db, broadcast.id, adapter.platform)),
         captionTarget: streamKeyResult,
       });
     } catch (err) {
-      if (existing) updateLink(db, existing.id, { lastSyncError: err.message });
+      if (existing) await updateLink(db, existing.id, { lastSyncError: err.message });
       respondToPlatformError(res, err, 'Could not schedule the broadcast');
     }
   });
@@ -189,11 +189,11 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     }
     if (!streamKey) return { bound: false, reason: 'no_stream_key' };
 
-    const existingTarget = (captionTargetsApi.list(db, apiKey) || [])
+    const existingTarget = ((await captionTargetsApi.list(db, apiKey)) || [])
       .find(t => t.type === 'youtube');
 
     if (!existingTarget) {
-      const result = captionTargetsApi.create(db, apiKey, { type: 'youtube', streamKey, enabled: true });
+      const result = await captionTargetsApi.create(db, apiKey, { type: 'youtube', streamKey, enabled: true });
       return result?.ok
         ? { bound: true, created: true, targetId: result.target.id }
         : { bound: false, reason: result?.error || 'create_failed' };
@@ -205,7 +205,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
       return { bound: false, reason: 'existing_target', targetId: existingTarget.id, available: true };
     }
 
-    const result = captionTargetsApi.update(db, apiKey, existingTarget.id, { streamKey });
+    const result = await captionTargetsApi.update(db, apiKey, existingTarget.id, { streamKey });
     return result?.ok
       ? { bound: true, created: false, targetId: existingTarget.id }
       : { bound: false, reason: result?.error || 'update_failed' };
@@ -220,7 +220,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     if (!ctx) return;
     const { adapter, broadcast, accessToken } = ctx;
 
-    const link = getLink(db, broadcast.id, adapter.platform);
+    const link = await getLink(db, broadcast.id, adapter.platform);
     if (!link) {
       return res.status(409).json({
         error: `Schedule this broadcast on ${adapter.platform} before setting a thumbnail`,
@@ -251,10 +251,10 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
 
     try {
       const { thumbnailUrl } = await adapter.setThumbnail(accessToken, link.external_broadcast_id, buf, mimeType);
-      updateLink(db, link.id, { thumbnailUrl });
+      await updateLink(db, link.id, { thumbnailUrl });
       res.json({ thumbnailUrl });
     } catch (err) {
-      updateLink(db, link.id, { lastSyncError: err.message });
+      await updateLink(db, link.id, { lastSyncError: err.message });
       respondToPlatformError(res, err, 'Could not set the thumbnail');
     }
   });
@@ -265,7 +265,7 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     if (!ctx) return;
     const { apiKey, adapter, broadcast, accessToken } = ctx;
 
-    const link = getLink(db, broadcast.id, adapter.platform);
+    const link = await getLink(db, broadcast.id, adapter.platform);
     if (!link) {
       return res.status(409).json({
         error: `Schedule this broadcast on ${adapter.platform} first`,
@@ -276,9 +276,9 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     let status;
     try {
       ({ status } = await adapter.transition(accessToken, link.external_broadcast_id, 'live'));
-      updateLink(db, link.id, { lastStatus: 'live', lastSyncError: null });
+      await updateLink(db, link.id, { lastStatus: 'live', lastSyncError: null });
     } catch (err) {
-      updateLink(db, link.id, { lastSyncError: err.message });
+      await updateLink(db, link.id, { lastSyncError: err.message });
       return respondToPlatformError(res, err, 'Could not go live');
     }
 
@@ -327,15 +327,15 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
     if (!ctx) return;
     const { apiKey, adapter, broadcast, accessToken } = ctx;
 
-    const link = getLink(db, broadcast.id, adapter.platform);
+    const link = await getLink(db, broadcast.id, adapter.platform);
     if (!link) return res.status(409).json({ error: 'This broadcast is not linked to a platform', code: 'not_linked' });
 
     let status;
     try {
       ({ status } = await adapter.transition(accessToken, link.external_broadcast_id, 'complete'));
-      updateLink(db, link.id, { lastStatus: 'complete', lastSyncError: null });
+      await updateLink(db, link.id, { lastStatus: 'complete', lastSyncError: null });
     } catch (err) {
-      updateLink(db, link.id, { lastSyncError: err.message });
+      await updateLink(db, link.id, { lastSyncError: err.message });
       return respondToPlatformError(res, err, 'Could not end the broadcast');
     }
 
@@ -360,10 +360,10 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
    * something, and re-fetching later gives better numbers.
    */
   async function captureSummary({ adapter, accessToken, link, broadcastId }) {
-    const peak = peakConcurrentFromSnapshots(db, broadcastId, link.platform);
+    const peak = await peakConcurrentFromSnapshots(db, broadcastId, link.platform);
     try {
       const stats = await adapter.getPostBroadcastStats(accessToken, link.external_broadcast_id);
-      insertStats(db, {
+      await insertStats(db, {
         broadcastId,
         platform: link.platform,
         kind: STATS_POST_SUMMARY,
@@ -371,38 +371,38 @@ export function createBroadcastPlatformsRouter(db, auth, deps) {
         averageWatchTimeSec: stats.averageWatchTimeSec,
         peakConcurrentViewers: stats.peakConcurrentViewers ?? peak,
       });
-      return formatStats(getLatestStats(db, broadcastId, link.platform, STATS_POST_SUMMARY));
+      return formatStats(await getLatestStats(db, broadcastId, link.platform, STATS_POST_SUMMARY));
     } catch (err) {
       // Ending the broadcast succeeded; the summary is a bonus. Record what we
       // do know rather than losing the peak we already measured.
       logger.warn(`[platforms] post-broadcast stats unavailable for ${broadcastId}: ${err.message}`);
-      insertStats(db, {
+      await insertStats(db, {
         broadcastId, platform: link.platform, kind: STATS_POST_SUMMARY, peakConcurrentViewers: peak,
       });
-      return formatStats(getLatestStats(db, broadcastId, link.platform, STATS_POST_SUMMARY));
+      return formatStats(await getLatestStats(db, broadcastId, link.platform, STATS_POST_SUMMARY));
     }
   }
 
   // ── Stats ──────────────────────────────────────────────────────────────
-  router.get('/:platform/stats', auth, (req, res) => {
+  router.get('/:platform/stats', auth, async (req, res) => {
     const apiKey = requireApiKey(req, res);
     if (!apiKey) return;
     const adapter = resolveAdapter(req, res);
     if (!adapter) return;
 
-    const broadcast = broadcastsApi.getBroadcast(db, apiKey, req.params.id);
+    const broadcast = await broadcastsApi.getBroadcast(db, apiKey, req.params.id);
     if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
 
     const platform = adapter.platform;
     const payload = {
-      latest: formatStats(getLatestStats(db, broadcast.id, platform, STATS_LIVE_SNAPSHOT)),
-      summary: formatStats(getLatestStats(db, broadcast.id, platform, STATS_POST_SUMMARY)),
-      peakConcurrentViewers: peakConcurrentFromSnapshots(db, broadcast.id, platform),
+      latest: formatStats(await getLatestStats(db, broadcast.id, platform, STATS_LIVE_SNAPSHOT)),
+      summary: formatStats(await getLatestStats(db, broadcast.id, platform, STATS_POST_SUMMARY)),
+      peakConcurrentViewers: await peakConcurrentFromSnapshots(db, broadcast.id, platform),
     };
 
     // Tier 3 — the historical trend needs no extra table; it is this query.
     if (req.query.history === '1') {
-      payload.history = listStats(db, broadcast.id, platform, { kind: STATS_LIVE_SNAPSHOT }).map(formatStats);
+      payload.history = (await listStats(db, broadcast.id, platform, { kind: STATS_LIVE_SNAPSHOT })).map(formatStats);
     }
 
     res.json(payload);

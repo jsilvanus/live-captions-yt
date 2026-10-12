@@ -6,9 +6,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import express from 'express';
 import { initDb, createKey, updateKey, formatKey } from '../src/db.js';
-import { runMigrations } from 'lcyt-rtmp/src/db.js';
 
-function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { return initDb(':memory:'); }
 import { isHlsEnabled } from 'lcyt-rtmp/src/db.js';
 import { createStreamHlsRouter } from 'lcyt-rtmp/src/routes/stream-hls.js';
 import { createPreviewRouter } from 'lcyt-rtmp/src/routes/preview.js';
@@ -43,39 +42,39 @@ async function getJson(server, path) {
 describe('hls_enabled DB column', () => {
   let db;
 
-  before(() => { db = initTestDb(); });
-  after(() => { db.close(); });
+  before(async () => { db = await initTestDb(); });
+  after(async () => { await db.close(); });
 
-  it('defaults to false on createKey', () => {
-    const k = createKey(db, { owner: 'Alice' });
-    assert.strictEqual(isHlsEnabled(db, k.key), false);
+  it('defaults to false on createKey', async () => {
+    const k = await createKey(db, { owner: 'Alice' });
+    assert.strictEqual(await isHlsEnabled(db, k.key), false);
   });
 
-  it('can be set to true on createKey', () => {
-    const k = createKey(db, { owner: 'Bob', hls_enabled: true });
-    assert.strictEqual(isHlsEnabled(db, k.key), true);
+  it('can be set to true on createKey', async () => {
+    const k = await createKey(db, { owner: 'Bob', hls_enabled: true });
+    assert.strictEqual(await isHlsEnabled(db, k.key), true);
   });
 
-  it('isHlsEnabled returns false for unknown key', () => {
-    assert.strictEqual(isHlsEnabled(db, 'no-such-key'), false);
+  it('isHlsEnabled returns false for unknown key', async () => {
+    assert.strictEqual(await isHlsEnabled(db, 'no-such-key'), false);
   });
 
-  it('isHlsEnabled returns true after updateKey', () => {
-    const k = createKey(db, { owner: 'Carol' });
-    assert.strictEqual(isHlsEnabled(db, k.key), false);
-    updateKey(db, k.key, { hls_enabled: true });
-    assert.strictEqual(isHlsEnabled(db, k.key), true);
+  it('isHlsEnabled returns true after updateKey', async () => {
+    const k = await createKey(db, { owner: 'Carol' });
+    assert.strictEqual(await isHlsEnabled(db, k.key), false);
+    await updateKey(db, k.key, { hls_enabled: true });
+    assert.strictEqual(await isHlsEnabled(db, k.key), true);
   });
 
-  it('isHlsEnabled returns false after disabling', () => {
-    const k = createKey(db, { owner: 'Dave', hls_enabled: true });
-    updateKey(db, k.key, { hls_enabled: false });
-    assert.strictEqual(isHlsEnabled(db, k.key), false);
+  it('isHlsEnabled returns false after disabling', async () => {
+    const k = await createKey(db, { owner: 'Dave', hls_enabled: true });
+    await updateKey(db, k.key, { hls_enabled: false });
+    assert.strictEqual(await isHlsEnabled(db, k.key), false);
   });
 
-  it('formatKey includes hlsEnabled field', () => {
-    const k = createKey(db, { owner: 'Eve', hls_enabled: true });
-    const row = db.prepare('SELECT * FROM api_keys WHERE key = ?').get(k.key);
+  it('formatKey includes hlsEnabled field', async () => {
+    const k = await createKey(db, { owner: 'Eve', hls_enabled: true });
+    const row = await db.prepare('SELECT * FROM api_keys WHERE key = ?').get(k.key);
     const formatted = formatKey(row);
     assert.strictEqual(formatted.hlsEnabled, true);
   });
@@ -153,7 +152,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
   let db, server, manager, tmpRoot;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `hls-nginx-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager();
@@ -166,9 +165,9 @@ describe('POST /stream-hls — nginx callbacks', () => {
     });
   });
 
-  after(() => new Promise(resolve => {
+  after(() => new Promise(async resolve => {
     server.close(resolve);
-    db.close();
+    await db.close();
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
@@ -178,7 +177,7 @@ describe('POST /stream-hls — nginx callbacks', () => {
   });
 
   it('returns 403 when HLS is not enabled for the key', async () => {
-    const k = createKey(db, { owner: 'Test' });
+    const k = await createKey(db, { owner: 'Test' });
     const res = await postForm(server, '/stream-hls', { call: 'publish', name: k.key });
     assert.strictEqual(res.status, 403);
   });
@@ -189,13 +188,13 @@ describe('POST /stream-hls — nginx callbacks', () => {
   });
 
   it('returns 400 for unknown call type', async () => {
-    const k = createKey(db, { owner: 'Test2', hls_enabled: true });
+    const k = await createKey(db, { owner: 'Test2', hls_enabled: true });
     const res = await postForm(server, '/stream-hls', { call: 'unknown', name: k.key });
     assert.strictEqual(res.status, 400);
   });
 
   it('POST /stream-hls/on_publish returns 403 if not enabled', async () => {
-    const k = createKey(db, { owner: 'Test3' });
+    const k = await createKey(db, { owner: 'Test3' });
     const res = await postForm(server, '/stream-hls/on_publish', { name: k.key });
     assert.strictEqual(res.status, 403);
   });
@@ -214,7 +213,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `hls-playlist-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
 
@@ -249,7 +248,7 @@ describe('GET /stream-hls/:key/index.m3u8', () => {
   after(() => new Promise(resolve => {
     if (savedMtxUrl !== undefined) process.env.MEDIAMTX_HLS_BASE_URL = savedMtxUrl;
     else delete process.env.MEDIAMTX_HLS_BASE_URL;
-    appServer.close(() => mockMtxServer.close(() => { db.close(); resolve(); }));
+    appServer.close(() => mockMtxServer.close(async () => { await db.close(); resolve(); }));
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
@@ -295,7 +294,7 @@ describe('GET /stream-hls/:key/:segment', () => {
   let db, appServer, manager, mockMtxServer, tmpRoot, savedMtxUrl;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     tmpRoot = join(tmpdir(), `hls-seg-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
 
@@ -330,7 +329,7 @@ describe('GET /stream-hls/:key/:segment', () => {
   after(() => new Promise(resolve => {
     if (savedMtxUrl !== undefined) process.env.MEDIAMTX_HLS_BASE_URL = savedMtxUrl;
     else delete process.env.MEDIAMTX_HLS_BASE_URL;
-    appServer.close(() => mockMtxServer.close(() => { db.close(); resolve(); }));
+    appServer.close(() => mockMtxServer.close(async () => { await db.close(); resolve(); }));
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   }));
 
@@ -395,7 +394,7 @@ describe('GET /stream-hls/:key/player.js', () => {
   let db, server, manager;
 
   before(async () => {
-    db = initTestDb();
+    db = await initTestDb();
     const tmpRoot = join(tmpdir(), `hls-player-test-${Date.now()}`);
     fs.mkdirSync(tmpRoot, { recursive: true });
     manager = new HlsManager();
@@ -408,9 +407,9 @@ describe('GET /stream-hls/:key/player.js', () => {
     });
   });
 
-  after(() => new Promise(resolve => {
+  after(() => new Promise(async resolve => {
     server.close(resolve);
-    db.close();
+    await db.close();
   }));
 
   it('returns 400 for too-short key', async () => {

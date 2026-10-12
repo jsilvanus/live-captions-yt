@@ -87,14 +87,14 @@ export function createWriteAuditMiddleware(db) {
   return function writeAuditMiddleware(req, res, next) {
     if (shouldSkip(req)) return next();
 
-    res.on('finish', () => {
+    res.on('finish', async () => {
       if (res.statusCode < 200 || res.statusCode >= 300) return;
       if (!req.auth && !req.user) return;
 
       // Route template, not the concrete URL — bounded action-name cardinality.
       const actionPath = req.route?.path && req.route.path !== '/' ? req.route.path : req.path;
       const action = `${req.method} ${req.baseUrl}${actionPath === '/' ? '' : actionPath}`.replace(/\/+/g, '/');
-      writeAuditLog(db, {
+      await writeAuditLog(db, {
         actor: resolveActor(req),
         actorKind: resolveActorKind(req),
         actorId: req.user?.email || req.auth?.tokenId || null,

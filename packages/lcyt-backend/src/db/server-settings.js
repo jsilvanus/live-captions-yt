@@ -5,50 +5,48 @@
  * here, that's SettingsService's job (src/settings/service.js). This module
  * only knows how to read/write raw JSON-encoded rows.
  */
+import { sqlNow } from './helpers.js';
+
+const SETTING_FIELDS = { key: true, value: true, updated_at: true, updated_by: true };
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
- * @returns {{ key: string, value: string, updated_at: string, updated_by: string|null }|undefined}
+ * @returns {Promise<{ key: string, value: string, updated_at: string, updated_by: string|null }|undefined>}
  */
-export function getServerSettingRow(db, key) {
-  return db.prepare(
-    'SELECT key, value, updated_at, updated_by FROM server_settings WHERE key = ?'
-  ).get(key);
+export async function getServerSettingRow(db, key) {
+  return (await db.server_settings.findUnique({ where: { key }, select: SETTING_FIELDS })) ?? undefined;
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
- * @returns {Array<{ key: string, value: string, updated_at: string, updated_by: string|null }>}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<Array<{ key: string, value: string, updated_at: string, updated_by: string|null }>>}
  */
-export function getAllServerSettingRows(db) {
-  return db.prepare(
-    'SELECT key, value, updated_at, updated_by FROM server_settings'
-  ).all();
+export async function getAllServerSettingRows(db) {
+  return db.server_settings.findMany({ select: SETTING_FIELDS });
 }
 
 /**
  * Upsert a raw (already JSON-encoded) setting value.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  * @param {string} jsonValue
  * @param {string|null} [updatedBy]
  */
-export function setServerSettingRow(db, key, jsonValue, updatedBy = null) {
-  db.prepare(`
-    INSERT INTO server_settings (key, value, updated_at, updated_by)
-    VALUES (?, ?, datetime('now'), ?)
-    ON CONFLICT(key) DO UPDATE SET
-      value = excluded.value,
-      updated_at = datetime('now'),
-      updated_by = excluded.updated_by
-  `).run(key, jsonValue, updatedBy ?? null);
+export async function setServerSettingRow(db, key, jsonValue, updatedBy = null) {
+  const updated_at = sqlNow();
+  const updated_by = updatedBy ?? null;
+  await db.server_settings.upsert({
+    where: { key },
+    create: { key, value: jsonValue, updated_at, updated_by },
+    update: { value: jsonValue, updated_at, updated_by },
+  });
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} key
  */
-export function deleteServerSettingRow(db, key) {
-  db.prepare('DELETE FROM server_settings WHERE key = ?').run(key);
+export async function deleteServerSettingRow(db, key) {
+  await db.server_settings.deleteMany({ where: { key } });
 }

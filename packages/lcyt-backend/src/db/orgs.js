@@ -1,3 +1,5 @@
+import { inTx } from './keys.js';
+import { sqlNow } from './helpers.js';
 import {
   clearOrgFeatureOverride,
   KNOWN_FEATURE_CODES,
@@ -5,74 +7,89 @@ import {
   getOrgFeatureOverrides,
 } from './project-features.js';
 
-export function getOrgMembership(db, orgId, userId) {
-  return db.prepare(`
-    SELECT om.role, om.invited_by, om.joined_at, o.owner_user_id
-    FROM org_members om
-    JOIN organizations o ON o.id = om.org_id
-    WHERE om.org_id = ? AND om.user_id = ?
-  `).get(orgId, userId) || null;
+const mapProject = (project) => ({
+  key: project.key,
+  owner: project.owner,
+  createdAt: project.created_at,
+  active: project.active === 1,
+  email: project.email,
+  userId: project.user_id,
+  orgId: project.org_id,
+});
+
+const PROJECT_SELECT = { key: true, owner: true, created_at: true, active: true, email: true, user_id: true, org_id: true };
+
+/** @param {import('./connection.js').Db} db */
+export async function getOrgMembership(db, orgId, userId) {
+  const om = await db.org_members.findUnique({
+    where: { org_id_user_id: { org_id: orgId, user_id: userId } },
+    select: { role: true, invited_by: true, joined_at: true, organizations: { select: { owner_user_id: true } } },
+  });
+  if (!om) return null;
+  return { role: om.role, invited_by: om.invited_by, joined_at: om.joined_at, owner_user_id: om.organizations.owner_user_id };
 }
 
-export function slugExists(db, slug) {
-  return db.prepare('SELECT 1 FROM organizations WHERE slug = ?').get(slug);
+/**
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<boolean>}
+ */
+export async function slugExists(db, slug) {
+  return (await db.organizations.count({ where: { slug } })) > 0;
 }
 
-export function buildUniqueSlug(db, base) {
+/** @param {import('./connection.js').Db} db */
+export async function buildUniqueSlug(db, base) {
   const slugBase = String(base || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'team';
   let slug = slugBase;
   let counter = 2;
-  while (slugExists(db, slug)) {
+  while (await slugExists(db, slug)) {
     slug = `${slugBase}-${counter}`;
     counter += 1;
   }
   return slug;
 }
 
-export function listOrganizationsForUser(db, userId) {
-  const rows = db.prepare(`
-    SELECT o.id, o.name, o.slug, o.owner_user_id, o.created_at, om.role AS user_role
-    FROM organizations o
-    JOIN org_members om ON om.org_id = o.id
-    WHERE om.user_id = ?
-    ORDER BY o.created_at DESC
-  `).all(userId);
+/** @param {import('./connection.js').Db} db */
+export async function listOrganizationsForUser(db, userId) {
+  const rows = await db.org_members.findMany({
+    where: { user_id: userId },
+    select: { role: true, organizations: { select: { id: true, name: true, slug: true, owner_user_id: true, created_at: true } } },
+  });
+  rows.sort((a, b) => (a.organizations.created_at < b.organizations.created_at ? 1 : a.organizations.created_at > b.organizations.created_at ? -1 : 0));
 
-  return rows.map(row => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    ownerUserId: row.owner_user_id,
-    createdAt: row.created_at,
-    role: row.user_role,
-    memberCount: db.prepare('SELECT COUNT(*) AS n FROM org_members WHERE org_id = ?').get(row.id).n,
-    projectCount: db.prepare('SELECT COUNT(*) AS n FROM api_keys WHERE org_id = ?').get(row.id).n,
-  }));
+  const out = [];
+  for (const { role, organizations: o } of rows) {
+    out.push({
+      id: o.id,
+      name: o.name,
+      slug: o.slug,
+      ownerUserId: o.owner_user_id,
+      createdAt: o.created_at,
+      role,
+      memberCount: await db.org_members.count({ where: { org_id: o.id } }),
+      projectCount: await db.api_keys.count({ where: { org_id: o.id } }),
+    });
+  }
+  return out;
 }
 
-export function getOrganizationDetails(db, orgId) {
-  const org = db.prepare(`
-    SELECT id, name, slug, owner_user_id, project_slug_policy, created_at
-    FROM organizations
-    WHERE id = ?
-  `).get(orgId);
+/** @param {import('./connection.js').Db} db */
+export async function getOrganizationDetails(db, orgId) {
+  const org = await db.organizations.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true, slug: true, owner_user_id: true, project_slug_policy: true, created_at: true },
+  });
   if (!org) return null;
 
-  const members = db.prepare(`
-    SELECT om.id, om.org_id, om.user_id, om.role, om.invited_by, om.joined_at,
-           u.email, u.name
-    FROM org_members om
-    JOIN users u ON u.id = om.user_id
-    WHERE om.org_id = ?
-    ORDER BY om.joined_at ASC
-  `).all(orgId);
+  const members = await db.org_members.findMany({
+    where: { org_id: orgId },
+    select: { id: true, org_id: true, user_id: true, role: true, invited_by: true, joined_at: true, users_org_members_user_idTousers: { select: { email: true, name: true } } },
+    orderBy: [{ joined_at: 'asc' }, { id: 'asc' }],
+  });
 
-  const projects = db.prepare(`
-    SELECT key, owner, created_at, active, email, user_id, org_id
-    FROM api_keys
-    WHERE org_id = ?
-    ORDER BY created_at DESC
-  `).all(orgId);
+  const projects = await db.api_keys.findMany({
+    where: { org_id: orgId }, select: PROJECT_SELECT, orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
 
   return {
     id: org.id,
@@ -84,58 +101,42 @@ export function getOrganizationDetails(db, orgId) {
     members: members.map(member => ({
       id: member.id,
       userId: member.user_id,
-      email: member.email,
-      name: member.name,
+      email: member.users_org_members_user_idTousers.email,
+      name: member.users_org_members_user_idTousers.name,
       role: member.role,
       invitedBy: member.invited_by,
       joinedAt: member.joined_at,
     })),
-    projects: projects.map(project => ({
-      key: project.key,
-      owner: project.owner,
-      createdAt: project.created_at,
-      active: project.active === 1,
-      email: project.email,
-      userId: project.user_id,
-      orgId: project.org_id,
-    })),
+    projects: projects.map(mapProject),
   };
 }
 
-export function createOrganization(db, { name, slug, ownerUserId }) {
-  return db.transaction(() => {
-    const result = db.prepare(`
-      INSERT INTO organizations (name, slug, owner_user_id)
-      VALUES (?, ?, ?)
-    `).run(name, slug, ownerUserId);
-    const orgId = result.lastInsertRowid;
-    db.prepare(`
-      INSERT INTO org_members (org_id, user_id, role, invited_by)
-      VALUES (?, ?, ?, ?)
-    `).run(orgId, ownerUserId, 'owner', ownerUserId);
-    return { id: orgId, name, slug };
-  })();
+/** @param {import('./connection.js').Db} db */
+export async function createOrganization(db, { name, slug, ownerUserId }) {
+  return inTx(db, async (tx) => {
+    const now = sqlNow();
+    const org = await tx.organizations.create({
+      data: { name, slug, owner_user_id: ownerUserId, created_at: now },
+    });
+    await tx.org_members.create({
+      data: { org_id: org.id, user_id: ownerUserId, role: 'owner', invited_by: ownerUserId, joined_at: now },
+    });
+    return { id: org.id, name, slug };
+  });
 }
 
-export function updateOrganization(db, orgId, updates) {
-  const fields = [];
-  const params = [];
-  if ('name' in updates) {
-    fields.push('name = ?');
-    params.push(updates.name);
-  }
-  if ('slug' in updates) {
-    fields.push('slug = ?');
-    params.push(updates.slug);
-  }
-  if ('projectSlugPolicy' in updates) {
-    fields.push('project_slug_policy = ?');
-    params.push(updates.projectSlugPolicy);
-  }
-  if (fields.length === 0) return null;
-  params.push(orgId);
-  db.prepare(`UPDATE organizations SET ${fields.join(', ')} WHERE id = ?`).run(...params);
-  return db.prepare('SELECT id, name, slug, owner_user_id, project_slug_policy, created_at FROM organizations WHERE id = ?').get(orgId);
+/** @param {import('./connection.js').Db} db */
+export async function updateOrganization(db, orgId, updates) {
+  const data = {};
+  if ('name' in updates) data.name = updates.name;
+  if ('slug' in updates) data.slug = updates.slug;
+  if ('projectSlugPolicy' in updates) data.project_slug_policy = updates.projectSlugPolicy;
+  if (Object.keys(data).length === 0) return null;
+  await db.organizations.updateMany({ where: { id: orgId }, data });
+  return (await db.organizations.findUnique({
+    where: { id: orgId },
+    select: { id: true, name: true, slug: true, owner_user_id: true, project_slug_policy: true, created_at: true },
+  })) ?? undefined;
 }
 
 /**
@@ -146,15 +147,15 @@ export function updateOrganization(db, orgId, updates) {
  * vanishing must never delete or break its projects. Detach them (SET
  * org_id = NULL) before deleting the org row; org_members/org_feature_overrides
  * are ON DELETE CASCADE and are cleaned up by the engine.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} orgId
- * @returns {boolean} true if a row was deleted
+ * @returns {Promise<boolean>} true if a row was deleted
  */
-export function deleteOrganization(db, orgId) {
-  return db.transaction(() => {
-    db.prepare('UPDATE api_keys SET org_id = NULL WHERE org_id = ?').run(orgId);
-    return db.prepare('DELETE FROM organizations WHERE id = ?').run(orgId).changes > 0;
-  })();
+export async function deleteOrganization(db, orgId) {
+  return inTx(db, async (tx) => {
+    await tx.api_keys.updateMany({ where: { org_id: orgId }, data: { org_id: null } });
+    return (await tx.organizations.deleteMany({ where: { id: orgId } })).count > 0;
+  });
 }
 
 /**
@@ -173,29 +174,31 @@ export function deleteOrganization(db, orgId) {
  * `DELETE /auth/me`'s sole-owner check and `DELETE /admin/users/:id`'s
  * `ownedOrgs` guard) — this function always resolves ownership one way or
  * the other so the subsequent `DELETE FROM users` never violates the FK.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
- * @returns {{ reassigned: Array<{orgId: number, newOwnerUserId: number}>, deleted: number[] }}
+ * @returns {Promise<{ reassigned: Array<{orgId: number, newOwnerUserId: number}>, deleted: number[] }>}
  */
-export function reassignOrDeleteOwnedOrgs(db, userId) {
-  const ownedOrgs = db.prepare('SELECT id FROM organizations WHERE owner_user_id = ?').all(userId);
+export async function reassignOrDeleteOwnedOrgs(db, userId) {
+  const ownedOrgs = await db.organizations.findMany({ where: { owner_user_id: userId }, select: { id: true }, orderBy: { id: 'asc' } });
   const result = { reassigned: [], deleted: [] };
+  const rank = { admin: 0, editor: 1, operator: 2 };
 
   for (const { id: orgId } of ownedOrgs) {
-    const nextOwner = db.prepare(`
-      SELECT user_id FROM org_members
-      WHERE org_id = ? AND user_id != ?
-      ORDER BY CASE role WHEN 'admin' THEN 0 WHEN 'editor' THEN 1 WHEN 'operator' THEN 2 ELSE 3 END, joined_at ASC
-      LIMIT 1
-    `).get(orgId, userId);
+    const others = await db.org_members.findMany({
+      where: { org_id: orgId, user_id: { not: userId } },
+      select: { user_id: true, role: true, joined_at: true },
+      orderBy: [{ joined_at: 'asc' }, { id: 'asc' }],
+    });
+    others.sort((a, b) => (rank[a.role] ?? 3) - (rank[b.role] ?? 3)); // stable: earliest joined first within a rank
+    const nextOwner = others[0];
 
     if (nextOwner) {
-      db.prepare('UPDATE organizations SET owner_user_id = ? WHERE id = ?').run(nextOwner.user_id, orgId);
-      db.prepare("UPDATE org_members SET role = 'owner' WHERE org_id = ? AND user_id = ?").run(orgId, nextOwner.user_id);
+      await db.organizations.updateMany({ where: { id: orgId }, data: { owner_user_id: nextOwner.user_id } });
+      await db.org_members.updateMany({ where: { org_id: orgId, user_id: nextOwner.user_id }, data: { role: 'owner' } });
       result.reassigned.push({ orgId, newOwnerUserId: nextOwner.user_id });
     } else {
-      db.prepare('UPDATE api_keys SET org_id = NULL WHERE org_id = ?').run(orgId);
-      db.prepare('DELETE FROM organizations WHERE id = ?').run(orgId);
+      await db.api_keys.updateMany({ where: { org_id: orgId }, data: { org_id: null } });
+      await db.organizations.deleteMany({ where: { id: orgId } });
       result.deleted.push(orgId);
     }
   }
@@ -203,39 +206,41 @@ export function reassignOrDeleteOwnedOrgs(db, userId) {
   return result;
 }
 
-export function listOrganizationMembers(db, orgId) {
-  const rows = db.prepare(`
-    SELECT om.id, om.user_id, om.role, om.invited_by, om.joined_at,
-           u.email, u.name
-    FROM org_members om
-    JOIN users u ON u.id = om.user_id
-    WHERE om.org_id = ?
-    ORDER BY om.joined_at ASC
-  `).all(orgId);
+/** @param {import('./connection.js').Db} db */
+export async function listOrganizationMembers(db, orgId) {
+  const rows = await db.org_members.findMany({
+    where: { org_id: orgId },
+    select: { id: true, user_id: true, role: true, invited_by: true, joined_at: true, users_org_members_user_idTousers: { select: { email: true, name: true } } },
+    orderBy: [{ joined_at: 'asc' }, { id: 'asc' }],
+  });
+  const projectCount = await db.api_keys.count({ where: { org_id: orgId } });
 
   return rows.map(row => ({
     id: row.id,
     userId: row.user_id,
-    email: row.email,
-    name: row.name,
+    email: row.users_org_members_user_idTousers.email,
+    name: row.users_org_members_user_idTousers.name,
     role: row.role,
     invitedBy: row.invited_by,
     joinedAt: row.joined_at,
-    projectCount: db.prepare('SELECT COUNT(*) as n FROM api_keys WHERE org_id = ?').get(orgId).n,
+    projectCount,
   }));
 }
 
-export function getOrganizationMember(db, orgId, userId) {
-  return db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(orgId, userId) || null;
+/** @param {import('./connection.js').Db} db */
+export async function getOrganizationMember(db, orgId, userId) {
+  return (await db.org_members.findUnique({
+    where: { org_id_user_id: { org_id: orgId, user_id: userId } }, select: { role: true },
+  })) || null;
 }
 
-export function createOrganizationMember(db, { orgId, userId, role, invitedBy }) {
-  const result = db.prepare(`
-    INSERT INTO org_members (org_id, user_id, role, invited_by)
-    VALUES (?, ?, ?, ?)
-  `).run(orgId, userId, role, invitedBy);
+/** @param {import('./connection.js').Db} db */
+export async function createOrganizationMember(db, { orgId, userId, role, invitedBy }) {
+  const row = await db.org_members.create({
+    data: { org_id: orgId, user_id: userId, role, invited_by: invitedBy ?? null, joined_at: sqlNow() },
+  });
   return {
-    id: result.lastInsertRowid,
+    id: row.id,
     userId,
     role,
     invitedBy,
@@ -243,53 +248,46 @@ export function createOrganizationMember(db, { orgId, userId, role, invitedBy })
   };
 }
 
-export function updateOrganizationMemberRole(db, { orgId, userId, role }) {
-  db.prepare('UPDATE org_members SET role = ? WHERE org_id = ? AND user_id = ?').run(role, orgId, userId);
+/** @param {import('./connection.js').Db} db */
+export async function updateOrganizationMemberRole(db, { orgId, userId, role }) {
+  await db.org_members.updateMany({ where: { org_id: orgId, user_id: userId }, data: { role } });
   return { userId, role };
 }
 
-export function removeOrganizationMember(db, { orgId, userId }) {
-  db.prepare('DELETE FROM org_members WHERE org_id = ? AND user_id = ?').run(orgId, userId);
+/** @param {import('./connection.js').Db} db */
+export async function removeOrganizationMember(db, { orgId, userId }) {
+  await db.org_members.deleteMany({ where: { org_id: orgId, user_id: userId } });
 }
 
-export function listOrganizationProjects(db, orgId) {
-  const rows = db.prepare(`
-    SELECT key, owner, created_at, active, email, user_id, org_id
-    FROM api_keys
-    WHERE org_id = ?
-    ORDER BY created_at DESC
-  `).all(orgId);
-
-  return rows.map(project => ({
-    key: project.key,
-    owner: project.owner,
-    createdAt: project.created_at,
-    active: project.active === 1,
-    email: project.email,
-    userId: project.user_id,
-    orgId: project.org_id,
-  }));
+/** @param {import('./connection.js').Db} db */
+export async function listOrganizationProjects(db, orgId) {
+  const rows = await db.api_keys.findMany({
+    where: { org_id: orgId }, select: PROJECT_SELECT, orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
+  return rows.map(mapProject);
 }
 
-export function getOrganizationFeatureCodes(db, orgId) {
-  return getOrgFeatureOverrides(db, orgId)
+/** @param {import('./connection.js').Db} db */
+export async function getOrganizationFeatureCodes(db, orgId) {
+  return (await getOrgFeatureOverrides(db, orgId))
     .filter(row => row.mode === 'available')
     .map(row => row.feature_code);
 }
 
-export function setOrganizationFeatureCodes(db, { orgId, userId, features }) {
+/** @param {import('./connection.js').Db} db */
+export async function setOrganizationFeatureCodes(db, { orgId, userId, features }) {
   const requested = Array.isArray(features) ? features : [];
   const normalized = requested.filter(code => typeof code === 'string' && KNOWN_FEATURE_CODES.has(code));
-  const existing = new Set(getOrgFeatureOverrides(db, orgId).map(row => row.feature_code));
+  const existing = new Set((await getOrgFeatureOverrides(db, orgId)).map(row => row.feature_code));
 
-  db.transaction(() => {
+  await inTx(db, async (tx) => {
     for (const code of existing) {
-      if (!normalized.includes(code)) clearOrgFeatureOverride(db, orgId, code);
+      if (!normalized.includes(code)) await clearOrgFeatureOverride(tx, orgId, code);
     }
     for (const code of normalized) {
-      setOrgFeatureOverride(db, orgId, code, 'available', userId);
+      await setOrgFeatureOverride(tx, orgId, code, 'available', userId);
     }
-  })();
+  });
 
   return getOrganizationFeatureCodes(db, orgId);
 }

@@ -19,10 +19,10 @@ const JWT_SECRET = 'test-events-stream-secret';
 
 let server, baseUrl, db, bus, apiKey;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   bus = new EventBus();
-  apiKey = createKey(db, { owner: 'StreamUser' }).key;
+  apiKey = (await createKey(db, { owner: 'StreamUser' })).key;
 
   const app = express();
   app.use(
@@ -134,7 +134,7 @@ describe('GET /events/stream', () => {
   });
 
   it('external token scoped events:read + dsk.* only sees dsk.* (even without ?topics)', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'dsk-only', scopes: ['events:read', 'dsk.*'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'dsk-only', scopes: ['events:read', 'dsk.*'] });
     const url = `${baseUrl}/events/stream?token=${token}`;
     const { events } = await collectStream(url, {
       onReady: () => {
@@ -147,7 +147,7 @@ describe('GET /events/stream', () => {
   });
 
   it('a token scoped to a single variable only receives that variable\'s changes', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'one-var', scopes: ['events:read', 'variable.section.changed'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'one-var', scopes: ['events:read', 'variable.section.changed'] });
     const url = `${baseUrl}/events/stream?token=${token}`;
     const { events } = await collectStream(url, {
       onReady: () => {
@@ -161,13 +161,13 @@ describe('GET /events/stream', () => {
   });
 
   it('external token without events:read is 403', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'no-events', scopes: ['dsk.*'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'no-events', scopes: ['dsk.*'] });
     const res = await fetch(`${baseUrl}/events/stream?token=${token}`);
     assert.equal(res.status, 403);
   });
 
   it('unscoped external token (NULL scopes) receives everything', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'full' }); // no scopes => full access
+    const { token } = await createMcpToken(db, apiKey, { label: 'full' }); // no scopes => full access
     const url = `${baseUrl}/events/stream?token=${token}`;
     const { events } = await collectStream(url, {
       onReady: () => {

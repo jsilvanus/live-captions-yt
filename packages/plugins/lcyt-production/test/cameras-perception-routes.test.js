@@ -10,17 +10,16 @@ import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import express from 'express';
 
-import { runMigrations } from '../src/db.js';
 import { createCamerasRouter } from '../src/routes/cameras.js';
 
 let server, baseUrl, db;
 
-function insertCamera(overrides = {}) {
+async function insertCamera(overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key, owner_api_key)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -52,18 +51,17 @@ function startApp(perceptionManager) {
   });
 }
 
-before(() => {
-  db = new Database(':memory:');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 afterEach(() => { if (server) { server.close(); server = null; } });
 
 describe('camera perception routes', () => {
   it('503s all three routes when no perceptionManager is configured', async () => {
     await startApp(null);
-    const id = insertCamera();
+    const id = await insertCamera();
     for (const [method, path] of [
       ['POST', `/production/cameras/${id}/perception/start`],
       ['POST', `/production/cameras/${id}/perception/stop`],
@@ -84,7 +82,7 @@ describe('camera perception routes', () => {
 
   it("start() 404s when the camera is owned by a different project", async () => {
     await startApp({ start: async () => ({ jobId: 'x' }) });
-    const id = insertCamera({ owner_api_key: 'other-project' });
+    const id = await insertCamera({ owner_api_key: 'other-project' });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/perception/start`, {
       method: 'POST', headers: { 'x-api-key': 'key1' },
     });
@@ -96,7 +94,7 @@ describe('camera perception routes', () => {
     await startApp({
       start: async (apiKey, camera, opts) => { calls.push({ apiKey, camera, opts }); return { jobId: 'job-123' }; },
     });
-    const id = insertCamera();
+    const id = await insertCamera();
     const res = await fetch(`${baseUrl}/production/cameras/${id}/perception/start`, {
       method: 'POST', headers: { 'x-api-key': 'key1', 'Content-Type': 'application/json' },
       body: JSON.stringify({ emitIntervalMs: 250 }),
@@ -113,14 +111,14 @@ describe('camera perception routes', () => {
   });
 
   it('start() maps a NOT_CONFIGURED manager error to 503', async () => {
-    const id = insertCamera();
+    const id = await insertCamera();
     await startApp({ start: async () => { const e = new Error('nope'); e.code = 'NOT_CONFIGURED'; throw e; } });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/perception/start`, { method: 'POST', headers: { 'x-api-key': 'key1' } });
     assert.equal(res.status, 503);
   });
 
   it('start() maps a NO_FEED manager error to 400', async () => {
-    const id = insertCamera();
+    const id = await insertCamera();
     await startApp({ start: async () => { const e = new Error('nope'); e.code = 'NO_FEED'; throw e; } });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/perception/start`, { method: 'POST', headers: { 'x-api-key': 'key1' } });
     assert.equal(res.status, 400);
@@ -132,7 +130,7 @@ describe('camera perception routes', () => {
       stop: async (cameraId) => { calls.push(['stop', cameraId]); return true; },
       status: (cameraId) => { calls.push(['status', cameraId]); return { jobId: 'job-123' }; },
     });
-    const id = insertCamera();
+    const id = await insertCamera();
 
     let res = await fetch(`${baseUrl}/production/cameras/${id}/perception/stop`, { method: 'POST', headers: { 'x-api-key': 'key1' } });
     assert.equal(res.status, 200);
@@ -152,20 +150,20 @@ describe('camera perception auto-start switch', () => {
   });
 
   it('sets and clears perception_enabled; it shows on the camera', async () => {
-    const id = insertCamera({ owner_api_key: 'key1' });
+    const id = await insertCamera({ owner_api_key: 'key1' });
     await startApp(null);
     assert.equal((await post(id, { enabled: true })).status, 200);
-    assert.equal(db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id).e, 1);
+    assert.equal((await db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id)).e, 1);
     const cam = await (await fetch(`${baseUrl}/production/cameras/${id}`, { headers: { 'x-api-key': 'key1' } })).json();
     assert.equal(cam.perceptionEnabled, true);
     assert.equal((await post(id, { enabled: false })).status, 200);
-    assert.equal(db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id).e, 0);
+    assert.equal((await db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id)).e, 0);
   });
 
   it('validates the body, needs a camera_key, and hides other projects cameras', async () => {
-    const mine = insertCamera({ owner_api_key: 'key1' });
-    const noFeed = insertCamera({ owner_api_key: 'key1', camera_key: '' });
-    const foreign = insertCamera({ owner_api_key: 'other' });
+    const mine = await insertCamera({ owner_api_key: 'key1' });
+    const noFeed = await insertCamera({ owner_api_key: 'key1', camera_key: '' });
+    const foreign = await insertCamera({ owner_api_key: 'other' });
     await startApp(null);
     assert.equal((await post(mine, { enabled: 'yes' })).status, 400);
     assert.equal((await post(noFeed, { enabled: true })).status, 400);

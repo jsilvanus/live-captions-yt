@@ -6,22 +6,24 @@
 
 /**
  * @param {{
- *   db: import('better-sqlite3').Database,
+ *   db: import('./db/connection.js').Db,
  *   sceneState: { getState: (apiKey: string) => { cameras?: object } },
  *   attributor: { status: (apiKey: string) => object },
  *   perceptionManager: { status: (id: string) => object|null, sharedFeedStatus: (apiKey: string) => object|null },
- *   sharedAutostart: { get: (apiKey: string) => boolean },
+ *   sharedAutostart: { get: (apiKey: string) => boolean | Promise<boolean> },
  *   now?: () => number,
  * }} deps
- * @returns {(apiKey: string) => object}
+ * @returns {(apiKey: string) => Promise<object>}
  */
 export function createPerceptionOverview({ db, sceneState, attributor, perceptionManager, sharedAutostart, now = () => Date.now() }) {
-  return function overview(apiKey) {
+  return async function overview(apiKey) {
     const attribution = attributor.status(apiKey);
     const scene = sceneState.getState(apiKey)?.cameras || {};
-    const rows = db.prepare(
-      'SELECT id, name, label, zone, camera_key, perception_enabled, mixer_input FROM prod_cameras WHERE owner_api_key = ? OR owner_api_key IS NULL ORDER BY sort_order, name'
-    ).all(apiKey);
+    const rows = await db.prod_cameras.findMany({
+      where: { OR: [{ owner_api_key: apiKey }, { owner_api_key: null }] },
+      select: { id: true, name: true, label: true, zone: true, camera_key: true, perception_enabled: true, mixer_input: true },
+      orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
+    });
     const cameras = rows.map((r) => {
       const s = scene[r.id] ?? null;
       const people = s ? (s.subjects || []).filter((x) => x.label === 'person') : [];
@@ -45,7 +47,7 @@ export function createPerceptionOverview({ db, sceneState, attributor, perceptio
     });
     return {
       attribution,
-      shared: { running: !!perceptionManager.sharedFeedStatus(apiKey), auto: !!sharedAutostart.get(apiKey) },
+      shared: { running: !!perceptionManager.sharedFeedStatus(apiKey), auto: !!(await sharedAutostart.get(apiKey)) },
       cameras,
     };
   };

@@ -1,27 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 
 import { createDskCaptionProcessor } from '../src/caption-processor.js';
 
+// Tests seed and inspect rows with plain SQL (async db.prepare/exec on the Prisma client, test-only).
+process.env.LCYT_DB_SQL_COMPAT ??= '1';
+
 test('caption-processor includes imageMeta from settings_json and skips disabled images', async (t) => {
-  // Setup in-memory DB with caption_files table
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE caption_files (
-      id INTEGER PRIMARY KEY,
-      api_key TEXT,
-      shorthand TEXT,
-      filename TEXT,
-      mime_type TEXT,
-      settings_json TEXT,
-      type TEXT
-    );
-  `);
+  const db = await initDb(':memory:');
+  t.after(() => db.close());
 
   const apiKey = 'testkey';
   const settings = { viewports: { landscape: { visible: false, position: { x: 0.9, y: 0.98 } } } };
-  db.prepare("INSERT INTO caption_files (api_key, shorthand, filename, mime_type, settings_json, type) VALUES (?, ?, ?, ?, ?, 'image')")
+  await db.prepare("INSERT INTO caption_files (api_key, shorthand, filename, mime_type, settings_json, type) VALUES (?, ?, ?, ?, ?, 'image')")
     .run(apiKey, 'logo', 'logo.png', 'image/png', JSON.stringify(settings));
 
   // Minimal store that records emitted events

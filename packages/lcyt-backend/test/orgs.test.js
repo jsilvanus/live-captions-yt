@@ -20,8 +20,8 @@ function makeToken(user) {
   return jwt.sign({ type: 'user', userId: user.id, email: user.email }, JWT_SECRET, { expiresIn: '1h' });
 }
 
-before(() => new Promise(resolve => {
-  db = initDb(':memory:');
+before(() => new Promise(async resolve => {
+  db = await initDb(':memory:');
   userAuth = createUserAuthMiddleware(JWT_SECRET);
 
   const app = express();
@@ -36,18 +36,17 @@ before(() => new Promise(resolve => {
 }));
 
 after(() => new Promise(resolve => {
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
-beforeEach(() => {
-  db.prepare('DELETE FROM org_feature_overrides').run();
-  db.prepare('DELETE FROM org_members').run();
-  db.prepare('DELETE FROM organizations').run();
-  db.prepare('DELETE FROM api_keys').run();
-  db.prepare('DELETE FROM users').run();
-  userA = createUser(db, { email: 'owner@example.com', passwordHash: 'hash', name: 'Owner' });
-  userB = createUser(db, { email: 'member@example.com', passwordHash: 'hash', name: 'Member' });
+beforeEach(async () => {
+  await db.prepare('DELETE FROM org_feature_overrides').run();
+  await db.prepare('DELETE FROM org_members').run();
+  await db.prepare('DELETE FROM organizations').run();
+  await db.prepare('DELETE FROM api_keys').run();
+  await db.prepare('DELETE FROM users').run();
+  userA = await createUser(db, { email: 'owner@example.com', passwordHash: 'hash', name: 'Owner' });
+  userB = await createUser(db, { email: 'member@example.com', passwordHash: 'hash', name: 'Member' });
 });
 
 describe('Organizations routes', () => {
@@ -144,7 +143,7 @@ describe('Organizations routes', () => {
     const created = await createRes.json();
     const orgId = created.organization.id;
 
-    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('org-delete-project', 'Org Delete Project', orgId);
+    await db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('org-delete-project', 'Org Delete Project', orgId);
 
     const deleteRes = await fetch(`${baseUrl}/orgs/${orgId}`, {
       method: 'DELETE',
@@ -154,13 +153,13 @@ describe('Organizations routes', () => {
 
     assert.strictEqual(deleteRes.status, 200);
     assert.strictEqual(deleteBody.deleted, true);
-    assert.strictEqual(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
+    assert.strictEqual(await db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
 
-    const project = db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get('org-delete-project');
+    const project = await db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get('org-delete-project');
     assert.ok(project, 'the project must survive the org delete');
     assert.strictEqual(project.org_id, null);
 
-    db.prepare('DELETE FROM api_keys WHERE key = ?').run('org-delete-project');
+    await db.prepare('DELETE FROM api_keys WHERE key = ?').run('org-delete-project');
   });
 
   it('returns project counts for org members', async () => {
@@ -174,8 +173,8 @@ describe('Organizations routes', () => {
     });
     const created = await createRes.json();
 
-    db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('counted-project', 'Counted Project', created.organization.id);
-    db.prepare('INSERT INTO project_members (api_key, user_id, access_level, invited_by) VALUES (?, ?, ?, ?)').run('counted-project', userB.id, 'member', userA.id);
+    await db.prepare('INSERT INTO api_keys (key, owner, org_id) VALUES (?, ?, ?)').run('counted-project', 'Counted Project', created.organization.id);
+    await db.prepare('INSERT INTO project_members (api_key, user_id, access_level, invited_by) VALUES (?, ?, ?, ?)').run('counted-project', userB.id, 'member', userA.id);
 
     const membersRes = await fetch(`${baseUrl}/orgs/${created.organization.id}/members`, {
       headers: { Authorization: `Bearer ${makeToken(userA)}` },

@@ -15,10 +15,10 @@ import { createSessionCaptionFileWriter } from '../src/caption-file-writer.js';
 
 let db, filesDir, adapter;
 
-before(() => {
-  db = initDb(':memory:');
-  createKey(db, { key: 'writer-key', owner: 'Writer', backend_file_enabled: 1 });
-  createKey(db, { key: 'disabled-key', owner: 'NoFiles' });
+before(async () => {
+  db = await initDb(':memory:');
+  await createKey(db, { key: 'writer-key', owner: 'Writer', backend_file_enabled: 1 });
+  await createKey(db, { key: 'disabled-key', owner: 'NoFiles' });
   filesDir = mkdtempSync(join(tmpdir(), 'lcyt-file-writer-'));
   adapter = createLocalAdapter(filesDir);
 });

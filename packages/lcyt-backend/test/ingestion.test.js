@@ -13,7 +13,6 @@ import { createServer } from 'node:http';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { initDb, createKey } from '../src/db.js';
-import { runMigrations } from 'lcyt-rtmp/src/db.js';
 import { createUser } from '../src/db/users.js';
 import { addMember } from '../src/db/project-members.js';
 import { createProjectAccessMiddleware, requireProjectRole } from '../src/middleware/project-access.js';
@@ -22,12 +21,12 @@ import { RtmpRelayManager } from 'lcyt-rtmp/src/rtmp-manager.js';
 
 const JWT_SECRET = 'test-ingestion-secret';
 
-function initTestDb() { const db = initDb(':memory:'); runMigrations(db); return db; }
+async function initTestDb() { return initDb(':memory:'); }
 
 let server, baseUrl, db, relayManager;
 
-before(() => new Promise((resolve) => {
-  db = initTestDb();
+before(() => new Promise(async (resolve) => {
+  db = await initTestDb();
   relayManager = new RtmpRelayManager();
   // Real production mounting (server.js) uses scopedAuth('rtmp')/
   // createProjectAccessMiddleware + requireProjectRole('setup'), not the
@@ -44,8 +43,8 @@ before(() => new Promise((resolve) => {
   });
 }));
 
-after(() => new Promise((resolve) => {
-  db.close();
+after(() => new Promise(async (resolve) => {
+  await db.close();
   server.close(resolve);
 }));
 
@@ -64,10 +63,10 @@ function tokenFor(apiKey) {
 // Writes now require explicit 'setup' tier (owner/admin) — mint a fresh
 // owner-of-this-key user token, mirroring targets.test.js's pattern.
 let _ownerSeq = 0;
-function ownerTokenFor(apiKey) {
+async function ownerTokenFor(apiKey) {
   _ownerSeq += 1;
-  const owner = createUser(db, { email: `ingest-owner-${_ownerSeq}-${apiKey}@example.com`, passwordHash: 'x' });
-  addMember(db, apiKey, owner.id, 'owner');
+  const owner = await createUser(db, { email: `ingest-owner-${_ownerSeq}-${apiKey}@example.com`, passwordHash: 'x' });
+  await addMember(db, apiKey, owner.id, 'owner');
   return jwt.sign({ type: 'user', userId: owner.id, email: owner.email, projectId: apiKey }, JWT_SECRET, { expiresIn: '1h' });
 }
 
@@ -79,7 +78,8 @@ async function get(apiKey) {
   return fetch(`${baseUrl}/ingestion/config`, { headers: bearer(tokenFor(apiKey), apiKey) });
 }
 
-async function patch(apiKey, body, tok = ownerTokenFor(apiKey)) {
+async function patch(apiKey, body, tok) {
+  tok ??= await ownerTokenFor(apiKey);
   return fetch(`${baseUrl}/ingestion/config`, {
     method: 'PATCH',
     headers: { ...bearer(tok, apiKey), 'Content-Type': 'application/json' },
@@ -87,7 +87,8 @@ async function patch(apiKey, body, tok = ownerTokenFor(apiKey)) {
   });
 }
 
-async function rotate(apiKey, tok = ownerTokenFor(apiKey)) {
+async function rotate(apiKey, tok) {
+  tok ??= await ownerTokenFor(apiKey);
   return fetch(`${baseUrl}/ingestion/config/rotate`, {
     method: 'POST',
     headers: bearer(tok, apiKey),
@@ -101,7 +102,7 @@ describe('GET /ingestion/config', () => {
   });
 
   it('returns the nested { video, dsk } shape with defaults', async () => {
-    const k = createKey(db, { owner: 'Fresh' });
+    const k = await createKey(db, { owner: 'Fresh' });
     const res = await get(k.key);
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -121,7 +122,7 @@ describe('GET /ingestion/config', () => {
   });
 
   it('reflects relay_allowed/relay_active/graphics_enabled from the key row', async () => {
-    const k = createKey(db, { owner: 'Flags', relay_allowed: true, graphics_enabled: true });
+    const k = await createKey(db, { owner: 'Flags', relay_allowed: true, graphics_enabled: true });
     const res = await get(k.key);
     const body = await res.json();
     assert.equal(body.video.enabled, true);
@@ -129,7 +130,7 @@ describe('GET /ingestion/config', () => {
   });
 
   it('video.live reflects relayManager.isPublishing()', async () => {
-    const k = createKey(db, { owner: 'Publishing', relay_allowed: true });
+    const k = await createKey(db, { owner: 'Publishing', relay_allowed: true });
     relayManager.markPublishing(k.key);
     try {
       const res = await get(k.key);
@@ -144,7 +145,7 @@ describe('GET /ingestion/config', () => {
     process.env.RTMP_HOST = 'ingest.example.com';
     process.env.RTMP_APPLICATION = 'custom-app';
     process.env.DSK_RTMP_APP = 'custom-dsk';
-    const k = createKey(db, { owner: 'EnvOverride' });
+    const k = await createKey(db, { owner: 'EnvOverride' });
     const res = await get(k.key);
     const body = await res.json();
     assert.equal(body.video.ingestUrl, `rtmp://ingest.example.com/custom-app/${k.key}`);
@@ -152,8 +153,8 @@ describe('GET /ingestion/config', () => {
   });
 
   it('video.streamKey/ingestUrl uses the rotated ingest_stream_key once set', async () => {
-    const k = createKey(db, { owner: 'Rotated' });
-    db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run('my-rotated-key', k.key);
+    const k = await createKey(db, { owner: 'Rotated' });
+    await db.prepare('UPDATE api_keys SET ingest_stream_key = ? WHERE key = ?').run('my-rotated-key', k.key);
     const res = await get(k.key);
     const body = await res.json();
     assert.equal(body.video.streamKey, 'my-rotated-key');
@@ -163,13 +164,13 @@ describe('GET /ingestion/config', () => {
 
 describe('PATCH /ingestion/config', () => {
   it('403s for a session token with no explicit project role (setup tier required)', async () => {
-    const k = createKey(db, { owner: 'NoRole' });
+    const k = await createKey(db, { owner: 'NoRole' });
     const res = await patch(k.key, { video: { enabled: true } }, tokenFor(k.key));
     assert.equal(res.status, 403);
   });
 
   it('flips video.enabled (relay_allowed) and returns the updated nested shape', async () => {
-    const k = createKey(db, { owner: 'ToggleVideo' });
+    const k = await createKey(db, { owner: 'ToggleVideo' });
     const res = await patch(k.key, { video: { enabled: true } });
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -181,19 +182,19 @@ describe('PATCH /ingestion/config', () => {
   });
 
   it('rejects a non-boolean video.enabled', async () => {
-    const k = createKey(db, { owner: 'BadVideoType' });
+    const k = await createKey(db, { owner: 'BadVideoType' });
     const res = await patch(k.key, { video: { enabled: 'yes' } });
     assert.equal(res.status, 400);
   });
 
   it('returns 501 for dsk.enabled — no real gate exists to flip yet', async () => {
-    const k = createKey(db, { owner: 'ToggleDsk' });
+    const k = await createKey(db, { owner: 'ToggleDsk' });
     const res = await patch(k.key, { dsk: { enabled: true } });
     assert.equal(res.status, 501);
   });
 
   it('applies video.enabled even in a combined request that also 501s on dsk.enabled', async () => {
-    const k = createKey(db, { owner: 'CombinedVideoDsk' });
+    const k = await createKey(db, { owner: 'CombinedVideoDsk' });
     const res = await patch(k.key, { video: { enabled: true }, dsk: { enabled: true } });
     assert.equal(res.status, 501);
 
@@ -203,7 +204,7 @@ describe('PATCH /ingestion/config', () => {
   });
 
   it('is a no-op (200, unchanged) when neither video nor dsk enabled fields are present', async () => {
-    const k = createKey(db, { owner: 'EmptyPatch', relay_allowed: true });
+    const k = await createKey(db, { owner: 'EmptyPatch', relay_allowed: true });
     const res = await patch(k.key, {});
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -213,7 +214,7 @@ describe('PATCH /ingestion/config', () => {
   describe('feature-gate enforcement (FEATURE_GATE_ENFORCE=1)', () => {
     it('rejects video.enabled when the ingest feature is not enabled for the project', async () => {
       process.env.FEATURE_GATE_ENFORCE = '1';
-      const k = createKey(db, { owner: 'GatedNoFeature' });
+      const k = await createKey(db, { owner: 'GatedNoFeature' });
       const res = await patch(k.key, { video: { enabled: true } });
       assert.equal(res.status, 403);
       const body = await res.json();
@@ -222,8 +223,8 @@ describe('PATCH /ingestion/config', () => {
 
     it('allows video.enabled when the ingest feature IS enabled for the project', async () => {
       process.env.FEATURE_GATE_ENFORCE = '1';
-      const k = createKey(db, { owner: 'GatedWithFeature' });
-      db.prepare(`
+      const k = await createKey(db, { owner: 'GatedWithFeature' });
+      await db.prepare(`
         INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'ingest', 1)
       `).run(k.key);
       const res = await patch(k.key, { video: { enabled: true } });
@@ -241,13 +242,13 @@ describe('POST /ingestion/config/rotate', () => {
   });
 
   it('403s for a session token with no explicit project role (setup tier required)', async () => {
-    const k = createKey(db, { owner: 'NoRoleRotate' });
+    const k = await createKey(db, { owner: 'NoRoleRotate' });
     const res = await rotate(k.key, tokenFor(k.key));
     assert.equal(res.status, 403);
   });
 
   it('generates a new streamKey distinct from the api_key and persists it', async () => {
-    const k = createKey(db, { owner: 'Rotator' });
+    const k = await createKey(db, { owner: 'Rotator' });
     const res = await rotate(k.key);
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -262,7 +263,7 @@ describe('POST /ingestion/config/rotate', () => {
   });
 
   it('rotating twice replaces the previous stream key', async () => {
-    const k = createKey(db, { owner: 'DoubleRotate' });
+    const k = await createKey(db, { owner: 'DoubleRotate' });
     const first = await (await rotate(k.key)).json();
     const second = await (await rotate(k.key)).json();
     assert.notEqual(first.streamKey, second.streamKey);

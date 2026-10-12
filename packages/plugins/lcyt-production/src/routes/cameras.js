@@ -86,9 +86,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
    * @param {object} camera  parseCamera() output
    * @param {import('express').Request} req
    */
-  function withThumbnailUrl(camera, req) {
+  async function withThumbnailUrl(camera, req) {
     const origin = `${req.protocol}://${req.get('host')}`;
-    const presetRows = db.prepare('SELECT preset_id, captured_at FROM prod_camera_preset_thumbnails WHERE camera_id = ?').all(camera.id);
+    const presetRows = await db.prod_camera_preset_thumbnails.findMany({ where: { camera_id: camera.id } });
     const presetThumbnails = {};
     for (const r of presetRows) {
       presetThumbnails[r.preset_id] = {
@@ -159,25 +159,24 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // + legacy/unowned cameras (plan_ingest_feeds.md's cross-tenant review
   // finding) — only takes effect once auth is wired in (req.session.apiKey set).
   router.get('/', async (req, res) => {
-    const rows = db
-      .prepare('SELECT * FROM prod_cameras ORDER BY sort_order, created_at')
-      .all()
+    const all = await db.prod_cameras.findMany({ orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] });
+    const rows = await Promise.all(all
       .filter(row => canAccessCamera(row, req))
-      .map(row => withThumbnailUrl(parseCamera(row), req));
+      .map(row => withThumbnailUrl(parseCamera(row), req)));
     res.json(await Promise.all(rows.map(withLive)));
   });
 
   // GET /production/cameras/:id — single camera
   router.get('/:id', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     // 404 (not 403) for a foreign camera — don't confirm its existence to a
     // caller who doesn't own it.
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
-    res.json(await withLive(withThumbnailUrl(parseCamera(row), req)));
+    res.json(await withLive(await withThumbnailUrl(parseCamera(row), req)));
   });
 
   // POST /production/cameras — create camera
-  router.post('/', requireSetup, (req, res) => {
+  router.post('/', requireSetup, async (req, res) => {
     const {
       name, mixerInput, mixerId = null, controlType = 'none', controlConfig = {},
       sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
@@ -197,12 +196,16 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     // pre-existing open/legacy behavior) when this router is used without
     // auth wired in (e.g. existing route-level tests).
     const ownerApiKey = req.session?.apiKey ?? null;
-    db.prepare(`
-      INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, bridge_instance_id, sort_order, connection_source, camera_key, owner_api_key, label, zone, overlap_links, mixer_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, mixerInput ?? null, controlType, JSON.stringify(controlConfig), bridgeInstanceId, sortOrder, connectionSource, cameraKey ?? null, ownerApiKey, label, zone, JSON.stringify(overlapLinks), mixerId);
+    await db.prod_cameras.create({
+      data: {
+        id, name, mixer_input: mixerInput ?? null, control_type: controlType, control_config: JSON.stringify(controlConfig),
+        bridge_instance_id: bridgeInstanceId, sort_order: sortOrder, connection_source: connectionSource,
+        camera_key: cameraKey ?? null, owner_api_key: ownerApiKey, label, zone,
+        overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
+      },
+    });
 
-    const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
+    const camera = parseCamera(await db.prod_cameras.findUnique({ where: { id } }));
     registry.reloadCamera(id).catch(err =>
       console.warn(`[production-control] reloadCamera after create: ${err.message}`)
     );
@@ -210,9 +213,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // PUT /production/cameras/:id — update camera
-  router.put('/:id', requireSetup, (req, res) => {
+  router.put('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
+    const existing = await db.prod_cameras.findUnique({ where: { id } });
     if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const {
@@ -237,17 +240,16 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       return res.status(400).json({ error: 'cameraKey may only contain letters, digits, underscore, and hyphen' });
     }
 
-    db.prepare(`
-      UPDATE prod_cameras
-      SET name = ?, mixer_input = ?, control_type = ?, control_config = ?,
-          bridge_instance_id = ?, sort_order = ?, connection_source = ?, camera_key = ?,
-          label = ?, zone = ?, overlap_links = ?, mixer_id = ?
-      WHERE id = ?
-    `).run(name, mixerInput ?? null, controlType, JSON.stringify(controlConfig),
-           bridgeInstanceId ?? null, sortOrder, connectionSource, cameraKey ?? null,
-           label, zone, JSON.stringify(overlapLinks), mixerId ?? null, id);
+    await db.prod_cameras.updateMany({
+      where: { id },
+      data: {
+        name, mixer_input: mixerInput ?? null, control_type: controlType, control_config: JSON.stringify(controlConfig),
+        bridge_instance_id: bridgeInstanceId ?? null, sort_order: sortOrder, connection_source: connectionSource,
+        camera_key: cameraKey ?? null, label, zone, overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId ?? null,
+      },
+    });
 
-    const camera = parseCamera(db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
+    const camera = parseCamera(await db.prod_cameras.findUnique({ where: { id } }));
     registry.reloadCamera(id).catch(err =>
       console.warn(`[production-control] reloadCamera after update: ${err.message}`)
     );
@@ -257,20 +259,20 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // DELETE /production/cameras/:id — delete camera
   router.delete('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id);
+    const existing = await db.prod_cameras.findUnique({ where: { id } });
     if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
 
-    db.prepare('DELETE FROM prod_cameras WHERE id = ?').run(id);
+    await db.prod_cameras.deleteMany({ where: { id } });
     registry.removeCamera(id).catch(() => {});
-    const presetIds = db.prepare('SELECT preset_id FROM prod_camera_preset_thumbnails WHERE camera_id = ?').all(id).map(r => r.preset_id);
-    db.prepare('DELETE FROM prod_camera_preset_thumbnails WHERE camera_id = ?').run(id);
+    const presetIds = (await db.prod_camera_preset_thumbnails.findMany({ where: { camera_id: id }, select: { preset_id: true } })).map(r => r.preset_id);
+    await db.prod_camera_preset_thumbnails.deleteMany({ where: { camera_id: id } });
     await deleteCameraThumbnailFile(id, cameraThumbnailOpts.thumbnailsDir, presetIds, cameraThumbnailOpts.thumbnailStore ?? null);
     res.status(204).end();
   });
 
   // POST /production/cameras/:id/thumbnail/capture — capture a still frame as this camera's thumbnail
   router.post('/:id/thumbnail/capture', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const camera = parseCamera(row);
@@ -298,7 +300,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   }
 
   async function serveThumbnail(req, res) {
-    const row = db.prepare('SELECT thumbnail_captured_at FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id }, select: { thumbnail_captured_at: true } });
     if (!row || !row.thumbnail_captured_at) {
       return res.status(404).json({ error: 'No thumbnail captured for this camera' });
     }
@@ -325,8 +327,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
   // GET /production/cameras/:id/preset/:presetId/thumbnail(.jpg) — per-preset reference image
   async function servePresetThumbnail(req, res) {
-    const row = db.prepare('SELECT 1 FROM prod_camera_preset_thumbnails WHERE camera_id = ? AND preset_id = ?')
-      .get(req.params.id, req.params.presetId);
+    const row = await db.prod_camera_preset_thumbnails.findUnique({
+      where: { camera_id_preset_id: { camera_id: req.params.id, preset_id: req.params.presetId } },
+    });
     if (!row) return res.status(404).json({ error: 'No thumbnail captured for this preset' });
     if (cameraThumbnailOpts.thumbnailStore) {
       return sendStoredJpeg(cameraThumbnailOpts.thumbnailStore, thumbnailObjectKey(req.params.id, req.params.presetId), res);
@@ -361,7 +364,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // Phase 3's job, not this route's.
   router.post('/:id/perception/start', async (req, res) => {
     if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const camera = parseCamera(row);
@@ -380,20 +383,20 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
   // POST /production/cameras/:id/perception/auto { enabled } — keep this camera's perception job running
   // while its feed is live (started and stopped by the auto-start reconciler)
-  router.post('/:id/perception/auto', (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+  router.post('/:id/perception/auto', async (req, res) => {
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     const enabled = req.body?.enabled;
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
     if (enabled && !row.camera_key) return res.status(400).json({ error: 'camera has no cameraKey (dedicated-feed cameras only)' });
-    db.prepare('UPDATE prod_cameras SET perception_enabled = ? WHERE id = ?').run(enabled ? 1 : 0, req.params.id);
+    await db.prod_cameras.updateMany({ where: { id: req.params.id }, data: { perception_enabled: enabled ? 1 : 0 } });
     res.json({ ok: true, perceptionEnabled: enabled });
   });
 
   // POST /production/cameras/:id/perception/stop
   router.post('/:id/perception/stop', async (req, res) => {
     if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     const stopped = await perceptionManager.stop(req.params.id);
@@ -401,9 +404,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   });
 
   // GET /production/cameras/:id/perception/status
-  router.get('/:id/perception/status', (req, res) => {
+  router.get('/:id/perception/status', async (req, res) => {
     if (!perceptionManager) return res.status(503).json({ error: 'Perception dispatch not configured' });
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
     res.json({ ok: true, status: perceptionManager.status(req.params.id) });
@@ -415,7 +418,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
   // GET /production/cameras/:id/whip-url — WHIP proxy info for a browser camera
   router.get('/:id/whip-url', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     // A credential-less kiosk request never sets req.session (see
     // isUnauthenticatedCameraRoute() above), so canAccessCamera() correctly
     // fails open for it; a device-role JWT scoped to a different project is
@@ -446,7 +449,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
   // POST /production/cameras/:id/whip — proxy SDP offer to MediaMTX WHIP endpoint
   router.post('/:id/whip', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     if (!BROWSER_CAMERA_TYPES.has(row.control_type)) {
       return res.status(400).json({ error: 'Camera is not a browser camera' });
@@ -489,7 +492,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
   // PATCH /production/cameras/:id/whip — proxy trickle ICE candidates to MediaMTX
   router.patch('/:id/whip', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     if (!row.camera_key || !mediamtxClient) return res.status(204).end();
 
@@ -509,7 +512,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
 
   // DELETE /production/cameras/:id/whip — terminate WHIP session (kick publisher)
   router.delete('/:id/whip', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(req.params.id);
+    const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req) || !row.camera_key || !mediamtxClient) return res.status(204).end();
 
     try { await mediamtxClient.kickPath(row.camera_key); } catch { /* ignore */ }

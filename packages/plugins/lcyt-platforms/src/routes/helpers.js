@@ -64,13 +64,13 @@ export function requireAdapter(req, res, resolve = getAdapter) {
  * list, which is enough for a client to render a picker without a second
  * round-trip.
  *
- * @returns {object|null} a platform_credentials row, or null after responding
+ * @returns {Promise<object|null>} a platform_credentials row, or null after responding
  */
-export function resolveCredential(req, res, db, apiKey, platform) {
+export async function resolveCredential(req, res, db, apiKey, platform) {
   const credentialId = req.body?.credentialId || req.query?.credentialId;
 
   if (credentialId) {
-    const row = getCredential(db, apiKey, credentialId);
+    const row = await getCredential(db, apiKey, credentialId);
     if (!row) {
       res.status(404).json({ error: 'Platform credential not found' });
       return null;
@@ -86,7 +86,7 @@ export function resolveCredential(req, res, db, apiKey, platform) {
     return row;
   }
 
-  const resolved = getDefaultCredential(db, apiKey, platform);
+  const resolved = await getDefaultCredential(db, apiKey, platform);
   if (resolved.ok) return resolved.credential;
 
   if (resolved.reason === 'none') {

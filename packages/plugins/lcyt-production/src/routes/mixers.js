@@ -118,10 +118,8 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // GET /production/mixers — list all mixers with connection status.
   // Filtered to the caller's own + legacy/unowned mixers (mirrors
   // routes/cameras.js's GET / — only takes effect once auth is wired in).
-  router.get('/', (req, res) => {
-    const rows = db
-      .prepare('SELECT * FROM prod_mixers ORDER BY created_at')
-      .all()
+  router.get('/', async (req, res) => {
+    const rows = (await db.prod_mixers.findMany({ orderBy: { created_at: 'asc' } }))
       .filter(row => canAccessMixer(row, req))
       .map(row => {
         const mixer = parseMixer(row);
@@ -135,8 +133,8 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // GET /production/mixers/:id — single mixer
-  router.get('/:id', (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+  router.get('/:id', async (req, res) => {
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     // 404 (not 403) for a foreign mixer — don't confirm its existence to a
     // caller who doesn't own it.
     if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
@@ -149,7 +147,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // POST /production/mixers — create mixer
-  router.post('/', requireSetup, (req, res) => {
+  router.post('/', requireSetup, async (req, res) => {
     const { name, type, connectionConfig = {}, bridgeInstanceId = null, connectionSource = 'backend', outputKey = null } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
@@ -163,12 +161,14 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
     // auth wired in (e.g. existing route-level tests) — mirrors
     // routes/cameras.js's POST / handler exactly.
     const ownerApiKey = req.session?.apiKey ?? null;
-    db.prepare(`
-      INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, connection_source, output_key, owner_api_key)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(id, name, type, JSON.stringify(connectionConfig), bridgeInstanceId, connectionSource, outputKey, ownerApiKey);
+    await db.prod_mixers.create({
+      data: {
+        id, name, type, connection_config: JSON.stringify(connectionConfig), bridge_instance_id: bridgeInstanceId,
+        connection_source: connectionSource, output_key: outputKey, owner_api_key: ownerApiKey,
+      },
+    });
 
-    const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
+    const mixer = parseMixer(await db.prod_mixers.findUnique({ where: { id } }));
     registry.reloadMixer(id).catch(err =>
       console.warn(`[production-control] reloadMixer after create: ${err.message}`)
     );
@@ -176,9 +176,9 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // PUT /production/mixers/:id — update mixer
-  router.put('/:id', requireSetup, (req, res) => {
+  router.put('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+    const existing = await db.prod_mixers.findUnique({ where: { id } });
     if (!existing || !canAccessMixer(existing, req)) return res.status(404).json({ error: 'Mixer not found' });
 
     const {
@@ -194,12 +194,15 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       return res.status(400).json({ error: `type must be one of: ${MIXER_TYPES.join(', ')}` });
     }
 
-    db.prepare(`
-      UPDATE prod_mixers SET name = ?, type = ?, connection_config = ?, bridge_instance_id = ?, connection_source = ?, output_key = ?
-      WHERE id = ?
-    `).run(name, type, JSON.stringify(connectionConfig), bridgeInstanceId ?? null, connectionSource, outputKey ?? null, id);
+    await db.prod_mixers.updateMany({
+      where: { id },
+      data: {
+        name, type, connection_config: JSON.stringify(connectionConfig), bridge_instance_id: bridgeInstanceId ?? null,
+        connection_source: connectionSource, output_key: outputKey ?? null,
+      },
+    });
 
-    const mixer = parseMixer(db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id));
+    const mixer = parseMixer(await db.prod_mixers.findUnique({ where: { id } }));
     registry.reloadMixer(id).catch(err =>
       console.warn(`[production-control] reloadMixer after update: ${err.message}`)
     );
@@ -207,12 +210,12 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // DELETE /production/mixers/:id — delete mixer
-  router.delete('/:id', requireSetup, (req, res) => {
+  router.delete('/:id', requireSetup, async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+    const existing = await db.prod_mixers.findUnique({ where: { id } });
     if (!existing || !canAccessMixer(existing, req)) return res.status(404).json({ error: 'Mixer not found' });
 
-    db.prepare('DELETE FROM prod_mixers WHERE id = ?').run(id);
+    await db.prod_mixers.deleteMany({ where: { id } });
     registry.removeMixer(id).catch(() => {});
     res.status(204).end();
   });
@@ -236,9 +239,9 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   });
 
   // GET /production/mixers/:id/active — current active input
-  router.get('/:id/active', (req, res) => {
+  router.get('/:id/active', async (req, res) => {
     const { id } = req.params;
-    const existing = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(id);
+    const existing = await db.prod_mixers.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ error: 'Mixer not found' });
 
     res.json({
@@ -254,7 +257,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
   // explicitly) for internal consistency — a live reachability probe against
   // the same class of device, not config CRUD.
   router.post('/:id/test', requireProduction, async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     if (!row) return res.status(404).json({ error: 'Mixer not found' });
 
     if (row.type === 'lcyt') {
@@ -308,7 +311,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
   // GET /production/mixers/:id/sources — camera sources for this mixer
   router.get('/:id/sources', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     // A credential-less kiosk request never sets req.session (see
     // isUnauthenticatedMixerRoute() above), so canAccessMixer() correctly
     // fails open for it; a device-role JWT scoped to a different project is
@@ -318,9 +321,10 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       return res.status(400).json({ error: 'Sources endpoint is only available for LCYT software mixers' });
     }
 
-    const cameras = db
-      .prepare('SELECT * FROM prod_cameras WHERE mixer_input IS NOT NULL ORDER BY sort_order, created_at')
-      .all();
+    const cameras = await db.prod_cameras.findMany({
+      where: { mixer_input: { not: null } },
+      orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
+    });
 
     const origin = `${req.protocol}://${req.get('host')}`;
     const sources = await Promise.all(cameras.map(async cam => {
@@ -345,7 +349,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
   // GET /production/mixers/:id/whip-url — WHIP proxy info for LCYT mixer output
   router.get('/:id/whip-url', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
     if (row.type !== 'lcyt') {
       return res.status(400).json({ error: 'WHIP output is only available for LCYT software mixers' });
@@ -364,7 +368,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
   // POST /production/mixers/:id/whip — proxy SDP offer to MediaMTX WHIP endpoint
   router.post('/:id/whip', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessMixer(row, req)) return res.status(404).json({ error: 'Mixer not found' });
     if (row.type !== 'lcyt') return res.status(400).json({ error: 'Mixer is not an LCYT software mixer' });
     if (!row.output_key) return res.status(400).json({ error: 'Mixer has no output_key configured' });
@@ -403,7 +407,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
   // PATCH /production/mixers/:id/whip — proxy trickle ICE candidates
   router.patch('/:id/whip', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessMixer(row, req) || !row.output_key || !mediamtxClient) return res.status(204).end();
 
     const body = req.rawBody ?? '';
@@ -422,7 +426,7 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
 
   // DELETE /production/mixers/:id/whip — terminate WHIP session (kick publisher)
   router.delete('/:id/whip', async (req, res) => {
-    const row = db.prepare('SELECT * FROM prod_mixers WHERE id = ?').get(req.params.id);
+    const row = await db.prod_mixers.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessMixer(row, req) || !row.output_key || !mediamtxClient) return res.status(204).end();
 
     try { await mediamtxClient.kickPath(row.output_key); } catch { /* ignore */ }

@@ -13,52 +13,55 @@
 /**
  * Insert or replace a template for an API key.
  * Returns the new row id.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {{ apiKey: string, name: string, templateJson: object }} opts
- * @returns {number}
+ * @returns {Promise<number>}
  */
-export function saveTemplate(db, { apiKey, name, templateJson }) {
+export async function saveTemplate(db, { apiKey, name, templateJson }) {
   const json = JSON.stringify(templateJson);
-  const existing = db.prepare(
-    'SELECT id FROM dsk_templates WHERE api_key = ? AND name = ?'
-  ).get(apiKey, name);
+  const now = db.$util.sqlNow();
+  const existing = await db.dsk_templates.findUnique({
+    where: { api_key_name: { api_key: apiKey, name } },
+    select: { id: true },
+  });
 
   if (existing) {
-    db.prepare(
-      "UPDATE dsk_templates SET template_json = ?, updated_at = datetime('now') WHERE id = ?"
-    ).run(json, existing.id);
+    await db.dsk_templates.updateMany({ where: { id: existing.id }, data: { template_json: json, updated_at: now } });
     return existing.id;
-  } else {
-    const { lastInsertRowid } = db.prepare(
-      "INSERT INTO dsk_templates (api_key, name, template_json, created_at, updated_at) VALUES (?, ?, ?, datetime('now'), datetime('now'))"
-    ).run(apiKey, name, json);
-    return Number(lastInsertRowid);
   }
+  const row = await db.dsk_templates.create({
+    data: { api_key: apiKey, name, template_json: json, created_at: now, updated_at: now },
+    select: { id: true },
+  });
+  return row.id;
 }
 
 /**
  * Return all templates for an API key (id, name, updated_at — no JSON payload).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {string} apiKey
- * @returns {Array<{ id: number, name: string, updated_at: string }>}
+ * @returns {Promise<Array<{ id: number, name: string, updated_at: string }>>}
  */
-export function listTemplates(db, apiKey) {
-  return db.prepare(
-    'SELECT id, name, updated_at FROM dsk_templates WHERE api_key = ? ORDER BY updated_at DESC'
-  ).all(apiKey);
+export async function listTemplates(db, apiKey) {
+  return db.dsk_templates.findMany({
+    where: { api_key: apiKey },
+    select: { id: true, name: true, updated_at: true },
+    orderBy: [{ updated_at: 'desc' }, { id: 'desc' }],
+  });
 }
 
 /**
  * Return a single template row including the JSON payload.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey  — must match; prevents cross-key access
- * @returns {{ id, name, templateJson: object, updated_at }|null}
+ * @returns {Promise<{ id, name, templateJson: object, updated_at }|null>}
  */
-export function getTemplate(db, id, apiKey) {
-  const row = db.prepare(
-    'SELECT id, name, template_json, updated_at FROM dsk_templates WHERE id = ? AND api_key = ?'
-  ).get(id, apiKey);
+export async function getTemplate(db, id, apiKey) {
+  const row = await db.dsk_templates.findFirst({
+    where: { id, api_key: apiKey },
+    select: { id: true, name: true, template_json: true, updated_at: true },
+  });
   if (!row) return null;
   return {
     id: row.id,
@@ -70,16 +73,14 @@ export function getTemplate(db, id, apiKey) {
 
 /**
  * Delete a template row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {number} id
  * @param {string} apiKey
- * @returns {boolean}  true if a row was deleted
+ * @returns {Promise<boolean>}  true if a row was deleted
  */
-export function deleteTemplate(db, id, apiKey) {
-  const { changes } = db.prepare(
-    'DELETE FROM dsk_templates WHERE id = ? AND api_key = ?'
-  ).run(id, apiKey);
-  return changes > 0;
+export async function deleteTemplate(db, id, apiKey) {
+  const res = await db.dsk_templates.deleteMany({ where: { id, api_key: apiKey } });
+  return res.count > 0;
 }
 
 // Recursively collect all string `id` values from a template JSON object.
@@ -97,12 +98,12 @@ function collectIdsFromObject(obj, out) {
  * the provided `templateJson`. Returns an array of conflict objects
  * { id, name, overlapping: [ids...] } excluding `excludeTemplateId` when set.
  */
-export function findTemplatesWithAnyElementIds(db, apiKey, templateJson, excludeTemplateId = null) {
+export async function findTemplatesWithAnyElementIds(db, apiKey, templateJson, excludeTemplateId = null) {
   const ids = new Set();
   collectIdsFromObject(templateJson, ids);
   if (ids.size === 0) return [];
 
-  const rows = db.prepare('SELECT id, name, template_json FROM dsk_templates WHERE api_key = ?').all(apiKey);
+  const rows = await db.dsk_templates.findMany({ where: { api_key: apiKey }, select: { id: true, name: true, template_json: true } });
   const conflicts = [];
   for (const row of rows) {
     if (excludeTemplateId != null && Number(row.id) === Number(excludeTemplateId)) continue;
@@ -122,13 +123,13 @@ export function findTemplatesWithAnyElementIds(db, apiKey, templateJson, exclude
  * where renameMap maps originalId -> newId. The function ensures new ids do not
  * collide with existing template ids.
  */
-export function autoRenameConflictingIds(db, apiKey, templateJson, excludeTemplateId = null) {
+export async function autoRenameConflictingIds(db, apiKey, templateJson, excludeTemplateId = null) {
   const ids = new Set();
   collectIdsFromObject(templateJson, ids);
   if (ids.size === 0) return { updatedTemplateJson: templateJson, renameMap: {} };
 
   // Collect all existing ids from other templates
-  const rows = db.prepare('SELECT id, template_json FROM dsk_templates WHERE api_key = ?').all(apiKey);
+  const rows = await db.dsk_templates.findMany({ where: { api_key: apiKey }, select: { id: true, template_json: true } });
   const existingIds = new Set();
   for (const row of rows) {
     if (excludeTemplateId != null && Number(row.id) === Number(excludeTemplateId)) continue;

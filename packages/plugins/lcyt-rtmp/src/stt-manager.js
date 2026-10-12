@@ -74,7 +74,7 @@ export class SttManager extends EventEmitter {
   /**
    * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store
    *   The backend session store — used to inject transcripts into session._sendQueue.
-   * @param {import('better-sqlite3').Database} [db]
+   * @param {object} [db]  Prisma client
    *   Optional: required for server-side translation in Phase 5.
    * @param {{ get: (key: string) => * }} [settings]
    *   lcyt-backend's SettingsService (plan_env_to_ui_settings.md), duck-typed.
@@ -433,7 +433,7 @@ export class SttManager extends EventEmitter {
    * @param {string} apiKey
    * @param {string} text
    * @param {Date}   timestamp
-   * @param {import('better-sqlite3').Database} [db]  Optional: required for server-side translation
+   * @param {object} [db]  Prisma client  Optional: required for server-side translation
    */
   _deliverTranscript(apiKey, text, timestamp, db = null) {
     if (!this._store) return;
@@ -469,11 +469,11 @@ export class SttManager extends EventEmitter {
         let showOriginal;
         if (db && this._getTranslationVendorConfig && this._getTranslationTargets) {
           try {
-            const vendorConfig = this._getTranslationVendorConfig(db, apiKey);
-            const translationTargets = this._getTranslationTargets(db, apiKey).filter(t => t.enabled);
+            const vendorConfig = await this._getTranslationVendorConfig(db, apiKey);
+            const translationTargets = (await this._getTranslationTargets(db, apiKey)).filter(t => t.enabled);
 
             // Get current STT source language
-            const sttCfg = getSttConfig(db, apiKey);
+            const sttCfg = await getSttConfig(db, apiKey);
             const sourceLang = sttCfg?.language || 'en-US';
 
             // Translate to all enabled target languages

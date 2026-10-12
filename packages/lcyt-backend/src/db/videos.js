@@ -3,6 +3,12 @@ import { join, resolve, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getMetricsInstance } from '../metrics/index.js';
 import logger from 'lcyt/logger';
+import { sqlNow, num } from './helpers.js';
+
+/** BigInt columns only take whole numbers; round floats and keep null/undefined. */
+function toBig(v) {
+  return v == null ? v : Math.round(Number(v));
+}
 
 function safeSlug(value) {
   const input = String(value || 'project').toLowerCase();
@@ -52,8 +58,8 @@ function formatRow(row) {
     status: row.status,
     storageType: row.storage_type,
     storageKey: row.storage_key ?? null,
-    durationMs: row.duration_ms ?? null,
-    sizeBytes: row.size_bytes ?? 0,
+    durationMs: num(row.duration_ms) ?? null,
+    sizeBytes: num(row.size_bytes) ?? 0,
     startedAt: row.started_at ?? null,
     endedAt: row.ended_at ?? null,
     createdAt: row.created_at,
@@ -61,27 +67,34 @@ function formatRow(row) {
   };
 }
 
-export function listVideos(db, apiKey, { status, broadcastId } = {}) {
-  const clauses = ['api_key = ?'];
-  const params = [apiKey];
-  if (status) {
-    clauses.push('status = ?');
-    params.push(status);
-  }
-  if (broadcastId) {
-    clauses.push('broadcast_id = ?');
-    params.push(broadcastId);
-  }
-  const rows = db.prepare(`SELECT * FROM videos WHERE ${clauses.join(' AND ')} ORDER BY created_at DESC`).all(...params);
+/**
+ * @param {import('./connection.js').Db} db
+ * @param {string} apiKey
+ * @param {{ status?: string, broadcastId?: string }} [opts]
+ * @returns {Promise<object[]>}
+ */
+export async function listVideos(db, apiKey, { status, broadcastId } = {}) {
+  const where = { api_key: apiKey };
+  if (status) where.status = status;
+  if (broadcastId) where.broadcast_id = broadcastId;
+  const rows = await db.videos.findMany({ where, orderBy: { created_at: 'desc' } });
   return rows.map(formatRow);
 }
 
-export function getVideo(db, apiKey, id) {
-  const row = db.prepare('SELECT * FROM videos WHERE api_key = ? AND id = ?').get(apiKey, id);
+/**
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<object|null>}
+ */
+export async function getVideo(db, apiKey, id) {
+  const row = await db.videos.findFirst({ where: { api_key: apiKey, id } });
   return row ? formatRow(row) : null;
 }
 
-export function createVideo(db, apiKey, fields = {}) {
+/**
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, video: object }>}
+ */
+export async function createVideo(db, apiKey, fields = {}) {
   const {
     id = randomUUID(),
     broadcastId = null,
@@ -98,34 +111,34 @@ export function createVideo(db, apiKey, fields = {}) {
   const resolvedStorageKey = storageKey ?? (storageType === 's3' ? buildVideoStorageKey(apiKey, id) : null);
 
   ensureVideoArtifacts(apiKey, id);
-  db.prepare(`
-    INSERT INTO videos (
-      id, api_key, broadcast_id, title, status, storage_type, storage_key,
-      duration_ms, size_bytes, started_at, ended_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id,
-    apiKey,
-    broadcastId,
-    title,
-    status,
-    storageType,
-    resolvedStorageKey,
-    durationMs,
-    sizeBytes,
-    startedAt,
-    endedAt,
-  );
+  await db.videos.create({
+    data: {
+      id,
+      api_key: apiKey,
+      broadcast_id: broadcastId,
+      title,
+      status,
+      storage_type: storageType,
+      storage_key: resolvedStorageKey,
+      duration_ms: toBig(durationMs),
+      size_bytes: toBig(sizeBytes) ?? 0,
+      started_at: startedAt,
+      ended_at: endedAt,
+    },
+  });
   getMetricsInstance()?.count('videos.created', 1, { project: apiKey });
-  return { ok: true, video: getVideo(db, apiKey, id) };
+  return { ok: true, video: await getVideo(db, apiKey, id) };
 }
 
-export function updateVideo(db, apiKey, id, patch = {}) {
-  const existing = getVideo(db, apiKey, id);
+/**
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ ok: true, video: object }|{ ok: false, error: string, status?: number }>}
+ */
+export async function updateVideo(db, apiKey, id, patch = {}) {
+  const existing = await getVideo(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Video not found', status: 404 };
 
-  const sets = [];
-  const params = [];
+  const data = {};
   const updatable = {
     title: 'title',
     status: 'status',
@@ -138,20 +151,21 @@ export function updateVideo(db, apiKey, id, patch = {}) {
   };
   for (const [key, column] of Object.entries(updatable)) {
     if (patch[key] !== undefined) {
-      sets.push(`${column} = ?`);
-      params.push(patch[key]);
+      data[column] = (key === 'durationMs' || key === 'sizeBytes') ? toBig(patch[key]) : patch[key];
     }
   }
-  if (sets.length === 0) return { ok: true, video: existing };
+  if (Object.keys(data).length === 0) return { ok: true, video: existing };
 
-  sets.push("updated_at = datetime('now')");
-  params.push(apiKey, id);
-  db.prepare(`UPDATE videos SET ${sets.join(', ')} WHERE api_key = ? AND id = ?`).run(...params);
-  return { ok: true, video: getVideo(db, apiKey, id) };
+  data.updated_at = sqlNow();
+  await db.videos.updateMany({ where: { api_key: apiKey, id }, data });
+  return { ok: true, video: await getVideo(db, apiKey, id) };
 }
 
+/**
+ * @param {import('./connection.js').Db} db
+ */
 export async function deleteVideo(db, apiKey, id, { recordingsStore = null } = {}) {
-  const video = getVideo(db, apiKey, id);
+  const video = await getVideo(db, apiKey, id);
   if (!video) return { ok: false, error: 'Video not found', status: 404 };
   const dir = getVideoStorageDir(apiKey, id);
   if (video.storageType === 's3' && recordingsStore) {
@@ -161,11 +175,12 @@ export async function deleteVideo(db, apiKey, id, { recordingsStore = null } = {
     });
   }
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
-  db.prepare('DELETE FROM videos WHERE api_key = ? AND id = ?').run(apiKey, id);
+  await db.videos.deleteMany({ where: { api_key: apiKey, id } });
   return { ok: true };
 }
 
-export function startVideoRecording(db, apiKey, fields = {}) {
+/** @param {import('./connection.js').Db} db */
+export async function startVideoRecording(db, apiKey, fields = {}) {
   const startedAt = fields.startedAt || new Date().toISOString();
   return createVideo(db, apiKey, {
     title: fields.title || 'Recorded broadcast',
@@ -177,7 +192,8 @@ export function startVideoRecording(db, apiKey, fields = {}) {
   });
 }
 
-export function finishVideoRecording(db, apiKey, id, fields = {}) {
+/** @param {import('./connection.js').Db} db */
+export async function finishVideoRecording(db, apiKey, id, fields = {}) {
   const sizeBytes = Number(fields.sizeBytes ?? 0);
   if (sizeBytes > 0) getMetricsInstance()?.count('videos.bytes', sizeBytes, { project: apiKey });
   return updateVideo(db, apiKey, id, {
@@ -196,7 +212,7 @@ export function finishVideoRecording(db, apiKey, id, fields = {}) {
  * playback still works from the (already-written) local files instead of
  * 404ing forever against an S3 location nothing populated.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} videoId
  */
@@ -239,11 +255,11 @@ export async function syncVideoRecordingToStorage(db, apiKey, videoId, {
   settleMs = 1000,
   maxWaitMs = 30000,
 } = {}) {
-  const video = getVideo(db, apiKey, videoId);
+  const video = await getVideo(db, apiKey, videoId);
   if (!video || video.storageType !== 's3') return;
   if (!recordingsStore) {
     logger.warn(`[videos] recording ${videoId} is marked s3 but no recordingsStore is configured; falling back to local`);
-    updateVideo(db, apiKey, videoId, { storageType: 'local' });
+    await updateVideo(db, apiKey, videoId, { storageType: 'local' });
     return;
   }
   const dir = getVideoStorageDir(apiKey, videoId);
@@ -271,14 +287,14 @@ export async function syncVideoRecordingToStorage(db, apiKey, videoId, {
     const workerCount = Math.max(1, Math.min(Number(maxConcurrency) || 1, files.length || 1));
     await Promise.all(Array.from({ length: workerCount }, uploadNext));
 
-    updateVideo(db, apiKey, videoId, { sizeBytes: totalBytes });
+    await updateVideo(db, apiKey, videoId, { sizeBytes: totalBytes });
     if (totalBytes > 0) getMetricsInstance()?.count('videos.bytes', totalBytes, { project: apiKey });
     if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   } catch (err) {
     logger.warn(`[videos] S3 upload failed for recording ${videoId}, falling back to local storage: ${err?.message}`);
     // Do not leave a half-uploaded copy behind; the local files stay the source of truth.
     try { await recordingsStore.deletePrefix?.(prefix); } catch { /* best effort */ }
-    updateVideo(db, apiKey, videoId, { storageType: 'local' });
+    await updateVideo(db, apiKey, videoId, { storageType: 'local' });
   }
 }
 

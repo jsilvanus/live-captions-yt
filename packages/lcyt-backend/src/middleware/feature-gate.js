@@ -45,7 +45,7 @@ export function isEnforced(settings = null) {
  * @returns {import('express').RequestHandler}
  */
 export function createRequireFeature(db, featureCode, settings = null) {
-  return function requireFeature(req, res, next) {
+  return async function requireFeature(req, res, next) {
     if (!isEnforced(settings)) return next();
 
     const apiKey = req.session?.apiKey;
@@ -54,7 +54,7 @@ export function createRequireFeature(db, featureCode, settings = null) {
       return next();
     }
 
-    if (!hasFeature(db, apiKey, featureCode)) {
+    if (!await hasFeature(db, apiKey, featureCode)) {
       return res.status(403).json({
         error: `Feature '${featureCode}' is not enabled for this project`,
         feature: featureCode,
@@ -75,13 +75,13 @@ export function createRequireFeature(db, featureCode, settings = null) {
  * @returns {import('express').RequestHandler}
  */
 export function createRequireKeyFeature(db, featureCode, settings = null) {
-  return function requireKeyFeature(req, res, next) {
+  return async function requireKeyFeature(req, res, next) {
     if (!isEnforced(settings)) return next();
 
     const apiKey = req.params.key;
     if (!apiKey) return next();
 
-    if (!hasFeature(db, apiKey, featureCode)) {
+    if (!await hasFeature(db, apiKey, featureCode)) {
       return res.status(403).json({
         error: `Feature '${featureCode}' is not enabled for this project`,
         feature: featureCode,

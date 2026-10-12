@@ -13,7 +13,7 @@ import { Router } from 'express';
 
 /**
  * @param {ReturnType<typeof import('../feed-attributor.js').createFeedAttributor>} attributor
- * @param {{ db?: import('better-sqlite3').Database, auth?: import('express').RequestHandler }} [opts]
+ * @param {{ db?: import('../db/connection.js').Db, auth?: import('express').RequestHandler }} [opts]
  */
 export function createAttributionRouter(attributor, opts = {}) {
   const { db = null, auth = null } = opts;
@@ -45,13 +45,13 @@ export function createAttributionRouter(attributor, opts = {}) {
     res.json({ ok: true, stopped: attributor.stop(apiKey) });
   });
 
-  router.post('/override', (req, res) => {
+  router.post('/override', async (req, res) => {
     const apiKey = apiKeyOf(req, res); if (!apiKey) return;
     const cameraId = req.body?.cameraId ?? null;
     if (cameraId !== null) {
       if (typeof cameraId !== 'string') return res.status(400).json({ error: 'cameraId must be a string or null' });
       if (db) {
-        const cam = db.prepare('SELECT owner_api_key FROM prod_cameras WHERE id = ?').get(cameraId);
+        const cam = await db.prod_cameras.findUnique({ where: { id: cameraId }, select: { owner_api_key: true } });
         if (!cam || (cam.owner_api_key && cam.owner_api_key !== apiKey)) return res.status(404).json({ error: 'Camera not found' });
       }
     }

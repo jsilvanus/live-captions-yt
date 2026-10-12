@@ -25,20 +25,13 @@ function makeDb(overrides = {}) {
   return {
     registered,
     updated,
-    prepare: (sql) => {
-      if (sql.includes('INSERT INTO caption_files')) {
-        return {
-          run: (...args) => {
-            const id = registered.length + 1;
-            registered.push({ id, args });
-            return { lastInsertRowid: id };
-          },
-        };
-      }
-      if (sql.includes('UPDATE caption_files')) {
-        return { run: (...args) => { updated.push(args); } };
-      }
-      return { run: () => {}, get: () => null, all: () => [] };
+    caption_files: {
+      create: async ({ data }) => {
+        const id = registered.length + 1;
+        registered.push({ id, data });
+        return { id };
+      },
+      updateMany: async (args) => { updated.push(args); return { count: 1 }; },
     },
     ...overrides,
   };

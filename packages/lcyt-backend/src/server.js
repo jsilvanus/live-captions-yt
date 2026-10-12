@@ -148,8 +148,8 @@ if (!process.env.ADMIN_KEY) {
 // instead of raw process.env, and DB-set values are reflected at the next
 // boot even though most of this block is startup logging, not enforcement.
 
-const db = initDb();
-const settings = new SettingsService(db);
+const db = await initDb();
+const settings = await SettingsService.create(db);
 
 const _allowedDomains = settings.get('app.allowed_domains');
 if (_allowedDomains.length === 1 && _allowedDomains[0] === '*') {
@@ -283,8 +283,8 @@ const productionCommands = createProductionCommands({
 const { storage, resolveStorage, invalidateStorageCache } = await initFilesControl(db, { settings });
 const mediaStores = await createMediaStores(settings);
 
-// RTMP plugin — run DB migrations, create all manager instances.
-// Always initialized so migrations run regardless of RTMP_RELAY_ACTIVE.
+// RTMP plugin — create all manager instances (tables come from the Prisma schema).
+// Always initialized, regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
 // Pass resolveStorage so HLS manager can publish segments/playlists to storage.
 const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings, hlsSubsStore: isMediaStorageS3(settings) ? mediaStores.hlsSubsStore : null });
@@ -349,7 +349,7 @@ sttManager?.setDeliveryHelpers({
   fanOutToTargets: createCaptionFanout({ db }),
 });
 
-// Music detection plugin — run DB migrations, create the SoundCaptionProcessor, and
+// Music detection plugin — create the SoundCaptionProcessor, and
 // (when a session store is supplied) the MusicManager for server-side HLS audio analysis.
 // The processor strips <!-- sound:... --> and <!-- bpm:... --> metacodes from captions
 // and fires sound_label / bpm_update SSE events on the existing GET /events stream.
@@ -419,16 +419,16 @@ const _operatorManager = new OperatorManager({
 });
 
 // API Connectors & Variables plugin — {{ }} variable bindings backed by
-// user-defined outbound API connectors. Runs its own DB migrations
-// (api_connectors, api_requests, api_response_mappings, variables tables).
-const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler, pollScheduler: _connectorsPollScheduler } = initConnectors(db, {
+// user-defined outbound API connectors. Tables come from the
+// backend Prisma schema (api_connectors, api_requests, api_response_mappings, variables).
+const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler, pollScheduler: _connectorsPollScheduler } = await initConnectors(db, {
   filesControl: { resolveStorage },
   eventBus,
 });
-// Named Actions plugin — runs its own migration (action_defs table).
-initActions(db);
+// Named Actions plugin (action_defs table comes from the core schema).
+await initActions(db);
 
-const _checkProjectRole = (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId);
+const _checkProjectRole = async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId);
 // Server-side action runner (plan_backend_actions.md): lcyt-actions stays
 // generic, this is the one place that knows which atom keys map to which
 // subsystem. Device atoms go through ProductionCommands (ownership check,
@@ -447,21 +447,21 @@ const _actionExecutor = createActionExecutor({
     crop: {
       device: true,
       deviceKey: () => 'crop',
-      toIds: (apiKey, value) => {
-        const presets = listCropPresets(db, apiKey);
+      toIds: async (apiKey, value) => {
+        const presets = await listCropPresets(db, apiKey);
         if (presets.some((p) => p.id === value)) return null;
         const found = presets.filter((p) => slugifyLabel(p.name) === slugifyLabel(value));
         return found.length === 1 ? found[0].id : null;
       },
-      toLabels: (apiKey, value) => {
-        const presets = listCropPresets(db, apiKey);
+      toLabels: async (apiKey, value) => {
+        const presets = await listCropPresets(db, apiKey);
         const preset = presets.find((p) => p.id === value);
         const slug = preset && slugifyLabel(preset.name);
         return slug && presets.filter((p) => slugifyLabel(p.name) === slug).length === 1 ? slug : null;
       },
-      run: (apiKey, value) => {
+      run: async (apiKey, value) => {
         const slug = slugifyLabel(value);
-        const presets = listCropPresets(db, apiKey);
+        const presets = await listCropPresets(db, apiKey);
         const matches = presets.filter((p) => p.id === value);
         const found = matches.length ? matches : presets.filter((p) => slugifyLabel(p.name) === slug);
         if (found.length === 0) return { ok: false, code: 'not_found', error: `Crop preset '${value}' not found` };
@@ -495,7 +495,7 @@ const _actionAuthoringGuard = createAuthoringGuard({ executor: _actionExecutor, 
 // Cue rules with `action.run` execute through the runner when their cue fires;
 // disarmed projects skip device steps (plan_backend_actions.md, db/arming.js).
 const _cueActionDispatcher = createCueActionDispatcher({
-  eventBus, executor: _actionExecutor, isArmed: (apiKey) => isArmed(db, apiKey),
+  eventBus, executor: _actionExecutor, isArmed: async (apiKey) => await isArmed(db, apiKey),
   maxRuns: () => settings.get('production.action_rate_max_runs'),
   windowMs: () => settings.get('production.action_rate_window_s') * 1000,
 });
@@ -507,15 +507,15 @@ _cueActionDispatcher.start();
 // broadcast_platform_links, broadcast_platform_stats) and starts the live-stats
 // poller. Must come after the core schema: its tables carry real foreign keys
 // onto api_keys and broadcasts.
-const { tokenService: _platformTokenService, poller: _platformStatsPoller } = initPlatforms(db, {
+const { tokenService: _platformTokenService, poller: _platformStatsPoller } = await initPlatforms(db, {
   eventBus,
   getOAuthConfig: () => ({
     clientId: settings.get('app.youtube_client_id'),
     clientSecret: settings.get('app.youtube_client_secret'),
   }),
-  getProjectForBroadcast: (broadcastId) => {
+  getProjectForBroadcast: async (broadcastId) => {
     try {
-      return db.prepare('SELECT api_key FROM broadcasts WHERE id = ?').get(broadcastId)?.api_key ?? null;
+      return (await db.broadcasts.findUnique({ where: { id: broadcastId }, select: { api_key: true } }))?.api_key ?? null;
     } catch {
       return null;
     }
@@ -526,7 +526,7 @@ const { tokenService: _platformTokenService, poller: _platformStatsPoller } = in
 // Capabilities that gained a feature flag after projects already used them (platform
 // connections, MCP tokens, AI roles): enable the flag so nothing switches off. Idempotent.
 try {
-  const added = backfillCapabilityFeatures(db);
+  const added = await backfillCapabilityFeatures(db);
   if (added.projects || added.users) console.log(`[features] capability backfill: ${added.projects} project flag(s), ${added.users} user entitlement(s)`);
 } catch (err) {
   console.warn(`[features] capability backfill skipped: ${err.message}`);
@@ -607,7 +607,7 @@ store.onSessionEnd = async (session) => {
   // avoid writing a session_stats row when apiKey is missing to prevent NOT NULL errors.
   if (session.apiKey) {
     const endedAt = new Date().toISOString();
-    writeSessionStat(db, {
+    await writeSessionStat(db, {
       sessionId: session.sessionId,
       apiKey: session.apiKey,
       domain: session.domain,
@@ -623,8 +623,8 @@ store.onSessionEnd = async (session) => {
     // Transition the bound broadcast to completed (plan/broadcasts).
     if (session.broadcastId) {
       try {
-        disarmOnEnd(db, eventBus, session.apiKey, session.broadcastId);
-        completeBroadcast(db, session.broadcastId, {
+        await disarmOnEnd(db, eventBus, session.apiKey, session.broadcastId);
+        await completeBroadcast(db, session.broadcastId, {
           youtubeVideoIds: session.youtubeVideoIds,
           endedAt,
         });
@@ -635,7 +635,7 @@ store.onSessionEnd = async (session) => {
   } else {
     console.warn(`[store] session ended without apiKey (sessionId=${session.sessionId}) — skipping session_stats write`);
   }
-  incrementDomainHourlySessionEnd(db, session.domain, durationMs);
+  await incrementDomainHourlySessionEnd(db, session.domain, durationMs);
 };
 
 // ---------------------------------------------------------------------------
@@ -683,7 +683,7 @@ const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmp
   // Setup-tier writes only (plan_project_roles.md, decided 2026-07-26) —
   // template/viewport CRUD; live-trigger routes (activate/broadcast/renderer
   // start-stop/graphics push) stay ungated, see CONSIDER.md.
-  deps: { checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId) },
+  deps: { checkProjectRole: async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId) },
 });
 // Dynamic CORS middleware — must run before all routers (including /icons) so
 // that OPTIONS preflight requests are handled and CORS headers are set.
@@ -708,7 +708,7 @@ app.use('/icons', createIconRouter(
 app.use(express.json({ limit: '64kb' }));
 
 if (localMode) {
-  const localIdentity = ensureLocalIdentity(db);
+  const localIdentity = await ensureLocalIdentity(db);
   const localAuth = createLocalModeMiddleware(db, jwtSecret, localIdentity);
   app.use(localAuth);
   // Lets the web UI pick up the local identity as if it had logged in.
@@ -910,14 +910,14 @@ apiRouter.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai
   // unconditional override on a team-visible project (plan_project_roles.md,
   // decided 2026-07-26) — broadened from the 2026-07-20 interim fix's
   // explicit-only check now that the override exists.
-  isExplicitProjectAdmin: (apiKey, userId) => hasProjectRole(db, 'setup', apiKey, userId),
-  checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
+  isExplicitProjectAdmin: async (apiKey, userId) => await hasProjectRole(db, 'setup', apiKey, userId),
+  checkProjectRole: async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId),
 }));
 apiRouter.use('/ai', createAiRouter(db, scopedAuth('ai'), settings));
 apiRouter.use('/agent', createAgentRouter(db, scopedAuth('agent'), _agent));
 apiRouter.use('/admin/ai-providers', createAdminAiProvidersRouter(db, createAdminMiddleware(db, jwtSecret), { bridgeManager: productionBridgeManager }));
 apiRouter.use('/roles', createRolesRouter(db, scopedAuth('role'), {
-  checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId),
+  checkProjectRole: async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId),
 }));
 apiRouter.use('/roles', createRolesChatRouter(db, scopedAuth('role'), _toolsContext, _rolesBus, productionBridgeManager));
 apiRouter.use('/roles', createVisionRolesRouter(db, scopedAuth('role'), _visionRoleManager, productionBridgeManager));
@@ -1046,7 +1046,7 @@ apiRouter.use('/production', createProductionRouter(db, productionRegistry, prod
   settings,
   // Setup-tier CRUD vs. Production-tier live-control split
   // (plan_project_roles.md, decided 2026-07-26) — see route-access.js.
-  deps: { checkProjectRole: (tier, apiKey, userId) => hasProjectRole(db, tier, apiKey, userId) },
+  deps: { checkProjectRole: async (tier, apiKey, userId) => await hasProjectRole(db, tier, apiKey, userId) },
 }));
 
 // RTMP relay routes — media.rtmp_relay_active is hot: always mounted (the

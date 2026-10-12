@@ -1,3 +1,5 @@
+import { sqlNow } from './helpers.js';
+
 /**
  * Project feature flag helpers.
  *
@@ -101,290 +103,306 @@ export function applyFeatureDeps(featureMap) {
 }
 
 /**
- * Get all feature rows for an API key.
- * @param {import('better-sqlite3').Database} db
- * @param {string} apiKey
- * @returns {Array<{ feature_code: string, enabled: number, config: string|null, granted_at: string }>}
+ * Run fn inside a transaction; when db already is a transaction client, just use it.
+ * @template T
+ * @param {import('./connection.js').Db} db
+ * @param {(tx: import('./connection.js').Db) => Promise<T>} fn
+ * @returns {Promise<T>}
  */
-export function getProjectFeatures(db, apiKey) {
-  return db.prepare(
-    'SELECT feature_code, enabled, config, granted_at FROM project_features WHERE api_key = ? ORDER BY feature_code'
-  ).all(apiKey);
+function inTx(db, fn) {
+  return typeof db.$transaction === 'function' ? db.$transaction(fn) : fn(db);
+}
+
+/**
+ * Get all feature rows for an API key.
+ * @param {import('./connection.js').Db} db
+ * @param {string} apiKey
+ * @returns {Promise<Array<{ feature_code: string, enabled: number, config: string|null, granted_at: string }>>}
+ */
+export async function getProjectFeatures(db, apiKey) {
+  return db.project_features.findMany({
+    where: { api_key: apiKey },
+    select: { feature_code: true, enabled: true, config: true, granted_at: true },
+    orderBy: { feature_code: 'asc' },
+  });
 }
 
 /**
  * Returns a Set of enabled feature codes for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @returns {Set<string>}
+ * @returns {Promise<Set<string>>}
  */
-export function getEnabledFeatureSet(db, apiKey) {
-  const rows = db.prepare(
-    'SELECT feature_code FROM project_features WHERE api_key = ? AND enabled = 1'
-  ).all(apiKey);
+export async function getEnabledFeatureSet(db, apiKey) {
+  const rows = await db.project_features.findMany({
+    where: { api_key: apiKey, enabled: 1 },
+    select: { feature_code: true },
+  });
   return new Set(rows.map(r => r.feature_code));
 }
 
 /**
  * Check whether a single feature is enabled for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} featureCode
- * @returns {boolean}
+ * @returns {Promise<boolean>}
  */
-export function hasFeature(db, apiKey, featureCode) {
-  const row = db.prepare(
-    'SELECT enabled FROM project_features WHERE api_key = ? AND feature_code = ?'
-  ).get(apiKey, featureCode);
+export async function hasFeature(db, apiKey, featureCode) {
+  const row = await db.project_features.findUnique({
+    where: { api_key_feature_code: { api_key: apiKey, feature_code: featureCode } },
+    select: { enabled: true },
+  });
   return row?.enabled === 1;
 }
 
 /**
  * Upsert a single feature flag for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} featureCode
  * @param {boolean} enabled
  * @param {object|null} [config]
  * @param {number|null} [grantedBy]
+ * @returns {Promise<void>}
  */
-export function setProjectFeature(db, apiKey, featureCode, enabled, config = null, grantedBy = null) {
-  db.prepare(`
-    INSERT INTO project_features (api_key, feature_code, enabled, config, granted_by, granted_at)
-    VALUES (?, ?, ?, ?, ?, datetime('now'))
-    ON CONFLICT (api_key, feature_code) DO UPDATE SET
-      enabled    = excluded.enabled,
-      config     = excluded.config,
-      granted_by = excluded.granted_by,
-      granted_at = excluded.granted_at
-  `).run(
-    apiKey,
-    featureCode,
-    enabled ? 1 : 0,
-    config != null ? JSON.stringify(config) : null,
-    grantedBy ?? null,
-  );
+export async function setProjectFeature(db, apiKey, featureCode, enabled, config = null, grantedBy = null) {
+  const data = {
+    enabled: enabled ? 1 : 0,
+    config: config != null ? JSON.stringify(config) : null,
+    granted_by: grantedBy ?? null,
+    granted_at: sqlNow(),
+  };
+  await db.project_features.upsert({
+    where: { api_key_feature_code: { api_key: apiKey, feature_code: featureCode } },
+    create: { api_key: apiKey, feature_code: featureCode, ...data },
+    update: data,
+  });
 }
 
 /**
  * Batch-upsert feature flags for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {Record<string, boolean | { enabled: boolean, config?: object }>} featureMap
  * @param {number|null} [grantedBy]
+ * @returns {Promise<void>}
  */
-export function setProjectFeatures(db, apiKey, featureMap, grantedBy = null) {
-  const tx = db.transaction(() => {
+export async function setProjectFeatures(db, apiKey, featureMap, grantedBy = null) {
+  await inTx(db, async (tx) => {
     for (const [code, value] of Object.entries(featureMap)) {
       const enabled = typeof value === 'boolean' ? value : value.enabled;
       const config  = typeof value === 'object' && value !== null ? (value.config ?? null) : null;
-      setProjectFeature(db, apiKey, code, enabled, config, grantedBy);
+      await setProjectFeature(tx, apiKey, code, enabled, config, grantedBy);
     }
   });
-  tx();
 }
 
 // ── User-level entitlements ───────────────────────────────────────────────────
 
 /**
  * Get all enabled feature codes for a user (their entitlements).
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
- * @returns {Set<string>}
+ * @returns {Promise<Set<string>>}
  */
-export function getUserFeatureSet(db, userId) {
-  const rows = db.prepare(
-    'SELECT feature_code FROM user_features WHERE user_id = ? AND enabled = 1'
-  ).all(userId);
+export async function getUserFeatureSet(db, userId) {
+  const rows = await db.user_features.findMany({
+    where: { user_id: userId, enabled: 1 },
+    select: { feature_code: true },
+  });
   return new Set(rows.map(r => r.feature_code));
 }
 
+const POLICY_FIELDS = { feature_code: true, mode: true, updated_by: true, updated_at: true };
+const OVERRIDE_FIELDS = { org_id: true, feature_code: true, mode: true, set_by: true, set_at: true };
+
 /**
  * Get the site-wide feature policy row for a feature code.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} featureCode
- * @returns {{ feature_code: string, mode: string, updated_by: number|null, updated_at: string }|null}
+ * @returns {Promise<{ feature_code: string, mode: string, updated_by: number|null, updated_at: string }|undefined>}
  */
-export function getSiteFeaturePolicy(db, featureCode) {
-  return db.prepare(
-    'SELECT feature_code, mode, updated_by, updated_at FROM site_feature_policies WHERE feature_code = ?'
-  ).get(featureCode);
+export async function getSiteFeaturePolicy(db, featureCode) {
+  return (await db.site_feature_policies.findUnique({ where: { feature_code: featureCode }, select: POLICY_FIELDS })) ?? undefined;
 }
 
 /**
  * Get all site-wide feature policy rows.
- * @param {import('better-sqlite3').Database} db
- * @returns {Array<{ feature_code: string, mode: string, updated_by: number|null, updated_at: string }>}
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<Array<{ feature_code: string, mode: string, updated_by: number|null, updated_at: string }>>}
  */
-export function getSiteFeaturePolicies(db) {
-  return db.prepare(
-    'SELECT feature_code, mode, updated_by, updated_at FROM site_feature_policies ORDER BY feature_code'
-  ).all();
+export async function getSiteFeaturePolicies(db) {
+  return db.site_feature_policies.findMany({ select: POLICY_FIELDS, orderBy: { feature_code: 'asc' } });
 }
 
 /**
  * Upsert a site-wide feature policy row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} featureCode
  * @param {'available'|'self_service'|'denied'} mode
  * @param {number|null} [updatedBy]
+ * @returns {Promise<void>}
  */
-export function setSiteFeaturePolicy(db, featureCode, mode, updatedBy = null) {
-  db.prepare(`
-    INSERT INTO site_feature_policies (feature_code, mode, updated_by, updated_at)
-    VALUES (?, ?, ?, datetime('now'))
-    ON CONFLICT(feature_code) DO UPDATE SET
-      mode = excluded.mode,
-      updated_by = excluded.updated_by,
-      updated_at = datetime('now')
-  `).run(featureCode, mode, updatedBy ?? null);
+export async function setSiteFeaturePolicy(db, featureCode, mode, updatedBy = null) {
+  const data = { mode, updated_by: updatedBy ?? null, updated_at: sqlNow() };
+  await db.site_feature_policies.upsert({
+    where: { feature_code: featureCode },
+    create: { feature_code: featureCode, ...data },
+    update: data,
+  });
 }
 
 /**
  * Get an org override row for a feature code.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} orgId
  * @param {string} featureCode
- * @returns {{ org_id: number, feature_code: string, mode: string, set_by: number|null, set_at: string }|null}
+ * @returns {Promise<{ org_id: number, feature_code: string, mode: string, set_by: number|null, set_at: string }|undefined>}
  */
-export function getOrgFeatureOverride(db, orgId, featureCode) {
-  return db.prepare(
-    'SELECT org_id, feature_code, mode, set_by, set_at FROM org_feature_overrides WHERE org_id = ? AND feature_code = ?'
-  ).get(orgId, featureCode);
+export async function getOrgFeatureOverride(db, orgId, featureCode) {
+  return (await db.org_feature_overrides.findUnique({
+    where: { org_id_feature_code: { org_id: orgId, feature_code: featureCode } },
+    select: OVERRIDE_FIELDS,
+  })) ?? undefined;
 }
 
 /**
  * Get all org feature override rows for an org.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} orgId
- * @returns {Array<{ org_id: number, feature_code: string, mode: string, set_by: number|null, set_at: string }>}
+ * @returns {Promise<Array<{ org_id: number, feature_code: string, mode: string, set_by: number|null, set_at: string }>>}
  */
-export function getOrgFeatureOverrides(db, orgId) {
-  return db.prepare(
-    'SELECT org_id, feature_code, mode, set_by, set_at FROM org_feature_overrides WHERE org_id = ? ORDER BY feature_code'
-  ).all(orgId);
+export async function getOrgFeatureOverrides(db, orgId) {
+  return db.org_feature_overrides.findMany({
+    where: { org_id: orgId },
+    select: OVERRIDE_FIELDS,
+    orderBy: { feature_code: 'asc' },
+  });
 }
 
 /**
  * Upsert an org feature override row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} orgId
  * @param {string} featureCode
  * @param {'available'|'self_service'|'denied'} mode
  * @param {number|null} [setBy]
+ * @returns {Promise<void>}
  */
-export function setOrgFeatureOverride(db, orgId, featureCode, mode, setBy = null) {
-  db.prepare(`
-    INSERT INTO org_feature_overrides (org_id, feature_code, mode, set_by, set_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(org_id, feature_code) DO UPDATE SET
-      mode = excluded.mode,
-      set_by = excluded.set_by,
-      set_at = datetime('now')
-  `).run(orgId, featureCode, mode, setBy ?? null);
+export async function setOrgFeatureOverride(db, orgId, featureCode, mode, setBy = null) {
+  const data = { mode, set_by: setBy ?? null, set_at: sqlNow() };
+  await db.org_feature_overrides.upsert({
+    where: { org_id_feature_code: { org_id: orgId, feature_code: featureCode } },
+    create: { org_id: orgId, feature_code: featureCode, ...data },
+    update: data,
+  });
 }
 
 /**
  * Remove an org feature override row.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} orgId
  * @param {string} featureCode
+ * @returns {Promise<void>}
  */
-export function clearOrgFeatureOverride(db, orgId, featureCode) {
-  db.prepare('DELETE FROM org_feature_overrides WHERE org_id = ? AND feature_code = ?').run(orgId, featureCode);
+export async function clearOrgFeatureOverride(db, orgId, featureCode) {
+  await db.org_feature_overrides.deleteMany({ where: { org_id: orgId, feature_code: featureCode } });
 }
 
 /**
  * Resolve the effective policy mode for a feature for a project.
  * Org override wins over site-wide default; personal projects use site default.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string} featureCode
- * @returns {'available'|'self_service'|'denied'}
+ * @returns {Promise<'available'|'self_service'|'denied'>}
  */
-export function resolveFeaturePolicy(db, apiKey, featureCode) {
-  const projectRow = db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get(apiKey);
+export async function resolveFeaturePolicy(db, apiKey, featureCode) {
+  const projectRow = await db.api_keys.findUnique({ where: { key: apiKey }, select: { org_id: true } });
   if (projectRow?.org_id != null) {
-    const override = getOrgFeatureOverride(db, projectRow.org_id, featureCode);
+    const override = await getOrgFeatureOverride(db, projectRow.org_id, featureCode);
     if (override) return override.mode;
   }
-  const policy = getSiteFeaturePolicy(db, featureCode);
+  const policy = await getSiteFeaturePolicy(db, featureCode);
   return policy?.mode ?? 'denied';
 }
 
 /**
  * Get all user_features rows for a user.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
- * @returns {Array}
+ * @returns {Promise<Array<{ feature_code: string, enabled: number, config: string|null, granted_at: string }>>}
  */
-export function getUserFeatures(db, userId) {
-  return db.prepare(
-    'SELECT feature_code, enabled, config, granted_at FROM user_features WHERE user_id = ? ORDER BY feature_code'
-  ).all(userId);
+export async function getUserFeatures(db, userId) {
+  return db.user_features.findMany({
+    where: { user_id: userId },
+    select: { feature_code: true, enabled: true, config: true, granted_at: true },
+    orderBy: { feature_code: 'asc' },
+  });
 }
 
 /**
  * Upsert a single user feature entitlement.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
  * @param {string} featureCode
  * @param {boolean} enabled
  * @param {number|null} [grantedBy]
+ * @returns {Promise<void>}
  */
-export function setUserFeature(db, userId, featureCode, enabled, grantedBy = null) {
-  db.prepare(`
-    INSERT INTO user_features (user_id, feature_code, enabled, granted_by, granted_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-    ON CONFLICT (user_id, feature_code) DO UPDATE SET
-      enabled    = excluded.enabled,
-      granted_by = excluded.granted_by,
-      granted_at = excluded.granted_at
-  `).run(userId, featureCode, enabled ? 1 : 0, grantedBy ?? null);
+export async function setUserFeature(db, userId, featureCode, enabled, grantedBy = null) {
+  const data = { enabled: enabled ? 1 : 0, granted_by: grantedBy ?? null, granted_at: sqlNow() };
+  await db.user_features.upsert({
+    where: { user_id_feature_code: { user_id: userId, feature_code: featureCode } },
+    create: { user_id: userId, feature_code: featureCode, ...data },
+    update: data,
+  });
 }
 
 /**
  * Provision default user feature entitlements for a newly registered user.
- * Called from auth.js register handler.
- * @param {import('better-sqlite3').Database} db
+ * Called from auth.js register handler. Existing rows are left untouched.
+ * @param {import('./connection.js').Db} db
  * @param {number} userId
+ * @returns {Promise<void>}
  */
-export function provisionDefaultUserFeatures(db, userId) {
+export async function provisionDefaultUserFeatures(db, userId) {
   const defaults = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed'];
-  const stmt = db.prepare(`
-    INSERT INTO user_features (user_id, feature_code, enabled)
-    VALUES (?, ?, 1)
-    ON CONFLICT (user_id, feature_code) DO NOTHING
-  `);
-  const tx = db.transaction(() => {
+  await inTx(db, async (tx) => {
     for (const code of defaults) {
-      stmt.run(userId, code);
+      await tx.user_features.upsert({
+        where: { user_id_feature_code: { user_id: userId, feature_code: code } },
+        create: { user_id: userId, feature_code: code, enabled: 1, granted_at: sqlNow() },
+        update: {},
+      });
     }
   });
-  tx();
 }
 
 /**
  * Provision default project features for a newly created API key.
- * Called from keys.js user-create handler.
- * @param {import('better-sqlite3').Database} db
+ * Called from keys.js user-create handler. Existing rows are left untouched.
+ * @param {import('./connection.js').Db} db
  * @param {string} apiKey
  * @param {string[]} [extra] - Additional feature codes beyond defaults
  * @param {number|null} [orgId]
+ * @returns {Promise<void>}
  */
-export function provisionDefaultProjectFeatures(db, apiKey, extra = [], orgId = null) {
+export async function provisionDefaultProjectFeatures(db, apiKey, extra = [], orgId = null) {
   const defaults = ['captions', 'viewer-target', 'mic-lock', 'stats', 'translations', 'embed'];
   const codes = new Set([...defaults, ...extra]);
 
-  const availablePolicies = db.prepare(
-    'SELECT feature_code FROM site_feature_policies WHERE mode = ?'
-  ).all('available');
+  const availablePolicies = await db.site_feature_policies.findMany({
+    where: { mode: 'available' },
+    select: { feature_code: true },
+  });
   for (const policy of availablePolicies) {
     codes.add(policy.feature_code);
   }
 
   if (orgId != null) {
-    const overrides = getOrgFeatureOverrides(db, orgId);
+    const overrides = await getOrgFeatureOverrides(db, orgId);
     for (const override of overrides) {
       if (override.mode === 'available') {
         codes.add(override.feature_code);
@@ -392,17 +410,15 @@ export function provisionDefaultProjectFeatures(db, apiKey, extra = [], orgId = 
     }
   }
 
-  const stmt = db.prepare(`
-    INSERT INTO project_features (api_key, feature_code, enabled)
-    VALUES (?, ?, 1)
-    ON CONFLICT (api_key, feature_code) DO NOTHING
-  `);
-  const tx = db.transaction(() => {
+  await inTx(db, async (tx) => {
     for (const code of codes) {
-      stmt.run(apiKey, code);
+      await tx.project_features.upsert({
+        where: { api_key_feature_code: { api_key: apiKey, feature_code: code } },
+        create: { api_key: apiKey, feature_code: code, enabled: 1, granted_at: sqlNow() },
+        update: {},
+      });
     }
   });
-  tx();
 }
 
 /**
@@ -437,37 +453,37 @@ const CAPABILITY_BACKFILLS = [
  * Enable the flag (and give the owning user the entitlement) for every project
  * that already uses the capability, so adding the flag does not switch
  * anything off. Idempotent: existing rows, including explicit "disabled" ones,
- * are left alone. Tables owned by plugins that are not installed are skipped.
+ * are left alone. Capabilities whose table cannot be read are skipped.
  * Run after the plugin migrations.
- * @param {import('better-sqlite3').Database} db
- * @returns {{ projects: number, users: number }} rows added
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ projects: number, users: number }>} rows added
  */
-export function backfillCapabilityFeatures(db) {
-  const tableExists = name => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
-  const addProject = db.prepare(`
-    INSERT INTO project_features (api_key, feature_code, enabled, config)
-    VALUES (?, ?, 1, NULL)
-    ON CONFLICT (api_key, feature_code) DO NOTHING
-  `);
-  const addUser = db.prepare(`
-    INSERT INTO user_features (user_id, feature_code, enabled)
-    VALUES (?, ?, 1)
-    ON CONFLICT (user_id, feature_code) DO NOTHING
-  `);
-  const ownerOf = db.prepare('SELECT user_id FROM api_keys WHERE key = ?');
-
+export async function backfillCapabilityFeatures(db) {
   let projects = 0;
   let users = 0;
-  db.transaction(() => {
-    for (const { code, table, keys } of CAPABILITY_BACKFILLS) {
-      if (!tableExists(table)) continue;
-      for (const { api_key: apiKey } of db.prepare(keys).all()) {
-        if (!ownerOf.get(apiKey)) continue; // key no longer exists
-        projects += addProject.run(apiKey, code).changes;
-        const userId = ownerOf.get(apiKey)?.user_id;
-        if (userId != null) users += addUser.run(userId, code).changes;
+  for (const { code, keys } of CAPABILITY_BACKFILLS) {
+    let rows;
+    try {
+      rows = await db.$queryRawUnsafe(keys);
+    } catch {
+      continue; // table not present
+    }
+    for (const { api_key: apiKey } of rows) {
+      const owner = await db.api_keys.findUnique({ where: { key: apiKey }, select: { user_id: true } });
+      if (!owner) continue; // key no longer exists
+      const pk = { api_key_feature_code: { api_key: apiKey, feature_code: code } };
+      if (!(await db.project_features.findUnique({ where: pk, select: { enabled: true } }))) {
+        await db.project_features.create({ data: { api_key: apiKey, feature_code: code, enabled: 1, granted_at: sqlNow() } });
+        projects++;
+      }
+      if (owner.user_id != null) {
+        const uk = { user_id_feature_code: { user_id: owner.user_id, feature_code: code } };
+        if (!(await db.user_features.findUnique({ where: uk, select: { enabled: true } }))) {
+          await db.user_features.create({ data: { user_id: owner.user_id, feature_code: code, enabled: 1, granted_at: sqlNow() } });
+          users++;
+        }
       }
     }
-  })();
+  }
   return { projects, users };
 }

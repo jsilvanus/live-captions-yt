@@ -5,11 +5,11 @@
 
 import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { createServer } from 'node:http';
 
-let Database, express, jwt;
+let express, jwt;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
   jwt = (await import('jsonwebtoken')).default;
 } catch {
@@ -54,17 +54,16 @@ const FAKE_TOOLS = [
   { name: 'mixer.switch', description: 'x', inputSchema: { type: 'object', properties: {} }, annotations: { destructiveHint: true } },
 ];
 
-before(() => {
-  db = new Database(':memory:');
-  runAiRolesMigrations(db);
-  runProviderRegistryMigrations(db);
-  providerId = createProvider(db, {
+before(async () => {
+  db = await initDb(':memory:');
+  await runAiRolesMigrations(db);
+  providerId = (await createProvider(db, {
     scope: 'site', kind: 'api', vendor: 'openai', name: 'Test provider', baseUrl: 'https://api.test', apiKeyRef: 'sk-test',
-  }).id;
+  })).id;
   token = jwt.sign({ sessionId: 's1', apiKey: 'key1' }, JWT_SECRET, { expiresIn: '1h' });
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 afterEach(() => { global.fetch = realFetch; if (server) { server.close(); server = null; } });
 
 function startApp(callToolImpl = async () => ({ ok: true })) {
@@ -112,7 +111,7 @@ describe('POST /roles/assistant/prompt', () => {
   });
 
   it('queues a suggestion in confirm mode (default) without calling the tool', async () => {
-    setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockPresetProposal();
     let called = false;
     await startApp(async () => { called = true; return { ok: true }; });
@@ -131,7 +130,7 @@ describe('POST /roles/assistant/prompt', () => {
 
 describe('confirm/reject suggestions', () => {
   it('confirm executes the tool and clears the queue', async () => {
-    setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockPresetProposal();
     let called = false;
     await startApp(async () => { called = true; return { ok: true }; });
@@ -149,7 +148,7 @@ describe('confirm/reject suggestions', () => {
   });
 
   it('404s confirming/rejecting an unknown suggestion id', async () => {
-    setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     await startApp();
     const res1 = await fetch(`${baseUrl}/roles/assistant/suggestions/nope/confirm`, { method: 'POST', headers: bearer() });
     assert.equal(res1.status, 404);
@@ -158,7 +157,7 @@ describe('confirm/reject suggestions', () => {
   });
 
   it('reject removes without executing', async () => {
-    setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
+    await setRoleConfig(db, 'key1', 'assistant', { enabled: true, providerId, modelName: 'gpt-4o-mini' });
     mockPresetProposal();
     let called = false;
     await startApp(async () => { called = true; return { ok: true }; });

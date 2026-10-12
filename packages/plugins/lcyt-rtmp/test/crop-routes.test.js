@@ -6,8 +6,7 @@ import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import Database from 'better-sqlite3';
-import { runCropMigrations } from '../src/db/crop.js';
+import { initDb } from 'lcyt-backend/db';
 import { createCropRouter } from '../src/routes/crop.js';
 
 const KEY = 'routekey';
@@ -35,9 +34,8 @@ function makeMockCropManager() {
 }
 
 before(async () => {
-  db = new Database(':memory:');
-  runCropMigrations(db);
-  db.exec(`CREATE TABLE project_features (api_key TEXT, feature_code TEXT, enabled INTEGER)`);
+  db = await initDb(':memory:');
+  await db.prepare("INSERT INTO api_keys (key, owner) VALUES (?, 'owner')").run(KEY);
 
   mockCrop = makeMockCropManager();
   mockRelay = { isPublishing: () => true };
@@ -54,13 +52,15 @@ before(async () => {
   });
 });
 
-after(() => new Promise(r => server.close(() => { db.close(); r(); })));
+after(() => new Promise(r => server.close(async () => { await db.close(); r(); })));
 
-beforeEach(() => {
+beforeEach(async () => {
   mockCrop.running.clear();
   mockCrop.applied.length = 0;
   mockCrop.status = {};
-  db.exec('DELETE FROM crop_config; DELETE FROM crop_presets; DELETE FROM crop_preset_sets; DELETE FROM crop_source_map; DELETE FROM project_features;');
+  for (const t of ['crop_config', 'crop_source_map', 'crop_presets', 'crop_preset_sets', 'project_features']) {
+    await db.exec(`DELETE FROM ${t}`);
+  }
 });
 
 const j = (method, path, body) => fetch(`${baseUrl}${path}`, {
@@ -213,9 +213,7 @@ describe('requireSetup wiring (plan_project_roles.md)', () => {
   let gateDb, gateServer, gateBaseUrl, calls;
 
   before(async () => {
-    gateDb = new Database(':memory:');
-    runCropMigrations(gateDb);
-    gateDb.exec(`CREATE TABLE project_features (api_key TEXT, feature_code TEXT, enabled INTEGER)`);
+    gateDb = await initDb(':memory:');
     calls = [];
     const auth = (req, res, next) => { calls.push('auth'); req.session = { apiKey: KEY }; next(); };
     const requireSetup = (req, res, next) => {
@@ -234,7 +232,7 @@ describe('requireSetup wiring (plan_project_roles.md)', () => {
     });
   });
 
-  after(() => new Promise(r => gateServer.close(() => { gateDb.close(); r(); })));
+  after(() => new Promise(r => gateServer.close(async () => { await gateDb.close(); r(); })));
 
   test('GET passes through requireSetup', async () => {
     calls.length = 0;
@@ -264,7 +262,7 @@ describe('feature gate', () => {
       assert.equal(denied.status, 403);
       assert.equal((await denied.json()).feature, 'crop');
 
-      db.prepare("INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'crop', 1)").run(KEY);
+      await db.prepare("INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'crop', 1)").run(KEY);
       assert.equal((await j('GET', '/crop/config')).status, 200);
     } finally {
       if (orig === undefined) delete process.env.FEATURE_GATE_ENFORCE;

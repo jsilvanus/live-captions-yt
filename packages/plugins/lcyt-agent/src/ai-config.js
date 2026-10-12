@@ -1,5 +1,5 @@
 /**
- * AI / Embedding configuration — DB migrations and helpers.
+ * AI / Embedding configuration helpers.
  *
  * Tables:
  *   ai_config — per-API-key AI model settings (embedding provider, API keys, thresholds)
@@ -10,21 +10,14 @@
  *   - 'custom' — user provides custom embedding API endpoint + key
  *   - 'none'   — AI features disabled (default)
  *
- * @param {import('better-sqlite3').Database} db
+ * All functions take the Prisma client from lcyt-backend's initDb() and are async.
  */
-export function runAiMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ai_config (
-      api_key             TEXT PRIMARY KEY,
-      embedding_provider  TEXT NOT NULL DEFAULT 'none',
-      embedding_model     TEXT NOT NULL DEFAULT '',
-      embedding_api_key   TEXT NOT NULL DEFAULT '',
-      embedding_api_url   TEXT NOT NULL DEFAULT '',
-      fuzzy_threshold     REAL NOT NULL DEFAULT 0.75,
-      updated_at          INTEGER NOT NULL DEFAULT (strftime('%s','now'))
-    )
-  `);
-}
+
+/**
+ * No-op kept for old callers: the ai_config table comes from the backend schema
+ * (prisma/sqlite/schema.sql, prisma/postgres/migrations).
+ */
+export async function runAiMigrations() {}
 
 /**
  * Valid embedding providers.
@@ -39,12 +32,12 @@ export const VALID_PROVIDERS = ['none', 'server', 'openai', 'custom', 'deer'];
 
 /**
  * Get AI config for an API key, or null if not configured.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getAiConfig(db, apiKey) {
-  const row = db.prepare('SELECT * FROM ai_config WHERE api_key = ?').get(apiKey);
+export async function getAiConfig(db, apiKey) {
+  const row = await db.ai_config.findUnique({ where: { api_key: apiKey } });
   if (!row) return null;
   return {
     embeddingProvider: row.embedding_provider,
@@ -61,12 +54,12 @@ export function getAiConfig(db, apiKey) {
  * ⚠ SECURITY: Returns the real API key — only use in trusted server-side code.
  * For client-facing responses, use getAiConfig() which masks the key.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
- * @returns {object|null}
+ * @returns {Promise<object|null>}
  */
-export function getAiConfigRaw(db, apiKey) {
-  const row = db.prepare('SELECT * FROM ai_config WHERE api_key = ?').get(apiKey);
+export async function getAiConfigRaw(db, apiKey) {
+  const row = await db.ai_config.findUnique({ where: { api_key: apiKey } });
   if (!row) return null;
   return {
     embeddingProvider: row.embedding_provider,
@@ -79,35 +72,33 @@ export function getAiConfigRaw(db, apiKey) {
 
 /**
  * Upsert AI config for an API key.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {string} apiKey
  * @param {object} opts
  */
-export function setAiConfig(db, apiKey, opts) {
-  const existing = db.prepare('SELECT api_key FROM ai_config WHERE api_key = ?').get(apiKey);
+export async function setAiConfig(db, apiKey, opts) {
+  const existing = await db.ai_config.findUnique({ where: { api_key: apiKey }, select: { api_key: true } });
   if (!existing) {
-    db.prepare(`
-      INSERT INTO ai_config (api_key, embedding_provider, embedding_model, embedding_api_key, embedding_api_url, fuzzy_threshold)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(
-      apiKey,
-      opts.embeddingProvider || 'none',
-      opts.embeddingModel || '',
-      opts.embeddingApiKey || '',
-      opts.embeddingApiUrl || '',
-      opts.fuzzyThreshold ?? 0.75,
-    );
+    await db.ai_config.create({
+      data: {
+        api_key: apiKey,
+        embedding_provider: opts.embeddingProvider || 'none',
+        embedding_model: opts.embeddingModel || '',
+        embedding_api_key: opts.embeddingApiKey || '',
+        embedding_api_url: opts.embeddingApiUrl || '',
+        fuzzy_threshold: opts.fuzzyThreshold ?? 0.75,
+        updated_at: Math.floor(Date.now() / 1000),
+      },
+    });
   } else {
-    const sets = [];
-    const vals = [];
-    if (opts.embeddingProvider !== undefined) { sets.push('embedding_provider = ?'); vals.push(opts.embeddingProvider); }
-    if (opts.embeddingModel !== undefined) { sets.push('embedding_model = ?'); vals.push(opts.embeddingModel); }
-    if (opts.embeddingApiKey !== undefined) { sets.push('embedding_api_key = ?'); vals.push(opts.embeddingApiKey); }
-    if (opts.embeddingApiUrl !== undefined) { sets.push('embedding_api_url = ?'); vals.push(opts.embeddingApiUrl); }
-    if (opts.fuzzyThreshold !== undefined) { sets.push('fuzzy_threshold = ?'); vals.push(opts.fuzzyThreshold); }
-    if (sets.length === 0) return;
-    sets.push('updated_at = strftime(\'%s\',\'now\')');
-    vals.push(apiKey);
-    db.prepare(`UPDATE ai_config SET ${sets.join(', ')} WHERE api_key = ?`).run(...vals);
+    const data = {};
+    if (opts.embeddingProvider !== undefined) data.embedding_provider = opts.embeddingProvider;
+    if (opts.embeddingModel !== undefined) data.embedding_model = opts.embeddingModel;
+    if (opts.embeddingApiKey !== undefined) data.embedding_api_key = opts.embeddingApiKey;
+    if (opts.embeddingApiUrl !== undefined) data.embedding_api_url = opts.embeddingApiUrl;
+    if (opts.fuzzyThreshold !== undefined) data.fuzzy_threshold = opts.fuzzyThreshold;
+    if (Object.keys(data).length === 0) return;
+    data.updated_at = Math.floor(Date.now() / 1000);
+    await db.ai_config.updateMany({ where: { api_key: apiKey }, data });
   }
 }

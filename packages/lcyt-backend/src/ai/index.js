@@ -22,11 +22,7 @@ export {
 } from 'lcyt-agent';
 
 /**
- * Run DB migrations for AI config tables.
- * @param {import('better-sqlite3').Database} db
+ * Kept for old callers: the AI tables come from the backend schema, so there is nothing to run.
  * @deprecated Use initAgent() from lcyt-agent instead.
  */
-export async function initAi(db) {
-  const { runAiMigrations } = await import('lcyt-agent');
-  runAiMigrations(db);
-}
+export async function initAi() {}

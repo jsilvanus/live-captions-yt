@@ -1,21 +1,18 @@
-import { test, describe, beforeEach, afterEach } from 'node:test';
+import { test, describe, beforeEach, afterEach, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 
-let Database;
-try {
-  Database = (await import('better-sqlite3')).default;
-} catch {
-  console.log('# better-sqlite3 not available — skipping resolution engine tests');
-  process.exit(0);
-}
 
-const { runMigrations, createConnector, createRequest, createMapping, getVariable } = await import('../src/db.js');
+const { createConnector, createRequest, createMapping, getVariable } = await import('../src/db.js');
 const { createResolutionEngine } = await import('../src/resolution-engine.js');
 const { VariablesBus } = await import('../src/variables-bus.js');
 
-function createDb() {
-  const db = new Database(':memory:');
-  runMigrations(db);
+const opened = [];
+after(async () => { for (const d of opened) await d.close(); });
+
+async function createDb() {
+  const db = await initDb(':memory:');
+  opened.push(db);
   return db;
 }
 
@@ -27,10 +24,10 @@ afterEach(() => {
 
 describe('resolution engine', () => {
   test('fireRequest maps a JSON response onto variables and emits SSE', async () => {
-    const db = createDb();
-    createConnector(db, 'key1', { id: 'c1', name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' });
-    createRequest(db, 'c1', { id: 'r1', name: 'Current', slug: 'current', method: 'GET', path: '/current', responseType: 'json' });
-    createMapping(db, 'r1', { id: 'm1', jsonPath: '$.temp', variableName: 'temp' });
+    const db = await createDb();
+    await createConnector(db, 'key1', { id: 'c1', name: 'Weather', slug: 'weather', baseUrl: 'https://example.com' });
+    await createRequest(db, 'c1', { id: 'r1', name: 'Current', slug: 'current', method: 'GET', path: '/current', responseType: 'json' });
+    await createMapping(db, 'r1', { id: 'm1', jsonPath: '$.temp', variableName: 'temp' });
 
     globalThis.fetch = async (url) => {
       assert.equal(String(url), 'https://example.com/current');
@@ -45,19 +42,19 @@ describe('resolution engine', () => {
     const result = await engine.fireRequest('key1', 'weather', 'current');
 
     assert.equal(result.ok, true);
-    assert.equal(getVariable(db, 'key1', 'temp').current_value, '21');
+    assert.equal((await getVariable(db, 'key1', 'temp')).current_value, '21');
     assert.equal(events.length, 1);
     assert.equal(events[0].data.name, 'temp');
   });
 
   test('fireRequest interpolates {{ }} into path from the current variable snapshot', async () => {
-    const db = createDb();
-    createConnector(db, 'key1', { id: 'c1', name: 'API', slug: 'api', baseUrl: 'https://example.com' });
-    createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/users/{{userId}}', responseType: 'text' });
-    createMapping(db, 'r1', { id: 'm1', jsonPath: '$', variableName: 'result' });
+    const db = await createDb();
+    await createConnector(db, 'key1', { id: 'c1', name: 'API', slug: 'api', baseUrl: 'https://example.com' });
+    await createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/users/{{userId}}', responseType: 'text' });
+    await createMapping(db, 'r1', { id: 'm1', jsonPath: '$', variableName: 'result' });
 
     const { upsertManualVariable } = await import('../src/db.js');
-    upsertManualVariable(db, 'key1', 'userId', { value: '42' });
+    await upsertManualVariable(db, 'key1', 'userId', { value: '42' });
 
     let requestedUrl;
     globalThis.fetch = async (url) => {
@@ -73,7 +70,7 @@ describe('resolution engine', () => {
   });
 
   test('fireRequest returns an error for an unknown connector', async () => {
-    const db = createDb();
+    const db = await createDb();
     const bus = new VariablesBus();
     const engine = createResolutionEngine({ db, bus });
     const result = await engine.fireRequest('key1', 'missing', 'missing');
@@ -82,9 +79,9 @@ describe('resolution engine', () => {
   });
 
   test('fireRequest surfaces a non-2xx HTTP status as an error without throwing', async () => {
-    const db = createDb();
-    createConnector(db, 'key1', { id: 'c1', name: 'API', slug: 'api', baseUrl: 'https://example.com' });
-    createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/x', responseType: 'json' });
+    const db = await createDb();
+    await createConnector(db, 'key1', { id: 'c1', name: 'API', slug: 'api', baseUrl: 'https://example.com' });
+    await createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/x', responseType: 'json' });
 
     globalThis.fetch = async () => new Response('{}', { status: 404, headers: { 'content-type': 'application/json' } });
 
@@ -96,12 +93,12 @@ describe('resolution engine', () => {
   });
 
   test('bearer auth adds an Authorization header', async () => {
-    const db = createDb();
-    createConnector(db, 'key1', {
+    const db = await createDb();
+    await createConnector(db, 'key1', {
       id: 'c1', name: 'API', slug: 'api', baseUrl: 'https://example.com',
       authType: 'bearer', authConfig: { token: 'sekret' },
     });
-    createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/x', responseType: 'text' });
+    await createRequest(db, 'c1', { id: 'r1', name: 'Get', slug: 'get', method: 'GET', path: '/x', responseType: 'text' });
 
     let seenHeaders;
     globalThis.fetch = async (_url, opts) => {
@@ -117,10 +114,10 @@ describe('resolution engine', () => {
   });
 
   test('image responses are stored through filesControl and the variable holds the reference', async () => {
-    const db = createDb();
-    createConnector(db, 'key1', { id: 'c1', name: 'Img', slug: 'img', baseUrl: 'https://example.com' });
-    createRequest(db, 'c1', { id: 'r1', name: 'Logo', slug: 'logo', method: 'GET', path: '/logo.png', responseType: 'image' });
-    createMapping(db, 'r1', { id: 'm1', jsonPath: '$', variableName: 'logo' });
+    const db = await createDb();
+    await createConnector(db, 'key1', { id: 'c1', name: 'Img', slug: 'img', baseUrl: 'https://example.com' });
+    await createRequest(db, 'c1', { id: 'r1', name: 'Logo', slug: 'logo', method: 'GET', path: '/logo.png', responseType: 'image' });
+    await createMapping(db, 'r1', { id: 'm1', jsonPath: '$', variableName: 'logo' });
 
     globalThis.fetch = async () => new Response(Buffer.from([1, 2, 3]), { status: 200, headers: { 'content-type': 'image/png' } });
 
@@ -137,6 +134,6 @@ describe('resolution engine', () => {
     assert.equal(result.ok, true);
     assert.deepEqual(stored[0].bytes, [1, 2, 3]);
     assert.equal(stored[0].type, 'image/png');
-    assert.equal(getVariable(db, 'key1', 'logo').current_value, 'https://files.example/logo.png');
+    assert.equal((await getVariable(db, 'key1', 'logo')).current_value, 'https://files.example/logo.png');
   });
 });

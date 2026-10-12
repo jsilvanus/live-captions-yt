@@ -387,14 +387,14 @@ export class CropManager {
    * "camera 1 back on program, now on preset 2" resolves correctly
    * regardless of whether the preset was recalled while off program.
    *
-   * @param {import('better-sqlite3').Database} db
+   * @param {object} db  Prisma client
    * @param {string} apiKey
    * @param {{ mixerId?: string|null, mixerInput?: number|null, cameraId?: string|null, cameraPreset?: string|null }} source
    * @returns {Promise<object|null>} the applyPosition() result, or null when
    *   follow_program is off, nothing is running, or no mapping resolved.
    */
   async applyForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
-    const config = getCropConfig(db, apiKey);
+    const config = await getCropConfig(db, apiKey);
     if (!config.followProgram) return null;
     if (!this.isRunning(apiKey)) return null;
 
@@ -411,7 +411,7 @@ export class CropManager {
       // Program-changed: this is the fresh fact — remember it and derive
       // which camera (if any) is now on program from it.
       state.mixerInput = mixerInput;
-      resolvedCameraId = resolveCameraIdForMixerInput(db, mixerInput);
+      resolvedCameraId = await resolveCameraIdForMixerInput(db, mixerInput);
       resolvedCameraPreset = resolvedCameraId != null
         ? (state.presetByCamera.get(resolvedCameraId) ?? null)
         : null;
@@ -419,14 +419,14 @@ export class CropManager {
       // Preset-recalled: remember it regardless of whether this camera is on
       // program right now — only re-apply live when it actually is.
       state.presetByCamera.set(cameraId, cameraPreset ?? null);
-      const currentCameraId = state.mixerInput != null ? resolveCameraIdForMixerInput(db, state.mixerInput) : null;
+      const currentCameraId = state.mixerInput != null ? await resolveCameraIdForMixerInput(db, state.mixerInput) : null;
       if (currentCameraId !== cameraId) return null;
       resolvedCameraPreset = cameraPreset ?? null;
     } else {
       return null;
     }
 
-    const preset = resolveCropPresetForSource(db, apiKey, {
+    const preset = await resolveCropPresetForSource(db, apiKey, {
       mixerId, mixerInput: state.mixerInput, cameraId: resolvedCameraId, cameraPreset: resolvedCameraPreset,
     });
     if (!preset) return null;

@@ -19,24 +19,23 @@ import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import express from 'express';
 
-import { runMigrations } from '../src/db.js';
 import { createMixersRouter } from '../src/routes/mixers.js';
 
 let server, baseUrl, db;
 
-function insertBridgeInstance(id = 'bridge-1') {
-  db.prepare(`
+async function insertBridgeInstance(id = 'bridge-1') {
+  await db.prepare(`
     INSERT OR IGNORE INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)
   `).run(id, 'Bridge 1', `tok-${id}`);
   return id;
 }
 
-function insertMixer(overrides = {}) {
+async function insertMixer(overrides = {}) {
   const id = overrides.id ?? randomUUID();
-  db.prepare(`
+  await db.prepare(`
     INSERT INTO prod_mixers (id, name, type, connection_config, bridge_instance_id, owner_api_key)
     VALUES (?, ?, ?, ?, ?, ?)
   `).run(
@@ -86,12 +85,11 @@ function startApp(registry, bridgeManager = null, opts = {}) {
   });
 }
 
-before(() => {
-  db = new Database(':memory:');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 
 afterEach(() => {
   if (server) { server.close(); server = null; }
@@ -99,14 +97,14 @@ afterEach(() => {
 
 describe('mixers router — auth wiring', () => {
   it('no opts.auth: routes stay fully open (historical behavior)', async () => {
-    const id = insertMixer();
+    const id = await insertMixer();
     await startApp(makeRegistryStub());
     const res = await fetch(`${baseUrl}/production/mixers/${id}`);
     assert.equal(res.status, 200);
   });
 
   it('opts.auth configured: GET /:id requires it', async () => {
-    const id = insertMixer();
+    const id = await insertMixer();
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const unauth = await fetch(`${baseUrl}/production/mixers/${id}`);
     assert.equal(unauth.status, 401);
@@ -115,7 +113,7 @@ describe('mixers router — auth wiring', () => {
   });
 
   it('opts.auth configured: /sources and /whip-url stay unauthenticated (LcytMixerPage kiosk)', async () => {
-    const id = insertMixer({ type: 'lcyt' });
+    const id = await insertMixer({ type: 'lcyt' });
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const sources = await fetch(`${baseUrl}/production/mixers/${id}/sources`);
     assert.notEqual(sources.status, 401);
@@ -127,7 +125,7 @@ describe('mixers router — auth wiring', () => {
     // LcytMixerPage.jsx plain-fetch()s this route with no Authorization
     // header, same as /sources and /whip-url — regression test for the
     // switch route having been accidentally left out of the carve-out.
-    const id = insertMixer({ type: 'lcyt' });
+    const id = await insertMixer({ type: 'lcyt' });
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
     assert.notEqual(res.status, 401);
@@ -138,7 +136,7 @@ describe('mixers router — auth wiring', () => {
     // Authorization: Bearer — once a credential IS present, this must go
     // through auth() and be subject to canAccessMixer() like any other
     // credentialed request, not silently bypass ownership.
-    const id = insertMixer({ type: 'lcyt', owner_api_key: 'proj-a' });
+    const id = await insertMixer({ type: 'lcyt', owner_api_key: 'proj-a' });
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
 
     const ownSources = await fetch(`${baseUrl}/production/mixers/${id}/sources`, { headers: { 'x-api-key': 'proj-a' } });
@@ -155,7 +153,7 @@ describe('mixers router — auth wiring', () => {
 
 describe('POST /:id/switch/:inputNumber — production-follow notification', () => {
   it('direct (lcyt, non-bridge) switch notifies with the acting session apiKey', async () => {
-    const id = insertMixer({ type: 'lcyt' });
+    const id = await insertMixer({ type: 'lcyt' });
     const registry = makeRegistryStub();
     await startApp(registry, null, { auth: fakeAuth, deps: permissiveDeps });
 
@@ -167,8 +165,8 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
   });
 
   it('bridge-relayed switch also notifies, without ever calling registry.switchSource()', async () => {
-    insertBridgeInstance('bridge-1');
-    const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
+    await insertBridgeInstance('bridge-1');
+    const id = await insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
     const registry = makeRegistryStub();
     let switchSourceCalled = false;
     registry.switchSource = async () => { switchSourceCalled = true; };
@@ -187,8 +185,8 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
   });
 
   it('maps a security-policy block to 403, not the generic 400', async () => {
-    insertBridgeInstance('bridge-1');
-    const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
+    await insertBridgeInstance('bridge-1');
+    const id = await insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
     const registry = makeRegistryStub();
     const bridgeManager = {
       isConnected: () => true,
@@ -204,8 +202,8 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
   });
 
   it('no notification when the bridge is not connected (switch fails)', async () => {
-    insertBridgeInstance('bridge-1');
-    const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
+    await insertBridgeInstance('bridge-1');
+    const id = await insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' }, bridge_instance_id: 'bridge-1' });
     const registry = makeRegistryStub();
     const bridgeManager = { isConnected: () => false, sendCommand: async () => {} };
     await startApp(registry, bridgeManager, { auth: fakeAuth, deps: permissiveDeps });
@@ -218,7 +216,7 @@ describe('POST /:id/switch/:inputNumber — production-follow notification', () 
   });
 
   it('apiKey is null when auth is not configured (historical open behavior)', async () => {
-    const id = insertMixer({ type: 'lcyt' });
+    const id = await insertMixer({ type: 'lcyt' });
     const registry = makeRegistryStub();
     await startApp(registry); // no auth opt
 
@@ -266,7 +264,7 @@ describe('Setup/Production tier gate', () => {
   });
 
   it('POST /:id/switch/:inputNumber (live control, credentialed) 403s when checkProjectRole rejects, requesting the production tier', async () => {
-    const id = insertMixer({ type: 'lcyt' });
+    const id = await insertMixer({ type: 'lcyt' });
     const seen = [];
     await startApp(makeRegistryStub(), null, {
       auth: fakeAuth,
@@ -280,7 +278,7 @@ describe('Setup/Production tier gate', () => {
   });
 
   it('POST /:id/test 403s when checkProjectRole rejects, requesting the production tier', async () => {
-    const id = insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' } });
+    const id = await insertMixer({ type: 'roland', connection_config: { host: '10.0.0.5' } });
     const seen = [];
     await startApp(makeRegistryStub(), null, {
       auth: fakeAuth,
@@ -307,7 +305,7 @@ describe('Setup/Production tier gate', () => {
 
 describe('mixer CRUD auth + ownership (cross-tenant, mirrors camera ownership)', () => {
   it('with no auth configured, an unowned mixer is fully visible/editable (legacy behavior preserved)', async () => {
-    const id = insertMixer();
+    const id = await insertMixer();
     await startApp(makeRegistryStub());
     const res = await fetch(`${baseUrl}/production/mixers/${id}`);
     assert.equal(res.status, 200);
@@ -315,7 +313,7 @@ describe('mixer CRUD auth + ownership (cross-tenant, mirrors camera ownership)',
 
   it('owner can read/update/delete their own mixer', async () => {
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertMixer({ owner_api_key: 'proj-a' });
+    const id = await insertMixer({ owner_api_key: 'proj-a' });
 
     const getRes = await fetch(`${baseUrl}/production/mixers/${id}`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(getRes.status, 200);
@@ -332,7 +330,7 @@ describe('mixer CRUD auth + ownership (cross-tenant, mirrors camera ownership)',
 
   it("a different project cannot read, update, delete, or switch another project's owned mixer (404, not leaked)", async () => {
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertMixer({ owner_api_key: 'proj-a', type: 'lcyt' });
+    const id = await insertMixer({ owner_api_key: 'proj-a', type: 'lcyt' });
 
     const getRes = await fetch(`${baseUrl}/production/mixers/${id}`, { headers: { 'x-api-key': 'proj-b' } });
     assert.equal(getRes.status, 404);
@@ -354,9 +352,9 @@ describe('mixer CRUD auth + ownership (cross-tenant, mirrors camera ownership)',
 
   it("GET / filters out other projects' owned mixers but keeps unowned (legacy) ones visible", async () => {
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const ownedId = insertMixer({ owner_api_key: 'proj-a', name: 'Owned by A' });
-    const otherOwnedId = insertMixer({ owner_api_key: 'proj-b', name: 'Owned by B' });
-    const legacyId = insertMixer({ owner_api_key: null, name: 'Legacy unowned' });
+    const ownedId = await insertMixer({ owner_api_key: 'proj-a', name: 'Owned by A' });
+    const otherOwnedId = await insertMixer({ owner_api_key: 'proj-b', name: 'Owned by B' });
+    const legacyId = await insertMixer({ owner_api_key: null, name: 'Legacy unowned' });
 
     const list = await (await fetch(`${baseUrl}/production/mixers`, { headers: { 'x-api-key': 'proj-a' } })).json();
     const ids = list.map((m) => m.id);
@@ -376,13 +374,13 @@ describe('mixer CRUD auth + ownership (cross-tenant, mirrors camera ownership)',
     assert.equal(body.isOwned, true);
     assert.equal(body.owner_api_key, undefined, 'owner_api_key must never be serialized back to the client');
 
-    const row = db.prepare('SELECT owner_api_key FROM prod_mixers WHERE id = ?').get(body.id);
+    const row = await db.prepare('SELECT owner_api_key FROM prod_mixers WHERE id = ?').get(body.id);
     assert.equal(row.owner_api_key, 'proj-a');
   });
 
   it('a credential-less kiosk switch request is unaffected by ownership (fails open, per isUnauthenticatedMixerRoute)', async () => {
     await startApp(makeRegistryStub(), null, { auth: fakeAuth, deps: permissiveDeps });
-    const id = insertMixer({ owner_api_key: 'proj-a', type: 'lcyt' });
+    const id = await insertMixer({ owner_api_key: 'proj-a', type: 'lcyt' });
 
     const res = await fetch(`${baseUrl}/production/mixers/${id}/switch/1`, { method: 'POST' });
     assert.notEqual(res.status, 401);

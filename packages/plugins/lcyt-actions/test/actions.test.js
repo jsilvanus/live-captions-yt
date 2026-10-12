@@ -1,17 +1,24 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import express from 'express';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { initActions, createActionsRouter, runActionsMigrations, listActionDefs } from '../src/api.js';
+
+// Tests seed and inspect rows with plain SQL (async db.prepare/exec on the Prisma client, test-only).
+process.env.LCYT_DB_SQL_COMPAT ??= '1';
+
+// One database for the whole file (a PostgreSQL schema per initDb is slow); each suite clears action_defs.
+let db;
+before(async () => { db = await initDb(':memory:'); });
+after(async () => { await db.close(); });
 
 // Fake session-auth middleware: reads the api key from a test header.
 const fakeAuth = (req, _res, next) => { req.session = { apiKey: req.headers['x-test-api-key'] }; next(); };
 
 describe('lcyt-actions — db', () => {
-  it('migrations create action_defs and CRUD helpers round-trip', () => {
-    const db = new Database(':memory:');
-    runActionsMigrations(db);
-    assert.deepEqual(listActionDefs(db, 'k'), []);
+  it('migrations are a no-op and CRUD helpers read the backend schema', async () => {
+    await runActionsMigrations(db);
+    assert.deepEqual(await listActionDefs(db, 'k'), []);
   });
 });
 
@@ -19,8 +26,8 @@ describe('lcyt-actions — routes', () => {
   let server, baseUrl;
 
   before(async () => {
-    const db = new Database(':memory:');
-    initActions(db);
+    await initActions(db);
+    await db.action_defs.deleteMany({});
     const app = express();
     app.use(express.json());
     app.use('/actions', createActionsRouter(db, fakeAuth));
@@ -82,8 +89,8 @@ describe('lcyt-actions — routes', () => {
 describe('lcyt-actions — POST /actions/run', () => {
   let server, baseUrl, role = true, runs;
   before(async () => {
-    const db = new Database(':memory:');
-    initActions(db);
+    await initActions(db);
+    await db.action_defs.deleteMany({});
     runs = [];
     const executor = {
       run: async (apiKey, target, opts) => {
@@ -135,8 +142,8 @@ describe('lcyt-actions — POST /actions/run', () => {
 describe('lcyt-actions — device authoring guard', () => {
   let server, baseUrl, allowed = false;
   before(async () => {
-    const db = new Database(':memory:');
-    initActions(db);
+    await initActions(db);
+    await db.action_defs.deleteMany({});
     const auth = (req, _res, next) => {
       req.session = { apiKey: 'key1' };
       if (req.headers['x-test-user']) req.user = { userId: 7 };
@@ -166,10 +173,10 @@ describe('lcyt-actions — device authoring guard', () => {
 });
 
 describe('lcyt-actions — device ids behind the scenes', () => {
-  let server, baseUrl, db;
+  let server, baseUrl;
   before(async () => {
-    db = new Database(':memory:');
-    initActions(db);
+    await initActions(db);
+    await db.action_defs.deleteMany({});
     // Stand-in executor: label `pulpit` <-> id `cam-1`.
     const executor = {
       isDeviceAtom: () => false,
@@ -186,7 +193,7 @@ describe('lcyt-actions — device ids behind the scenes', () => {
   it('stores ids, returns labels', async () => {
     const res = await fetch(`${baseUrl}/actions`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'Go', slug: 'go', definition: 'camera:pulpit.wide' }) });
     assert.equal((await res.json()).action.definition, 'camera:pulpit.wide');
-    assert.equal(db.prepare("SELECT definition FROM action_defs WHERE slug = 'go'").get().definition, 'camera:cam-1.wide');
+    assert.equal((await db.prepare("SELECT definition FROM action_defs WHERE slug = 'go'").get()).definition, 'camera:cam-1.wide');
     const got = await (await fetch(`${baseUrl}/actions/go`)).json();
     assert.equal(got.action.definition, 'camera:pulpit.wide');
     const list = await (await fetch(`${baseUrl}/actions`)).json();

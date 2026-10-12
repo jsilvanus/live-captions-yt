@@ -67,7 +67,7 @@ async function main() {
     remote.stores[area] = await createS3ObjectStore({ ...s3, prefix: prefixes[area] });
   }
 
-  const db = initDb(process.env.DB_PATH || './lcyt-backend.db');
+  const db = await initDb(process.env.DB_PATH || './lcyt-backend.db');
   const [from, to] = args.to === 's3' ? [local, remote] : [remote, local];
   console.log(`${args.dryRun ? '[dry run] ' : ''}Moving files to ${args.to}: ${args.areas.join(', ')}`);
   const result = await migrateFiles({
@@ -86,7 +86,7 @@ async function main() {
     failed += s.failed;
     console.log(`${area.padEnd(18)} copied ${s.copied}, already there ${s.skipped}, failed ${s.failed}, source deleted ${s.deleted}, ${s.bytes} bytes${s.rowsUpdated ? `, ${s.rowsUpdated} rows updated` : ''}`);
   }
-  db.close();
+  await db.close();
   process.exit(failed > 0 ? 2 : 0);
 }
 

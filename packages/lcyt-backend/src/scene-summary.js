@@ -14,26 +14,26 @@ function place(bbox) {
 }
 
 /**
- * @param {{ db: import('better-sqlite3').Database,
+ * @param {{ db: import('./db/connection.js').Db,
  *           sceneState: { getState: (apiKey: string) => object },
  *           attributor?: { getTag: (apiKey: string) => object },
  *           now?: () => number }} deps
- * @returns {(apiKey: string) => string|null}
+ * @returns {(apiKey: string) => Promise<string|null>}
  */
 export function createSceneSummary({ db, sceneState, attributor = null, now = () => Date.now() }) {
-  return function summarise(apiKey) {
+  return async function summarise(apiKey) {
     const cams = sceneState.getState(apiKey)?.cameras || {};
     const tag = attributor?.getTag?.(apiKey) ?? null;
     const lines = [];
     if (tag) {
-      const onAir = tag.cameraId ? db.prepare('SELECT name, label FROM prod_cameras WHERE id = ?').get(tag.cameraId) : null;
+      const onAir = tag.cameraId ? await db.prod_cameras.findUnique({ where: { id: tag.cameraId }, select: { name: true, label: true } }) : null;
       lines.push(onAir
         ? `On program: camera "${onAir.label || onAir.name}" (identified by ${tag.method}, confidence ${Math.round((tag.confidence ?? 0) * 100)}%).`
         : 'On program: unknown camera.');
     }
     for (const [cameraId, cam] of Object.entries(cams)) {
       if (now() - (cam.lastSeenAt ?? 0) > FRESH_MS) continue;
-      const row = db.prepare('SELECT name, label, zone FROM prod_cameras WHERE id = ?').get(cameraId);
+      const row = await db.prod_cameras.findUnique({ where: { id: cameraId }, select: { name: true, label: true, zone: true } });
       const name = row ? (row.label || row.name) : cameraId;
       const people = (cam.subjects || []).filter((s) => s.label === 'person' && s.bbox);
       let text = `- "${name}"${tag?.cameraId === cameraId ? ' (on program)' : ''}: `;

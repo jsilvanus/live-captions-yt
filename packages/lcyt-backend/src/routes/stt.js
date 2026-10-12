@@ -20,12 +20,12 @@
  *
  * @param {import('express').RequestHandler} auth  Session JWT Bearer middleware
  * @param {import('lcyt-rtmp').SttManager}   sttManager
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @returns {import('express').Router}
  */
 
 import { Router } from 'express';
-import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from 'lcyt-rtmp';
+import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from '../db/stt.js';
 import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 import { getMetricsInstance } from '../metrics/index.js';
 import { requireProjectRole } from '../middleware/project-access.js';
@@ -41,7 +41,7 @@ function sendEvent(res, eventName, data) {
 /**
  * @param {import('express').RequestHandler} auth
  * @param {import('../../plugins/lcyt-rtmp/src/stt-manager.js').SttManager} sttManager
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @param {string} jwtSecret — for verifying the SSE ?token= / Bearer session JWT
  */
 export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null) {
@@ -156,9 +156,9 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── GET /stt/config ────────────────────────────────────────────────────────
 
-  router.get('/config', auth, (req, res) => {
+  router.get('/config', auth, async (req, res) => {
     const { apiKey } = req.session;
-    const cfg = getSttConfig(db, apiKey);
+    const cfg = await getSttConfig(db, apiKey);
     res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
     if (!cfg) {
       return res.json({
@@ -180,7 +180,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
   // /events, and /config/source-language (a live fast-switch, not config)
   // deliberately stay ungated — those are Production-tier operate actions,
   // out of scope for this pass.
-  router.put('/config', auth, requireProjectRole(db, 'setup'), (req, res) => {
+  router.put('/config', auth, requireProjectRole(db, 'setup'), async (req, res) => {
     const { apiKey } = req.session;
     const { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = req.body || {};
 
@@ -198,7 +198,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     }
 
     try {
-      setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold });
+      await setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -207,16 +207,16 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── GET /stt/source-languages ──────────────────────────────────────────────
 
-  router.get('/source-languages', auth, (req, res) => {
+  router.get('/source-languages', auth, async (req, res) => {
     const { apiKey } = req.session;
-    const languages = getSttSourceLanguages(db, apiKey);
+    const languages = await getSttSourceLanguages(db, apiKey);
     res.set('Cache-Control', 'private, max-age=300, stale-while-revalidate=600');
     res.json({ languages });
   });
 
   // ── POST /stt/source-languages ─────────────────────────────────────────────
 
-  router.post('/source-languages', auth, requireProjectRole(db, 'setup'), (req, res) => {
+  router.post('/source-languages', auth, requireProjectRole(db, 'setup'), async (req, res) => {
     const { apiKey } = req.session;
     const { lang, label, sortOrder } = req.body || {};
 
@@ -224,7 +224,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
       return res.status(400).json({ error: 'lang is required' });
     }
 
-    const result = addSttSourceLanguage(db, apiKey, lang, { label, sortOrder });
+    const result = await addSttSourceLanguage(db, apiKey, lang, { label, sortOrder });
     if (!result.ok) {
       return res.status(400).json({ error: result.error });
     }
@@ -233,12 +233,12 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── PUT /stt/source-languages/:id ──────────────────────────────────────────
 
-  router.put('/source-languages/:id', auth, requireProjectRole(db, 'setup'), (req, res) => {
+  router.put('/source-languages/:id', auth, requireProjectRole(db, 'setup'), async (req, res) => {
     const { apiKey } = req.session;
     const { id } = req.params;
     const { label, sortOrder } = req.body || {};
 
-    const result = updateSttSourceLanguage(db, apiKey, parseInt(id, 10), { label, sortOrder });
+    const result = await updateSttSourceLanguage(db, apiKey, parseInt(id, 10), { label, sortOrder });
     if (!result.ok) {
       return res.status(result.status || 400).json({ error: result.error });
     }
@@ -247,11 +247,11 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── DELETE /stt/source-languages/:id ───────────────────────────────────────
 
-  router.delete('/source-languages/:id', auth, requireProjectRole(db, 'setup'), (req, res) => {
+  router.delete('/source-languages/:id', auth, requireProjectRole(db, 'setup'), async (req, res) => {
     const { apiKey } = req.session;
     const { id } = req.params;
 
-    const deleted = deleteSttSourceLanguage(db, apiKey, parseInt(id, 10));
+    const deleted = await deleteSttSourceLanguage(db, apiKey, parseInt(id, 10));
     if (!deleted) {
       return res.status(404).json({ error: 'Language not found' });
     }
@@ -271,7 +271,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     }
 
     // Validate that the language is in the project's predefined list
-    const predefined = getSttSourceLanguages(db, apiKey);
+    const predefined = await getSttSourceLanguages(db, apiKey);
     const isValid = predefined.some(l => l.lang === lang);
     if (predefined.length > 0 && !isValid) {
       return res.status(400).json({ error: `Language not in predefined list. Valid: ${predefined.map(l => l.lang).join(', ')}` });
@@ -279,7 +279,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
     // Update the config
     try {
-      setSttConfig(db, apiKey, { language: lang });
+      await setSttConfig(db, apiKey, { language: lang });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }

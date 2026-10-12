@@ -13,29 +13,26 @@
  *   - relayManager integration
  */
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { createDskCaptionProcessor } from '../src/caption-processor.js';
+
+// Tests seed and inspect rows with plain SQL (async db.prepare/exec on the Prisma client, test-only).
+process.env.LCYT_DB_SQL_COMPAT ??= '1';
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function makeDb() {
-  const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE caption_files (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      api_key TEXT,
-      shorthand TEXT,
-      filename TEXT,
-      mime_type TEXT,
-      settings_json TEXT,
-      type TEXT DEFAULT 'image'
-    )
-  `);
-  return db;
+let sharedDb;
+before(async () => { sharedDb = await initDb(':memory:'); });
+after(async () => { await sharedDb.close(); });
+
+/** Shared Prisma client with an empty caption_files table (one initDb per file keeps PostgreSQL runs fast). */
+async function makeDb() {
+  await sharedDb.caption_files.deleteMany({});
+  return sharedDb;
 }
 
 function makeStore(initialState = {}) {
@@ -68,7 +65,7 @@ const KEY = 'testkey';
 
 describe('caption-processor: no metacode', () => {
   it('returns text unchanged when no <!-- present', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     const out = await proc(KEY, 'Hello world');
@@ -77,7 +74,7 @@ describe('caption-processor: no metacode', () => {
   });
 
   it('returns text unchanged when <!-- present but no graphics keyword', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     const out = await proc(KEY, '<!-- comment -->Hello');
@@ -85,7 +82,7 @@ describe('caption-processor: no metacode', () => {
   });
 
   it('emits bindings event when codes are non-empty, even with no metacode', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, 'Hello', { section: 'intro' });
@@ -95,7 +92,7 @@ describe('caption-processor: no metacode', () => {
   });
 
   it('does not emit bindings event when codes is empty object', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, 'Hello', {});
@@ -103,7 +100,7 @@ describe('caption-processor: no metacode', () => {
   });
 
   it('does not emit bindings event when codes is omitted', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, 'Hello');
@@ -117,7 +114,7 @@ describe('caption-processor: no metacode', () => {
 
 describe('caption-processor: absolute default section', () => {
   it('sets default to listed names', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     const out = await proc(KEY, '<!-- graphics:logo,banner -->Hello');
@@ -128,7 +125,7 @@ describe('caption-processor: absolute default section', () => {
   });
 
   it('clears default when section is empty (<!-- graphics: -->)', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ default: ['logo'] });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics: -->');
@@ -137,7 +134,7 @@ describe('caption-processor: absolute default section', () => {
   });
 
   it('strips whitespace around names', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics: logo , banner -->');
@@ -146,7 +143,7 @@ describe('caption-processor: absolute default section', () => {
   });
 
   it('updates server-side state for subsequent delta operations', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:logo,banner -->');
@@ -165,7 +162,7 @@ describe('caption-processor: absolute default section', () => {
 
 describe('caption-processor: delta mode', () => {
   it('+name adds to existing default', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ default: ['logo'] });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:+banner -->');
@@ -175,7 +172,7 @@ describe('caption-processor: delta mode', () => {
   });
 
   it('-name removes from existing default', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ default: ['logo', 'banner'] });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:-banner -->');
@@ -185,7 +182,7 @@ describe('caption-processor: delta mode', () => {
   });
 
   it('+add and -remove work simultaneously', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ default: ['logo', 'banner'] });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:+extra,-banner -->');
@@ -196,7 +193,7 @@ describe('caption-processor: delta mode', () => {
   });
 
   it('unprefixed name in delta section treated as add', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ default: ['logo'] });
     const proc = makeProcessor(db, store);
     // Mix of unprefixed + prefixed — triggers delta mode
@@ -208,7 +205,7 @@ describe('caption-processor: delta mode', () => {
   });
 
   it('-name for non-existent item is a no-op (no error)', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ default: ['logo'] });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:-nonexistent -->');
@@ -223,7 +220,7 @@ describe('caption-processor: delta mode', () => {
 
 describe('caption-processor: viewport-specific sections', () => {
   it('targets a named viewport, default is null', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[vertical-left]:stanza -->');
@@ -233,7 +230,7 @@ describe('caption-processor: viewport-specific sections', () => {
   });
 
   it('targets multiple viewports with comma-separated list', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[v1,v2]:stanza -->');
@@ -243,7 +240,7 @@ describe('caption-processor: viewport-specific sections', () => {
   });
 
   it('clears a viewport with empty section', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ viewports: { 'vertical-right': ['logo'] } });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[vertical-right]: -->');
@@ -252,7 +249,7 @@ describe('caption-processor: viewport-specific sections', () => {
   });
 
   it('landscape alias resolves to landscape slot', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[landscape]:logo -->');
@@ -262,7 +259,7 @@ describe('caption-processor: viewport-specific sections', () => {
   });
 
   it('default alias resolves to landscape slot', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[default]:logo -->');
@@ -271,7 +268,7 @@ describe('caption-processor: viewport-specific sections', () => {
   });
 
   it('main alias resolves to landscape slot', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[main]:logo -->');
@@ -280,7 +277,7 @@ describe('caption-processor: viewport-specific sections', () => {
   });
 
   it('viewport delta: +name adds to existing viewport state', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore({ viewports: { 'vertical-left': ['stanza'] } });
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics[vertical-left]:+logo -->');
@@ -296,7 +293,7 @@ describe('caption-processor: viewport-specific sections', () => {
 
 describe('caption-processor: combined metacodes', () => {
   it('default section and viewport-specific section coexist', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:logo --><!-- graphics[vertical-left]:stanza -->Hello');
@@ -312,7 +309,7 @@ describe('caption-processor: combined metacodes', () => {
 
 describe('caption-processor: clean text', () => {
   it('strips default metacode and returns clean text', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     const out = await proc(KEY, '<!-- graphics:logo -->Hello world');
@@ -320,7 +317,7 @@ describe('caption-processor: clean text', () => {
   });
 
   it('strips viewport metacode and returns clean text', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     const out = await proc(KEY, '<!-- graphics[v1]:logo -->Hello');
@@ -328,7 +325,7 @@ describe('caption-processor: clean text', () => {
   });
 
   it('strips multiple metacodes', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     const out = await proc(KEY, '<!-- graphics:a -->Hi <!-- graphics[v1]:b -->there');
@@ -336,7 +333,7 @@ describe('caption-processor: clean text', () => {
   });
 
   it('emits text SSE event when cleanText is non-empty', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:logo -->Hello');
@@ -346,7 +343,7 @@ describe('caption-processor: clean text', () => {
   });
 
   it('does NOT emit text SSE event when cleanText is empty', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:logo -->');
@@ -360,9 +357,9 @@ describe('caption-processor: clean text', () => {
 
 describe('caption-processor: imageMeta', () => {
   it('populates imageMeta from caption_files settings_json', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const settings = { viewports: { landscape: { visible: true, x: 0.5 } } };
-    db.prepare(
+    await db.prepare(
       "INSERT INTO caption_files (api_key, shorthand, filename, mime_type, settings_json, type) VALUES (?, ?, ?, ?, ?, 'image')"
     ).run(KEY, 'logo', 'logo.png', 'image/png', JSON.stringify(settings));
 
@@ -375,7 +372,7 @@ describe('caption-processor: imageMeta', () => {
   });
 
   it('imageMeta is empty object for unknown names', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const proc = makeProcessor(db, store);
     await proc(KEY, '<!-- graphics:unknownname -->');
@@ -390,8 +387,8 @@ describe('caption-processor: imageMeta', () => {
 
 describe('caption-processor: relayManager', () => {
   it('calls relayManager.setDskOverlay when default section is non-null', async () => {
-    const db = makeDb();
-    db.prepare(
+    const db = await makeDb();
+    await db.prepare(
       "INSERT INTO caption_files (api_key, shorthand, filename, mime_type, settings_json, type) VALUES (?, ?, ?, ?, ?, 'image')"
     ).run(KEY, 'logo', 'logo.png', 'image/png', null);
 
@@ -412,8 +409,8 @@ describe('caption-processor: relayManager', () => {
   });
 
   it('excludes SVG images from relay overlay paths', async () => {
-    const db = makeDb();
-    db.prepare(
+    const db = await makeDb();
+    await db.prepare(
       "INSERT INTO caption_files (api_key, shorthand, filename, mime_type, settings_json, type) VALUES (?, ?, ?, ?, ?, 'image')"
     ).run(KEY, 'icon', 'icon.svg', 'image/svg+xml', null);
 
@@ -433,7 +430,7 @@ describe('caption-processor: relayManager', () => {
   });
 
   it('does not call relayManager when default section is null (viewport-only)', async () => {
-    const db = makeDb();
+    const db = await makeDb();
     const store = makeStore();
     const calls = [];
     const relayManager = {

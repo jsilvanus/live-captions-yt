@@ -50,14 +50,14 @@ export function adminMiddleware(req, res, next) {
  * @returns {import('express').RequestHandler}
  */
 export function createAdminMiddleware(db, jwtSecret) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     // --- Check user JWT Bearer token (user-based admin) ---
     const authHeader = req.headers.authorization;
     if (authHeader?.startsWith('Bearer ') && jwtSecret) {
       try {
         const payload = jwt.verify(authHeader.slice(7), jwtSecret);
         if (payload.type === 'user') {
-          const user = getUserById(db, payload.userId);
+          const user = await getUserById(db, payload.userId);
           if (user?.is_admin) {
             req.adminUser = { userId: user.id, email: user.email, adminRole: user.admin_role };
             return next();

@@ -36,8 +36,9 @@ import {
   hasFeature,
   registerCaptionFile,
   updateCaptionFileSize,
+  updateCaptionFileMeta,
 } from 'lcyt-backend/db';
-import { runFilesDbMigrations, getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
+import { getKeyStorageConfig, setKeyStorageConfig, deleteKeyStorageConfig } from '../db.js';
 import { shiftVttContent } from '../vtt.js';
 import logger from 'lcyt/logger';
 
@@ -169,7 +170,7 @@ const fileRateLimit = rateLimit({
  * PUT    /file/storage-config    — Set per-key S3 config (requires "custom-storage" feature)
  * DELETE /file/storage-config    — Remove per-key S3 config (revert to global default)
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth - Project-access Bearer middleware
  * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store - Only used by the token-based GET /:id download route (?token= direct links); every other route reads apiKey off req.session directly
  * @param {string} jwtSecret
@@ -188,9 +189,6 @@ const fileRateLimit = rateLimit({
  * @returns {Router}
  */
 export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, invalidateStorageCache = () => {}, routeOptions = null) {
-  // Ensure the key_storage_config table exists (idempotent — safe to call on every startup)
-  if (db) runFilesDbMigrations(db);
-
   // Defensive fallback: if no resolver provided, use an adapter-less stub that returns 503
   const _resolve = resolveStorage ?? (() => Promise.reject(new Error('Storage not configured')));
   const hasLegacyRequireSetup = typeof routeOptions === 'function';
@@ -204,8 +202,8 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
   // ── Storage config endpoints (must be registered before /:id to avoid route conflicts) ──
 
   // GET /file/storage-config — return current config (credentials masked)
-  router.get('/storage-config', auth, (req, res) => {
-    const config = getKeyStorageConfig(db, req.session.apiKey);
+  router.get('/storage-config', auth, async (req, res) => {
+    const config = await getKeyStorageConfig(db, req.session.apiKey);
     res.set('Cache-Control', 'private, max-age=300');
     if (!config) {
       return res.json({ storageMode: 'default', config: null });
@@ -229,14 +227,14 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
   });
 
   // PUT /file/storage-config — set per-key S3 config
-  router.put('/storage-config', auth, requireSetup, (req, res) => {
+  router.put('/storage-config', auth, requireSetup, async (req, res) => {
     const apiKey = req.session.apiKey;
     const { storage_type, bucket, region, endpoint, prefix, access_key_id, secret_access_key } = req.body || {};
     const storageType = (storage_type === 'webdav') ? 'webdav' : 's3';
 
     if (storageType === 'webdav') {
       // Require "files-webdav" project feature
-      if (!hasFeature(db, apiKey, 'files-webdav')) {
+      if (!(await hasFeature(db, apiKey, 'files-webdav'))) {
         return res.status(403).json({ error: 'WebDAV storage is not enabled for this key' });
       }
       if (!endpoint || typeof endpoint !== 'string' || !endpoint.trim()) {
@@ -244,7 +242,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
       }
     } else {
       // Require "files-custom-bucket" project feature
-      if (!hasFeature(db, apiKey, 'files-custom-bucket')) {
+      if (!(await hasFeature(db, apiKey, 'files-custom-bucket'))) {
         return res.status(403).json({ error: 'Custom storage bucket is not enabled for this key' });
       }
       if (!bucket || typeof bucket !== 'string' || !bucket.trim()) {
@@ -252,7 +250,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
       }
     }
 
-    setKeyStorageConfig(db, apiKey, {
+    await setKeyStorageConfig(db, apiKey, {
       storage_type:      storageType,
       bucket:            bucket ? bucket.trim() : '',
       region:            region            || 'auto',
@@ -269,9 +267,9 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
   });
 
   // DELETE /file/storage-config — remove per-key config (revert to global default)
-  router.delete('/storage-config', auth, requireSetup, (req, res) => {
+  router.delete('/storage-config', auth, requireSetup, async (req, res) => {
     const apiKey = req.session.apiKey;
-    deleteKeyStorageConfig(db, apiKey);
+    await deleteKeyStorageConfig(db, apiKey);
     invalidateStorageCache(apiKey);
 
     return res.json({ ok: true });
@@ -280,9 +278,9 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
   // ── Caption file endpoints ──────────────────────────────────────────────────
 
   // GET /file — List files
-  router.get('/', fileRateLimit, auth, (req, res) => {
+  router.get('/', fileRateLimit, auth, async (req, res) => {
     const typeFilter = typeof req.query.type === 'string' ? req.query.type.trim() : '';
-    const files = listCaptionFiles(db, req.session.apiKey)
+    const files = (await listCaptionFiles(db, req.session.apiKey))
       .filter(row => !typeFilter || row.type === typeFilter)
       .map(row => ({
         id: row.id,
@@ -373,7 +371,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     try {
       await writeFileContent(storage, apiKey, storageKey, buffer, contentType);
 
-      const id = registerCaptionFile(db, {
+      const id = await registerCaptionFile(db, {
         apiKey,
         // req.auth.sessionId is set by the project-access middleware for a
         // live-session-authenticated request (legacy plain session JWT); a
@@ -391,7 +389,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
         format,
         type,
       });
-      updateCaptionFileSize(db, id, buffer.byteLength);
+      await updateCaptionFileSize(db, id, buffer.byteLength);
       return res.status(201).json({
         ok: true,
         file: {
@@ -415,7 +413,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Invalid file id' });
 
-    const row = getCaptionFile(db, id, apiKey);
+    const row = await getCaptionFile(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'File not found' });
 
     const { filename, content, format = row.format || 'md', type = row.type || 'captions', lang } = req.body || {};
@@ -438,10 +436,8 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
         await storage.deleteFile(apiKey, row.filename).catch(() => {});
       }
 
-      db.prepare(
-        'UPDATE caption_files SET filename = ?, lang = ?, format = ?, type = ?, updated_at = datetime(\'now\') WHERE id = ? AND api_key = ?'
-      ).run(storageKey, lang ?? row.lang ?? null, format, type, id, apiKey);
-      updateCaptionFileSize(db, id, buffer.byteLength);
+      await updateCaptionFileMeta(db, id, apiKey, { filename: storageKey, lang: lang ?? row.lang ?? null, format, type });
+      await updateCaptionFileSize(db, id, buffer.byteLength);
       return res.json({
         ok: true,
         file: {
@@ -478,7 +474,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Invalid file id' });
 
-    const row = getCaptionFile(db, id, apiKey);
+    const row = await getCaptionFile(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'File not found' });
 
     // Optional cue-time shift for VTT files (?offsetMs=±N) — lets the user
@@ -526,11 +522,11 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Invalid file id' });
 
-    const row = getCaptionFile(db, id, apiKey);
+    const row = await getCaptionFile(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'File not found' });
 
     // Delete database row first (authoritative; best-effort storage deletion follows)
-    const deleted = deleteCaptionFile(db, id, apiKey);
+    const deleted = await deleteCaptionFile(db, id, apiKey);
     if (!deleted) return res.status(404).json({ error: 'File not found' });
 
     // Best-effort deletion from storage backend (uses per-key adapter if configured)

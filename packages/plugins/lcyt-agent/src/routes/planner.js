@@ -27,7 +27,7 @@ import { getProvider } from '../provider-registry.js';
 import { resolveRoleProviderSettings } from '../agentic-turn.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth — session JWT middleware
  * @param {import('../agent-engine.js').AgentEngine} agent
  * @returns {import('express').Router}
@@ -43,10 +43,10 @@ export function createPlannerRouter(db, auth, agent, bridgeManager = null) {
     const { currentPlan, goal, templateId } = req.body || {};
     if (typeof goal !== 'string' || !goal.trim()) return res.status(400).json({ error: 'goal is required' });
 
-    const config = getRoleConfig(db, apiKey, 'planner');
+    const config = await getRoleConfig(db, apiKey, 'planner');
     if (!config.enabled) return res.status(503).json({ error: 'Role is not enabled for this project' });
 
-    const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
+    const providerRow = config.providerId ? await getProvider(db, config.providerId) : null;
     const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
     if (!apiSettings) return res.status(503).json({ error: 'AI provider not configured or unsupported' });
 

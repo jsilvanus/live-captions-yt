@@ -17,9 +17,9 @@ const KEY = 'bcast-route-key';
 
 let server, baseUrl, db, token;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  db.prepare("INSERT INTO api_keys (key, owner, active) VALUES (?, 'Owner', 1)").run(KEY);
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
+  await db.prepare("INSERT INTO api_keys (key, owner, active) VALUES (?, 'Owner', 1)").run(KEY);
 
   const auth = createAuthMiddleware(JWT_SECRET);
   const app = express();
@@ -40,9 +40,9 @@ after(() => new Promise((resolve) => {
   server.close(resolve);
 }));
 
-beforeEach(() => {
-  db.prepare('UPDATE api_keys SET active_broadcast_id = NULL WHERE key = ?').run(KEY);
-  db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(KEY);
+beforeEach(async () => {
+  await db.prepare('UPDATE api_keys SET active_broadcast_id = NULL WHERE key = ?').run(KEY);
+  await db.prepare('DELETE FROM broadcasts WHERE api_key = ?').run(KEY);
 });
 
 async function api(path, opts = {}) {

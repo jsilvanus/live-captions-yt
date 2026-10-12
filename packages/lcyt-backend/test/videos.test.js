@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import express from 'express';
-import { initDb } from '../src/db/schema.js';
+import { initDb } from '../src/db.js';
 import { createVideosRouter, rewritePlaylistReferences } from '../src/routes/videos.js';
 import { startVideoRecording, getVideo, getVideoStorageDir, syncVideoRecordingToStorage } from '../src/db/videos.js';
 import { startMockS3Server } from '../../plugins/lcyt-files/test/helpers/mock-s3-server.js';
@@ -29,11 +29,11 @@ describe('videos router', () => {
     return new Promise((resolve) => target.close(() => resolve()));
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     tempDir = mkdtempSync(join(tmpdir(), 'lcyt-videos-'));
     process.env.VIDEOS_STORAGE_DIR = join(tempDir, 'recordings');
-    db = initDb(join(tempDir, 'backend.db'));
-    db.prepare('INSERT INTO api_keys (key, owner) VALUES (?, ?)').run('demo-key', 'demo');
+    db = await initDb(':memory:');
+    await db.prepare('INSERT INTO api_keys (key, owner) VALUES (?, ?)').run('demo-key', 'demo');
     const app = express();
     app.use(express.json());
     app.use('/videos', createVideosRouter(auth, db));
@@ -46,8 +46,8 @@ describe('videos router', () => {
   });
 
   afterEach(() => {
-    return closeHttpServer(server).finally(() => {
-      try { db?.close?.(); } catch {}
+    return closeHttpServer(server).finally(async () => {
+      try { await db?.close?.(); } catch {}
       rmSync(tempDir, { recursive: true, force: true });
       delete process.env.VIDEOS_STORAGE_DIR;
     });
@@ -106,7 +106,7 @@ describe('videos router', () => {
 
     try {
       await recordingsStore.put('demo-prefix/playlist.m3u8', '#EXTM3U\n#EXTINF:1.0,placeholder\nsegment0.ts\n', { contentType: 'application/vnd.apple.mpegurl' });
-      const result = db.prepare(`
+      const result = await db.prepare(`
         INSERT INTO videos (id, api_key, title, status, storage_type, storage_key, started_at)
         VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run('s3-video', 'demo-key', 'S3 recording', 'recording', 's3', 'demo-prefix', new Date().toISOString());
@@ -148,7 +148,7 @@ describe('videos router', () => {
       });
       await recordingsStore.put('demo-prefix/playlist.m3u8', '#EXTM3U\n#EXTINF:1.0,x\nsegment0.ts\n');
       await recordingsStore.put('demo-prefix/segment0.ts', 'segment-bytes');
-      db.prepare('INSERT INTO videos (id, api_key, title, status, storage_type, storage_key, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+      await db.prepare('INSERT INTO videos (id, api_key, title, status, storage_type, storage_key, started_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
         .run('s3-video', 'demo-key', 'S3 recording', 'completed', 's3', 'demo-prefix', new Date().toISOString());
     });
 
@@ -200,7 +200,7 @@ describe('videos router', () => {
     process.env.S3_SECRET_ACCESS_KEY = 'test';
     let recordingsStore = null;
     try {
-      const result = startVideoRecording(db, 'demo-key', { title: 'S3 sync', storageType: 's3' });
+      const result = await startVideoRecording(db, 'demo-key', { title: 'S3 sync', storageType: 's3' });
       assert.ok(result.ok);
       const videoId = result.video.id;
 
@@ -217,12 +217,12 @@ describe('videos router', () => {
 
       await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore, settleMs: 0 });
 
-      const storageKey = getVideo(db, 'demo-key', videoId).storageKey;
+      const storageKey = (await getVideo(db, 'demo-key', videoId)).storageKey;
       assert.ok(mockS3.objects.has(`demo-bucket/recordings/${storageKey}/playlist.m3u8`));
       assert.ok(mockS3.objects.has(`demo-bucket/recordings/${storageKey}/segment0.ts`));
       assert.equal(mockS3.objects.get(`demo-bucket/recordings/${storageKey}/segment1.ts`)?.toString(), 'segment-bytes');
 
-      const updated = getVideo(db, 'demo-key', videoId);
+      const updated = await getVideo(db, 'demo-key', videoId);
       assert.equal(updated.storageType, 's3');
       assert.ok(updated.sizeBytes > 0);
     } finally {
@@ -237,7 +237,7 @@ describe('videos router', () => {
 
   it('syncVideoRecordingToStorage falls back to local storage when the upload fails', async () => {
     try {
-      const result = startVideoRecording(db, 'demo-key', { title: 'S3 sync failure', storageType: 's3' });
+      const result = await startVideoRecording(db, 'demo-key', { title: 'S3 sync failure', storageType: 's3' });
       assert.ok(result.ok);
       const videoId = result.video.id;
 
@@ -248,7 +248,7 @@ describe('videos router', () => {
 
       await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore: brokenStore, settleMs: 0 });
 
-      const updated = getVideo(db, 'demo-key', videoId);
+      const updated = await getVideo(db, 'demo-key', videoId);
       assert.equal(updated.storageType, 'local');
     } finally {
       // no-op
@@ -256,7 +256,7 @@ describe('videos router', () => {
   });
 
   it('syncVideoRecordingToStorage removes a half-uploaded copy when the upload fails', async () => {
-    const result = startVideoRecording(db, 'demo-key', { title: 'S3 partial', storageType: 's3' });
+    const result = await startVideoRecording(db, 'demo-key', { title: 'S3 partial', storageType: 's3' });
     const videoId = result.video.id;
     const removed = [];
     let calls = 0;
@@ -269,18 +269,18 @@ describe('videos router', () => {
       deletePrefix: async (prefix) => { removed.push(prefix); },
     };
     await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore: flakyStore, settleMs: 0, maxConcurrency: 1 });
-    assert.equal(getVideo(db, 'demo-key', videoId).storageType, 'local');
-    assert.deepEqual(removed, [getVideo(db, 'demo-key', videoId).storageKey]);
+    assert.equal((await getVideo(db, 'demo-key', videoId)).storageType, 'local');
+    assert.deepEqual(removed, [(await getVideo(db, 'demo-key', videoId)).storageKey]);
   });
 
   it('syncVideoRecordingToStorage is a no-op for local-storage recordings', async () => {
-    const result = startVideoRecording(db, 'demo-key', { title: 'Local only', storageType: 'local' });
+    const result = await startVideoRecording(db, 'demo-key', { title: 'Local only', storageType: 'local' });
     assert.ok(result.ok);
     const videoId = result.video.id;
 
     await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore: null });
 
-    const updated = getVideo(db, 'demo-key', videoId);
+    const updated = await getVideo(db, 'demo-key', videoId);
     assert.equal(updated.storageType, 'local');
     assert.equal(updated.sizeBytes, 0);
   });

@@ -94,7 +94,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
 
   // Use the lightweight test server helper (avoids importing full backend plugins)
   const { createTestServer } = await import('../test-server.js');
-  const { app, db, bridgeManager: productionBridgeManager } = createTestServer();
+  const { app, db, bridgeManager: productionBridgeManager } = await createTestServer();
 
   // Start test backend on ephemeral port
   const srv = app.listen(0);
@@ -164,7 +164,7 @@ test('bridge → tcp-echo integration', { timeout: TEST_TIMEOUT_MS }, async (t) 
   assert.ok(cmdJson.ok === true, `expected ok=true, got ${JSON.stringify(cmdJson)}`);
 
   // Also verify DB last_seen updated for the instance row
-  const row = db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(instanceId);
+  const row = await db.prepare('SELECT * FROM prod_bridge_instances WHERE id = ?').get(instanceId);
   assert.ok(row, 'instance row exists in DB');
   assert.ok(row.last_seen, 'last_seen was updated');
 

@@ -23,7 +23,6 @@ import { createViewerRouter, broadcastToViewers } from '../src/routes/viewer.js'
 import { createCaptionsRouter } from '../src/routes/captions.js';
 import { createAuthMiddleware } from '../src/middleware/auth.js';
 import { createLiveRouter } from '../src/routes/live.js';
-import { runMigrations as runRtmpMigrations } from 'lcyt-rtmp/src/db.js';
 
 const JWT_SECRET = 'test-viewer-secret';
 
@@ -39,10 +38,9 @@ const SSE_CONNECTION_DELAY_MS = 80;
 
 let server, baseUrl, store, db;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  runRtmpMigrations(db); // POST /live checks rtmp_relays for the recordOnStart flag
-  createKey(db, { key: 'test-key', owner: 'Test User' });
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
+  await createKey(db, { key: 'test-key', owner: 'Test User' });
 
   store = new SessionStore({ cleanupInterval: 0 });
   const auth = createAuthMiddleware(JWT_SECRET);
@@ -374,7 +372,7 @@ describe('POST /live — viewer target validation', () => {
   }
 
   it('accepts a valid viewer target', async () => {
-    const { key } = createKey(db, { owner: 'Viewer Target Test' });
+    const { key } = await createKey(db, { owner: 'Viewer Target Test' });
     const res = await postLive({
       apiKey: key,
       domain: 'https://viewer-test.com',
@@ -386,7 +384,7 @@ describe('POST /live — viewer target validation', () => {
   });
 
   it('returns 400 when viewerKey is missing', async () => {
-    const { key } = createKey(db, { owner: 'Viewer Key Missing' });
+    const { key } = await createKey(db, { owner: 'Viewer Key Missing' });
     const res = await postLive({
       apiKey: key,
       domain: 'https://viewer-test.com',
@@ -398,7 +396,7 @@ describe('POST /live — viewer target validation', () => {
   });
 
   it('returns 400 when viewerKey is too short', async () => {
-    const { key } = createKey(db, { owner: 'Viewer Key Short' });
+    const { key } = await createKey(db, { owner: 'Viewer Key Short' });
     const res = await postLive({
       apiKey: key,
       domain: 'https://viewer-test.com',
@@ -410,7 +408,7 @@ describe('POST /live — viewer target validation', () => {
   });
 
   it('returns 400 when viewerKey contains invalid characters', async () => {
-    const { key } = createKey(db, { owner: 'Viewer Key Invalid' });
+    const { key } = await createKey(db, { owner: 'Viewer Key Invalid' });
     const res = await postLive({
       apiKey: key,
       domain: 'https://viewer-test.com',

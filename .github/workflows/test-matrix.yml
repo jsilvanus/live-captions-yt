@@ -18,15 +18,12 @@ jobs:
   test-matrix:
     name: Test Matrix (${{ matrix.database }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
       matrix:
-        # FIXME: PostgreSQL tests temporarily disabled until all test code is refactored to support both SQLite and PostgreSQL
-        # Currently: tests are SQLite-hardcoded (use initDb(':memory:'), raw ? placeholders, PRAGMA, datetime() functions)
-        # TODO: Migrate test suite to use DbClient abstraction + parameterized queries compatible with both databases
-        database: [sqlite]  # [sqlite, postgres]
+        database: [sqlite, postgres]
         node-version: [20.x]
 
     services:
@@ -63,7 +60,6 @@ jobs:
       - name: Configure SQLite database
         if: matrix.database == 'sqlite'
         run: |
-          echo "DATABASE_URL=file:./test.db" >> $GITHUB_ENV
           echo "TEST_DATABASE=sqlite" >> $GITHUB_ENV
 
       - name: Configure PostgreSQL database
@@ -81,13 +77,13 @@ jobs:
           done
         timeout-minutes: 5
 
-      - name: Generate Prisma client
-        working-directory: packages/lcyt-backend
-        run: npx prisma generate
+      - name: Generate Prisma clients
+        run: npm run db:generate -w packages/lcyt-backend
 
       - name: Run tests (${{ matrix.database }})
         working-directory: packages/lcyt-backend
         run: npm test
+        timeout-minutes: 10
         env:
           NODE_ENV: test
           DATABASE_URL: ${{ env.DATABASE_URL }}
@@ -177,12 +173,18 @@ jobs:
         run: npm ci
 
       - name: Set DATABASE_URL for validation
-        run: echo "DATABASE_URL=file:./test.db" >> $GITHUB_ENV
+        run: echo "DATABASE_URL=file:./validate.db" >> $GITHUB_ENV
 
-      - name: Validate Prisma schema
+      - name: PostgreSQL schema is derived from schema.prisma
         working-directory: packages/lcyt-backend
-        run: npx prisma validate
+        run: node scripts/prisma-pg.mjs --check
+
+      - name: Validate Prisma schemas
+        working-directory: packages/lcyt-backend
+        run: |
+          npx prisma validate --schema prisma/schema.prisma
+          DATABASE_URL=postgresql://u:p@localhost:5432/x npx prisma validate --schema prisma/schema.postgresql.prisma
 
       - name: Format check (Prisma)
         working-directory: packages/lcyt-backend
-        run: npx prisma format --check
+        run: npx prisma format --check --schema prisma/schema.prisma

@@ -1,5 +1,6 @@
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
 import { buildVideoStorageKey } from '../db/videos.js';
+import { sqlNow } from '../db/helpers.js';
 
 /**
  * Move stored files between the local filesystem and S3 (either direction).
@@ -75,12 +76,16 @@ async function migrateStoreArea(area, from, to, opts, stats) {
 }
 
 /** DSK thumbnail rows written before the object store hold absolute paths; store mode wants the key. */
-function fixThumbnailRows(db, baseDir, stats, { dryRun, log }) {
+async function fixThumbnailRows(db, baseDir, stats, { dryRun, log }) {
   if (!baseDir) return;
   const root = resolve(baseDir);
-  // The table belongs to the DSK plugin and exists once the backend has started once.
-  if (!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'dsk_thumbnails'").get()) return;
-  const rows = db.prepare('SELECT id, storage_path FROM dsk_thumbnails').all();
+  // On SQLite the table belongs to the DSK plugin and exists once the backend has started once.
+  let rows;
+  try {
+    rows = await db.dsk_thumbnails.findMany({ select: { id: true, storage_path: true } });
+  } catch {
+    return;
+  }
   for (const row of rows) {
     if (!row.storage_path || !isAbsolute(row.storage_path)) continue;
     const rel = relative(root, resolve(row.storage_path));
@@ -88,7 +93,7 @@ function fixThumbnailRows(db, baseDir, stats, { dryRun, log }) {
       log(`thumbnail ${row.id}: ${row.storage_path} is outside ${root}, left as is`);
       continue;
     }
-    if (!dryRun) db.prepare('UPDATE dsk_thumbnails SET storage_path = ? WHERE id = ?').run(rel.split(sep).join('/'), row.id);
+    if (!dryRun) await db.dsk_thumbnails.updateMany({ where: { id: row.id }, data: { storage_path: rel.split(sep).join('/') } });
     stats.rowsUpdated = (stats.rowsUpdated || 0) + 1;
   }
 }
@@ -98,7 +103,7 @@ async function migrateRecordings(db, direction, from, to, opts, stats) {
   const dst = to.stores.recordings;
   if (!src || !dst) return;
   const wantType = direction === 's3' ? 'local' : 's3';
-  const videos = db.prepare('SELECT id, api_key, storage_key FROM videos WHERE storage_type = ?').all(wantType);
+  const videos = await db.videos.findMany({ where: { storage_type: wantType }, select: { id: true, api_key: true, storage_key: true } });
   for (const video of videos) {
     const prefix = buildVideoStorageKey(video.api_key, video.id, video.storage_key);
     const keys = await listAll(src, `${prefix}/`);
@@ -111,8 +116,10 @@ async function migrateRecordings(db, direction, from, to, opts, stats) {
     for (const key of keys) ok = (await copyObject(src, dst, key, stats, { ...opts, deleteSource: false })) && ok;
     if (!ok) continue; // never switch a row whose files are not all verified
     if (!opts.dryRun) {
-      db.prepare("UPDATE videos SET storage_type = ?, storage_key = ?, updated_at = datetime('now') WHERE id = ?")
-        .run(direction === 's3' ? 's3' : 'local', direction === 's3' ? prefix : null, video.id);
+      await db.videos.updateMany({
+        where: { id: video.id },
+        data: { storage_type: direction === 's3' ? 's3' : 'local', storage_key: direction === 's3' ? prefix : null, updated_at: sqlNow() },
+      });
     }
     stats.rowsUpdated = (stats.rowsUpdated || 0) + 1;
     if (opts.deleteSource && !opts.dryRun) {
@@ -131,7 +138,7 @@ async function migrateCaptions(db, direction, from, to, opts, stats) {
   const src = from.captions;
   const dst = to.captions;
   if (!src || !dst) return;
-  const rows = db.prepare('SELECT id, api_key, filename, format FROM caption_files').all();
+  const rows = await db.caption_files.findMany({ select: { id: true, api_key: true, filename: true, format: true } });
   for (const row of rows) {
     // Local adapter stores absolute paths, the S3 adapter object keys.
     const isLocalRow = isAbsolute(row.filename);
@@ -146,7 +153,7 @@ async function migrateCaptions(db, direction, from, to, opts, stats) {
       if (existing === 0) await handle.write(body);
       await handle.close();
       if (handle.sizeBytes() !== body.length) throw new Error(`size mismatch (${body.length} vs ${handle.sizeBytes()})`);
-      db.prepare("UPDATE caption_files SET filename = ?, updated_at = datetime('now') WHERE id = ?").run(handle.storedKey, row.id);
+      await db.caption_files.updateMany({ where: { id: row.id }, data: { filename: handle.storedKey, updated_at: sqlNow() } });
       stats.copied++;
       stats.bytes += body.length;
       if (opts.deleteSource) {
@@ -178,7 +185,7 @@ export async function migrateFiles({
     else if (area === 'captions') await migrateCaptions(db, direction, from, to, opts, stats);
     else {
       await migrateStoreArea(area, from, to, opts, stats);
-      if (area === 'dskThumbnails') fixThumbnailRows(db, thumbnailsBaseDir, stats, opts);
+      if (area === 'dskThumbnails') await fixThumbnailRows(db, thumbnailsBaseDir, stats, opts);
     }
   }
   return result;

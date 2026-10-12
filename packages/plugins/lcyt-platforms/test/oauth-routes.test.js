@@ -1,17 +1,17 @@
 import { test, describe, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { initDb } from 'lcyt-backend/db';
 import { randomBytes } from 'node:crypto';
 
-let Database, express;
+let express;
 try {
-  Database = (await import('better-sqlite3')).default;
   express = (await import('express')).default;
 } catch {
-  console.log('# better-sqlite3/express not available — skipping lcyt-platforms OAuth route tests');
+  console.log('# express not available — skipping lcyt-platforms OAuth route tests');
   process.exit(0);
 }
 
-const { runMigrations, listCredentials, upsertCredential, getCredentialById } = await import('../src/db.js');
+const { listCredentials, upsertCredential, getCredentialById } = await import('../src/db.js');
 const { encryptSecret } = await import('../src/crypto.js');
 const { createOAuthRouter } = await import('../src/routes/oauth.js');
 const { createState } = await import('../src/oauth-state.js');
@@ -43,11 +43,8 @@ describe('lcyt-platforms OAuth routes', () => {
 
   before(async () => {
     process.env.PLATFORM_CREDENTIAL_KEY = KEY_B64;
-    db = new Database(':memory:');
-    db.exec('CREATE TABLE api_keys (key TEXT PRIMARY KEY)');
-    db.exec('CREATE TABLE broadcasts (id TEXT PRIMARY KEY)');
-    runMigrations(db);
-    for (const k of ['key1', 'key2']) db.prepare('INSERT INTO api_keys (key) VALUES (?)').run(k);
+    db = await initDb(':memory:');
+    for (const k of ['key1', 'key2']) await db.api_keys.create({ data: { key: k, owner: 'test' } });
 
     adapterRef = { current: makeAdapter() };
 
@@ -76,14 +73,15 @@ describe('lcyt-platforms OAuth routes', () => {
     baseUrl = `http://127.0.0.1:${server.address().port}`;
   });
 
-  after(() => {
+  after(async () => {
     delete process.env.PLATFORM_CREDENTIAL_KEY;
-    return new Promise((r) => server.close(r));
+    await new Promise((r) => server.close(r));
+    await db.close();
   });
 
-  beforeEach(() => {
+  beforeEach(async () => {
     adapterRef.current = makeAdapter();
-    db.exec('DELETE FROM platform_credentials');
+    await db.platform_credentials.deleteMany({});
   });
 
   async function call(path, opts = {}) {
@@ -98,8 +96,8 @@ describe('lcyt-platforms OAuth routes', () => {
     return { status: res.status, body, location: res.headers.get('location') };
   }
 
-  function seedCredential(apiKey = 'key1', overrides = {}) {
-    return upsertCredential(db, apiKey, {
+  async function seedCredential(apiKey = 'key1', overrides = {}) {
+    return await upsertCredential(db, apiKey, {
       platform: 'youtube',
       externalAccountId: 'UC-seed',
       accountLabel: 'Seeded',
@@ -114,7 +112,7 @@ describe('lcyt-platforms OAuth routes', () => {
   // ── GET /platforms ──────────────────────────────────────────────────────
   describe('GET /platforms', () => {
     test('lists connected accounts and never leaks ciphertext', async () => {
-      seedCredential();
+      await seedCredential();
       const { status, body } = await call('/platforms');
       assert.equal(status, 200);
       assert.equal(body.credentials.length, 1);
@@ -125,14 +123,14 @@ describe('lcyt-platforms OAuth routes', () => {
     });
 
     test('reports several accounts on one platform', async () => {
-      seedCredential('key1', { externalAccountId: 'UC-a', accountLabel: 'A' });
-      seedCredential('key1', { externalAccountId: 'UC-b', accountLabel: 'B' });
+      await seedCredential('key1', { externalAccountId: 'UC-a', accountLabel: 'A' });
+      await seedCredential('key1', { externalAccountId: 'UC-b', accountLabel: 'B' });
       const { body } = await call('/platforms');
       assert.deepEqual(body.credentials.map(c => c.accountLabel).sort(), ['A', 'B']);
     });
 
     test('is scoped to the calling project', async () => {
-      seedCredential('key2');
+      await seedCredential('key2');
       const { body } = await call('/platforms');
       assert.equal(body.credentials.length, 0);
     });
@@ -182,7 +180,7 @@ describe('lcyt-platforms OAuth routes', () => {
       assert.equal(status, 302);
       assert.match(location, /ok=1/);
 
-      const rows = listCredentials(db, 'key1');
+      const rows = await listCredentials(db, 'key1');
       assert.equal(rows.length, 1);
       assert.equal(rows[0].external_account_id, 'UC-a');
       // The whole point of the plan's encryption-at-rest section.
@@ -194,22 +192,22 @@ describe('lcyt-platforms OAuth routes', () => {
       // The callback is unauthenticated; state is the only binding.
       const state = createState({ apiKey: 'key2', platform: 'youtube' }, JWT_SECRET);
       await call(cb({ code: 'c', state }), { headers: { 'x-test-api-key': 'key1' } });
-      assert.equal(listCredentials(db, 'key2').length, 1);
-      assert.equal(listCredentials(db, 'key1').length, 0);
+      assert.equal((await listCredentials(db, 'key2')).length, 1);
+      assert.equal((await listCredentials(db, 'key1')).length, 0);
     });
 
     test('rejects a forged state without storing anything', async () => {
       const { status, location } = await call(cb({ code: 'c', state: 'forged.signature' }));
       assert.equal(status, 302);
       assert.match(location, /ok=0.*bad_state/);
-      assert.equal(listCredentials(db, 'key1').length, 0);
+      assert.equal((await listCredentials(db, 'key1')).length, 0);
     });
 
     test('rejects an expired state', async () => {
       const state = createState({ apiKey: 'key1', platform: 'youtube' }, JWT_SECRET, { now: Date.now() - 3_600_000 });
       const { location } = await call(cb({ code: 'c', state }));
       assert.match(location, /ok=0/);
-      assert.equal(listCredentials(db, 'key1').length, 0);
+      assert.equal((await listCredentials(db, 'key1')).length, 0);
     });
 
     test('handles the user cancelling consent', async () => {
@@ -229,7 +227,7 @@ describe('lcyt-platforms OAuth routes', () => {
       const state = createState({ apiKey: 'key1', platform: 'youtube' }, JWT_SECRET);
       const { location } = await call(cb({ code: 'c', state }));
       assert.match(location, /ok=0.*exchange_failed/);
-      assert.equal(listCredentials(db, 'key1').length, 0);
+      assert.equal((await listCredentials(db, 'key1')).length, 0);
     });
 
     test('connecting a second channel adds rather than replaces', async () => {
@@ -243,7 +241,7 @@ describe('lcyt-platforms OAuth routes', () => {
       await call(cb({ code: 'c2', state: state2 }));
 
       // The decision-#1 regression guard at the route level.
-      assert.equal(listCredentials(db, 'key1').length, 2);
+      assert.equal((await listCredentials(db, 'key1')).length, 2);
     });
 
     test('reconnecting the same channel replaces its row', async () => {
@@ -251,27 +249,27 @@ describe('lcyt-platforms OAuth routes', () => {
         const state = createState({ apiKey: 'key1', platform: 'youtube' }, JWT_SECRET);
         await call(cb({ code, state }));
       }
-      assert.equal(listCredentials(db, 'key1').length, 1);
+      assert.equal((await listCredentials(db, 'key1')).length, 1);
     });
   });
 
   // ── disconnect ──────────────────────────────────────────────────────────
   describe('POST /platforms/:platform/disconnect', () => {
     test('revokes locally and remotely', async () => {
-      const row = seedCredential();
+      const row = await seedCredential();
       const { status, body } = await call('/platforms/youtube/disconnect', {
         method: 'POST', body: JSON.stringify({ credentialId: row.id }),
       });
       assert.equal(status, 200);
       assert.equal(body.revoked, true);
       assert.equal(body.remoteRevoked, true);
-      assert.ok(getCredentialById(db, row.id).revoked_at, 'row kept for audit');
-      assert.equal(listCredentials(db, 'key1').length, 0);
+      assert.ok((await getCredentialById(db, row.id)).revoked_at, 'row kept for audit');
+      assert.equal((await listCredentials(db, 'key1')).length, 0);
     });
 
     test('still disconnects locally when the provider refuses, and says so', async () => {
       adapterRef.current = makeAdapter({ revokeToken: async () => false });
-      const row = seedCredential();
+      const row = await seedCredential();
       const { body } = await call('/platforms/youtube/disconnect', {
         method: 'POST', body: JSON.stringify({ credentialId: row.id }),
       });
@@ -283,7 +281,7 @@ describe('lcyt-platforms OAuth routes', () => {
     test('requires an explicit credentialId', async () => {
       // With multi-channel, guessing which account to drop is the wrong thing
       // to be clever about.
-      seedCredential();
+      await seedCredential();
       const { status, body } = await call('/platforms/youtube/disconnect', {
         method: 'POST', body: JSON.stringify({}),
       });
@@ -292,12 +290,12 @@ describe('lcyt-platforms OAuth routes', () => {
     });
 
     test("cannot disconnect another project's credential", async () => {
-      const row = seedCredential('key2');
+      const row = await seedCredential('key2');
       const { status } = await call('/platforms/youtube/disconnect', {
         method: 'POST', body: JSON.stringify({ credentialId: row.id }),
       });
       assert.equal(status, 404);
-      assert.equal(getCredentialById(db, row.id).revoked_at, null);
+      assert.equal((await getCredentialById(db, row.id)).revoked_at, null);
     });
   });
 });

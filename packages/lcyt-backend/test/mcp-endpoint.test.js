@@ -40,10 +40,10 @@ function createStubRegistry() {
 
 let server, baseUrl, db, bus, apiKey, registry;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   bus = new EventBus();
-  apiKey = createKey(db, { owner: 'McpUser' }).key;
+  apiKey = (await createKey(db, { owner: 'McpUser' })).key;
   registry = createStubRegistry();
 
   const app = express();
@@ -82,7 +82,7 @@ async function rpc(method, params, token) {
 
 describe('POST /mcp — MCP endpoint', () => {
   it('requires mcp:connect scope for external tokens', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'no-mcp', scopes: ['events:read'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'no-mcp', scopes: ['events:read'] });
     const res = await fetch(`${baseUrl}/mcp?token=${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -92,7 +92,7 @@ describe('POST /mcp — MCP endpoint', () => {
   });
 
   it('initialize returns server info', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'full', scopes: ['mcp:connect'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'full', scopes: ['mcp:connect'] });
     const { status, body } = await rpc('initialize', {}, token);
     assert.equal(status, 200);
     assert.equal(body.result.serverInfo.name, 'lcyt-mcp');
@@ -105,7 +105,7 @@ describe('POST /mcp — MCP endpoint', () => {
   });
 
   it('tools/list filters by token scopes', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'cam-only', scopes: ['mcp:connect', 'camera:read', 'camera:write'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'cam-only', scopes: ['mcp:connect', 'camera:read', 'camera:write'] });
     const { body } = await rpc('tools/list', {}, token);
     const names = body.result.tools.map((t) => t.name);
     assert(names.includes('camera.list'));
@@ -121,14 +121,14 @@ describe('POST /mcp — MCP endpoint', () => {
   });
 
   it('tools/call rejects out-of-scope tool', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'cam-only2', scopes: ['mcp:connect', 'camera:read'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'cam-only2', scopes: ['mcp:connect', 'camera:read'] });
     const { body } = await rpc('tools/call', { name: 'mixer.switch', arguments: { mixerId: 'x', inputNumber: 1 } }, token);
     assert.equal(body.error.code, -32001);
     assert(body.error.message.includes('Insufficient scope'));
   });
 
   it('tools/call executes destructive tool for unscoped (full delegation) tokens', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'full2', scopes: [] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'full2', scopes: [] });
     const { body } = await rpc('tools/call', { name: 'camera.preset', arguments: { cameraId: 'cam2' } }, token);
     const result = JSON.parse(body.result.content[0].text);
     assert.equal(result.ok, true);

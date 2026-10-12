@@ -35,26 +35,21 @@ function makeTone(freq, sampleRate, length) {
 /** Mock DB whose getMusicConfig() row can opt into auto_calibrate. */
 function makeMockDb({ autoCalibrate = false } = {}) {
   return {
-    prepare() {
-      return {
-        get() {
-          return {
-            silence_threshold: 0.01,
-            flatness_threshold: 0.4,
-            zcr_threshold: 0.15,
-            confirm_segments: 2,
-            bpm_enabled: 1,
-            bpm_min: 40,
-            bpm_max: 200,
-            auto_start: 0,
-            auto_calibrate: autoCalibrate ? 1 : 0,
-          };
-        },
-        run() { return {}; },
-        all() { return []; },
-      };
+    music_config: {
+      findUnique: async () => ({
+        api_key: 'key1',
+        enabled: 0,
+        silence_threshold: 0.01,
+        flatness_threshold: 0.4,
+        zcr_threshold: 0.15,
+        confirm_segments: 2,
+        bpm_enabled: 1,
+        bpm_min: 40,
+        bpm_max: 200,
+        auto_start: 0,
+        auto_calibrate: autoCalibrate ? 1 : 0,
+      }),
     },
-    exec() {},
   };
 }
 

@@ -3,31 +3,34 @@
  * allow-deny rule evaluator.
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { randomUUID } from 'node:crypto';
-import { runMigrations, createBridgeSecurityRule } from '../src/db.js';
+import { createBridgeSecurityRule } from '../src/db.js';
 import {
   matchesHostPattern, matchesCommandPattern, isValidHostPattern, isValidCommandPattern,
   checkIpAllowed, checkCommandAllowed,
 } from '../src/bridge-security.js';
 
-function makeDb() {
-  const db = new Database(':memory:');
-  runMigrations(db);
+const openDbs = [];
+async function makeDb() {
+  const db = await initDb(':memory:');
+  openDbs.push(db);
   return db;
 }
+
+after(async () => { for (const d of openDbs) await d.close(); });
 
 // bridge_security_rules.bridge_instance_id has a real FK to
 // prod_bridge_instances(id) — insert a stub row for every instance id a test
 // references before writing rules against it.
-function insertInstance(db, id) {
-  db.prepare('INSERT INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
+async function insertInstance(db, id) {
+  await db.prepare('INSERT INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
     .run(id, id, randomUUID());
 }
 
-function addRule(db, bridgeInstanceId, ruleKind, ruleType, pattern, description = null) {
+async function addRule(db, bridgeInstanceId, ruleKind, ruleType, pattern, description = null) {
   return createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId, ruleKind, ruleType, pattern, description });
 }
 
@@ -136,82 +139,82 @@ describe('isValidHostPattern / isValidCommandPattern', () => {
 // ---------------------------------------------------------------------------
 
 describe('checkIpAllowed — precedence', () => {
-  it('default-allow when no rules exist', () => {
-    const db = makeDb();
-    const result = checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319);
+  it('default-allow when no rules exist', async () => {
+    const db = await makeDb();
+    const result = await checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319);
     assert.equal(result.allowed, true);
   });
 
-  it('deny-only mode blocks a matching pattern, allows everything else', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'ip', 'deny', '192.168.1.50');
-    assert.equal(checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319).allowed, false);
-    assert.equal(checkIpAllowed(db, 'bridge-1', '192.168.1.51', 1319).allowed, true);
+  it('deny-only mode blocks a matching pattern, allows everything else', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'ip', 'deny', '192.168.1.50');
+    assert.equal((await checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319)).allowed, false);
+    assert.equal((await checkIpAllowed(db, 'bridge-1', '192.168.1.51', 1319)).allowed, true);
   });
 
-  it('allow-only mode switches to default-deny', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'ip', 'allow', '192.168.1.50');
-    assert.equal(checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319).allowed, true);
-    assert.equal(checkIpAllowed(db, 'bridge-1', '192.168.1.99', 1319).allowed, false);
+  it('allow-only mode switches to default-deny', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'ip', 'allow', '192.168.1.50');
+    assert.equal((await checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319)).allowed, true);
+    assert.equal((await checkIpAllowed(db, 'bridge-1', '192.168.1.99', 1319)).allowed, false);
   });
 
-  it('deny always wins over an overlapping allow rule', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'ip', 'allow', '192.168.1.0/24');
-    addRule(db, 'bridge-1', 'ip', 'deny', '192.168.1.50');
-    assert.equal(checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319).allowed, false, 'deny carve-out inside the allowed range');
-    assert.equal(checkIpAllowed(db, 'bridge-1', '192.168.1.51', 1319).allowed, true, 'rest of the allowed range still passes');
+  it('deny always wins over an overlapping allow rule', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'ip', 'allow', '192.168.1.0/24');
+    await addRule(db, 'bridge-1', 'ip', 'deny', '192.168.1.50');
+    assert.equal((await checkIpAllowed(db, 'bridge-1', '192.168.1.50', 1319)).allowed, false, 'deny carve-out inside the allowed range');
+    assert.equal((await checkIpAllowed(db, 'bridge-1', '192.168.1.51', 1319)).allowed, true, 'rest of the allowed range still passes');
   });
 
-  it('rules are scoped per bridge instance', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    insertInstance(db, 'bridge-2');
-    addRule(db, 'bridge-1', 'ip', 'deny', '192.168.1.50');
-    assert.equal(checkIpAllowed(db, 'bridge-2', '192.168.1.50', 1319).allowed, true, 'a different bridge is unaffected');
+  it('rules are scoped per bridge instance', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await insertInstance(db, 'bridge-2');
+    await addRule(db, 'bridge-1', 'ip', 'deny', '192.168.1.50');
+    assert.equal((await checkIpAllowed(db, 'bridge-2', '192.168.1.50', 1319)).allowed, true, 'a different bridge is unaffected');
   });
 });
 
 describe('checkCommandAllowed — precedence', () => {
-  it('default-allow when no rules exist', () => {
-    const db = makeDb();
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'ANYTHING').allowed, true);
+  it('default-allow when no rules exist', async () => {
+    const db = await makeDb();
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'ANYTHING')).allowed, true);
   });
 
-  it('deny-only mode blocks a matching command, allows the rest', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'command', 'deny', '^FACTORY-RESET$');
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'FACTORY-RESET').allowed, false);
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'PRESET-1').allowed, true);
+  it('deny-only mode blocks a matching command, allows the rest', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'command', 'deny', '^FACTORY-RESET$');
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'FACTORY-RESET')).allowed, false);
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'PRESET-1')).allowed, true);
   });
 
-  it('allow-only mode switches to default-deny', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'command', 'allow', '^PRESET-[0-9]+$');
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'PRESET-3').allowed, true);
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'FACTORY-RESET').allowed, false);
+  it('allow-only mode switches to default-deny', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'command', 'allow', '^PRESET-[0-9]+$');
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'PRESET-3')).allowed, true);
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'FACTORY-RESET')).allowed, false);
   });
 
-  it('deny always wins over an overlapping allow rule', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'command', 'allow', '^PRESET-[0-9]+$');
-    addRule(db, 'bridge-1', 'command', 'deny', '^PRESET-13$', 'unlucky preset, blocked');
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'PRESET-13').allowed, false);
-    assert.equal(checkCommandAllowed(db, 'bridge-1', 'PRESET-3').allowed, true);
+  it('deny always wins over an overlapping allow rule', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'command', 'allow', '^PRESET-[0-9]+$');
+    await addRule(db, 'bridge-1', 'command', 'deny', '^PRESET-13$', 'unlucky preset, blocked');
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'PRESET-13')).allowed, false);
+    assert.equal((await checkCommandAllowed(db, 'bridge-1', 'PRESET-3')).allowed, true);
   });
 
-  it('the block reason includes the deny rule description when present', () => {
-    const db = makeDb();
-    insertInstance(db, 'bridge-1');
-    addRule(db, 'bridge-1', 'command', 'deny', '^FACTORY-RESET$', 'never allow a factory reset');
-    const result = checkCommandAllowed(db, 'bridge-1', 'FACTORY-RESET');
+  it('the block reason includes the deny rule description when present', async () => {
+    const db = await makeDb();
+    await insertInstance(db, 'bridge-1');
+    await addRule(db, 'bridge-1', 'command', 'deny', '^FACTORY-RESET$', 'never allow a factory reset');
+    const result = await checkCommandAllowed(db, 'bridge-1', 'FACTORY-RESET');
     assert.equal(result.allowed, false);
     assert.match(result.reason, /never allow a factory reset/);
   });

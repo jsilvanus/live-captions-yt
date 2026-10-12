@@ -23,7 +23,7 @@ export const AUTO_COOLDOWN_FLOOR_MS = 3000;
 
 export class ProductionAssistantManager {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {import('lcyt-backend/db').Db} db
    * @param {import('./roles-bus.js').RolesBus} rolesBus
    */
   constructor(db, rolesBus) {

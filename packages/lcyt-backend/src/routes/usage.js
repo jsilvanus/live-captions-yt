@@ -27,7 +27,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 export function createUsageRouter(db, settings = null) {
   const router = Router();
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const usagePublic = settings ? settings.get('app.usage_public') : !!process.env.USAGE_PUBLIC;
     // Auth: skip if USAGE_PUBLIC is set, otherwise require admin key
     if (!usagePublic) {
@@ -65,10 +65,10 @@ export function createUsageRouter(db, settings = null) {
       return res.status(403).json({ error: 'Domain not allowed' });
     }
 
-    const rows = getDomainUsageStats(db, { from, to, granularity, domain });
+    const rows = await getDomainUsageStats(db, { from, to, granularity, domain });
     const data = allowedDomains === '*' ? rows : rows.filter(r => allowedDomains.includes(r.domain));
 
-    const viewerStats = getViewerAnonStats(db, { from, to });
+    const viewerStats = await getViewerAnonStats(db, { from, to });
 
     // Historical windows (entirely in the past) are immutable — safe to cache.
     // Any window touching today changes constantly, so must not be cached.

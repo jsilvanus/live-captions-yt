@@ -41,7 +41,7 @@ function resolveToolAllowlist(role, harnessConfig, allTools) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} auth — session JWT middleware
  * @param {{ tools: Array, callTool: Function }} toolsContext — from lcyt-tools' registry (or its in-process MCP bridge, wrapped)
  * @param {import('../roles-bus.js').RolesBus} rolesBus
@@ -58,16 +58,16 @@ export function createRolesChatRouter(db, auth, toolsContext, rolesBus, bridgeMa
     const { roleCode } = req.params;
     if (!CHAT_DIALOG_ROLES.has(roleCode)) return res.status(404).json({ error: 'Unknown role' });
 
-    const role = getRole(db, roleCode);
+    const role = await getRole(db, roleCode);
     if (!role) return res.status(404).json({ error: 'Unknown role' });
 
     const { text, conversationId } = req.body || {};
     if (typeof text !== 'string' || !text.trim()) return res.status(400).json({ error: 'text is required' });
 
-    const config = getRoleConfig(db, apiKey, roleCode);
+    const config = await getRoleConfig(db, apiKey, roleCode);
     if (!config.enabled) return res.status(503).json({ error: 'Role is not enabled for this project' });
 
-    const providerRow = config.providerId ? getProvider(db, config.providerId) : null;
+    const providerRow = config.providerId ? await getProvider(db, config.providerId) : null;
     const apiSettings = resolveRoleProviderSettings(providerRow, config.modelName, { bridgeManager });
     if (!apiSettings) return res.status(503).json({ error: 'AI provider not configured or unsupported' });
 

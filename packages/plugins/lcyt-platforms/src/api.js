@@ -8,14 +8,12 @@
  *
  * Usage in lcyt-backend:
  *   import { initPlatforms, createPlatformsRouter, createBroadcastPlatformsRouter } from 'lcyt-platforms';
- *   const { poller, tokenService } = initPlatforms(db, { eventBus, getSetting, getJwtSecret, ... });
+ *   const { poller, tokenService } = await initPlatforms(db, { eventBus, getSetting, getJwtSecret, ... });
  *   app.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
  *   app.use('/broadcasts/:id/platforms', createBroadcastPlatformsRouter(db, scopedAuth('broadcast'), platformDeps));
  *
- * ORDERING: initPlatforms() must run *after* lcyt-backend's own schema
- * migrations. This plugin's tables carry real foreign keys onto `api_keys` and
- * `broadcasts`, and better-sqlite3 enables `PRAGMA foreign_keys` by default,
- * so creating them against a DB without those parents would fail.
+ * The tables (with real foreign keys onto `api_keys` and `broadcasts`) come
+ * from the lcyt-backend schema; this plugin creates nothing itself.
  *
  * DEPENDENCY DIRECTION: this plugin never imports lcyt-backend — it depends on
  * the plugins, not the other way round. Broadcast and caption-target access
@@ -25,7 +23,6 @@
  * docs/plans/plan_broadcast_platform_sync_phases.md.
  */
 import logger from 'lcyt/logger';
-import { runMigrations } from './db.js';
 import { hasCredentialKey } from './crypto.js';
 import { createTokenService } from './token-service.js';
 import { createStatsPoller, DEFAULT_INTERVAL_MS } from './stats-poller.js';
@@ -45,18 +42,18 @@ export { createOAuthRouter } from './routes/oauth.js';
 export { createBroadcastPlatformsRouter } from './routes/broadcast-platforms.js';
 
 /**
- * Run migrations, build the token service, and start the stats poller.
+ * Build the token service and start the stats poller.
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {object} [opts]
  * @param {{ publish: Function }} [opts.eventBus]
  * @param {(platform: string) => {clientId: string, clientSecret: string}} [opts.getOAuthConfig]
- * @param {(broadcastId: string) => string|null} [opts.getProjectForBroadcast]
+ * @param {(broadcastId: string) => string|null|Promise<string|null>} [opts.getProjectForBroadcast]
  * @param {() => number} [opts.getIntervalMs]
  * @param {(platform: string) => object|null} [opts.getAdapter]
- * @returns {{ tokenService: object, poller: object }}
+ * @returns {Promise<{ tokenService: object, poller: object }>}
  */
-export function initPlatforms(db, opts = {}) {
+export async function initPlatforms(db, opts = {}) {
   const {
     eventBus = null,
     getOAuthConfig = () => ({}),
@@ -64,8 +61,6 @@ export function initPlatforms(db, opts = {}) {
     getIntervalMs = () => DEFAULT_INTERVAL_MS,
     getAdapter = registryGetAdapter,
   } = opts;
-
-  runMigrations(db);
 
   // Warn, don't throw. A server with no key must still boot and serve
   // everything else — only platform connection is unavailable, and the
@@ -87,7 +82,7 @@ export function initPlatforms(db, opts = {}) {
     eventBus,
     getIntervalMs,
   });
-  poller.restore();
+  await poller.restore();
 
   return { tokenService, poller };
 }

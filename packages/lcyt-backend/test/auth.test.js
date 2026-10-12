@@ -25,8 +25,8 @@ const JWT_SECRET = 'test-auth-secret';
 
 let server, baseUrl, db;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
 
   const app = express();
   app.use(express.json());
@@ -40,8 +40,7 @@ before(() => new Promise((resolve) => {
 }));
 
 after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
 // Helper — register a user and return the response body
@@ -187,9 +186,9 @@ describe('POST /auth/project-token', () => {
   before(async () => {
     const { body } = await register('project-token@example.com', 'password123', 'Project User');
     userToken = body.token;
-    projectKey = createKey(db, { owner: 'Project User', user_id: body.userId }).key;
-    addMember(db, projectKey, body.userId, 'owner');
-    setActiveBroadcastId(db, projectKey, 'broadcast-123');
+    projectKey = (await createKey(db, { owner: 'Project User', user_id: body.userId })).key;
+    await addMember(db, projectKey, body.userId, 'owner');
+    await setActiveBroadcastId(db, projectKey, 'broadcast-123');
   });
 
   it('issues a project-scoped token for a project member', async () => {
@@ -360,12 +359,12 @@ describe('GET /auth/me/export', () => {
     const { body } = await register('export-user@example.com', 'password123', 'Export User');
     const userId = body.userId;
 
-    createKey(db, { key: 'export-project-key', owner: 'Export Project', email: 'export-user@example.com', user_id: userId });
-    db.prepare('INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, ?, 1)').run('export-project-key', 'captions');
+    await createKey(db, { key: 'export-project-key', owner: 'Export Project', email: 'export-user@example.com', user_id: userId });
+    await db.prepare('INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, ?, 1)').run('export-project-key', 'captions');
 
-    const orgResult = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Export Org', 'export-org', userId);
-    db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(orgResult.lastInsertRowid, userId, 'editor', userId);
-    db.prepare('UPDATE api_keys SET org_id = ? WHERE key = ?').run(orgResult.lastInsertRowid, 'export-project-key');
+    const orgResult = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Export Org', 'export-org', userId);
+    await db.prepare('INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, ?, ?)').run(orgResult.lastInsertRowid, userId, 'editor', userId);
+    await db.prepare('UPDATE api_keys SET org_id = ? WHERE key = ?').run(orgResult.lastInsertRowid, 'export-project-key');
 
     const res = await fetch(`${baseUrl}/auth/me/export`, {
       headers: { Authorization: `Bearer ${body.token}` },
@@ -390,9 +389,9 @@ describe('DELETE /auth/me/data', () => {
     const { body } = await register('delete-data@example.com', 'password123', 'Delete Data');
     const userId = body.userId;
 
-    createKey(db, { key: 'owned-project-key', owner: 'Owned Project', email: 'delete-data@example.com', user_id: userId });
-    createKey(db, { key: 'shared-project-key', owner: 'Shared Project', email: 'shared@example.com' });
-    db.prepare('INSERT INTO project_members (api_key, user_id, access_level, invited_by) VALUES (?, ?, ?, ?)').run('shared-project-key', userId, 'member', userId);
+    await createKey(db, { key: 'owned-project-key', owner: 'Owned Project', email: 'delete-data@example.com', user_id: userId });
+    await createKey(db, { key: 'shared-project-key', owner: 'Shared Project', email: 'shared@example.com' });
+    await db.prepare('INSERT INTO project_members (api_key, user_id, access_level, invited_by) VALUES (?, ?, ?, ?)').run('shared-project-key', userId, 'member', userId);
 
     const res = await fetch(`${baseUrl}/auth/me/data`, {
       method: 'DELETE',
@@ -402,9 +401,9 @@ describe('DELETE /auth/me/data', () => {
     assert.equal(res.status, 200);
     const deleteBody = await res.json();
     assert.equal(deleteBody.deletedProjectCount, 1);
-    assert.equal(db.prepare('SELECT key FROM api_keys WHERE key = ?').get('owned-project-key'), undefined);
-    assert.ok(db.prepare('SELECT key FROM api_keys WHERE key = ?').get('shared-project-key'));
-    assert.equal(db.prepare('SELECT COUNT(*) as count FROM project_members WHERE api_key = ? AND user_id = ?').get('shared-project-key', userId).count, 0);
+    assert.equal(await db.prepare('SELECT key FROM api_keys WHERE key = ?').get('owned-project-key'), undefined);
+    assert.ok(await db.prepare('SELECT key FROM api_keys WHERE key = ?').get('shared-project-key'));
+    assert.equal((await db.prepare('SELECT COUNT(*) as count FROM project_members WHERE api_key = ? AND user_id = ?').get('shared-project-key', userId)).count, 0);
   });
 });
 
@@ -424,7 +423,7 @@ describe('DELETE /auth/me', () => {
     assert.equal(res.status, 200);
     const deleteBody = await res.json();
     assert.equal(deleteBody.deleted, true);
-    assert.equal(db.prepare('SELECT id FROM users WHERE email = ?').get('delete-account@example.com'), undefined);
+    assert.equal(await db.prepare('SELECT id FROM users WHERE email = ?').get('delete-account@example.com'), undefined);
   });
 
   // `organizations.owner_user_id` is NOT NULL with no ON DELETE action, so a
@@ -437,10 +436,10 @@ describe('DELETE /auth/me', () => {
     const { body } = await register('solo-org-owner@example.com', 'password123', 'Solo Owner');
     const userId = body.userId;
 
-    const orgResult = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Solo Org', 'solo-org', userId);
+    const orgResult = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Solo Org', 'solo-org', userId);
     const orgId = orgResult.lastInsertRowid;
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, userId, userId);
-    createKey(db, { key: 'solo-org-project', owner: 'Solo Org Project', org_id: orgId });
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, userId, userId);
+    await createKey(db, { key: 'solo-org-project', owner: 'Solo Org Project', org_id: orgId });
 
     const res = await fetch(`${baseUrl}/auth/me`, {
       method: 'DELETE',
@@ -450,11 +449,11 @@ describe('DELETE /auth/me', () => {
     assert.equal(res.status, 200);
     const deleteBody = await res.json();
     assert.equal(deleteBody.deleted, true);
-    assert.equal(db.prepare('SELECT id FROM users WHERE email = ?').get('solo-org-owner@example.com'), undefined);
-    assert.equal(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
+    assert.equal(await db.prepare('SELECT id FROM users WHERE email = ?').get('solo-org-owner@example.com'), undefined);
+    assert.equal(await db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId), undefined);
     // The org's project must survive, just detached — same "an org vanishing
     // must never delete/break its projects" convention as DELETE /orgs/:id.
-    const project = db.prepare('SELECT org_id, active FROM api_keys WHERE key = ?').get('solo-org-project');
+    const project = await db.prepare('SELECT org_id, active FROM api_keys WHERE key = ?').get('solo-org-project');
     assert.ok(project);
     assert.equal(project.org_id, null);
   });
@@ -464,10 +463,10 @@ describe('DELETE /auth/me', () => {
     const userId = body.userId;
     const otherUser = await register('other-member@example.com', 'password123', 'Other Member');
 
-    const orgResult = db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Shared Org', 'shared-org', userId);
+    const orgResult = await db.prepare('INSERT INTO organizations (name, slug, owner_user_id) VALUES (?, ?, ?)').run('Shared Org', 'shared-org', userId);
     const orgId = orgResult.lastInsertRowid;
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, userId, userId);
-    db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'viewer', ?)").run(orgId, otherUser.body.userId, userId);
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'owner', ?)").run(orgId, userId, userId);
+    await db.prepare("INSERT INTO org_members (org_id, user_id, role, invited_by) VALUES (?, ?, 'viewer', ?)").run(orgId, otherUser.body.userId, userId);
 
     const res = await fetch(`${baseUrl}/auth/me`, {
       method: 'DELETE',
@@ -475,8 +474,8 @@ describe('DELETE /auth/me', () => {
     });
 
     assert.equal(res.status, 409);
-    assert.ok(db.prepare('SELECT id FROM users WHERE email = ?').get('blocked-org-owner@example.com'));
-    assert.ok(db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId));
+    assert.ok(await db.prepare('SELECT id FROM users WHERE email = ?').get('blocked-org-owner@example.com'));
+    assert.ok(await db.prepare('SELECT id FROM organizations WHERE id = ?').get(orgId));
   });
 });
 

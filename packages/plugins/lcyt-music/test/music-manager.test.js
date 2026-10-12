@@ -33,13 +33,10 @@ function makeNoise(length, seed = 1) {
 // Helpers — mock collaborators
 // ---------------------------------------------------------------------------
 
-/** Mock DB: getMusicConfig always returns defaults (no row in music_config). */
+/** Mock Prisma client: getMusicConfig always returns defaults (no row in music_config). */
 function makeMockDb() {
   return {
-    prepare() {
-      return { get() { return undefined; }, run() { return {}; }, all() { return []; } };
-    },
-    exec() {},
+    music_config: { findUnique: async () => null },
   };
 }
 
@@ -255,10 +252,9 @@ describe('MusicManager', () => {
       // This test verifies the config conditions are correct; the actual wiring is tested via
       // the RTMP route tests in lcyt-rtmp.
       const mockDb = {
-        prepare() {
-          return {
-            get() {
-              return {
+        music_config: {
+          findUnique: async () => ({
+            api_key: 'key1',
                 enabled: 1,
                 auto_start: 1,
                 silence_threshold: 0.01,
@@ -269,16 +265,11 @@ describe('MusicManager', () => {
                 bpm_min: 40,
                 bpm_max: 200,
                 auto_calibrate: 0,
-              };
-            },
-            run() { return {}; },
-            all() { return []; },
-          };
+          }),
         },
-        exec() {},
       };
       const { getMusicConfig } = await import('../src/db.js');
-      const config = getMusicConfig(mockDb, 'key1');
+      const config = await getMusicConfig(mockDb, 'key1');
       assert.equal(config.enabled, true);
       assert.equal(config.autoStart, true);
       // The RTMP router should check both conditions before starting
@@ -288,10 +279,9 @@ describe('MusicManager', () => {
       // When enabled=false but autoStart=true, the on_publish hook should not start.
       // This is like having music detection configured but not enabled globally for the key.
       const mockDb = {
-        prepare() {
-          return {
-            get() {
-              return {
+        music_config: {
+          findUnique: async () => ({
+            api_key: 'key1',
                 enabled: 0,
                 auto_start: 1,
                 silence_threshold: 0.01,
@@ -302,16 +292,11 @@ describe('MusicManager', () => {
                 bpm_min: 40,
                 bpm_max: 200,
                 auto_calibrate: 0,
-              };
-            },
-            run() { return {}; },
-            all() { return []; },
-          };
+          }),
         },
-        exec() {},
       };
       const { getMusicConfig } = await import('../src/db.js');
-      const config = getMusicConfig(mockDb, 'key1');
+      const config = await getMusicConfig(mockDb, 'key1');
       assert.equal(config.enabled, false);
       assert.equal(config.autoStart, true);
       // The RTMP router checks: if (config.enabled && config.autoStart)

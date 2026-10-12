@@ -24,7 +24,7 @@
  *                                               { updates: [{ selector, text }, ...] }
  *                                               uses page.evaluate() so animations keep running
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('express').RequestHandler} auth
  * @param {object} relayManager
  */
@@ -141,9 +141,9 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
    * caption-session JWT from POST /live carries no req.user.userId and still
    * 403s here, same as every other Setup-tier route in this codebase.
    */
-  function requireSetup(req, res, next) {
+  async function requireSetup(req, res, next) {
     const apiKey = req.session?.apiKey;
-    if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !deps.checkProjectRole('setup', apiKey, req.user.userId)) {
+    if (typeof deps.checkProjectRole !== 'function' || !req.user?.userId || !await deps.checkProjectRole('setup', apiKey, req.user.userId)) {
       return res.status(403).json({ error: 'Explicit project admin/owner access required' });
     }
     next();
@@ -173,19 +173,19 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
    * exactly like requireSetup(): editor/viewer-role team members can no
    * longer trigger these actions, only operator+.
    */
-  function requireProduction(req, res, next) {
+  async function requireProduction(req, res, next) {
     const apiKey = req.session?.apiKey;
     if (!req.user?.userId) return next();
-    if (typeof deps.checkProjectRole !== 'function' || !deps.checkProjectRole('production', apiKey, req.user.userId)) {
+    if (typeof deps.checkProjectRole !== 'function' || !await deps.checkProjectRole('production', apiKey, req.user.userId)) {
       return res.status(403).json({ error: 'Explicit project operator+ access required' });
     }
     next();
   }
 
   // GET /dsk/:apikey/templates
-  router.get('/:apikey/templates', auth, (req, res) => {
+  router.get('/:apikey/templates', auth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const rows = listTemplates(db, req.params.apikey);
+    const rows = await listTemplates(db, req.params.apikey);
     res.json({ templates: rows });
   });
 
@@ -203,8 +203,8 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
     try {
       // Auto-rename conflicting element ids instead of rejecting
-      const { updatedTemplateJson, renameMap } = autoRenameConflictingIds(db, req.params.apikey, template);
-      const id = saveTemplate(db, { apiKey: req.params.apikey, name, templateJson: updatedTemplateJson });
+      const { updatedTemplateJson, renameMap } = await autoRenameConflictingIds(db, req.params.apikey, template);
+      const id = await saveTemplate(db, { apiKey: req.params.apikey, name, templateJson: updatedTemplateJson });
       const resp = { ok: true, id, name };
       if (Object.keys(renameMap).length > 0) resp.renames = renameMap;
       res.status(201).json(resp);
@@ -215,29 +215,29 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   });
 
   // GET /dsk/:apikey/templates/:id
-  router.get('/:apikey/templates/:id', auth, (req, res) => {
+  router.get('/:apikey/templates/:id', auth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
 
-    const row = getTemplate(db, id, req.params.apikey);
+    const row = await getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
     res.json({ template: row });
   });
 
   // DELETE /dsk/:apikey/templates/:id
-  router.delete('/:apikey/templates/:id', auth, requireSetup, (req, res) => {
+  router.delete('/:apikey/templates/:id', auth, requireSetup, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
 
-    const deleted = deleteTemplate(db, id, req.params.apikey);
+    const deleted = await deleteTemplate(db, id, req.params.apikey);
     if (!deleted) return res.status(404).json({ error: 'Template not found' });
     res.json({ ok: true });
   });
 
   // PUT /dsk/:apikey/templates/:id — update template name and/or JSON payload
-  router.put('/:apikey/templates/:id', auth, requireSetup, (req, res) => {
+  router.put('/:apikey/templates/:id', auth, requireSetup, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
@@ -248,19 +248,20 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
       return res.status(400).json({ error: 'name must be 1-64 alphanumeric/space/dash/underscore chars' });
     }
 
-    const existing = getTemplate(db, id, req.params.apikey);
+    const existing = await getTemplate(db, id, req.params.apikey);
     if (!existing) return res.status(404).json({ error: 'Template not found' });
 
     const updatedName = name ?? existing.name;
     const updatedJson = template ?? existing.templateJson;
     try {
       // Auto-rename conflicting element ids instead of rejecting
-      const { updatedTemplateJson, renameMap } = autoRenameConflictingIds(db, req.params.apikey, updatedJson, id);
+      const { updatedTemplateJson, renameMap } = await autoRenameConflictingIds(db, req.params.apikey, updatedJson, id);
 
       // Direct UPDATE by id so renaming works without creating a duplicate record
-      db.prepare(
-        "UPDATE dsk_templates SET name = ?, template_json = ?, updated_at = datetime('now') WHERE id = ?"
-      ).run(updatedName, JSON.stringify(updatedTemplateJson), id);
+      await db.dsk_templates.updateMany({
+        where: { id },
+        data: { name: updatedName, template_json: JSON.stringify(updatedTemplateJson), updated_at: db.$util.sqlNow() },
+      });
       const resp = { ok: true, id, name: updatedName };
       if (Object.keys(renameMap).length > 0) resp.renames = renameMap;
       res.json(resp);
@@ -276,7 +277,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
 
-    const row = getTemplate(db, id, req.params.apikey);
+    const row = await getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
 
     // Update server-side renderer — non-fatal if renderer has not been started
@@ -293,7 +294,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     const id = Number(req.body?.id);
     if (!Number.isFinite(id)) return res.status(400).json({ error: 'id must be a number' });
 
-    const row = getTemplate(db, id, req.params.apikey);
+    const row = await getTemplate(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Template not found' });
 
     // Update server-side renderer — non-fatal if renderer has not been started
@@ -333,8 +334,8 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     // Push to client-side overlay subscribers via SSE
     if (dskBus) {
       if (idList.length > 0) {
-        const templateJsons = idList
-          .map(id => getTemplate(db, id, req.params.apikey))
+        const templateRows = await Promise.all(idList.map(id => getTemplate(db, id, req.params.apikey)));
+        const templateJsons = templateRows
           .filter(Boolean)
           .map(row => row.templateJson);
         if (templateJsons.length > 0) {
@@ -352,7 +353,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
 
     // Server-side renderer: activate the last selected template, then inject text
     if (idList.length > 0) {
-      const lastRow = getTemplate(db, idList[idList.length - 1], req.params.apikey);
+      const lastRow = await getTemplate(db, idList[idList.length - 1], req.params.apikey);
       if (lastRow) {
         try { await updateTemplate(req.params.apikey, lastRow.templateJson); } catch { /* non-fatal */ }
       }
@@ -368,9 +369,9 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   });
 
   // GET /dsk/:apikey/thumbnails — list cached thumbnails for this key
-  router.get('/:apikey/thumbnails', auth, thumbnailRateLimit, (req, res) => {
+  router.get('/:apikey/thumbnails', auth, thumbnailRateLimit, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
-    const rows = listThumbnails(db, req.params.apikey);
+    const rows = await listThumbnails(db, req.params.apikey);
     const thumbnails = rows.map(({ storage_path, ...rest }) => rest);
     res.json({ thumbnails });
   });
@@ -388,7 +389,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     if (!Number.isInteger(resolvedTemplateId)) resolvedTemplateId = null;
 
     if (resolvedTemplateId != null) {
-      const row = getTemplate(db, resolvedTemplateId, apiKey);
+      const row = await getTemplate(db, resolvedTemplateId, apiKey);
       if (!row) return res.status(404).json({ error: 'Template not found' });
       templatePayload = row.templateJson;
     }
@@ -406,7 +407,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
       } else {
         writeFileSync(storagePath, png);
       }
-      const id = createThumbnail(db, {
+      const id = await createThumbnail(db, {
         apiKey,
         templateId: resolvedTemplateId,
         name: name || 'thumbnail',
@@ -427,7 +428,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
-    const row = getThumbnail(db, id, req.params.apikey);
+    const row = await getThumbnail(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Thumbnail not found' });
     if (req.query.meta === '1' || req.query.meta === 'true') {
       const { storage_path, ...safe } = row;
@@ -454,7 +455,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
-    const existing = getThumbnail(db, id, req.params.apikey);
+    const existing = await getThumbnail(db, id, req.params.apikey);
     if (!existing) return res.status(404).json({ error: 'Thumbnail not found' });
     const { name, template, templateId, width, height } = req.body || {};
     const apiKey = req.params.apikey;
@@ -462,7 +463,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     let templatePayload = template;
     let resolvedTemplateId = templateId != null ? Number(templateId) : existing.template_id;
     if (resolvedTemplateId != null && Number.isInteger(resolvedTemplateId)) {
-      const row = getTemplate(db, resolvedTemplateId, apiKey);
+      const row = await getTemplate(db, resolvedTemplateId, apiKey);
       if (!row) return res.status(404).json({ error: 'Template not found' });
       templatePayload = row.templateJson;
     }
@@ -483,7 +484,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
         writeFileSync(storagePath, png);
         if (existsSync(existing.storage_path)) unlinkSync(existing.storage_path);
       }
-      updateThumbnail(db, id, apiKey, {
+      await updateThumbnail(db, id, apiKey, {
         name: name || existing.name || 'thumbnail',
         templateId: resolvedTemplateId,
         width: Number(width) || existing.width || 1920,
@@ -503,19 +504,19 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     if (!checkOwner(req, res, req.params.apikey)) return;
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) return res.status(400).json({ error: 'Invalid id' });
-    const row = getThumbnail(db, id, req.params.apikey);
+    const row = await getThumbnail(db, id, req.params.apikey);
     if (!row) return res.status(404).json({ error: 'Thumbnail not found' });
     if (thumbnailStore) {
       if (row.storage_path) await thumbnailStore.delete(row.storage_path).catch(() => {});
     } else if (row.storage_path && existsSync(row.storage_path)) {
       unlinkSync(row.storage_path);
     }
-    deleteThumbnail(db, id, req.params.apikey);
+    await deleteThumbnail(db, id, req.params.apikey);
     res.json({ ok: true });
   });
 
   // GET /dsk/:apikey/renderer/status — health check: is the renderer running for this key?
-  router.get('/:apikey/renderer/status', auth, (req, res) => {
+  router.get('/:apikey/renderer/status', auth, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const status = getStatus(req.params.apikey);
     res.json(status);
@@ -533,12 +534,12 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
     // and publishes to <key>__<viewport> (+ push targets). Does NOT feed the
     // program composite — that is the bare-key renderer stream below.
     if (viewport) {
-      const vp = getViewport(db, apiKey, viewport);
+      const vp = await getViewport(db, apiKey, viewport);
       if (!vp) return res.status(404).json({ error: 'Viewport not found' });
       let displaySettings = null;
       try { displaySettings = JSON.parse(vp.display_settings_json || 'null'); } catch {}
       let slug = null;
-      try { slug = db.prepare('SELECT public_slug FROM api_keys WHERE key = ?').get(apiKey)?.public_slug ?? null; } catch {}
+      slug = (await db.api_keys.findUnique({ where: { key: apiKey }, select: { public_slug: true } }))?.public_slug ?? null;
       try {
         await startViewportStream(apiKey, {
           slug, viewport,
@@ -571,7 +572,7 @@ export function createDskTemplatesRouter(db, auth, relayManager, dskBus, metrics
   // POST /dsk/:apikey/graphics — manually push a 'graphics' SSE event to all client-side overlay
   // subscribers, updating which image shorthands are visible on /dsk/:key pages.
   // Body: { default?: string[], viewports?: { [name]: string[] } }
-  router.post('/:apikey/graphics', auth, requireProduction, (req, res) => {
+  router.post('/:apikey/graphics', auth, requireProduction, async (req, res) => {
     if (!checkOwner(req, res, req.params.apikey)) return;
     const { default: defaultNames, viewports } = req.body || {};
 

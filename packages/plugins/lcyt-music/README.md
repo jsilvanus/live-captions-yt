@@ -32,7 +32,7 @@ In `lcyt-backend`:
 ```javascript
 import { initMusicControl, createSoundCaptionProcessor, createMusicRouters } from 'lcyt-music';
 
-// Runs DB migrations and (when a session store is passed) constructs the
+// Constructs (when a session store is passed) the
 // MusicManager for server-side HLS audio analysis.
 const { musicManager } = await initMusicControl(db, store);
 
@@ -329,7 +329,7 @@ npm test -w packages/plugins/lcyt-music
 - `test/bpm-detector.test.js` — `detectBpm` beat-tracking estimator
 - `test/music-manager.test.js` — `MusicManager` start/stop lifecycle, confirm-segments smoothing, BPM delta-gating, direct `soundProcessor` invocation (bypassing `_sendQueue`)
 - `test/music-manager-rtmp.test.js` — `MusicManager` RTMP audio source: ffmpeg spawn args/URL building, process lifecycle (stop/error/non-zero exit), PCM windowing/accumulation, shared classify/confirm-segments/BPM pipeline reuse
-- `test/db.test.js` (Phase 4) — `getMusicEventsPage` pagination/ordering/`eventType` filtering/`total` count, `autoCalibrate` config field round-trip, `runMigrations` idempotency (re-running migrations on an already-migrated DB is a no-op)
+- `test/db.test.js` (Phase 4) — `getMusicEventsPage` pagination/ordering/`eventType` filtering/`total` count, `autoCalibrate` config field round-trip
 - `test/music-manager-calibration.test.js` (Phase 4) — RMS accumulation during the calibration window, classification/emission suppressed while calibrating, `calibratedSilenceThreshold` derivation, `calibrated` event emission, subsequent classification using the calibrated threshold, `getStatus()` calibration fields
 - `test/external-classifier.test.js` (Phase 4) — `classifyExternal` success path (mocked `fetch`), timeout (`AbortSignal.timeout`), non-2xx response, malformed response, and `MUSIC_CLASSIFIER_URL` unset
 - `test/music-manager-classifier-queue.test.js` (Phase 4) — `MUSIC_CLASSIFIER_URL` integration: async `_analysePcm`/`_processRtmpWindow`, fallback to the built-in heuristic on classifier failure, RTMP `processingQueue` ordering guarantee when multiple windows arrive within a single `data` chunk (events fire in emission order, not promise-resolution order)

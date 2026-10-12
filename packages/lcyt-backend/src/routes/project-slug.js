@@ -33,10 +33,10 @@ export function createProjectSlugRouter(db, { loginEnabled = false, jwtSecret = 
    * read allows any project member. X-Admin-Key always passes (isAdmin=true).
    * Calls next(user, isAdmin) on success, responds itself on failure.
    */
-  function authorize(req, res, { write }, next) {
+  async function authorize(req, res, { write }, next) {
     if (req.headers['x-admin-key']) {
-      return adminMiddleware(req, res, () => {
-        if (!getKey(db, req.params.key)) return res.status(404).json({ error: 'Project not found' });
+      return adminMiddleware(req, res, async () => {
+        if (!await getKey(db, req.params.key)) return res.status(404).json({ error: 'Project not found' });
         next(null, true);
       });
     }
@@ -44,10 +44,10 @@ export function createProjectSlugRouter(db, { loginEnabled = false, jwtSecret = 
     const user = extractAndVerifyUserToken(jwtSecret, req);
     if (!user) return res.status(401).json({ error: 'Authentication required' });
 
-    const row = getKey(db, req.params.key);
+    const row = await getKey(db, req.params.key);
     if (!row) return res.status(404).json({ error: 'Project not found' });
     if (row.user_id !== user.userId) {
-      const level = getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
+      const level = await getEffectiveProjectAccessLevel(db, req.params.key, user.userId);
       if (!level) return res.status(403).json({ error: 'Project access required' });
       if (write && level !== 'owner' && level !== 'admin') {
         return res.status(403).json({ error: 'settings-manager permission required' });
@@ -57,40 +57,40 @@ export function createProjectSlugRouter(db, { loginEnabled = false, jwtSecret = 
   }
 
   // GET /keys/:key/slug
-  router.get('/', (req, res) => {
-    authorize(req, res, { write: false }, () => {
-      const row = getKey(db, req.params.key);
+  router.get('/', async (req, res) => {
+    await authorize(req, res, { write: false }, async () => {
+      const row = await getKey(db, req.params.key);
       res.json({
         slug: row.public_slug ?? null,
-        requiredPrefix: getRequiredSlugPrefix(db, req.params.key),
+        requiredPrefix: await getRequiredSlugPrefix(db, req.params.key),
       });
     });
   });
 
   // GET /keys/:key/slug/check?slug=…
-  router.get('/check', (req, res) => {
-    authorize(req, res, { write: false }, (_user, isAdmin) => {
+  router.get('/check', async (req, res) => {
+    await authorize(req, res, { write: false }, async (_user, isAdmin) => {
       const slug = String(req.query.slug ?? '');
-      const result = checkPublicSlugAvailability(db, req.params.key, slug, { bypassPolicy: isAdmin });
+      const result = await checkPublicSlugAvailability(db, req.params.key, slug, { bypassPolicy: isAdmin });
       res.json(result.available ? { available: true } : { available: false, reason: result.reason });
     });
   });
 
   // PUT /keys/:key/slug  { slug: string | null }
-  router.put('/', (req, res) => {
-    authorize(req, res, { write: true }, (_user, isAdmin) => {
+  router.put('/', async (req, res) => {
+    await authorize(req, res, { write: true }, async (_user, isAdmin) => {
       const { slug } = req.body ?? {};
 
       if (slug === null) {
-        setPublicSlug(db, req.params.key, null);
+        await setPublicSlug(db, req.params.key, null);
         return res.json({ ok: true, slug: null });
       }
 
-      const result = checkPublicSlugAvailability(db, req.params.key, slug, { bypassPolicy: isAdmin });
+      const result = await checkPublicSlugAvailability(db, req.params.key, slug, { bypassPolicy: isAdmin });
       if (!result.available) return res.status(400).json({ error: result.reason });
 
       try {
-        setPublicSlug(db, req.params.key, slug);
+        await setPublicSlug(db, req.params.key, slug);
       } catch (err) {
         // Unique-index race: someone claimed the slug between check and write
         if (String(err.message).includes('UNIQUE')) {

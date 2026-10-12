@@ -99,7 +99,7 @@ function computeRms(pcm) {
 
 export class MusicManager extends EventEmitter {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {object} db  Prisma client
    * @param {import('../../../lcyt-backend/src/store.js').SessionStore} store
    * @param {(apiKey: string, text: string) => string} soundProcessor
    *   Built via createSoundCaptionProcessor({ store, db }) — called directly
@@ -145,7 +145,7 @@ export class MusicManager extends EventEmitter {
     }
 
     const effectiveStreamKey = streamKey || apiKey;
-    const config = getMusicConfig(this._db, apiKey);
+    const config = await getMusicConfig(this._db, apiKey);
 
     /** @type {MusicSession} */
     const session = {

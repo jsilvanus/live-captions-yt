@@ -16,9 +16,9 @@ const JWT_SECRET = 'test-stats-secret';
 
 let server, baseUrl, store, db;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
-  createKey(db, { key: 'stats-test-key', owner: 'Stats User', email: 'stats@example.com' });
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
+  await createKey(db, { key: 'stats-test-key', owner: 'Stats User', email: 'stats@example.com' });
 
   store = new SessionStore({ cleanupInterval: 0 });
   const auth = createAuthMiddleware(JWT_SECRET);
@@ -36,8 +36,7 @@ before(() => new Promise((resolve) => {
 
 after(() => new Promise((resolve) => {
   store.stopCleanup();
-  db.close();
-  server.close(resolve);
+  server.close(async () => { await db.close(); resolve(); });
 }));
 
 beforeEach(() => {
@@ -186,7 +185,7 @@ describe('DELETE /stats', () => {
 
   it('should anonymise the key and return ok', async () => {
     // Create a fresh key so we can erase it without affecting other tests
-    createKey(db, { key: 'erase-test-key', owner: 'Erase User', email: 'erase@example.com' });
+    await createKey(db, { key: 'erase-test-key', owner: 'Erase User', email: 'erase@example.com' });
     const session = store.create({
       apiKey: 'erase-test-key',
       streamKey: 'sk',

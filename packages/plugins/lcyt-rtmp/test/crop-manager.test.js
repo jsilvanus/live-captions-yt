@@ -6,12 +6,12 @@
  * RtmpRelayManager.
  */
 import { resetLaunches, launched, stdinWritten } from './helpers/fake-ffmpeg-env.js';
-import { test, describe } from 'node:test';
+import { test, describe, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { CropManager } from '../src/crop-manager.js';
 import { RtmpRelayManager } from '../src/rtmp-manager.js';
-import { runCropMigrations, createCropPreset, createCropSourceMapEntry, setCropConfig } from '../src/db/crop.js';
+import { createCropPreset, createCropSourceMapEntry, setCropConfig } from '../src/db/crop.js';
 
 const CONFIG = {
   enabled: true, aspectW: 9, aspectH: 16, outW: 1080, outH: 1920,
@@ -228,25 +228,24 @@ describe('RtmpRelayManager — crop-view slots', () => {
 describe('CropManager.applyForSource — production follow (plan_vertical_crop.md §4)', () => {
   const KEY = 'followkey';
 
-  function makeDb() {
-    const db = new Database(':memory:');
-    runCropMigrations(db);
-    db.exec(`
-      CREATE TABLE prod_cameras (
-        id TEXT PRIMARY KEY,
-        mixer_input INTEGER
-      )
-    `);
-    db.prepare("INSERT INTO prod_cameras (id, mixer_input) VALUES ('cam1', 1)").run();
-    db.prepare("INSERT INTO prod_cameras (id, mixer_input) VALUES ('cam2', 2)").run();
+  const dbs = [];
+  afterEach(async () => {
+    while (dbs.length) await dbs.pop().close();
+  });
+
+  async function makeDb() {
+    const db = await initDb(':memory:');
+    dbs.push(db);
+    await db.prepare("INSERT INTO prod_cameras (id, name, mixer_input) VALUES ('cam1', 'Cam 1', 1)").run();
+    await db.prepare("INSERT INTO prod_cameras (id, name, mixer_input) VALUES ('cam2', 'Cam 2', 2)").run();
     return db;
   }
 
   test('no-op when follow_program is disabled', async () => {
-    const db = makeDb();
-    setCropConfig(db, KEY, { followProgram: false });
-    const preset = createCropPreset(db, KEY, { name: 'lectern', xNorm: 0.1 }).preset;
-    createCropSourceMapEntry(db, KEY, { mixerInput: 1, presetId: preset.id });
+    const db = await makeDb();
+    await setCropConfig(db, KEY, { followProgram: false });
+    const preset = (await createCropPreset(db, KEY, { name: 'lectern', xNorm: 0.1 })).preset;
+    await createCropSourceMapEntry(db, KEY, { mixerInput: 1, presetId: preset.id });
 
     const mgr = makeManager();
     await mgr.start(KEY, CONFIG);
@@ -257,9 +256,9 @@ describe('CropManager.applyForSource — production follow (plan_vertical_crop.m
   });
 
   test('no-op when the renderer is not running', async () => {
-    const db = makeDb();
-    const preset = createCropPreset(db, KEY, { name: 'lectern', xNorm: 0.1 }).preset;
-    createCropSourceMapEntry(db, KEY, { mixerInput: 1, presetId: preset.id });
+    const db = await makeDb();
+    const preset = (await createCropPreset(db, KEY, { name: 'lectern', xNorm: 0.1 })).preset;
+    await createCropSourceMapEntry(db, KEY, { mixerInput: 1, presetId: preset.id });
 
     const mgr = makeManager();
     const result = await mgr.applyForSource(db, KEY, { mixerInput: 1 });
@@ -267,9 +266,9 @@ describe('CropManager.applyForSource — production follow (plan_vertical_crop.m
   });
 
   test('mixer switch applies the mapped preset for that input', async () => {
-    const db = makeDb();
-    const preset = createCropPreset(db, KEY, { name: 'centre', xNorm: 0.5 }).preset;
-    createCropSourceMapEntry(db, KEY, { mixerInput: 2, presetId: preset.id });
+    const db = await makeDb();
+    const preset = (await createCropPreset(db, KEY, { name: 'centre', xNorm: 0.5 })).preset;
+    await createCropSourceMapEntry(db, KEY, { mixerInput: 2, presetId: preset.id });
 
     const mgr = makeManager();
     await mgr.start(KEY, CONFIG);
@@ -281,20 +280,20 @@ describe('CropManager.applyForSource — production follow (plan_vertical_crop.m
   });
 
   test('camera 1/preset 1 → camera 2 → camera 1/preset 2 follows across switches', async () => {
-    const db = makeDb();
-    const posA = createCropPreset(db, KEY, { name: 'lectern', xNorm: 0.1 }).preset;
-    const posB = createCropPreset(db, KEY, { name: 'centre',  xNorm: 0.5 }).preset;
-    const posC = createCropPreset(db, KEY, { name: 'piano',   xNorm: 0.9 }).preset;
-    createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 'preset1', presetId: posA.id });
-    createCropSourceMapEntry(db, KEY, { mixerInput: 2, presetId: posB.id });
-    createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 'preset2', presetId: posC.id });
+    const db = await makeDb();
+    const posA = (await createCropPreset(db, KEY, { name: 'lectern', xNorm: 0.1 })).preset;
+    const posB = (await createCropPreset(db, KEY, { name: 'centre',  xNorm: 0.5 })).preset;
+    const posC = (await createCropPreset(db, KEY, { name: 'piano',   xNorm: 0.9 })).preset;
+    await createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: '1', presetId: posA.id });
+    await createCropSourceMapEntry(db, KEY, { mixerInput: 2, presetId: posB.id });
+    await createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: '2', presetId: posC.id });
 
     const mgr = makeManager();
     await mgr.start(KEY, CONFIG);
 
     // Camera 1 recalls preset1 while it happens to already be on program (input 1).
     await mgr.applyForSource(db, KEY, { mixerId: 'mix1', mixerInput: 1 }); // camera 1 comes up on program first (no preset yet → no map row without cameraPreset, no-op)
-    await mgr.applyForSource(db, KEY, { cameraId: 'cam1', cameraPreset: 'preset1' });
+    await mgr.applyForSource(db, KEY, { cameraId: 'cam1', cameraPreset: '1' });
     assert.equal(mgr.getStatus(KEY).activePresetId, posA.id);
     assert.equal(mgr.getStatus(KEY).xNorm, 0.1);
 
@@ -307,18 +306,18 @@ describe('CropManager.applyForSource — production follow (plan_vertical_crop.m
     assert.equal(mgr.getStatus(KEY).xNorm, 0.1);
 
     // Camera 1 recalls preset2 while still on program — applies immediately.
-    await mgr.applyForSource(db, KEY, { cameraId: 'cam1', cameraPreset: 'preset2' });
+    await mgr.applyForSource(db, KEY, { cameraId: 'cam1', cameraPreset: '2' });
     assert.equal(mgr.getStatus(KEY).xNorm, 0.9);
 
     await mgr.stop(KEY);
   });
 
   test('a preset recalled while its camera is off program is remembered but not applied yet', async () => {
-    const db = makeDb();
-    const onProgram = createCropPreset(db, KEY, { name: 'centre', xNorm: 0.5 }).preset;
-    const offProgramPreset = createCropPreset(db, KEY, { name: 'piano', xNorm: 0.9 }).preset;
-    createCropSourceMapEntry(db, KEY, { mixerInput: 2, presetId: onProgram.id });
-    createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: 'p2', presetId: offProgramPreset.id });
+    const db = await makeDb();
+    const onProgram = (await createCropPreset(db, KEY, { name: 'centre', xNorm: 0.5 })).preset;
+    const offProgramPreset = (await createCropPreset(db, KEY, { name: 'piano', xNorm: 0.9 })).preset;
+    await createCropSourceMapEntry(db, KEY, { mixerInput: 2, presetId: onProgram.id });
+    await createCropSourceMapEntry(db, KEY, { cameraId: 'cam1', cameraPreset: '2', presetId: offProgramPreset.id });
 
     const mgr = makeManager();
     await mgr.start(KEY, CONFIG);
@@ -327,7 +326,7 @@ describe('CropManager.applyForSource — production follow (plan_vertical_crop.m
     // NOT currently on program.
     await mgr.applyForSource(db, KEY, { mixerId: 'mix1', mixerInput: 2 });
     assert.equal(mgr.getStatus(KEY).xNorm, 0.5);
-    const r = await mgr.applyForSource(db, KEY, { cameraId: 'cam1', cameraPreset: 'p2' });
+    const r = await mgr.applyForSource(db, KEY, { cameraId: 'cam1', cameraPreset: '2' });
     assert.equal(r, null, 'off-program preset recall is memory-only');
     assert.equal(mgr.getStatus(KEY).xNorm, 0.5, 'position unchanged while cam1 stays off program');
 

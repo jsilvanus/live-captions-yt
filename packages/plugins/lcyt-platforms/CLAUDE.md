@@ -1,5 +1,8 @@
 # `packages/plugins/lcyt-platforms` — Broadcast Platform Sync (v0.1.0)
 
+
+> **Database access:** every function takes the async Prisma client (`db`, from `initDb()` in lcyt-backend; it carries `db.$dialect` and `db.$util = { sqlNow, num }`) and returns a Promise, so callers must `await`. Works on SQLite and PostgreSQL. Tables come from the backend Prisma schema; the plugin's `run*Migrations` functions are no-ops. Tests use `initDb(':memory:')` with `LCYT_DB_SQL_COMPAT=1` and `await db.close()` in `after`.
+
 Server-side OAuth, scheduling, thumbnails, go-live/end and viewer stats for external streaming platforms, tied to the `broadcasts` entity. **YouTube is fully implemented; Facebook Live exists only as a non-wired adapter skeleton.**
 
 Implements `docs/plans/plan_broadcast_platform_sync.md` (sequenced by `docs/plans/plan_broadcast_platform_sync_phases.md`) — the "Phase 2 YouTube two-way sync" that `plan_broadcasts.md` explicitly deferred.
@@ -20,9 +23,9 @@ One capability from the old code was deliberately carried forward rather than dr
 
 | File | Purpose |
 |---|---|
-| `src/api.js` | `initPlatforms()` — migrations, token service, stats poller. Re-exports everything below. |
+| `src/api.js` | `initPlatforms()` (async) — token service, stats poller. Re-exports everything below. |
 | `src/crypto.js` | AES-256-GCM secrets-at-rest. **The repo's first real one** — `mcp_tokens` stores one-way hashes, useless for a refresh token that must be decrypted to be used. |
-| `src/db.js` | Migrations + CRUD for the three tables. `maskCredential()` is the only shape a route may return. |
+| `src/db.js` | Async Prisma CRUD for the three tables. `maskCredential()` is the only shape a route may return. |
 | `src/oauth-state.js` | HMAC-signed, short-TTL `state` param. The **only** thing binding an unauthenticated callback to a project. |
 | `src/token-service.js` | Lazy access-token refresh, single in-flight per credential, `CredentialUnusableError`. |
 | `src/stats-poller.js` | One interval sweeping live links; quota back-off; re-reads work from the DB each tick. |
@@ -73,7 +76,7 @@ broadcast_platform_stats  id, broadcast_id, platform, captured_at,
 
 **Multi-channel is real.** The source plan proposed `UNIQUE(api_key, platform)`; what shipped is `UNIQUE(api_key, platform, external_account_id)`, so a project can connect several YouTube channels. Reconnecting the *same* channel replaces its row; connecting a *different* one adds. `broadcast_platform_links.credential_id` records which account scheduled a link, so a later poll or transition uses that same channel even after the project connects others.
 
-`initPlatforms()` **must run after** lcyt-backend's core schema migrations — these tables carry real foreign keys onto `api_keys` and `broadcasts`, and this install enforces them (`PRAGMA foreign_keys` is on by default in better-sqlite3).
+`initPlatforms()` is async and takes the Prisma client; it **must run after** the core schema exists — these tables carry real foreign keys onto `api_keys` and `broadcasts`, and this install enforces them (`PRAGMA foreign_keys` is on by default in better-sqlite3).
 
 Revocation is a **soft delete** (`revoked_at`); rows are kept for audit and never hard-deleted.
 

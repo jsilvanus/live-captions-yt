@@ -22,12 +22,13 @@ const POLICY_REASON = 'Blocked by network policy';
 
 /**
  * Org and global rules as the plain `{ allow, deny }` pattern lists varfetch takes.
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {number|null} orgId
+ * @returns {Promise<{ orgDeny: string[], globalDeny: string[], allow: string[] }>}
  */
-export function loadNetworkPolicy(db, orgId) {
-  const orgRules = orgId != null ? listNetworkRules(db, { scope: 'org', orgId }) : [];
-  const globalRules = listNetworkRules(db, { scope: 'global' });
+export async function loadNetworkPolicy(db, orgId) {
+  const orgRules = orgId != null ? await listNetworkRules(db, { scope: 'org', orgId }) : [];
+  const globalRules = await listNetworkRules(db, { scope: 'global' });
   const patterns = (rules, type) => rules.filter((r) => r.rule_type === type).map((r) => r.pattern);
   return {
     orgDeny: patterns(orgRules, 'deny'),
@@ -42,13 +43,13 @@ export function toNetworkOptions(policy) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {URL} url
  * @param {number|null} orgId
  * @returns {Promise<{ allowed: boolean, reason?: string }>}
  */
 export async function checkUrlAllowed(db, url, orgId) {
-  const policy = loadNetworkPolicy(db, orgId);
+  const policy = await loadNetworkPolicy(db, orgId);
 
   // One DNS lookup shared by the up to three checks below.
   let lookupResult;

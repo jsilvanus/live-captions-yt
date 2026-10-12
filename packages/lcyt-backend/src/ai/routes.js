@@ -14,7 +14,7 @@ import { getAiConfig, setAiConfig, VALID_PROVIDERS } from './config.js';
 import { isServerEmbeddingAvailable } from './embeddings.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('../db/connection.js').Db} db
  * @param {import('express').RequestHandler} auth — JWT Bearer auth middleware
  * @returns {import('express').Router}
  */
@@ -22,11 +22,11 @@ export function createAiRouter(db, auth) {
   const router = Router();
 
   /** GET /ai/config — get AI config for the authenticated session's API key */
-  router.get('/config', auth, (req, res) => {
+  router.get('/config', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
 
-    const config = getAiConfig(db, apiKey);
+    const config = await getAiConfig(db, apiKey);
     const defaults = {
       embeddingProvider: 'none',
       embeddingModel: '',
@@ -39,7 +39,7 @@ export function createAiRouter(db, auth) {
   });
 
   /** PUT /ai/config — update AI config */
-  router.put('/config', auth, (req, res) => {
+  router.put('/config', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Not authenticated' });
 
@@ -56,7 +56,7 @@ export function createAiRouter(db, auth) {
       }
     }
 
-    setAiConfig(db, apiKey, {
+    await setAiConfig(db, apiKey, {
       embeddingProvider,
       embeddingModel,
       embeddingApiKey,

@@ -1,142 +1,53 @@
 /**
- * API Connectors & Variables plugin — DB migrations and CRUD helpers.
+ * API Connectors & Variables plugin — CRUD helpers on the Prisma client from lcyt-backend's initDb().
  *
- * Tables (see docs/plans/plan_api_connectors_variables.md §3):
+ * Tables (created by the backend schema; see docs/plans/plan_api_connectors_variables.md §3):
  *   api_connectors          — outbound HTTP connector definitions (base URL, auth, headers)
  *   api_requests            — nested named requests per connector (method/path/query/body)
  *   api_response_mappings   — JSONPath-to-variable mappings per request
  *   variables               — project-scoped {{name}} values, manual or connector-sourced
+ *   connector_network_rules — SSRF guard allow/deny rules (global and per org)
  *
- * @param {import('better-sqlite3').Database} db
+ * Every function is async.
  */
-export function runMigrations(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS api_connectors (
-      id           TEXT    PRIMARY KEY,
-      api_key      TEXT    NOT NULL,
-      name         TEXT    NOT NULL,
-      slug         TEXT    NOT NULL,
-      base_url     TEXT    NOT NULL,
-      auth_type    TEXT    NOT NULL DEFAULT 'none',
-      auth_config  TEXT    NOT NULL DEFAULT '{}',
-      headers      TEXT    NOT NULL DEFAULT '[]',
-      created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (api_key, slug)
-    )
-  `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_api_connectors_key ON api_connectors(api_key)`);
 
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS api_requests (
-      id                   TEXT    PRIMARY KEY,
-      connector_id         TEXT    NOT NULL REFERENCES api_connectors(id) ON DELETE CASCADE,
-      name                 TEXT    NOT NULL,
-      slug                 TEXT    NOT NULL,
-      method               TEXT    NOT NULL,
-      path                 TEXT    NOT NULL,
-      query_params         TEXT    NOT NULL DEFAULT '[]',
-      body_type            TEXT    NOT NULL DEFAULT 'raw',
-      body_content         TEXT,
-      response_type        TEXT    NOT NULL DEFAULT 'auto',
-      prefetch_interval_ms INTEGER NOT NULL DEFAULT 3000,
-      timeout_ms           INTEGER NOT NULL DEFAULT 200,
-      -- Session-long, pointer-independent background refresh (plan_live_variables.md §2),
-      -- deliberately opt-in and separate from the !api:/api:/api!: metacode tiers, which
-      -- stay pointer-scoped and frontend-owned exactly as before. Toggled via
-      -- PUT /connectors/:connectorSlug/requests/:requestSlug/poll, run by PollScheduler.
-      constant_poll_enabled INTEGER NOT NULL DEFAULT 0,
-      created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
-      updated_at           TEXT    NOT NULL DEFAULT (datetime('now')),
-      UNIQUE (connector_id, slug)
-    )
-  `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_api_requests_connector ON api_requests(connector_id)`);
-  // Additive column migration for pre-existing installs (fresh DBs already get
-  // the column from the CREATE TABLE above).
-  try { db.exec(`ALTER TABLE api_requests ADD COLUMN constant_poll_enabled INTEGER NOT NULL DEFAULT 0`); } catch { /* column already exists */ }
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS api_response_mappings (
-      id             TEXT    PRIMARY KEY,
-      request_id     TEXT    NOT NULL REFERENCES api_requests(id) ON DELETE CASCADE,
-      json_path      TEXT    NOT NULL DEFAULT '$',
-      variable_name  TEXT    NOT NULL,
-      skip_if_null   INTEGER NOT NULL DEFAULT 1,
-      sort_order     INTEGER NOT NULL DEFAULT 0
-    )
-  `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_api_response_mappings_request ON api_response_mappings(request_id)`);
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS variables (
-      api_key           TEXT    NOT NULL,
-      name              TEXT    NOT NULL,
-      current_value     TEXT,
-      default_value     TEXT,
-      source            TEXT    NOT NULL DEFAULT 'manual',
-      source_request_id TEXT REFERENCES api_requests(id) ON DELETE SET NULL,
-      resolved_at       TEXT,
-      updated_at        TEXT    NOT NULL DEFAULT (datetime('now')),
-      -- TTL / expiry (plan_metacode_variable_unification.md "Variable TTL / expiry"):
-      expires_at        TEXT,        -- ISO timestamp; time-based revert due (null = no TTL)
-      expires_at_seq    INTEGER,     -- caption-count revert threshold (enforcement is a follow-on send-path hook)
-      revert_mode       TEXT,        -- 'baseline' | 'literal' | 'previous' (null when no TTL pending)
-      revert_value      TEXT,        -- literal to restore when revert_mode='literal'
-      prev_value        TEXT,        -- value captured at assignment, restored when revert_mode='previous'
-      PRIMARY KEY (api_key, name)
-    )
-  `);
-  // Additive column migrations for pre-existing installs (the CREATE above only
-  // applies to fresh DBs). Each ALTER is a no-op-if-present.
-  for (const col of [
-    'expires_at TEXT', 'expires_at_seq INTEGER', 'revert_mode TEXT',
-    'revert_value TEXT', 'prev_value TEXT',
-  ]) {
-    try { db.exec(`ALTER TABLE variables ADD COLUMN ${col}`); } catch { /* column already exists */ }
-  }
-
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS connector_network_rules (
-      id          TEXT    PRIMARY KEY,
-      scope       TEXT    NOT NULL,    -- 'global' | 'org'
-      org_id      INTEGER,             -- NULL for global; organizations.id for org scope
-      rule_type   TEXT    NOT NULL,    -- 'allow' | 'deny'
-      pattern     TEXT    NOT NULL,    -- see network-guard.js for pattern syntax
-      description TEXT,
-      created_by  INTEGER,             -- users.id, nullable (legacy X-Admin-Key has no user)
-      created_at  TEXT    NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_connector_network_rules_scope ON connector_network_rules(scope, org_id)`);
-}
+/** No-op kept for old callers: the tables come from the backend schema. */
+export async function runMigrations() {}
 
 // ---------------------------------------------------------------------------
 // Connector CRUD
 // ---------------------------------------------------------------------------
 
-export function listConnectors(db, apiKey) {
-  return db.prepare('SELECT * FROM api_connectors WHERE api_key = ? ORDER BY created_at').all(apiKey);
+const now = (db) => db.$util.sqlNow();
+// The old better-sqlite3 helpers returned undefined for a missing row; keep that.
+const orUndef = (row) => row ?? undefined;
+
+export async function listConnectors(db, apiKey) {
+  return db.api_connectors.findMany({ where: { api_key: apiKey }, orderBy: { created_at: 'asc' } });
 }
 
-export function getConnectorBySlug(db, apiKey, slug) {
-  return db.prepare('SELECT * FROM api_connectors WHERE api_key = ? AND slug = ?').get(apiKey, slug);
+export async function getConnectorBySlug(db, apiKey, slug) {
+  return orUndef(await db.api_connectors.findUnique({ where: { api_key_slug: { api_key: apiKey, slug } } }));
 }
 
-export function getConnectorById(db, id) {
-  return db.prepare('SELECT * FROM api_connectors WHERE id = ?').get(id);
+export async function getConnectorById(db, id) {
+  return orUndef(await db.api_connectors.findUnique({ where: { id } }));
 }
 
-export function createConnector(db, apiKey, { id, name, slug, baseUrl, authType, authConfig, headers }) {
-  db.prepare(`
-    INSERT INTO api_connectors (id, api_key, name, slug, base_url, auth_type, auth_config, headers)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(id, apiKey, name, slug, baseUrl, authType || 'none', JSON.stringify(authConfig || {}), JSON.stringify(headers || []));
+export async function createConnector(db, apiKey, { id, name, slug, baseUrl, authType, authConfig, headers }) {
+  await db.api_connectors.create({
+    data: {
+      id, api_key: apiKey, name, slug, base_url: baseUrl,
+      auth_type: authType || 'none',
+      auth_config: JSON.stringify(authConfig || {}),
+      headers: JSON.stringify(headers || []),
+    },
+  });
   return getConnectorById(db, id);
 }
 
-export function updateConnector(db, id, fields) {
-  const existing = getConnectorById(db, id);
+export async function updateConnector(db, id, fields) {
+  const existing = await getConnectorById(db, id);
   if (!existing) return null;
   const next = {
     name: fields.name !== undefined ? fields.name : existing.name,
@@ -146,16 +57,12 @@ export function updateConnector(db, id, fields) {
     auth_config: fields.authConfig !== undefined ? JSON.stringify(fields.authConfig) : existing.auth_config,
     headers: fields.headers !== undefined ? JSON.stringify(fields.headers) : existing.headers,
   };
-  db.prepare(`
-    UPDATE api_connectors
-    SET name = ?, slug = ?, base_url = ?, auth_type = ?, auth_config = ?, headers = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `).run(next.name, next.slug, next.base_url, next.auth_type, next.auth_config, next.headers, id);
+  await db.api_connectors.updateMany({ where: { id }, data: { ...next, updated_at: now(db) } });
   return getConnectorById(db, id);
 }
 
-export function deleteConnector(db, id) {
-  return db.prepare('DELETE FROM api_connectors WHERE id = ?').run(id).changes > 0;
+export async function deleteConnector(db, id) {
+  return (await db.api_connectors.deleteMany({ where: { id } })).count > 0;
 }
 
 /** Mask auth_config for client responses — never expose raw secrets. */
@@ -178,39 +85,38 @@ export function maskConnector(row) {
 // Request CRUD
 // ---------------------------------------------------------------------------
 
-export function listRequests(db, connectorId) {
-  return db.prepare('SELECT * FROM api_requests WHERE connector_id = ? ORDER BY created_at').all(connectorId);
+export async function listRequests(db, connectorId) {
+  return db.api_requests.findMany({ where: { connector_id: connectorId }, orderBy: { created_at: 'asc' } });
 }
 
-export function getRequestBySlug(db, connectorId, slug) {
-  return db.prepare('SELECT * FROM api_requests WHERE connector_id = ? AND slug = ?').get(connectorId, slug);
+export async function getRequestBySlug(db, connectorId, slug) {
+  return orUndef(await db.api_requests.findUnique({ where: { connector_id_slug: { connector_id: connectorId, slug } } }));
 }
 
-export function getRequestById(db, id) {
-  return db.prepare('SELECT * FROM api_requests WHERE id = ?').get(id);
+export async function getRequestById(db, id) {
+  return orUndef(await db.api_requests.findUnique({ where: { id } }));
 }
 
-export function createRequest(db, connectorId, {
+export async function createRequest(db, connectorId, {
   id, name, slug, method, path, queryParams, bodyType, bodyContent,
   responseType, prefetchIntervalMs, timeoutMs,
 }) {
-  db.prepare(`
-    INSERT INTO api_requests
-      (id, connector_id, name, slug, method, path, query_params, body_type, body_content,
-       response_type, prefetch_interval_ms, timeout_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    id, connectorId, name, slug, method, path,
-    JSON.stringify(queryParams || []), bodyType || 'raw', bodyContent ?? null,
-    responseType || 'auto',
-    clampInterval(prefetchIntervalMs, 3000),
-    clampTimeout(timeoutMs, 200),
-  );
+  await db.api_requests.create({
+    data: {
+      id, connector_id: connectorId, name, slug, method, path,
+      query_params: JSON.stringify(queryParams || []),
+      body_type: bodyType || 'raw',
+      body_content: bodyContent ?? null,
+      response_type: responseType || 'auto',
+      prefetch_interval_ms: clampInterval(prefetchIntervalMs, 3000),
+      timeout_ms: clampTimeout(timeoutMs, 200),
+    },
+  });
   return getRequestById(db, id);
 }
 
-export function updateRequest(db, id, fields) {
-  const existing = getRequestById(db, id);
+export async function updateRequest(db, id, fields) {
+  const existing = await getRequestById(db, id);
   if (!existing) return null;
   const next = {
     name: fields.name !== undefined ? fields.name : existing.name,
@@ -228,26 +134,20 @@ export function updateRequest(db, id, fields) {
       ? clampTimeout(fields.timeoutMs, existing.timeout_ms)
       : existing.timeout_ms,
   };
-  db.prepare(`
-    UPDATE api_requests
-    SET name = ?, slug = ?, method = ?, path = ?, query_params = ?, body_type = ?, body_content = ?,
-        response_type = ?, prefetch_interval_ms = ?, timeout_ms = ?, updated_at = datetime('now')
-    WHERE id = ?
-  `).run(
-    next.name, next.slug, next.method, next.path, next.query_params, next.body_type, next.body_content,
-    next.response_type, next.prefetch_interval_ms, next.timeout_ms, id,
-  );
+  await db.api_requests.updateMany({ where: { id }, data: { ...next, updated_at: now(db) } });
   return getRequestById(db, id);
 }
 
-export function deleteRequest(db, id) {
-  return db.prepare('DELETE FROM api_requests WHERE id = ?').run(id).changes > 0;
+export async function deleteRequest(db, id) {
+  return (await db.api_requests.deleteMany({ where: { id } })).count > 0;
 }
 
 /** Toggle a request's constant-poll flag (see PollScheduler). Returns the updated row. */
-export function setConstantPoll(db, id, enabled) {
-  db.prepare(`UPDATE api_requests SET constant_poll_enabled = ?, updated_at = datetime('now') WHERE id = ?`)
-    .run(enabled ? 1 : 0, id);
+export async function setConstantPoll(db, id, enabled) {
+  await db.api_requests.updateMany({
+    where: { id },
+    data: { constant_poll_enabled: enabled ? 1 : 0, updated_at: now(db) },
+  });
   return getRequestById(db, id);
 }
 
@@ -256,14 +156,18 @@ export function setConstantPoll(db, id, enabled) {
  * joined with its owning connector so PollScheduler.restore() has the
  * (apiKey, connectorSlug, requestSlug) triple fireRequest() needs.
  */
-export function listConstantPollRequests(db) {
-  return db.prepare(`
-    SELECT r.id AS request_id, r.slug AS request_slug, r.prefetch_interval_ms AS interval_ms,
-           c.api_key AS api_key, c.slug AS connector_slug
-    FROM api_requests r
-    JOIN api_connectors c ON c.id = r.connector_id
-    WHERE r.constant_poll_enabled = 1
-  `).all();
+export async function listConstantPollRequests(db) {
+  const rows = await db.api_requests.findMany({
+    where: { constant_poll_enabled: 1 },
+    include: { api_connectors: { select: { api_key: true, slug: true } } },
+  });
+  return rows.map((r) => ({
+    request_id: r.id,
+    request_slug: r.slug,
+    interval_ms: r.prefetch_interval_ms,
+    api_key: r.api_connectors.api_key,
+    connector_slug: r.api_connectors.slug,
+  }));
 }
 
 /**
@@ -274,15 +178,20 @@ export function listConstantPollRequests(db) {
  * request (or its connector) no longer exists — the scheduler treats that
  * as "stop polling, nothing left to fire".
  */
-export function getConstantPollTarget(db, requestId) {
-  return db.prepare(`
-    SELECT r.id AS request_id, r.slug AS request_slug, r.prefetch_interval_ms AS interval_ms,
-           r.constant_poll_enabled AS constant_poll_enabled,
-           c.api_key AS api_key, c.slug AS connector_slug
-    FROM api_requests r
-    JOIN api_connectors c ON c.id = r.connector_id
-    WHERE r.id = ?
-  `).get(requestId);
+export async function getConstantPollTarget(db, requestId) {
+  const r = await db.api_requests.findUnique({
+    where: { id: requestId },
+    include: { api_connectors: { select: { api_key: true, slug: true } } },
+  });
+  if (!r) return undefined;
+  return {
+    request_id: r.id,
+    request_slug: r.slug,
+    interval_ms: r.prefetch_interval_ms,
+    constant_poll_enabled: r.constant_poll_enabled,
+    api_key: r.api_connectors.api_key,
+    connector_slug: r.api_connectors.slug,
+  };
 }
 
 function clampInterval(value, fallback) {
@@ -301,24 +210,26 @@ function clampTimeout(value, fallback) {
 // Response mapping CRUD
 // ---------------------------------------------------------------------------
 
-export function listMappings(db, requestId) {
-  return db.prepare('SELECT * FROM api_response_mappings WHERE request_id = ? ORDER BY sort_order').all(requestId);
+export async function listMappings(db, requestId) {
+  return db.api_response_mappings.findMany({ where: { request_id: requestId }, orderBy: { sort_order: 'asc' } });
 }
 
-export function getMappingById(db, id) {
-  return db.prepare('SELECT * FROM api_response_mappings WHERE id = ?').get(id);
+export async function getMappingById(db, id) {
+  return orUndef(await db.api_response_mappings.findUnique({ where: { id } }));
 }
 
-export function createMapping(db, requestId, { id, jsonPath, variableName, skipIfNull, sortOrder }) {
-  db.prepare(`
-    INSERT INTO api_response_mappings (id, request_id, json_path, variable_name, skip_if_null, sort_order)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, requestId, jsonPath || '$', variableName, skipIfNull === false ? 0 : 1, sortOrder || 0);
+export async function createMapping(db, requestId, { id, jsonPath, variableName, skipIfNull, sortOrder }) {
+  await db.api_response_mappings.create({
+    data: {
+      id, request_id: requestId, json_path: jsonPath || '$', variable_name: variableName,
+      skip_if_null: skipIfNull === false ? 0 : 1, sort_order: sortOrder || 0,
+    },
+  });
   return getMappingById(db, id);
 }
 
-export function updateMapping(db, id, fields) {
-  const existing = getMappingById(db, id);
+export async function updateMapping(db, id, fields) {
+  const existing = await getMappingById(db, id);
   if (!existing) return null;
   const next = {
     json_path: fields.jsonPath !== undefined ? fields.jsonPath : existing.json_path,
@@ -326,28 +237,26 @@ export function updateMapping(db, id, fields) {
     skip_if_null: fields.skipIfNull !== undefined ? (fields.skipIfNull ? 1 : 0) : existing.skip_if_null,
     sort_order: fields.sortOrder !== undefined ? fields.sortOrder : existing.sort_order,
   };
-  db.prepare(`
-    UPDATE api_response_mappings
-    SET json_path = ?, variable_name = ?, skip_if_null = ?, sort_order = ?
-    WHERE id = ?
-  `).run(next.json_path, next.variable_name, next.skip_if_null, next.sort_order, id);
+  await db.api_response_mappings.updateMany({ where: { id }, data: next });
   return getMappingById(db, id);
 }
 
-export function deleteMapping(db, id) {
-  return db.prepare('DELETE FROM api_response_mappings WHERE id = ?').run(id).changes > 0;
+export async function deleteMapping(db, id) {
+  return (await db.api_response_mappings.deleteMany({ where: { id } })).count > 0;
 }
 
 // ---------------------------------------------------------------------------
 // Variable CRUD
 // ---------------------------------------------------------------------------
 
-export function listVariables(db, apiKey) {
-  return db.prepare('SELECT * FROM variables WHERE api_key = ? ORDER BY name').all(apiKey);
+export async function listVariables(db, apiKey) {
+  const rows = await db.variables.findMany({ where: { api_key: apiKey } });
+  // Plain code-unit order like SQLite's BINARY collation, so PostgreSQL's locale collation cannot reorder names.
+  return rows.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
-export function getVariable(db, apiKey, name) {
-  return db.prepare('SELECT * FROM variables WHERE api_key = ? AND name = ?').get(apiKey, name);
+export async function getVariable(db, apiKey, name) {
+  return orUndef(await db.variables.findUnique({ where: { api_key_name: { api_key: apiKey, name } } }));
 }
 
 /**
@@ -369,40 +278,35 @@ function computeTtlColumns(ttl, prevValue) {
   };
 }
 
-export function upsertManualVariable(db, apiKey, name, { value, defaultValue, ttl = null, source = 'manual' } = {}) {
-  const existing = getVariable(db, apiKey, name);
+export async function upsertManualVariable(db, apiKey, name, { value, defaultValue, ttl = null, source = 'manual' } = {}) {
+  const existing = await getVariable(db, apiKey, name);
   const nextValue = value !== undefined ? value : (existing ? existing.current_value : null);
   const nextDefault = defaultValue !== undefined ? defaultValue : (existing ? existing.default_value : null);
   const resolvedBumped = value !== undefined;
   const t = computeTtlColumns(ttl, existing ? existing.current_value : null);
   const src = source === 'file' ? 'file' : 'manual';
+  const ts = now(db);
 
   if (!existing) {
-    db.prepare(`
-      INSERT INTO variables
-        (api_key, name, current_value, default_value, source, resolved_at, updated_at,
-         expires_at, expires_at_seq, revert_mode, revert_value, prev_value)
-      VALUES (?, ?, ?, ?, ?,
-        CASE WHEN ? THEN datetime('now') ELSE NULL END, datetime('now'),
-        ?, ?, ?, ?, ?)
-    `).run(
-      apiKey, name, nextValue ?? null, nextDefault ?? null, src, resolvedBumped ? 1 : 0,
-      t.expires_at, t.expires_at_seq, t.revert_mode, t.revert_value, t.prev_value,
-    );
+    await db.variables.create({
+      data: {
+        api_key: apiKey, name,
+        current_value: nextValue ?? null, default_value: nextDefault ?? null, source: src,
+        resolved_at: resolvedBumped ? ts : null, updated_at: ts,
+        ...t,
+      },
+    });
     return getVariable(db, apiKey, name);
   }
-  db.prepare(`
-    UPDATE variables
-    SET current_value = ?, default_value = ?, source = ?,
-        resolved_at = CASE WHEN ? THEN datetime('now') ELSE resolved_at END,
-        updated_at = datetime('now'),
-        expires_at = ?, expires_at_seq = ?, revert_mode = ?, revert_value = ?, prev_value = ?
-    WHERE api_key = ? AND name = ?
-  `).run(
-    nextValue ?? null, nextDefault ?? null, src, resolvedBumped ? 1 : 0,
-    t.expires_at, t.expires_at_seq, t.revert_mode, t.revert_value, t.prev_value,
-    apiKey, name,
-  );
+  await db.variables.updateMany({
+    where: { api_key: apiKey, name },
+    data: {
+      current_value: nextValue ?? null, default_value: nextDefault ?? null, source: src,
+      ...(resolvedBumped ? { resolved_at: ts } : {}),
+      updated_at: ts,
+      ...t,
+    },
+  });
   return getVariable(db, apiKey, name);
 }
 
@@ -411,21 +315,23 @@ export function upsertManualVariable(db, apiKey, name, { value, defaultValue, tt
  * stored revert_mode and clear all TTL columns. Used by the scheduler at expiry
  * and by materializeExpired() lazily on read. Returns the updated row (or null).
  */
-export function applyRevert(db, apiKey, name) {
-  const row = getVariable(db, apiKey, name);
+export async function applyRevert(db, apiKey, name) {
+  const row = await getVariable(db, apiKey, name);
   if (!row || !row.revert_mode) return null;
   let reverted;
   if (row.revert_mode === 'literal') reverted = row.revert_value ?? '';
   else if (row.revert_mode === 'previous') reverted = row.prev_value ?? null;
   else reverted = null; // baseline → clear, resolves to default_value → ''
-  db.prepare(`
-    UPDATE variables
-    SET current_value = ?,
-        resolved_at = CASE WHEN ? IS NULL THEN resolved_at ELSE datetime('now') END,
-        updated_at = datetime('now'),
-        expires_at = NULL, expires_at_seq = NULL, revert_mode = NULL, revert_value = NULL, prev_value = NULL
-    WHERE api_key = ? AND name = ?
-  `).run(reverted ?? null, reverted ?? null, apiKey, name);
+  const ts = now(db);
+  await db.variables.updateMany({
+    where: { api_key: apiKey, name },
+    data: {
+      current_value: reverted ?? null,
+      ...(reverted == null ? {} : { resolved_at: ts }),
+      updated_at: ts,
+      expires_at: null, expires_at_seq: null, revert_mode: null, revert_value: null, prev_value: null,
+    },
+  });
   return getVariable(db, apiKey, name);
 }
 
@@ -434,16 +340,15 @@ export function applyRevert(db, apiKey, name) {
  * Belt-and-braces for a missed/never-scheduled timer (e.g. server restart before
  * scheduler.restore()). Returns the list of reverted rows so the caller can emit.
  */
-export function materializeExpired(db, apiKey, now = Date.now()) {
-  const due = db.prepare(
-    'SELECT name FROM variables WHERE api_key = ? AND expires_at IS NOT NULL'
-  ).all(apiKey).filter((r) => {
-    const t = Date.parse(getVariable(db, apiKey, r.name)?.expires_at);
-    return Number.isFinite(t) && t <= now;
+export async function materializeExpired(db, apiKey, nowMs = Date.now()) {
+  const rows = await db.variables.findMany({ where: { api_key: apiKey, expires_at: { not: null } } });
+  const due = rows.filter((r) => {
+    const t = Date.parse(r.expires_at);
+    return Number.isFinite(t) && t <= nowMs;
   });
   const reverted = [];
   for (const { name } of due) {
-    const row = applyRevert(db, apiKey, name);
+    const row = await applyRevert(db, apiKey, name);
     if (row) reverted.push(row);
   }
   return reverted;
@@ -463,25 +368,27 @@ export function serializeVariableRow(row) {
 }
 
 /** Set a variable's resolved value from a connector call. */
-export function setConnectorVariable(db, apiKey, name, value, sourceRequestId) {
-  const existing = getVariable(db, apiKey, name);
+export async function setConnectorVariable(db, apiKey, name, value, sourceRequestId) {
+  const existing = await getVariable(db, apiKey, name);
+  const ts = now(db);
   if (!existing) {
-    db.prepare(`
-      INSERT INTO variables (api_key, name, current_value, default_value, source, source_request_id, resolved_at, updated_at)
-      VALUES (?, ?, ?, NULL, 'connector', ?, datetime('now'), datetime('now'))
-    `).run(apiKey, name, value ?? null, sourceRequestId);
+    await db.variables.create({
+      data: {
+        api_key: apiKey, name, current_value: value ?? null, default_value: null, source: 'connector',
+        source_request_id: sourceRequestId, resolved_at: ts, updated_at: ts,
+      },
+    });
   } else {
-    db.prepare(`
-      UPDATE variables
-      SET current_value = ?, source = 'connector', source_request_id = ?, resolved_at = datetime('now'), updated_at = datetime('now')
-      WHERE api_key = ? AND name = ?
-    `).run(value ?? null, sourceRequestId, apiKey, name);
+    await db.variables.updateMany({
+      where: { api_key: apiKey, name },
+      data: { current_value: value ?? null, source: 'connector', source_request_id: sourceRequestId, resolved_at: ts, updated_at: ts },
+    });
   }
   return getVariable(db, apiKey, name);
 }
 
-export function deleteVariable(db, apiKey, name) {
-  return db.prepare('DELETE FROM variables WHERE api_key = ? AND name = ?').run(apiKey, name).changes > 0;
+export async function deleteVariable(db, apiKey, name) {
+  return (await db.variables.deleteMany({ where: { api_key: apiKey, name } })).count > 0;
 }
 
 /** Resolve a variable's effective value for {{ }} interpolation: current -> default -> ''. */
@@ -496,42 +403,36 @@ export function resolveVariableValue(row) {
 // Outbound network policy (SSRF guard rules) — see network-guard.js
 // ---------------------------------------------------------------------------
 
-export function listNetworkRules(db, { scope, orgId } = {}) {
-  if (scope === 'global') {
-    return db.prepare("SELECT * FROM connector_network_rules WHERE scope = 'global' ORDER BY created_at").all();
-  }
-  if (scope === 'org') {
-    return db.prepare("SELECT * FROM connector_network_rules WHERE scope = 'org' AND org_id = ? ORDER BY created_at").all(orgId);
-  }
-  return db.prepare('SELECT * FROM connector_network_rules ORDER BY created_at').all();
+export async function listNetworkRules(db, { scope, orgId } = {}) {
+  let where = {};
+  if (scope === 'global') where = { scope: 'global' };
+  else if (scope === 'org') where = { scope: 'org', org_id: orgId };
+  return db.connector_network_rules.findMany({ where, orderBy: { created_at: 'asc' } });
 }
 
-export function getNetworkRule(db, id) {
-  return db.prepare('SELECT * FROM connector_network_rules WHERE id = ?').get(id);
+export async function getNetworkRule(db, id) {
+  return orUndef(await db.connector_network_rules.findUnique({ where: { id } }));
 }
 
-export function createNetworkRule(db, { id, scope, orgId = null, ruleType, pattern, description = null, createdBy = null }) {
-  db.prepare(`
-    INSERT INTO connector_network_rules (id, scope, org_id, rule_type, pattern, description, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, scope, orgId, ruleType, pattern, description, createdBy);
+export async function createNetworkRule(db, { id, scope, orgId = null, ruleType, pattern, description = null, createdBy = null }) {
+  await db.connector_network_rules.create({
+    data: { id, scope, org_id: orgId, rule_type: ruleType, pattern, description, created_by: createdBy },
+  });
   return getNetworkRule(db, id);
 }
 
-export function deleteNetworkRule(db, id) {
-  return db.prepare('DELETE FROM connector_network_rules WHERE id = ?').run(id).changes > 0;
+export async function deleteNetworkRule(db, id) {
+  return (await db.connector_network_rules.deleteMany({ where: { id } })).count > 0;
 }
 
 /** api_keys.org_id lookup — api_keys is a core lcyt-backend table, not owned by this plugin. */
-export function getApiKeyOrgId(db, apiKey) {
+export async function getApiKeyOrgId(db, apiKey) {
   try {
-    const row = db.prepare('SELECT org_id FROM api_keys WHERE key = ?').get(apiKey);
+    const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { org_id: true } });
     return row?.org_id ?? null;
   } catch {
-    // api_keys is a core lcyt-backend table; if it's absent (e.g. an isolated
-    // test DB with only this plugin's own migrations run), fall back to "no
-    // org" rather than failing the whole request — network rules just won't
-    // have an org-scoped tier to check in that case.
+    // Fall back to "no org" rather than failing the whole request — network
+    // rules just won't have an org-scoped tier to check in that case.
     return null;
   }
 }
@@ -541,10 +442,10 @@ export function getApiKeyOrgId(db, apiKey) {
  * their org_members.role, or null if they're not a member at all.
  * organizations/org_members are core lcyt-backend tables, not owned by this plugin.
  */
-export function getOrgRole(db, userId, orgId) {
-  const org = db.prepare('SELECT owner_user_id FROM organizations WHERE id = ?').get(orgId);
+export async function getOrgRole(db, userId, orgId) {
+  const org = await db.organizations.findUnique({ where: { id: orgId }, select: { owner_user_id: true } });
   if (!org) return null;
   if (org.owner_user_id === userId) return 'owner';
-  const member = db.prepare('SELECT role FROM org_members WHERE org_id = ? AND user_id = ?').get(orgId, userId);
+  const member = await db.org_members.findFirst({ where: { org_id: orgId, user_id: userId }, select: { role: true } });
   return member?.role ?? null;
 }

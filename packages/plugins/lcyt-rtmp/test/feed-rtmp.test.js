@@ -4,54 +4,42 @@
  * ('rtmp'-type prod_cameras rows).
  *
  * prod_cameras is owned by lcyt-production; this plugin has no dependency
- * on it, so the test builds a minimal inline table (same cross-plugin-query
+ * on it, the rows are seeded with plain SQL (same cross-plugin-query
  * convention documented in db/relay.js and feed-rtmp.js itself).
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import express from 'express';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import { createFeedRtmpRouter } from '../src/routes/feed-rtmp.js';
 import { RtmpRelayManager } from '../src/rtmp-manager.js';
-import { runMigrations } from '../src/db.js';
 
 let db, server, baseUrl, relayManager;
 
-before(() => new Promise((resolve) => {
-  db = new Database(':memory:');
-  // Minimal api_keys stub — runMigrations() below ALTERs it (relay_allowed
-  // etc.) and getApiKeysReferencingCamera()/isRelayActive()/getRelays()/
-  // getKey() (called from feed-rtmp.js's on_publish, code-review follow-up)
-  // need the real rtmp_relays/api_keys shape, not just prod_cameras.
-  db.exec('CREATE TABLE api_keys (key TEXT PRIMARY KEY)');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
 
-  db.exec(`
-    CREATE TABLE prod_cameras (
-      id TEXT PRIMARY KEY,
-      camera_key TEXT UNIQUE,
-      control_type TEXT NOT NULL DEFAULT 'none'
-    )
-  `);
-  db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type) VALUES ('cam-1', 'altar-cam', 'rtmp')").run();
+  await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type) VALUES ('cam-1', 'Altar', 'altar-cam', 'rtmp')").run();
   // A non-'rtmp' camera with the same-shaped key should NOT be resolvable.
-  db.prepare("INSERT INTO prod_cameras (id, camera_key, control_type) VALUES ('cam-2', 'ptz-cam', 'amx')").run();
+  await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type) VALUES ('cam-2', 'PTZ', 'ptz-cam', 'amx')").run();
 
   relayManager = new RtmpRelayManager();
   const app = express();
   app.use('/feed-rtmp', createFeedRtmpRouter(db, relayManager));
   server = createServer(app);
-  server.listen(0, () => {
-    baseUrl = `http://localhost:${server.address().port}`;
-    resolve();
+  await new Promise((resolve) => {
+    server.listen(0, () => {
+      baseUrl = `http://localhost:${server.address().port}`;
+      resolve();
+    });
   });
-}));
+});
 
-after(() => new Promise((resolve) => {
-  db.close();
-  server.close(resolve);
-}));
+after(async () => {
+  await new Promise((resolve) => server.close(resolve));
+  await db.close();
+});
 
 function postFeedRtmp(path, fields) {
   const body = new URLSearchParams(fields).toString();
@@ -121,8 +109,8 @@ describe('POST /feed-rtmp/on_publish and /on_publish_done (separate-URL style)',
 
 describe('camera-only egress: on_publish must trigger relay start (code-review follow-up)', () => {
   it('starts the relay for a project whose only slot sources from this camera', async () => {
-    db.prepare("INSERT INTO api_keys (key, relay_active) VALUES ('proj-camonly', 1)").run();
-    db.prepare(`
+    await db.prepare("INSERT INTO api_keys (key, owner, relay_active) VALUES ('proj-camonly', 'owner', 1)").run();
+    await db.prepare(`
       INSERT INTO rtmp_relays (api_key, slot, target_url, source_camera_id)
       VALUES ('proj-camonly', 1, 'rtmp://teams.example.com/live/x', 'cam-1')
     `).run();
@@ -135,8 +123,8 @@ describe('camera-only egress: on_publish must trigger relay start (code-review f
   });
 
   it('does not start the relay for a referencing project with relay_active=0', async () => {
-    db.prepare("INSERT INTO api_keys (key, relay_active) VALUES ('proj-inactive', 0)").run();
-    db.prepare(`
+    await db.prepare("INSERT INTO api_keys (key, owner, relay_active) VALUES ('proj-inactive', 'owner', 0)").run();
+    await db.prepare(`
       INSERT INTO rtmp_relays (api_key, slot, target_url, source_camera_id)
       VALUES ('proj-inactive', 1, 'rtmp://teams.example.com/live/y', 'cam-1')
     `).run();

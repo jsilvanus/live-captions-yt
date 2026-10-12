@@ -52,7 +52,7 @@ function ensureImageDir(apiKey) {
  * GET    /images/:id   — Serve image bytes publicly (no auth — for DSK page)
  * DELETE /images/:id   — Delete an image (auth required)
  *
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db Prisma client
  * @param {import('express').RequestHandler} auth
  * @param {{ get: (key: string) => * }} [settings] - lcyt-backend's SettingsService
  *   (plan_env_to_ui_settings.md), duck-typed. Falls back to raw process.env when omitted.
@@ -62,7 +62,7 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
   const router = Router();
 
   // POST /images — upload
-  router.post('/', auth, (req, res) => {
+  router.post('/', auth, async (req, res) => {
     const graphicsEnabled = settings ? settings.get('graphics.enabled') : process.env.GRAPHICS_ENABLED === '1';
     if (!graphicsEnabled) {
       return res.status(503).json({ error: 'Graphics upload is not enabled on this server' });
@@ -71,7 +71,7 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
     const apiKey = req.session.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 
-    if (!isGraphicsEnabled(db, apiKey)) {
+    if (!await isGraphicsEnabled(db, apiKey)) {
       logger.warn(`[images] upload rejected: graphics_enabled=false for apiKey=${apiKey}`);
       return res.status(403).json({ error: 'Graphics upload not enabled for this API key' });
     }
@@ -80,7 +80,7 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
     const maxStorageBytes = settings ? settings.get('graphics.max_storage_bytes') : MAX_STORAGE_BYTES;
 
     // Check total storage quota before accepting the upload
-    const usedBytes = getTotalImageStorageBytes(db, apiKey);
+    const usedBytes = await getTotalImageStorageBytes(db, apiKey);
     if (usedBytes >= maxStorageBytes) {
       return res.status(413).json({
         error: `Storage quota exceeded (${(maxStorageBytes / 1024 / 1024).toFixed(0)} MB limit per key)`,
@@ -209,13 +209,13 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
       }
 
       // Check shorthand uniqueness
-      if (isShorthandTaken(db, apiKey, shorthand)) {
+      if (await isShorthandTaken(db, apiKey, shorthand)) {
         if (!graphicsStore && diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(409).json({ error: `Shorthand '${shorthand}' is already in use for this key` });
       }
 
       // Re-check quota including this file (race condition guard)
-      const nowUsed = getTotalImageStorageBytes(db, apiKey);
+      const nowUsed = await getTotalImageStorageBytes(db, apiKey);
       if (nowUsed + uploadedBytes > maxStorageBytes) {
         if (!graphicsStore && diskPath) try { fs.unlinkSync(diskPath); } catch {}
         return res.status(413).json({ error: 'Storage quota would be exceeded' });
@@ -232,7 +232,7 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
         }
       }
 
-      const id = registerImage(db, {
+      const id = await registerImage(db, {
         apiKey,
         filename: storedFilename,
         shorthand,
@@ -248,11 +248,11 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
   });
 
   // GET /images — list (auth required)
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, async (req, res) => {
     const apiKey = req.session.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 
-    const rows = listImages(db, apiKey);
+    const rows = await listImages(db, apiKey);
     const images = rows.map(r => ({
       id:          r.id,
       shorthand:   r.shorthand,
@@ -266,7 +266,7 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
   });
 
   // PUT /images/:id — update per-viewport settings (auth required)
-  router.put('/:id', auth, (req, res) => {
+  router.put('/:id', auth, async (req, res) => {
     const apiKey = req.session.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 
@@ -281,14 +281,14 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
       return res.status(400).json({ error: 'settingsJson must be an object' });
     }
 
-    const updated = updateImageSettings(db, id, apiKey, settingsJson);
+    const updated = await updateImageSettings(db, id, apiKey, settingsJson);
     if (!updated) return res.status(404).json({ error: 'Image not found' });
 
     return res.json({ ok: true, settingsJson });
   });
 
   // GET /images/:id — serve image publicly (no auth — for DSK page pre-loading)
-  router.get('/:id', (req, res) => {
+  router.get('/:id', async (req, res) => {
     const sendStoreObject = async () => {
       const objectKey = `${safeApiKey(row.api_key)}/${safeFilename}`;
       try {
@@ -307,7 +307,7 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Invalid image id' });
 
-    const row = getImage(db, id);
+    const row = await getImage(db, id);
     if (!row) return res.status(404).json({ error: 'Image not found' });
 
     const safe = safeApiKey(row.api_key);
@@ -331,14 +331,14 @@ export function createImagesRouter(db, auth, settings = null, { graphicsStore = 
   });
 
   // DELETE /images/:id — delete (auth required)
-  router.delete('/:id', auth, (req, res) => {
+  router.delete('/:id', auth, async (req, res) => {
     const apiKey = req.session.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'Unauthorized' });
 
     const id = parseInt(req.params.id, 10);
     if (isNaN(id)) return res.status(400).json({ error: 'Invalid image id' });
 
-    const row = deleteImage(db, id, apiKey);
+    const row = await deleteImage(db, id, apiKey);
     if (!row) return res.status(404).json({ error: 'Image not found' });
 
     // Best-effort object deletion

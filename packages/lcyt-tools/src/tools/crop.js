@@ -29,9 +29,9 @@ export function createCropTools(deps) {
       description: 'List the vertical-crop presets in the project\'s active preset set, along with the {key}-crop renderer\'s current status (running, active preset/position, live-vs-restart repositioning mode).',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
-      handler: (_args, ctx) => ({
+      handler: async (_args, ctx) => ({
         ok: true,
-        presets: listCropPresets(db, ctx.apiKey),
+        presets: await listCropPresets(db, ctx.apiKey),
         ...cropManager.getStatus(ctx.apiKey),
       }),
     },
@@ -49,13 +49,13 @@ export function createCropTools(deps) {
       annotations: { destructiveHint: true },
       handler: async ({ presetId, transitionMs }, ctx) => {
         const apiKey = ctx.apiKey;
-        const preset = getCropPreset(db, apiKey, presetId);
+        const preset = await getCropPreset(db, apiKey, presetId);
         if (!preset) return { ok: false, error: 'Preset not found' };
         if (!cropManager.isRunning(apiKey)) return { ok: false, error: 'Crop renderer is not running' };
 
         const ms = Number.isFinite(Number(transitionMs)) && Number(transitionMs) >= 0
           ? Number(transitionMs)
-          : getCropConfig(db, apiKey).transitionMs;
+          : (await getCropConfig(db, apiKey)).transitionMs;
 
         try {
           const result = await cropManager.applyPosition(apiKey, {

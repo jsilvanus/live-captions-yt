@@ -16,7 +16,7 @@ export function createSceneRouter(auth, sceneState) {
   router.use(auth);
 
   // GET /scene/state — return the current scene state snapshot
-  router.get('/state', (req, res) => {
+  router.get('/state', async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
 

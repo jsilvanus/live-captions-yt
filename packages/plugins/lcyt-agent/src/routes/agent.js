@@ -23,7 +23,7 @@ import { Router } from 'express';
 import { getRecentAgentEvents } from '../db.js';
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {Function} auth — JWT auth middleware
  * @param {import('../agent-engine.js').AgentEngine} agent
  * @returns {Router}
@@ -32,7 +32,7 @@ export function createAgentRouter(db, auth, agent) {
   const router = Router();
 
   // GET /agent/status — capabilities and configuration state
-  router.get('/status', auth, (req, res) => {
+  router.get('/status', auth, async (req, res) => {
     res.set('Cache-Control', 'private, max-age=3600, stale-while-revalidate=3600');
     res.json({
       ok: true,
@@ -48,7 +48,7 @@ export function createAgentRouter(db, auth, agent) {
   });
 
   // GET /agent/context — current context window
-  router.get('/context', auth, (req, res) => {
+  router.get('/context', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     res.set('Cache-Control', 'private, max-age=30');
@@ -56,7 +56,7 @@ export function createAgentRouter(db, auth, agent) {
   });
 
   // POST /agent/context — add a context entry
-  router.post('/context', auth, (req, res) => {
+  router.post('/context', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const { type, text } = req.body || {};
@@ -66,7 +66,7 @@ export function createAgentRouter(db, auth, agent) {
   });
 
   // DELETE /agent/context — clear context window
-  router.delete('/context', auth, (req, res) => {
+  router.delete('/context', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     agent.clearContext(apiKey);
@@ -74,11 +74,11 @@ export function createAgentRouter(db, auth, agent) {
   });
 
   // GET /agent/events — recent agent events
-  router.get('/events', auth, (req, res) => {
+  router.get('/events', auth, async (req, res) => {
     const apiKey = req.session?.apiKey;
     if (!apiKey) return res.status(401).json({ error: 'No API key in session' });
     const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
-    const events = getRecentAgentEvents(db, apiKey, limit);
+    const events = await getRecentAgentEvents(db, apiKey, limit);
     res.set('Cache-Control', 'private, max-age=15');
     res.json({ ok: true, events });
   });

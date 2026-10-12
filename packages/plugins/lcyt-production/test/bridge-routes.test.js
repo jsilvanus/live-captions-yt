@@ -20,19 +20,19 @@ import { describe, it, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import Database from 'better-sqlite3';
+import { initDb } from 'lcyt-backend/db';
 import express from 'express';
 
-import { runMigrations, createBridgeSecurityRule } from '../src/db.js';
+import { createBridgeSecurityRule } from '../src/db.js';
 import { createBridgeRouter } from '../src/routes/bridge.js';
 import { BridgeManager } from '../src/bridge-manager.js';
 
 let server, baseUrl, db, bridgeManager;
 
-function insertInstance(overrides = {}) {
+async function insertInstance(overrides = {}) {
   const id = overrides.id ?? randomUUID();
   const token = overrides.token ?? randomUUID();
-  db.prepare('INSERT INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
+  await db.prepare('INSERT INTO prod_bridge_instances (id, name, token) VALUES (?, ?, ?)')
     .run(id, overrides.name ?? 'Bridge 1', token);
   return { id, token };
 }
@@ -58,13 +58,12 @@ function startApp(opts = {}) {
   });
 }
 
-before(() => {
-  db = new Database(':memory:');
-  runMigrations(db);
+before(async () => {
+  db = await initDb(':memory:');
   bridgeManager = new BridgeManager(db);
 });
 
-after(() => db.close());
+after(async () => { await db.close(); });
 
 afterEach(() => {
   if (server) { server.close(); server = null; }
@@ -91,7 +90,7 @@ describe('bridge router — auth wiring', () => {
   });
 
   it('opts.auth configured: the bridge agent channel (/commands, /status) stays unauthenticated by human auth — only its own token', async () => {
-    const { token } = insertInstance();
+    const { token } = await insertInstance();
     await startApp({ auth: fakeAuth });
     // No x-api-key at all — a real bridge agent binary sends its own bridge
     // token instead, never a human session/user JWT.
@@ -102,7 +101,7 @@ describe('bridge router — auth wiring', () => {
   });
 
   it('POST /instances/:id/command maps a security-policy block to 403, not 502', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     bridgeManager.isConnected = () => true;
     bridgeManager.sendCommand = async () => { throw new Error('Blocked by bridge security policy: Blocked by deny rule (10.0.0.1)'); };
     await startApp({ auth: fakeAuth, deps: permissiveDeps });
@@ -115,7 +114,7 @@ describe('bridge router — auth wiring', () => {
   });
 
   it('opts.auth configured: POST /instances/:id/command requires it', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/command`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'tcp_send' }),
@@ -124,7 +123,7 @@ describe('bridge router — auth wiring', () => {
   });
 
   it('opts.auth configured: GET /instances/:id/env requires it', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/env`);
     assert.equal(res.status, 401);
@@ -134,14 +133,14 @@ describe('bridge router — auth wiring', () => {
     // Unlike every other GET in this router, this one re-downloads the
     // bridge's plaintext auth token — a non-admin project member who passes
     // opts.auth must still be rejected. See CONSIDER.md.
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/env`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(res.status, 403);
   });
 
   it('GET /instances/:id/env succeeds for a real admin/owner', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth, deps: permissiveDeps });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/env`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(res.status, 200);
@@ -150,7 +149,7 @@ describe('bridge router — auth wiring', () => {
   });
 
   it('opts.auth configured: security-rules CRUD requires it', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`);
     assert.equal(res.status, 401);
@@ -191,7 +190,7 @@ describe('bridge router — auth wiring', () => {
 
 describe('bridge router — security-rules CRUD', () => {
   it('POST creates a rule, GET lists it', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp();
 
     const create = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
@@ -211,7 +210,7 @@ describe('bridge router — security-rules CRUD', () => {
   });
 
   it('GET ?kind= filters to one rule kind', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp();
     await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -229,7 +228,7 @@ describe('bridge router — security-rules CRUD', () => {
   });
 
   it('POST rejects an invalid ruleKind', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp();
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -239,7 +238,7 @@ describe('bridge router — security-rules CRUD', () => {
   });
 
   it('POST rejects an invalid regex for a command rule', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp();
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -249,7 +248,7 @@ describe('bridge router — security-rules CRUD', () => {
   });
 
   it('POST rejects an invalid host pattern for an ip rule', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp();
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -265,7 +264,7 @@ describe('bridge router — security-rules CRUD', () => {
   });
 
   it('DELETE removes a rule; a second DELETE 404s', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp();
     const create = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -284,8 +283,8 @@ describe('bridge router — security-rules CRUD', () => {
   });
 
   it('DELETE 404s when the rule belongs to a different bridge instance', async () => {
-    const a = insertInstance();
-    const b = insertInstance();
+    const a = await insertInstance();
+    const b = await insertInstance();
     await startApp();
     const create = await fetch(`${baseUrl}/production/bridge/instances/${a.id}/security-rules`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -310,8 +309,8 @@ describe('bridge router — security-rules for-agent', () => {
   });
 
   it('returns ip/command rules for the token-resolved instance only', async () => {
-    const real = insertInstance();
-    const other = insertInstance();
+    const real = await insertInstance();
+    const other = await insertInstance();
     await startApp();
 
     await fetch(`${baseUrl}/production/bridge/instances/${real.id}/security-rules`, {
@@ -373,14 +372,14 @@ describe('bridge Setup/Production tier gate', () => {
   });
 
   it('DELETE /instances/:id 403s when checkProjectRole rejects the setup tier', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}`, { method: 'DELETE', headers: { 'x-api-key': 'proj-a' } });
     assert.equal(res.status, 403);
   });
 
   it('POST /instances/:id/command 403s when checkProjectRole rejects, requesting the production tier', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     const seen = [];
     await startApp({ auth: fakeAuth, deps: { checkProjectRole: (tier) => { seen.push(tier); return false; } } });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/command`, {
@@ -392,7 +391,7 @@ describe('bridge Setup/Production tier gate', () => {
   });
 
   it('POST /instances/:id/command succeeds when checkProjectRole allows the production tier', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     bridgeManager.isConnected = () => true;
     bridgeManager.sendCommand = async () => ({ ok: true, result: 'done' });
     await startApp({ auth: fakeAuth, deps: permissiveDeps });
@@ -404,7 +403,7 @@ describe('bridge Setup/Production tier gate', () => {
   });
 
   it('POST /instances/:id/security-rules 403s when checkProjectRole rejects the setup tier', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const res = await fetch(`${baseUrl}/production/bridge/instances/${id}/security-rules`, {
       method: 'POST', headers: { 'x-api-key': 'proj-a', 'Content-Type': 'application/json' },
@@ -414,7 +413,7 @@ describe('bridge Setup/Production tier gate', () => {
   });
 
   it('DELETE /instances/:id/security-rules/:ruleId 403s when checkProjectRole rejects the setup tier', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     // Insert the rule directly via the DB helper (not through the API) so
     // this test only ever needs one running app/server — calling startApp()
     // twice in one test leaks the first listening server forever (nothing
@@ -428,7 +427,7 @@ describe('bridge Setup/Production tier gate', () => {
   });
 
   it('GET /instances and GET security-rules stay open regardless of the gate (read is never blocked)', async () => {
-    const { id } = insertInstance();
+    const { id } = await insertInstance();
     await startApp({ auth: fakeAuth, deps: { checkProjectRole: () => false } });
     const instances = await fetch(`${baseUrl}/production/bridge/instances`, { headers: { 'x-api-key': 'proj-a' } });
     assert.equal(instances.status, 200);

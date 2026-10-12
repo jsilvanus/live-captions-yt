@@ -21,7 +21,7 @@ const HEARTBEAT_INTERVAL_MS = 20_000;
 
 export class BridgeManager {
   /**
-   * @param {import('better-sqlite3').Database} db
+   * @param {import('lcyt-backend/db').Db} db
    */
   constructor(db) {
     this._db = db;
@@ -34,13 +34,11 @@ export class BridgeManager {
   /**
    * Authenticate a bridge token. Returns the BridgeInstance row or null.
    * @param {string} token
-   * @returns {object|null}
+   * @returns {Promise<object|null>}
    */
-  authenticate(token) {
+  async authenticate(token) {
     if (!token) return null;
-    return this._db
-      .prepare('SELECT * FROM prod_bridge_instances WHERE token = ?')
-      .get(token) ?? null;
+    return (await this._db.prod_bridge_instances.findUnique({ where: { token } })) ?? null;
   }
 
   /**
@@ -49,8 +47,9 @@ export class BridgeManager {
    *
    * @param {string} instanceId
    * @param {object} res  Express response object for the SSE stream
+   * @returns {Promise<void>}  resolves once the DB status row is updated (the SSE stream itself is set up synchronously)
    */
-  connect(instanceId, res) {
+  async connect(instanceId, res) {
     // Kick existing connection if present
     const existing = this._connections.get(instanceId);
     if (existing) {
@@ -73,34 +72,33 @@ export class BridgeManager {
 
     // Heartbeat to keep the SSE stream alive through proxies
     const heartbeatTimer = setInterval(() => {
-      try { res.write(': heartbeat\n\n'); } catch { this.disconnect(instanceId); }
+      try { res.write(': heartbeat\n\n'); } catch { this.disconnect(instanceId).catch(() => {}); }
     }, HEARTBEAT_INTERVAL_MS);
 
     this._connections.set(instanceId, { res, instanceId, heartbeatTimer });
 
-    // Update DB status
-    this._db.prepare(
-      "UPDATE prod_bridge_instances SET status = 'connected', last_seen = datetime('now') WHERE id = ?"
-    ).run(instanceId);
-
     // Handle client disconnect
-    res.on('close', () => this.disconnect(instanceId));
+    res.on('close', () => { this.disconnect(instanceId).catch((err) => console.warn(`[bridge] disconnect update failed: ${err.message}`)); });
 
     console.info(`[bridge] Instance ${instanceId} connected`);
+
+    // Update DB status
+    await this._db.prod_bridge_instances.updateMany({
+      where: { id: instanceId },
+      data: { status: 'connected', last_seen: this._db.$util.sqlNow() },
+    });
   }
 
   /**
    * Deregister a bridge connection (called on SSE close or kick).
    * @param {string} instanceId
    */
-  disconnect(instanceId) {
+  async disconnect(instanceId) {
     const conn = this._connections.get(instanceId);
     if (!conn) return;
     clearInterval(conn.heartbeatTimer);
     this._connections.delete(instanceId);
-    this._db.prepare(
-      "UPDATE prod_bridge_instances SET status = 'disconnected' WHERE id = ?"
-    ).run(instanceId);
+    await this._db.prod_bridge_instances.updateMany({ where: { id: instanceId }, data: { status: 'disconnected' } });
     console.info(`[bridge] Instance ${instanceId} disconnected`);
   }
 
@@ -127,15 +125,15 @@ export class BridgeManager {
    *   defaults to 120s for `model_call` (local inference is slow), 10s otherwise
    * @returns {Promise<{ ok: boolean, error?: string }>}
    */
-  sendCommand(instanceId, command, opts = {}) {
+  async sendCommand(instanceId, command, opts = {}) {
     const conn = this._connections.get(instanceId);
     if (!conn) {
-      return Promise.reject(new Error(`Bridge ${instanceId} is not connected`));
+      throw new Error(`Bridge ${instanceId} is not connected`);
     }
 
-    const blockReason = this._checkSecurity(instanceId, command.type ?? 'tcp_send', command);
+    const blockReason = await this._checkSecurity(instanceId, command.type ?? 'tcp_send', command);
     if (blockReason) {
-      return Promise.reject(new Error(blockReason));
+      throw new Error(blockReason);
     }
 
     const requestId = randomUUID();
@@ -164,13 +162,19 @@ export class BridgeManager {
    *
    * @param {string} instanceId
    * @param {{ requestId?: string, type?: string, ok?: boolean, error?: string }} body
+   * @returns {Promise<void>}  resolves once last_seen is updated (a pending command is settled synchronously)
    */
-  receiveStatus(instanceId, body) {
-    // Update last_seen on every POST (heartbeats and results)
-    this._db.prepare(
-      "UPDATE prod_bridge_instances SET last_seen = datetime('now') WHERE id = ?"
-    ).run(instanceId);
+  async receiveStatus(instanceId, body) {
+    this._settlePending(body);
 
+    // Update last_seen on every POST (heartbeats and results)
+    await this._db.prod_bridge_instances.updateMany({
+      where: { id: instanceId },
+      data: { last_seen: this._db.$util.sqlNow() },
+    });
+  }
+
+  _settlePending(body) {
     if (!body.requestId) return; // heartbeat or informational
 
     const pending = this._pending.get(body.requestId);
@@ -214,16 +218,16 @@ export class BridgeManager {
    * second, defense-in-depth layer. Never throws — any error is turned into
    * a block reason, since a caller that awaits sendCommand()'s documented
    * Promise contract must never see a synchronous exception out of it.
-   * @returns {string|null}  a block reason, or null if allowed
+   * @returns {Promise<string|null>}  a block reason, or null if allowed
    */
-  _checkSecurity(instanceId, type, command) {
+  async _checkSecurity(instanceId, type, command) {
     try {
       for (const target of this._resolveIpTargets(type, command)) {
-        const { allowed, reason } = checkIpAllowed(this._db, instanceId, target.host, target.port);
+        const { allowed, reason } = await checkIpAllowed(this._db, instanceId, target.host, target.port);
         if (!allowed) return `Blocked by bridge security policy: ${reason}`;
       }
       if (type === 'tcp_send') {
-        const { allowed, reason } = checkCommandAllowed(this._db, instanceId, command.payload ?? '');
+        const { allowed, reason } = await checkCommandAllowed(this._db, instanceId, command.payload ?? '');
         if (!allowed) return `Blocked by bridge security policy: ${reason}`;
       }
       return null;

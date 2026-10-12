@@ -102,16 +102,16 @@ function attachProjectContext(req, authInfo) {
  * that project, not only the raw-key flow. Unknown ids pass: not every
  * projectId resolves to an api_keys row, and this check only revokes.
  */
-function isProjectKeyRevoked(db, projectId) {
-  const row = db.prepare('SELECT active FROM api_keys WHERE key = ?').get(projectId);
+async function isProjectKeyRevoked(db, projectId) {
+  const row = await db.api_keys.findUnique({ where: { key: projectId }, select: { active: true } });
   return row?.active === 0;
 }
 
-function handleTokenAuth(db, req, res, next, authInfo) {
+async function handleTokenAuth(db, req, res, next, authInfo) {
   if (!authInfo.projectId) {
     return res.status(400).json({ error: 'projectId is required' });
   }
-  if (isProjectKeyRevoked(db, authInfo.projectId)) {
+  if (await isProjectKeyRevoked(db, authInfo.projectId)) {
     return res.status(401).json({ error: 'Project key has been revoked' });
   }
   attachProjectContext(req, authInfo);
@@ -125,7 +125,7 @@ function handleTokenAuth(db, req, res, next, authInfo) {
  * `requiredScope` can be used to gate external-token requests to a specific scope.
  */
 export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = null, jwtOnly = false } = {}) {
-  return (req, res, next) => {
+  return async (req, res, next) => {
     const projectId = resolveProjectId(req);
     const token = extractAuthToken(req);
     if (!token) {
@@ -138,7 +138,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
       if (jwtOnly) {
         return res.status(403).json({ error: 'External tokens are not permitted for this resource' });
       }
-      const external = verifyMcpToken(db, token);
+      const external = await verifyMcpToken(db, token);
       if (!external) {
         return res.status(401).json({ error: 'Invalid or expired external token' });
       }
@@ -154,7 +154,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           return res.status(403).json({ error: 'Insufficient token scope' });
         }
       }
-      return handleTokenAuth(db, req, res, next, {
+      return await handleTokenAuth(db, req, res, next, {
         kind: 'external',
         projectId: projectId || external.projectId || external.apiKey,
         userId: external.userId,
@@ -171,7 +171,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
       const kind = classifyToken(payload);
 
       if (kind === 'session') {
-        return handleTokenAuth(db, req, res, next, {
+        return await handleTokenAuth(db, req, res, next, {
           kind: 'session',
           projectId: projectId || payload.projectId || payload.apiKey,
           sessionId: payload.sessionId || null,
@@ -193,11 +193,11 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
           return res.status(400).json({ error: 'projectId is required' });
         }
         const projectRole = payload.projectRole || payload.role || null;
-        const accessLevel = projectRole ? normalizeProjectRole(projectRole) : getEffectiveProjectAccessLevel(db, resolvedProjectId, user.userId);
+        const accessLevel = projectRole ? normalizeProjectRole(projectRole) : await getEffectiveProjectAccessLevel(db, resolvedProjectId, user.userId);
         if (!accessLevel) {
           return res.status(403).json({ error: 'Not a project member' });
         }
-        return handleTokenAuth(db, req, res, next, {
+        return await handleTokenAuth(db, req, res, next, {
           kind: payload.kind === 'project' ? 'project' : 'user',
           userId: user.userId,
           email: user.email,
@@ -215,7 +215,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         // (Item 4 — Phase 4, plan_userprojects.md). roleId is only present on
         // tokens issued after this check was added; older tokens without it
         // fall through unchecked until they naturally expire.
-        if (payload.roleId != null && !isDeviceRoleActive(db, payload.roleId)) {
+        if (payload.roleId != null && !await isDeviceRoleActive(db, payload.roleId)) {
           return res.status(401).json({ error: 'Device role is inactive or expired' });
         }
         // normalizeUserPayload() rather than inline field extraction — device
@@ -224,7 +224,7 @@ export function createProjectAccessMiddleware(db, jwtSecret, { requiredScope = n
         // uniformly with the external/user branches instead of a fourth,
         // narrower copy.
         const device = normalizeUserPayload(payload);
-        return handleTokenAuth(db, req, res, next, {
+        return await handleTokenAuth(db, req, res, next, {
           kind: 'device',
           projectId: projectId || payload.projectId || payload.apiKey,
           deviceRole: payload.deviceRole || payload.role || null,
@@ -279,10 +279,10 @@ export const PROJECT_TIER_MIN_LEVEL = { setup: 'admin', assets: 'editor', produc
  * @param {number|null|undefined} userId
  * @returns {boolean}
  */
-export function hasProjectRole(db, tier, apiKey, userId) {
+export async function hasProjectRole(db, tier, apiKey, userId) {
   const minLevel = PROJECT_TIER_MIN_LEVEL[tier];
   if (!minLevel || !apiKey || !userId) return false;
-  const level = getEffectiveProjectAccessLevel(db, apiKey, userId);
+  const level = await getEffectiveProjectAccessLevel(db, apiKey, userId);
   if (!level) return false;
   return PROJECT_ROLE_ORDER[level] >= PROJECT_ROLE_ORDER[minLevel];
 }
@@ -305,7 +305,7 @@ export function hasProjectRole(db, tier, apiKey, userId) {
  */
 export function requireProjectRole(db, tier) {
   const minLevel = PROJECT_TIER_MIN_LEVEL[tier];
-  return (req, res, next) => {
+  return async (req, res, next) => {
     if (READ_METHODS.has(req.method)) return next();
     // Deliberately doesn't fall back to the generic resolveProjectId() header/
     // body/query/param scavenger above — this middleware always mounts
@@ -319,7 +319,7 @@ export function requireProjectRole(db, tier) {
     // this gate's 403 — let it through unchanged (matches requireExplicitAdmin).
     if (!apiKey) return next();
     const userId = req.user?.userId;
-    if (!hasProjectRole(db, tier, apiKey, userId)) {
+    if (!await hasProjectRole(db, tier, apiKey, userId)) {
       return res.status(403).json({ error: `Explicit project ${minLevel}${minLevel === 'admin' ? '/owner' : '+'} access required` });
     }
     next();

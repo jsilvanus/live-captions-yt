@@ -28,21 +28,22 @@ export function createStatsRouter(db, auth, store, { resolveStorage, settings = 
   const requireStats = createRequireFeature(db, 'stats', settings);
 
   // GET /stats — Per-key usage stats (auth required)
-  router.get('/', auth, requireStats, (req, res) => {
+  router.get('/', auth, requireStats, async (req, res) => {
     const { apiKey } = req.session;
 
-    const keyRow = getKey(db, apiKey);
+    const keyRow = await getKey(db, apiKey);
     if (!keyRow) {
       return res.status(404).json({ error: 'API key not found' });
     }
 
     const today = new Date().toISOString().slice(0, 10);
-    const dailyRow = db.prepare(
-      'SELECT count FROM caption_usage WHERE api_key = ? AND date = ?'
-    ).get(apiKey, today);
+    const dailyRow = await db.caption_usage.findFirst({
+      where: { api_key: apiKey, date: today },
+      select: { count: true },
+    });
 
-    const { sessions, captionErrors, authEvents } = getKeyStats(db, apiKey);
-    const viewerStats = getViewerKeyStats(db, apiKey);
+    const { sessions, captionErrors, authEvents } = await getKeyStats(db, apiKey);
+    const viewerStats = await getViewerKeyStats(db, apiKey);
 
     res.set('Cache-Control', 'private, max-age=60, stale-while-revalidate=120');
     return res.status(200).json({
@@ -79,9 +80,9 @@ export function createStatsRouter(db, auth, store, { resolveStorage, settings = 
 
     // Delete caption file DB records synchronously (must happen before anonymizeKey
     // so the key still exists when we check it below)
-    deleteAllCaptionFiles(db, apiKey);
+    await deleteAllCaptionFiles(db, apiKey);
 
-    const found = anonymizeKey(db, apiKey);
+    const found = await anonymizeKey(db, apiKey);
     if (!found) {
       return res.status(404).json({ error: 'API key not found' });
     }

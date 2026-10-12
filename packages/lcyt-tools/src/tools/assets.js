@@ -20,7 +20,7 @@ export function createAssetTools(deps) {
       description: 'List uploaded DSK overlay image assets for this project.',
       inputSchema: { type: 'object', properties: {} },
       annotations: { readOnlyHint: true },
-      handler: (_args, { apiKey }) => ({ ok: true, assets: listImages(db, apiKey) }),
+      handler: async (_args, { apiKey }) => ({ ok: true, assets: await listImages(db, apiKey) }),
     },
     {
       name: 'asset.update',
@@ -31,10 +31,10 @@ export function createAssetTools(deps) {
         required: ['id', 'settings'],
       },
       annotations: {},
-      handler: ({ id, settings }, { apiKey }) => {
-        const updated = updateImageSettings(db, id, apiKey, settings);
+      handler: async ({ id, settings }, { apiKey }) => {
+        const updated = await updateImageSettings(db, id, apiKey, settings);
         if (!updated) return { ok: false, error: 'Asset not found' };
-        return { ok: true, asset: getImageByKey(db, id, apiKey) };
+        return { ok: true, asset: await getImageByKey(db, id, apiKey) };
       },
     },
     {
@@ -42,8 +42,8 @@ export function createAssetTools(deps) {
       description: 'Delete an image asset.',
       inputSchema: { type: 'object', properties: { id: { type: 'number' } }, required: ['id'] },
       annotations: { destructiveHint: true },
-      handler: ({ id }, { apiKey }) => {
-        const deleted = deleteImage(db, id, apiKey);
+      handler: async ({ id }, { apiKey }) => {
+        const deleted = await deleteImage(db, id, apiKey);
         return deleted ? { ok: true } : { ok: false, error: 'Asset not found' };
       },
     },

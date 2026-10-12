@@ -26,7 +26,7 @@
 import crypto from 'crypto';
 import { AsyncLocalStorage } from 'async_hooks';
 import { parseActionItems, expandActionItems } from 'lcyt/actions';
-import { getActionDefBySlug } from './db.js';
+import { listActionDefs } from './db.js';
 
 export const MAX_WAIT_MS = 30_000;
 const DEFAULT_STEP_TIMEOUT_MS = 15_000;
@@ -66,8 +66,9 @@ export function parseWaitMs(value) {
 
 /**
  * @param {object} deps
- * @param {import('better-sqlite3').Database} deps.db
+ * @param {import('lcyt-backend/db').Db} deps.db Prisma client
  * @param {import('lcyt/event-bus').EventBus|null} [deps.eventBus]
+ * (toIds/toLabels hooks may be async)
  * @param {Record<string, Function | { run: Function, device?: boolean, toIds?: Function, toLabels?: Function }>} [deps.handlers]
  * @param {number} [deps.stepTimeoutMs]
  */
@@ -117,14 +118,16 @@ export function createActionExecutor({
 
   /**
    * Expand a run request to a flat atom list.
-   * @returns {{ ok: true, atoms: Array, warnings: string[] } | { ok: false, code: string, error: string }}
+   * @returns {Promise<{ ok: true, atoms: Array, warnings: string[] } | { ok: false, code: string, error: string }>}
    */
-  function resolve(apiKey, { ref, expr }) {
+  async function resolve(apiKey, { ref, expr }) {
     const warnings = [];
     let items;
+    // expandActionItems resolves @refs synchronously: load the project's definitions once.
+    const defsBySlug = new Map((await listActionDefs(db, apiKey)).map((row) => [row.slug, row]));
     if (ref) {
       const slug = String(ref).replace(/^@/, '').trim();
-      const row = getActionDefBySlug(db, apiKey, slug);
+      const row = defsBySlug.get(slug);
       if (!row) return { ok: false, code: 'not_found', error: `Unknown named action '${slug}'` };
       items = [{ ref: slug }]; // expand through the same cycle guard as nested refs
     } else if (typeof expr === 'string' && expr.trim()) {
@@ -133,7 +136,7 @@ export function createActionExecutor({
       return { ok: false, code: 'bad_request', error: 'ref or expr is required' };
     }
     const resolveDef = (name) => {
-      const row = getActionDefBySlug(db, apiKey, name);
+      const row = defsBySlug.get(name);
       return row ? parseActionItems(row.definition) : null;
     };
     const atoms = expandActionItems(items, resolveDef, (msg) => warnings.push(msg));
@@ -159,7 +162,7 @@ export function createActionExecutor({
     const started = Date.now();
     const label = target.ref ? `@${String(target.ref).replace(/^@/, '')}` : String(target.expr ?? '');
 
-    const resolved = resolve(apiKey, target);
+    const resolved = await resolve(apiKey, target);
     if (!resolved.ok) {
       publish(apiKey, 'action.failed', { runId, action: label, source, error: resolved.error, code: resolved.code, ...(causation && { causation }) });
       return { ...resolved, runId };
@@ -235,13 +238,13 @@ export function createActionExecutor({
    * @param {string} apiKey
    * @param {string} expr
    * @param {'ids'|'labels'} direction
-   * @returns {string}
+   * @returns {Promise<string>}
    */
-  function rewriteDeviceRefs(apiKey, expr, direction) {
+  async function rewriteDeviceRefs(apiKey, expr, direction) {
     if (typeof expr !== 'string' || !expr.trim()) return expr;
     const hook = direction === 'ids' ? 'toIds' : 'toLabels';
     let changed = false;
-    const parts = expr.split('|').map((part) => {
+    const parts = await Promise.all(expr.split('|').map(async (part) => {
       const p = part.trim();
       const colon = p.indexOf(':');
       if (!p || p.startsWith('@') || colon <= 0) return p;
@@ -250,11 +253,11 @@ export function createActionExecutor({
       if (typeof handler?.[hook] !== 'function') return p;
       const value = p.slice(colon + 1).trim();
       let next;
-      try { next = handler[hook](apiKey, value); } catch { next = null; }
+      try { next = await handler[hook](apiKey, value); } catch { next = null; }
       if (typeof next !== 'string' || !next || next === value) return p;
       changed = true;
       return `${key}:${next}`;
-    });
+    }));
     return changed ? parts.filter(Boolean).join(' | ') : expr;
   }
 

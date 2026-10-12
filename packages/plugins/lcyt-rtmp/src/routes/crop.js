@@ -31,15 +31,16 @@ function isFeatureGateEnforced() {
   return v === '1' || v === 'true';
 }
 
-function hasCropFeature(db, apiKey) {
-  const row = db.prepare(
-    "SELECT enabled FROM project_features WHERE api_key = ? AND feature_code = 'crop'"
-  ).get(apiKey);
+async function hasCropFeature(db, apiKey) {
+  const row = await db.project_features.findUnique({
+    where: { api_key_feature_code: { api_key: apiKey, feature_code: 'crop' } },
+    select: { enabled: true },
+  });
   return row?.enabled === 1;
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {object} db  Prisma client
  * @param {import('express').RequestHandler} auth  Project-access Bearer middleware
  * @param {import('../crop-manager.js').CropManager} cropManager
  * @param {import('../rtmp-manager.js').RtmpRelayManager} [relayManager]  For isPublishing()
@@ -51,8 +52,8 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
   router.use(auth);
   router.use(requireSetup);
 
-  router.use((req, res, next) => {
-    if (isFeatureGateEnforced() && !hasCropFeature(db, req.session.apiKey)) {
+  router.use(async (req, res, next) => {
+    if (isFeatureGateEnforced() && !(await hasCropFeature(db, req.session.apiKey))) {
       return res.status(403).json({ error: "Feature 'crop' is not enabled for this project", feature: 'crop' });
     }
     next();
@@ -60,18 +61,18 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
 
   // ── config ────────────────────────────────────────────────────────────────
 
-  router.get('/config', (req, res) => {
+  router.get('/config', async (req, res) => {
     const apiKey = req.session.apiKey;
     res.json({
-      ...getCropConfig(db, apiKey),
+      ...(await getCropConfig(db, apiKey)),
       ...cropManager.getStatus(apiKey),
     });
   });
 
   router.put('/config', async (req, res) => {
     const apiKey = req.session.apiKey;
-    const wasEnabled = getCropConfig(db, apiKey).enabled;
-    const result = setCropConfig(db, apiKey, req.body || {});
+    const wasEnabled = (await getCropConfig(db, apiKey)).enabled;
+    const result = await setCropConfig(db, apiKey, req.body || {});
     if (!result.ok) return res.status(400).json({ error: result.error });
 
     // Start/stop the renderer to match the new config while the source is live.
@@ -119,41 +120,41 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
 
   // ── presets ───────────────────────────────────────────────────────────────
 
-  router.get('/presets', (req, res) => {
+  router.get('/presets', async (req, res) => {
     const setId = req.query.setId !== undefined
       ? (req.query.setId === '' || req.query.setId === 'null' ? null : String(req.query.setId))
       : undefined;
-    res.json({ presets: listCropPresets(db, req.session.apiKey, { setId }) });
+    res.json({ presets: await listCropPresets(db, req.session.apiKey, { setId }) });
   });
 
-  router.post('/presets', (req, res) => {
-    const result = createCropPreset(db, req.session.apiKey, req.body || {});
+  router.post('/presets', async (req, res) => {
+    const result = await createCropPreset(db, req.session.apiKey, req.body || {});
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.status(201).json({ ok: true, preset: result.preset });
   });
 
-  router.put('/presets/:id', (req, res) => {
-    const result = updateCropPreset(db, req.session.apiKey, req.params.id, req.body || {});
+  router.put('/presets/:id', async (req, res) => {
+    const result = await updateCropPreset(db, req.session.apiKey, req.params.id, req.body || {});
     if (!result.ok) return res.status(result.status ?? 400).json({ error: result.error });
     res.json({ ok: true, preset: result.preset });
   });
 
-  router.delete('/presets/:id', (req, res) => {
-    const deleted = deleteCropPreset(db, req.session.apiKey, req.params.id);
+  router.delete('/presets/:id', async (req, res) => {
+    const deleted = await deleteCropPreset(db, req.session.apiKey, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Preset not found' });
     res.json({ ok: true });
   });
 
   router.post('/presets/:id/activate', async (req, res) => {
     const apiKey = req.session.apiKey;
-    const preset = getCropPreset(db, apiKey, req.params.id);
+    const preset = await getCropPreset(db, apiKey, req.params.id);
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
     if (!cropManager.isRunning(apiKey)) {
       return res.status(409).json({ error: 'Crop renderer is not running' });
     }
     const transitionMs = Number(req.body?.transitionMs) >= 0
       ? Number(req.body.transitionMs)
-      : getCropConfig(db, apiKey).transitionMs;
+      : (await getCropConfig(db, apiKey)).transitionMs;
     try {
       const result = await cropManager.applyPosition(apiKey, {
         xNorm: preset.xNorm,
@@ -169,32 +170,32 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
 
   // ── preset sets (banks) ───────────────────────────────────────────────────
 
-  router.get('/sets', (req, res) => {
+  router.get('/sets', async (req, res) => {
     const apiKey = req.session.apiKey;
-    res.json({ sets: listCropSets(db, apiKey), activeSetId: getCropConfig(db, apiKey).activeSetId });
+    res.json({ sets: await listCropSets(db, apiKey), activeSetId: (await getCropConfig(db, apiKey)).activeSetId });
   });
 
-  router.post('/sets', (req, res) => {
-    const result = createCropSet(db, req.session.apiKey, req.body || {});
+  router.post('/sets', async (req, res) => {
+    const result = await createCropSet(db, req.session.apiKey, req.body || {});
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.status(201).json({ ok: true, set: result.set });
   });
 
-  router.put('/sets/:id', (req, res) => {
-    const result = updateCropSet(db, req.session.apiKey, req.params.id, req.body || {});
+  router.put('/sets/:id', async (req, res) => {
+    const result = await updateCropSet(db, req.session.apiKey, req.params.id, req.body || {});
     if (!result.ok) return res.status(result.status ?? 400).json({ error: result.error });
     res.json({ ok: true, set: result.set });
   });
 
-  router.delete('/sets/:id', (req, res) => {
-    const deleted = deleteCropSet(db, req.session.apiKey, req.params.id);
+  router.delete('/sets/:id', async (req, res) => {
+    const deleted = await deleteCropSet(db, req.session.apiKey, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Set not found' });
     res.json({ ok: true });
   });
 
   router.post('/sets/:id/activate', async (req, res) => {
     const apiKey = req.session.apiKey;
-    const result = setCropConfig(db, apiKey, { activeSetId: req.params.id });
+    const result = await setCropConfig(db, apiKey, { activeSetId: req.params.id });
     if (!result.ok) return res.status(404).json({ error: result.error });
 
     // Re-apply: if the renderer is running and the previously-active preset has
@@ -202,9 +203,9 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
     let applied = null;
     const status = cropManager.getStatus(apiKey);
     if (status.running && status.activePresetId) {
-      const oldPreset = getCropPreset(db, apiKey, status.activePresetId);
+      const oldPreset = await getCropPreset(db, apiKey, status.activePresetId);
       if (oldPreset) {
-        const counterpart = listCropPresets(db, apiKey, { setId: req.params.id })
+        const counterpart = (await listCropPresets(db, apiKey, { setId: req.params.id }))
           .find(p => p.name === oldPreset.name);
         if (counterpart) {
           try {
@@ -225,18 +226,18 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
 
   // ── source map ────────────────────────────────────────────────────────────
 
-  router.get('/source-map', (req, res) => {
-    res.json({ entries: listCropSourceMap(db, req.session.apiKey) });
+  router.get('/source-map', async (req, res) => {
+    res.json({ entries: await listCropSourceMap(db, req.session.apiKey) });
   });
 
-  router.post('/source-map', (req, res) => {
-    const result = createCropSourceMapEntry(db, req.session.apiKey, req.body || {});
+  router.post('/source-map', async (req, res) => {
+    const result = await createCropSourceMapEntry(db, req.session.apiKey, req.body || {});
     if (!result.ok) return res.status(400).json({ error: result.error });
     res.status(201).json({ ok: true, entry: result.entry });
   });
 
-  router.delete('/source-map/:id', (req, res) => {
-    const deleted = deleteCropSourceMapEntry(db, req.session.apiKey, req.params.id);
+  router.delete('/source-map/:id', async (req, res) => {
+    const deleted = await deleteCropSourceMapEntry(db, req.session.apiKey, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Mapping not found' });
     res.json({ ok: true });
   });

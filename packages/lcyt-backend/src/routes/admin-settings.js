@@ -64,7 +64,7 @@ export function createAdminSettingsRouter(db, settings) {
    * key is validated (known, Tier B, not env-locked) before anything is
    * written, so a single bad key in the batch doesn't leave a partial write.
    */
-  router.put('/', settingsRateLimit, requireFullAdmin(), (req, res) => {
+  router.put('/', settingsRateLimit, requireFullAdmin(), async (req, res) => {
     const values = req.body?.values;
     if (!values || typeof values !== 'object' || Array.isArray(values)) {
       return res.status(400).json({ error: 'Body must be { values: { key: value, ... } }' });
@@ -96,8 +96,8 @@ export function createAdminSettingsRouter(db, settings) {
 
     for (const [key, value] of entries) {
       const def = REGISTRY_BY_KEY.get(key);
-      settings.set(key, value, { updatedBy });
-      writeAuditLog(db, {
+      await settings.set(key, value, { updatedBy });
+      await writeAuditLog(db, {
         actor,
         action: 'server_settings.update',
         targetType: 'server_setting',
@@ -117,7 +117,7 @@ export function createAdminSettingsRouter(db, settings) {
    * DELETE /admin/server-settings/:key
    * Revert a key to its env/default value.
    */
-  router.delete('/:key', settingsRateLimit, requireFullAdmin(), (req, res) => {
+  router.delete('/:key', settingsRateLimit, requireFullAdmin(), async (req, res) => {
     const { key } = req.params;
     const def = REGISTRY_BY_KEY.get(key);
     if (!def) return res.status(404).json({ error: `Unknown setting: ${key}` });
@@ -126,8 +126,8 @@ export function createAdminSettingsRouter(db, settings) {
     }
 
     const updatedBy = req.adminUser ? `user:${req.adminUser.userId}` : 'admin-key';
-    settings.clear(key, { updatedBy });
-    writeAuditLog(db, {
+    await settings.clear(key, { updatedBy });
+    await writeAuditLog(db, {
       actor: resolveActor(req),
       action: 'server_settings.clear',
       targetType: 'server_setting',

@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { parseBackupDays, runBackup, cleanOldBackups } from '../src/backup.js';
 import { initDb } from '../src/db.js';
+import { getDialect } from '../src/db/connection.js';
+
+// runBackup copies the SQLite file; on PostgreSQL it must refuse (use pg_dump).
+const PG = () => getDialect() === 'postgres';
 import { createLocalObjectStore, createS3ObjectStore } from 'lcyt-files';
 import { startMockS3Server } from '../../plugins/lcyt-files/test/helpers/mock-s3-server.js';
 
@@ -35,7 +39,7 @@ describe('runBackup', () => {
   before(async () => {
     tmpDir = join(tmpdir(), `lcyt-backup-test-${Date.now()}`);
     await mkdir(tmpDir, { recursive: true });
-    db = initDb(':memory:');
+    db = await initDb(':memory:');
   });
 
   after(async () => {
@@ -43,7 +47,11 @@ describe('runBackup', () => {
     await rm(tmpDir, { recursive: true, force: true });
   });
 
-  it('creates a date-stamped subdirectory and database file', async () => {
+  it('creates a date-stamped subdirectory and database file', async (t) => {
+    if (PG()) {
+      await assert.rejects(() => runBackup(db, tmpDir), /SQLite/);
+      return;
+    }
     const dir = await runBackup(db, tmpDir);
     const today = new Date().toISOString().slice(0, 10);
 
@@ -54,6 +62,7 @@ describe('runBackup', () => {
   });
 
   it('is idempotent — running twice on the same day overwrites without error', async () => {
+    if (PG()) return;
     await assert.doesNotReject(() => runBackup(db, tmpDir));
     await assert.doesNotReject(() => runBackup(db, tmpDir));
   });
@@ -135,7 +144,7 @@ function defineStoreBackupSuite(label, setup) {
 
     before(async () => {
       ({ store, cleanup } = await setup());
-      db = initDb(':memory:');
+      db = await initDb(':memory:');
     });
 
     after(async () => {
@@ -144,6 +153,10 @@ function defineStoreBackupSuite(label, setup) {
     });
 
     it('uploads <date>/lcyt-backend.db', async () => {
+      if (PG()) {
+        await assert.rejects(() => runBackup(db, store), /SQLite/);
+        return;
+      }
       const key = await runBackup(db, store);
       const today = new Date().toISOString().slice(0, 10);
       assert.strictEqual(key, `${today}/lcyt-backend.db`);
@@ -157,6 +170,7 @@ function defineStoreBackupSuite(label, setup) {
       const removed = await cleanOldBackups(store, 7);
       assert.strictEqual(removed, 2);
       assert.strictEqual(await store.exists('2000-01-01/lcyt-backend.db'), false);
+      if (PG()) return; // no backup was uploaded on PostgreSQL
       const today = new Date().toISOString().slice(0, 10);
       assert.strictEqual(await store.exists(`${today}/lcyt-backend.db`), true);
     });

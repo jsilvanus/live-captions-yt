@@ -32,7 +32,7 @@ if (process.env.MUSIC_DETECTION_ACTIVE === '1') {
 - `analyser/external-classifier.js` — optional external HTTP classifier hook.
 - `routes/music.js` — `GET /music/status`, `POST /music/start`, `POST /music/stop`, `GET /music/events/history` (Bearer token), `GET /music/:key/live` (public SSE).
 - `routes/music-config.js` — `GET/PUT /music/config` per-key detector settings (Bearer token).
-- `db.js` — `sound_state` table (current `{ label, bpm, confidence, ts }` per key), `music_events` history table, and `music_config` per-key server-side detector settings.
+- `db.js` — async Prisma helpers (`insertMusicEvent`, `getRecentMusicEvents`, `getMusicEventsPage`, `getMusicConfig`, `setMusicConfig`; the `db` argument is the backend's Prisma client, works on SQLite and PostgreSQL). Tables `music_events` (history) and `music_config` (per-key detector settings) come from the backend schema; the plugin runs no migrations. `createSoundCaptionProcessor()`'s returned function is async (SSE events are emitted first, then it awaits the `music_events` inserts).
 
 **Sound metacode syntax (frontend inline markers):**
 ```

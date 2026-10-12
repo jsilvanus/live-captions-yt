@@ -26,32 +26,32 @@ function validateBody(body) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} adminAuth
  */
 export function createGlobalNetworkRulesRouter(db, adminAuth) {
   const router = Router();
   router.use(adminAuth);
 
-  router.get('/', (req, res) => {
-    res.json({ rules: listNetworkRules(db, { scope: 'global' }) });
+  router.get('/', async (req, res) => {
+    res.json({ rules: await listNetworkRules(db, { scope: 'global' }) });
   });
 
-  router.post('/', (req, res) => {
+  router.post('/', async (req, res) => {
     const error = validateBody(req.body);
     if (error) return res.status(400).json({ error });
     const { ruleType, pattern, description } = req.body;
-    const row = createNetworkRule(db, {
+    const row = await createNetworkRule(db, {
       id: randomUUID(), scope: 'global', ruleType, pattern, description,
       createdBy: req.adminUser?.userId ?? null,
     });
     res.status(201).json({ rule: row });
   });
 
-  router.delete('/:id', (req, res) => {
-    const rule = getNetworkRule(db, req.params.id);
+  router.delete('/:id', async (req, res) => {
+    const rule = await getNetworkRule(db, req.params.id);
     if (!rule || rule.scope !== 'global') return res.status(404).json({ error: 'Unknown rule' });
-    deleteNetworkRule(db, rule.id);
+    await deleteNetworkRule(db, rule.id);
     res.json({ ok: true });
   });
 
@@ -59,20 +59,20 @@ export function createGlobalNetworkRulesRouter(db, adminAuth) {
 }
 
 /**
- * @param {import('better-sqlite3').Database} db
+ * @param {import('lcyt-backend/db').Db} db
  * @param {import('express').RequestHandler} userAuth
  */
 export function createOrgNetworkRulesRouter(db, userAuth) {
   const router = Router();
   router.use(userAuth);
 
-  function requireOrgRole(req, res, allowedRoles) {
+  async function requireOrgRole(req, res, allowedRoles) {
     const orgId = Number(req.params.orgId);
     if (!Number.isFinite(orgId)) {
       res.status(400).json({ error: 'Invalid org ID' });
       return null;
     }
-    const role = getOrgRole(db, req.user.userId, orgId);
+    const role = await getOrgRole(db, req.user.userId, orgId);
     if (!role || !allowedRoles.includes(role)) {
       res.status(403).json({ error: 'Not authorized for this organization' });
       return null;
@@ -80,31 +80,31 @@ export function createOrgNetworkRulesRouter(db, userAuth) {
     return orgId;
   }
 
-  router.get('/orgs/:orgId/connector-network-rules', (req, res) => {
-    const orgId = requireOrgRole(req, res, ['owner', 'admin', 'member']);
+  router.get('/orgs/:orgId/connector-network-rules', async (req, res) => {
+    const orgId = await requireOrgRole(req, res, ['owner', 'admin', 'member']);
     if (orgId == null) return;
-    res.json({ rules: listNetworkRules(db, { scope: 'org', orgId }) });
+    res.json({ rules: await listNetworkRules(db, { scope: 'org', orgId }) });
   });
 
-  router.post('/orgs/:orgId/connector-network-rules', (req, res) => {
-    const orgId = requireOrgRole(req, res, ['owner', 'admin']);
+  router.post('/orgs/:orgId/connector-network-rules', async (req, res) => {
+    const orgId = await requireOrgRole(req, res, ['owner', 'admin']);
     if (orgId == null) return;
     const error = validateBody(req.body);
     if (error) return res.status(400).json({ error });
     const { ruleType, pattern, description } = req.body;
-    const row = createNetworkRule(db, {
+    const row = await createNetworkRule(db, {
       id: randomUUID(), scope: 'org', orgId, ruleType, pattern, description,
       createdBy: req.user.userId,
     });
     res.status(201).json({ rule: row });
   });
 
-  router.delete('/orgs/:orgId/connector-network-rules/:id', (req, res) => {
-    const orgId = requireOrgRole(req, res, ['owner', 'admin']);
+  router.delete('/orgs/:orgId/connector-network-rules/:id', async (req, res) => {
+    const orgId = await requireOrgRole(req, res, ['owner', 'admin']);
     if (orgId == null) return;
-    const rule = getNetworkRule(db, req.params.id);
+    const rule = await getNetworkRule(db, req.params.id);
     if (!rule || rule.scope !== 'org' || rule.org_id !== orgId) return res.status(404).json({ error: 'Unknown rule' });
-    deleteNetworkRule(db, rule.id);
+    await deleteNetworkRule(db, rule.id);
     res.json({ ok: true });
   });
 

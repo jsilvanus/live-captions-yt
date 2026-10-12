@@ -22,18 +22,18 @@ export function createArmingRouter(db, auth, eventBus = null) {
   const router = Router();
   const requireProduction = requireProjectRole(db, 'production');
 
-  router.get('/', auth, (req, res) => {
-    res.json(getArming(db, req.session.apiKey));
+  router.get('/', auth, async (req, res) => {
+    res.json(await getArming(db, req.session.apiKey));
   });
 
-  router.put('/', auth, requireProduction, (req, res) => {
+  router.put('/', auth, requireProduction, async (req, res) => {
     const { armed } = req.body || {};
     if (typeof armed !== 'boolean') return res.status(400).json({ error: 'armed must be true or false' });
     const apiKey = req.session.apiKey;
-    const result = setArmed(db, apiKey, armed);
+    const result = await setArmed(db, apiKey, armed);
     if (!result.ok) return res.status(result.status).json({ error: result.error });
     if (result.changed) publishArmingChange(eventBus, apiKey, { armed: result.armed, broadcastId: result.broadcastId, reason: 'manual' });
-    res.json(getArming(db, apiKey));
+    res.json(await getArming(db, apiKey));
   });
 
   return router;

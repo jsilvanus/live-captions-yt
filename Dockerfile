@@ -1,6 +1,10 @@
 FROM node:22-slim AS build
 WORKDIR /app
 
+# Prisma's query engine needs OpenSSL
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 # Copy workspace manifests (enables layer caching for npm ci)
 COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
@@ -60,11 +64,16 @@ COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/ packages/plugins/lcyt-actions/
 COPY packages/plugins/lcyt-platforms/ packages/plugins/lcyt-platforms/
 
+# Prisma clients (SQLite + PostgreSQL) for the backend; needs the schema, so after the source copy
+RUN npm run db:generate -w packages/lcyt-backend
+
 # Build frontend (React bundle) — clean dist first to avoid stale cache
 RUN rm -rf packages/lcyt-web/dist/ && npm run build:web
 
 FROM node:22-slim
 WORKDIR /app
+RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app .
 
 # Copy built frontend bundle to /srv/web for serving (after other COPY so it's not overwritten)

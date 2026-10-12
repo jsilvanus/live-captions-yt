@@ -18,10 +18,10 @@ const JWT_SECRET = 'test-events-publish-secret';
 
 let server, baseUrl, db, bus, apiKey;
 
-before(() => new Promise((resolve) => {
-  db = initDb(':memory:');
+before(() => new Promise(async (resolve) => {
+  db = await initDb(':memory:');
   bus = new EventBus();
-  apiKey = createKey(db, { owner: 'PublishUser' }).key;
+  apiKey = (await createKey(db, { owner: 'PublishUser' })).key;
 
   const app = express();
   app.use(express.json());
@@ -58,7 +58,7 @@ async function postEvent(body, token) {
 
 describe('POST /events — external event publishing', () => {
   it('requires events:write scope', async () => {
-    const { token } = createMcpToken(db, apiKey, { label: 'read-only', scopes: ['events:read'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'read-only', scopes: ['events:read'] });
     const res = await fetch(`${baseUrl}/events?token=${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -71,7 +71,7 @@ describe('POST /events — external event publishing', () => {
     const received = [];
     const unsub = bus.subscribe(apiKey, ['external.*'], (env) => received.push(env));
 
-    const { token } = createMcpToken(db, apiKey, { label: 'writer', scopes: ['events:write'] });
+    const { token } = await createMcpToken(db, apiKey, { label: 'writer', scopes: ['events:write'] });
     const { status, body } = await postEvent({ topic: 'external.trigger', data: { key: 'value' } }, token);
 
     assert.equal(status, 202);
@@ -109,7 +109,7 @@ describe('POST /events — external event publishing', () => {
     const received = [];
     const unsub = bus.subscribe(apiKey, ['external.*'], (env) => received.push(env));
 
-    const { token, id: tokenId } = createMcpToken(db, apiKey, { label: 'stamped', scopes: ['events:write'] });
+    const { token, id: tokenId } = await createMcpToken(db, apiKey, { label: 'stamped', scopes: ['events:write'] });
     await postEvent({ topic: 'external.stamped', data: { test: 1 } }, token);
 
     assert.equal(received.length, 1);

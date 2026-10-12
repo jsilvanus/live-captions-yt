@@ -58,7 +58,7 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
       }
 
       const seq = { current: 0, baseMs: null };
-      const dbId = registerCaptionFile(db, {
+      const dbId = await registerCaptionFile(db, {
         apiKey,
         sessionId,
         filename: handle.storedKey,   // store the adapter's key (filepath or S3 object key)
@@ -98,7 +98,7 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
     // Update DB size after write
     const sizeBytes = entry.handle.sizeBytes();
     if (sizeBytes > 0) {
-      updateCaptionFileSize(db, entry.dbId, sizeBytes);
+      await updateCaptionFileSize(db, entry.dbId, sizeBytes);
     }
   } catch (err) {
     logger.error('[captions] Backend file write error (outer)', { error: err.message });

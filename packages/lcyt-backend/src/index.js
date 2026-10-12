@@ -1,6 +1,6 @@
 import logger from 'lcyt/logger';
 import { app, db, store, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
-import { cleanRevokedKeys } from './db.js';
+import { cleanRevokedKeys, getDialect } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
 import { compactHourlyRollups } from './db/usage-rollups.js';
@@ -80,10 +80,10 @@ if (BACKUP_DAYS > 0) {
 // ---------------------------------------------------------------------------
 
 if (settings.get('retention.revoked_key_ttl_days') > 0) {
-  scheduleRearmable(() => settings.get('retention.revoked_key_cleanup_interval'), () => {
+  scheduleRearmable(() => settings.get('retention.revoked_key_cleanup_interval'), async () => {
     const days = settings.get('retention.revoked_key_ttl_days');
     if (days <= 0) return;
-    const { count } = cleanRevokedKeys(db, days);
+    const { count } = await cleanRevokedKeys(db, days);
     if (count > 0) logger.info(`[cleanup] Purged ${count} revoked key(s) older than ${days} days`);
   });
 }
@@ -93,10 +93,10 @@ if (settings.get('retention.revoked_key_ttl_days') > 0) {
 // ---------------------------------------------------------------------------
 
 if (settings.get('retention.event_log_retention_days') > 0) {
-  scheduleRearmable(() => settings.get('retention.event_log_cleanup_interval'), () => {
+  scheduleRearmable(() => settings.get('retention.event_log_cleanup_interval'), async () => {
     const days = settings.get('retention.event_log_retention_days');
     if (days <= 0) return;
-    const { count } = deleteBusEventsOlderThan(db, days);
+    const { count } = await deleteBusEventsOlderThan(db, days);
     if (count > 0) logger.info(`[cleanup] Purged ${count} bus event(s) older than ${days} days`);
   });
 }
@@ -122,14 +122,14 @@ const STATS_TABLES = [
   { table: 'music_events', column: 'ts', type: 'unixSeconds' },
 ];
 
-function runRollupMaintenance() {
+async function runRollupMaintenance() {
   const usageRollupHourlyRetentionDays = settings.get('retention.usage_rollup_hourly_retention_days');
   const auditLogRetentionDays = settings.get('retention.audit_log_retention_days');
   const statsRetentionDays = settings.get('retention.stats_retention_days');
 
   if (usageRollupHourlyRetentionDays > 0) {
     try {
-      const compacted = compactHourlyRollups(db, { olderThanDays: usageRollupHourlyRetentionDays, kindForMetric });
+      const compacted = await compactHourlyRollups(db, { olderThanDays: usageRollupHourlyRetentionDays, kindForMetric });
       if (compacted > 0) logger.info(`[cleanup] Compacted ${compacted} hourly usage rollup(s) into daily rows`);
     } catch (err) {
       logger.error('[cleanup] Rollup compaction failed:', err.message);
@@ -137,7 +137,7 @@ function runRollupMaintenance() {
   }
   if (auditLogRetentionDays > 0) {
     try {
-      const { count } = deleteAuditLogOlderThan(db, auditLogRetentionDays);
+      const { count } = await deleteAuditLogOlderThan(db, auditLogRetentionDays);
       if (count > 0) logger.info(`[cleanup] Purged ${count} audit log row(s) older than ${auditLogRetentionDays} days`);
     } catch (err) {
       logger.error('[cleanup] Audit log retention failed:', err.message);
@@ -152,8 +152,8 @@ function runRollupMaintenance() {
     };
     for (const { table, column, type } of STATS_TABLES) {
       try {
-        const info = db.prepare(`DELETE FROM ${table} WHERE ${column} < ?`).run(cutoffs[type]);
-        if (info.changes > 0) logger.info(`[cleanup] Purged ${info.changes} row(s) from ${table} older than ${statsRetentionDays} days`);
+        const changes = await db.$executeRawUnsafe(`DELETE FROM ${table} WHERE ${column} < ${getDialect() === 'postgres' ? '$1' : '?'}`, cutoffs[type]);
+        if (changes > 0) logger.info(`[cleanup] Purged ${changes} row(s) from ${table} older than ${statsRetentionDays} days`);
       } catch {
         // Table may not exist on this install (plugin not migrated) — skip.
       }

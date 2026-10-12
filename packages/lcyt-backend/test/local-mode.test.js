@@ -47,9 +47,9 @@ describe('resolveLocalBind', () => {
 describe('local mode middleware', () => {
   let server, baseUrl, db, identity, localKey;
 
-  before(() => new Promise((resolve) => {
-    db = initDb(':memory:');
-    identity = ensureLocalIdentity(db);
+  before(() => new Promise(async (resolve) => {
+    db = await initDb(':memory:');
+    identity = await ensureLocalIdentity(db);
     const app = express();
     app.use(express.json());
     app.use(createLocalModeMiddleware(db, SECRET, identity));
@@ -61,12 +61,12 @@ describe('local mode middleware', () => {
     server = createServer(app);
     server.listen(0, () => { baseUrl = `http://localhost:${server.address().port}`; resolve(); });
   }));
-  after(() => new Promise((r) => server.close(r)));
+  after(async () => { await new Promise((r) => server.close(r)); await db.close(); });
 
-  it('creates the local admin and project once', () => {
-    const again = ensureLocalIdentity(db);
+  it('creates the local admin and project once', async () => {
+    const again = await ensureLocalIdentity(db);
     assert.deepEqual(again, identity);
-    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM users WHERE email = ?').get(LOCAL_USER_EMAIL).n, 1);
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM users WHERE email = ?').get(LOCAL_USER_EMAIL)).n, 1);
   });
 
   it('lets credential-less requests through as the local owner', async () => {
@@ -80,7 +80,7 @@ describe('local mode middleware', () => {
   });
 
   it('owns projects created later, including setup-tier writes', async () => {
-    const other = createKey(db, { owner: 'Someone else' }).key;
+    const other = (await createKey(db, { owner: 'Someone else' })).key;
     const res = await fetch(`${baseUrl}/setup`, { method: 'PUT', headers: { 'x-project-id': other } });
     assert.equal(res.status, 200);
   });
@@ -93,8 +93,8 @@ describe('local mode middleware', () => {
   });
 
   it('still honours revoked project keys', async () => {
-    const revoked = createKey(db, { owner: 'Revoked' }).key;
-    db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(revoked);
+    const revoked = (await createKey(db, { owner: 'Revoked' })).key;
+    await db.prepare('UPDATE api_keys SET active = 0 WHERE key = ?').run(revoked);
     const res = await fetch(`${baseUrl}/project`, { headers: { 'x-project-id': revoked } });
     assert.equal(res.status, 401);
   });

@@ -1,642 +1,1114 @@
-// Prisma schema for LCYT Backend
-// Supports both SQLite and PostgreSQL
-// 
-// Usage:
-//   SQLite:      DATABASE_URL="file:./lcyt.db"
-//   PostgreSQL:  DATABASE_URL="postgresql://user:pass@host:5432/lcyt"
-//
-// Generate client: npx prisma generate
-// Create migration: npx prisma migrate dev --name <name>
-// Apply migration:  npx prisma migrate deploy
+// GENERATED ONCE from the SQLite schema built by src/db/schema.js and the plugin init functions (77 tables) (prisma db pull) and then maintained by hand.
+// src/db/schema.js still creates the SQLite tables; test/prisma-schema-drift.test.js fails when the two disagree.
+// Column names are kept as-is (snake_case) so query results have the same shape as the old raw SQL.
+// The PostgreSQL schema and migration are derived from this file: npm run db:pg:build.
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/sqlite"
+}
 
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
-generator client {
-  provider = "prisma-client-js"
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Users & Authentication
-// ───────────────────────────────────────────────────────────────────────────
-
-model User {
-  id           Int     @id @default(autoincrement())
-  email        String  @unique
-  passwordHash String
-  name         String?
-  createdAt    String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  active       Int     @default(1)
-  isAdmin      Int     @default(0)
-  adminRole    String  @default("full")
-
-  // Relations
-  organizations         Organization[]
-  orgMemberships        OrgMember[]
-  projectMembers        ProjectMember[]
-  apiKeys               ApiKey[]
-  invitedOrgMembers     OrgMember[]          @relation("InvitedBy")
-  siteFeaturePolicies   SiteFeaturePolicy[]
-  orgFeatureOverrides   OrgFeatureOverride[]
-  projectFeatures       ProjectFeature[]
-  userFeatures          UserFeature[]
-  invitedProjectMembers ProjectMember[]      @relation("InvitedBy")
-  auditLogs             AuditLog[]
-  grantedUserFeatures   UserFeature[]        @relation("GrantedBy")
-  serverSettings        ServerSettings[]
-
-  @@map("users")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Organizations & Teams
-// ───────────────────────────────────────────────────────────────────────────
-
-model Organization {
-  id                Int    @id @default(autoincrement())
-  name              String
-  slug              String @unique
-  ownerUserId       Int
-  createdAt         String @default(dbgenerated("CURRENT_TIMESTAMP"))
-  projectSlugPolicy String @default("none") // 'none' | 'prefix'
-
-  // Relations
-  owner            User                 @relation(fields: [ownerUserId], references: [id])
-  members          OrgMember[]
-  featureOverrides OrgFeatureOverride[]
-  apiKeys          ApiKey[]
-  auditLogs        AuditLog[]
-
-  @@map("organizations")
-}
-
-model OrgMember {
-  id        Int    @id @default(autoincrement())
-  orgId     Int
-  userId    Int
-  role      String @default("member") // 'member' | 'admin'
-  invitedBy Int?
-  joinedAt  String @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inviter User?        @relation("InvitedBy", fields: [invitedBy], references: [id])
-
-  @@unique([orgId, userId])
-  @@index([userId])
-  @@index([orgId])
-  @@map("org_members")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// API Keys & Projects
-// ───────────────────────────────────────────────────────────────────────────
-
-model ApiKey {
-  id                 Int     @id @default(autoincrement())
-  key                String  @unique
-  owner              String
-  createdAt          String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  expiresAt          String?
-  active             Int     @default(1)
-  email              String?
-  dailyLimit         Int?
-  lifetimeLimit      Int?
-  lifetimeUsed       Int     @default(0)
-  activeBroadcastId  String?
-  revokedAt          String?
-  sequence           Int     @default(0)
-  lastCaptionAt      String?
-  backendFileEnabled Int     @default(0)
-  graphicsEnabled    Int     @default(0)
-  userId             Int?
-  orgId              Int?
-  restricted         Int     @default(0)
-  orgBaselineRole    String  @default("viewer") // 'viewer' | 'editor'
-
-  // RTMP/relay columns
-  relayAllowed    Int     @default(0)
-  relayActive     Int     @default(0)
-  radioEnabled    Int     @default(0)
-  hlsEnabled      Int     @default(0)
-  cea708DelayMs   Int     @default(0)
-  embedCors       String  @default("*")
-  deviceCode      String?
-  ingestStreamKey String? @unique
-  publicSlug      String? @unique
-
-  // Relations
-  owner_user         User?                    @relation(fields: [userId], references: [id])
-  organization       Organization?            @relation(fields: [orgId], references: [id])
-  targets            CaptionTarget[]
-  usage              CaptionUsage[]
-  errors             CaptionError[]
-  sessions           Session[]
-  broadcasts         Broadcast[]
-  videos             Video[]
-  projectFeatures    ProjectFeature[]
-  projectMembers     ProjectMember[]
-  stats              SessionStats[]
-  translationVendor  TranslationVendorConfig?
-  translationTargets TranslationTarget[]
-  captionFiles       CaptionFile[]
-  icons              Icon[]
-  auditLogs          AuditLog[]
-  mcpTokens          MCPToken[]
-  usageRollups       UsageRollup[]
-  deviceRoles        ProjectDeviceRole[]
-
-  @@index([orgId])
-  @@index([ingestStreamKey])
-  @@index([publicSlug])
-  @@map("api_keys")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Caption Targets & Delivery
-// ───────────────────────────────────────────────────────────────────────────
-
-model CaptionTarget {
-  id          String  @id @default(cuid())
-  apiKey      String
-  type        String // 'youtube' | 'viewer' | 'generic'
-  enabled     Int     @default(1)
-  sortOrder   Int     @default(0)
-  streamKey   String?
-  url         String?
-  headers     String? // JSON
-  viewerKey   String?
-  noBatch     Int     @default(0)
-  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  iconId      Int?
-  iconEnabled Int     @default(0)
-
-  // Relations
-  project            ApiKey              @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  icon               Icon?               @relation(fields: [iconId], references: [id], onDelete: SetNull)
-  translationTargets TranslationTarget[]
-
-  @@index([apiKey])
-  @@map("caption_targets")
-}
-
-model CaptionUsage {
-  apiKey String
-  date   String
-  count  Int    @default(0)
-
-  // Relations
-  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@id([apiKey, date])
-  @@map("caption_usage")
-}
-
-model CaptionError {
-  id        Int     @id @default(autoincrement())
-  apiKey    String
-  sessionId String
-  timestamp String
-  errorCode Int?
-  errorMsg  String?
-  batchSize Int     @default(1)
-
-  // Relations
-  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@map("caption_errors")
-}
-
-model UsageRollup {
-  apiKey      String
-  periodStart String
-  grain       String @default("hour") // 'hour' | 'day'
-  metric      String
-  value       Float  @default(0)
-
-  // Relations
-  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@id([apiKey, metric, grain, periodStart])
-  @@index([periodStart])
-  @@index([metric, periodStart])
-  @@map("usage_rollups")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Sessions & Statistics
-// ───────────────────────────────────────────────────────────────────────────
-
-model Session {
-  sessionId    String  @id
-  apiKey       String?
-  streamKey    String?
-  domain       String?
-  sequence     Int     @default(0)
-  startedAt    String?
-  lastActivity String?
-  syncOffset   Int?
-  micHolder    String?
-  data         String? // JSON
-  broadcastId  String?
-
-  // Relations
-  project ApiKey?        @relation(fields: [apiKey], references: [key], onDelete: SetNull)
-  stats   SessionStats[]
-
-  @@map("sessions")
-}
-
-model SessionStats {
-  id             Int     @id @default(autoincrement())
-  sessionId      String
-  apiKey         String
-  domain         String?
-  startedAt      String
-  endedAt        String
-  durationMs     Int
-  captionsSent   Int     @default(0)
-  captionsFailed Int     @default(0)
-  finalSequence  Int     @default(0)
-  endedBy        String  @default("client")
-  broadcastId    String?
-
-  // Relations
-  session Session @relation(fields: [sessionId], references: [sessionId], onDelete: Cascade)
-  project ApiKey  @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@map("session_stats")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Broadcasts & Videos
-// ───────────────────────────────────────────────────────────────────────────
-
-model Broadcast {
-  id                 String  @id
-  apiKey             String
-  title              String  @default("")
-  description        String?
-  status             String  @default("draft") // 'draft' | 'scheduled' | 'live' | 'ended'
-  scheduledStart     String?
-  scheduledEnd       String?
-  actualStart        String?
-  actualEnd          String?
-  youtubeVideoIds    String?
-  youtubeBroadcastId String?
-  rundownFileId      Int?
-  recordEnabled      Int     @default(0)
-  privacyStatus      String  @default("unlisted")
-  armed              Int     @default(0)
-  archivedAt         String?
-  createdAt          String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt          String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  project ApiKey           @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  assets  BroadcastAsset[]
-  files   BroadcastFile[]
-  videos  Video[]
-
-  @@index([apiKey])
-  @@index([apiKey, status])
-  @@map("broadcasts")
-}
-
-model BroadcastAsset {
-  id          Int    @id @default(autoincrement())
-  broadcastId String
-  assetType   String
-  assetRef    String
-  sortOrder   Int    @default(0)
-  createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  broadcast Broadcast @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
-
-  @@unique([broadcastId, assetType, assetRef])
-  @@index([broadcastId])
-  @@map("broadcast_assets")
-}
-
-model BroadcastFile {
-  id          Int    @id @default(autoincrement())
-  broadcastId String
-  fileId      Int
-  createdAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  broadcast Broadcast   @relation(fields: [broadcastId], references: [id], onDelete: Cascade)
-  file      CaptionFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
-
-  @@unique([broadcastId, fileId])
-  @@index([broadcastId])
-  @@index([fileId])
-  @@map("broadcast_files")
-}
-
-model Video {
+model action_defs {
   id          String  @id
-  apiKey      String
-  broadcastId String?
-  title       String  @default("")
-  status      String  @default("recording")
-  storageType String  @default("local")
-  storageKey  String?
-  durationMs  Int?
-  sizeBytes   Int     @default(0)
-  startedAt   String?
-  endedAt     String?
-  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  project   ApiKey     @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  broadcast Broadcast? @relation(fields: [broadcastId], references: [id], onDelete: SetNull)
-
-  @@index([apiKey])
-  @@index([broadcastId])
-  @@map("videos")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// File Storage
-// ───────────────────────────────────────────────────────────────────────────
-
-model CaptionFile {
-  id          Int     @id @default(autoincrement())
-  apiKey      String
-  sessionId   String?
-  filename    String
-  lang        String?
-  format      String  @default("youtube")
-  type        String  @default("captions")
-  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  sizeBytes   Int     @default(0)
-  broadcastId String?
-
-  // Relations
-  project        ApiKey          @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  broadcastFiles BroadcastFile[]
-
-  @@map("caption_files")
-}
-
-model Icon {
-  id           Int    @id @default(autoincrement())
-  apiKey       String
-  filename     String
-  diskFilename String
-  mimeType     String @default("image/png")
-  createdAt    String @default(dbgenerated("CURRENT_TIMESTAMP"))
-  sizeBytes    Int    @default(0)
-
-  // Relations
-  project ApiKey          @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  targets CaptionTarget[]
-
-  @@map("icons")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Translations
-// ───────────────────────────────────────────────────────────────────────────
-
-model TranslationVendorConfig {
-  apiKey       String  @id
-  vendor       String  @default("mymemory")
-  vendorApiKey String?
-  libreUrl     String?
-  libreKey     String?
-  showOriginal Int     @default(0)
-  updatedAt    String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@map("translation_vendor_config")
-}
-
-model TranslationTarget {
-  id              String  @id @default(cuid())
-  apiKey          String
-  enabled         Int     @default(1)
-  lang            String
-  target          String
-  format          String?
-  sortOrder       Int     @default(0)
-  createdAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  captionTargetId String?
-  showOriginal    Int     @default(0)
-
-  // Relations
-  project       ApiKey         @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  captionTarget CaptionTarget? @relation(fields: [captionTargetId], references: [id], onDelete: SetNull)
-
-  @@index([apiKey])
-  @@map("translation_targets")
-}
-
-// ───────────────────────────────────────────────────────────────────────────
-// Feature Flags & Access Control
-// ───────────────────────────────────────────────────────────────────────────
-
-model SiteFeaturePolicy {
-  featureCode String @id
-  mode        String @default("denied")
-  updatedBy   Int?
-  updatedAt   String @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  updatedByUser User? @relation(fields: [updatedBy], references: [id])
-
-  @@map("site_feature_policies")
-}
-
-model OrgFeatureOverride {
-  orgId       Int
-  featureCode String
-  mode        String
-  setBy       Int?
-  setAt       String @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  setByUser User?        @relation(fields: [setBy], references: [id])
-
-  @@id([orgId, featureCode])
-  @@map("org_feature_overrides")
-}
-
-model ProjectFeature {
-  apiKey      String
-  featureCode String
-  enabled     Int     @default(1)
-  config      String? // JSON
-  grantedBy   Int?
-  grantedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  project       ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  grantedByUser User?  @relation(fields: [grantedBy], references: [id])
-
-  @@id([apiKey, featureCode])
-  @@index([apiKey])
-  @@map("project_features")
-}
-
-model UserFeature {
-  userId      Int
-  featureCode String
-  enabled     Int     @default(1)
-  config      String? // JSON
-  grantedBy   Int?
-  grantedAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  user          User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  grantedByUser User? @relation("GrantedBy", fields: [grantedBy], references: [id])
-
-  @@id([userId, featureCode])
-  @@index([userId])
-  @@map("user_features")
-}
-
-model ProjectMember {
-  id          Int    @id @default(autoincrement())
-  apiKey      String
-  userId      Int
-  accessLevel String @default("editor") // 'viewer' | 'editor' | 'operator' | 'admin' | 'owner'
-  invitedBy   Int?
-  joinedAt    String @default(dbgenerated("CURRENT_TIMESTAMP"))
-
-  // Relations
-  project     ApiKey                    @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-  user        User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  inviter     User?                     @relation("InvitedBy", fields: [invitedBy], references: [id])
-  permissions ProjectMemberPermission[]
-
-  @@unique([apiKey, userId])
-  @@index([userId])
-  @@index([apiKey])
-  @@map("project_members")
-}
-
-model ProjectMemberPermission {
-  id         Int    @id @default(autoincrement())
-  memberId   Int
-  permission String
-  granted    Int    @default(1)
-
-  // Relations
-  member ProjectMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
-
-  @@unique([memberId, permission])
-  @@map("project_member_permissions")
-}
-
-model ProjectDeviceRole {
-  id          Int     @id @default(autoincrement())
-  apiKey      String
-  roleType    String
+  api_key     String
   name        String
-  pinHash     String
-  permissions String  @default("[]") // JSON
-  config      String? // JSON
-  active      Int     @default(1)
-  createdAt   String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  expiresAt   String?
+  slug        String
+  definition  String  @default("")
+  description String?
+  created_at  String  @default(dbgenerated("datetime('now')"))
+  updated_at  String  @default(dbgenerated("datetime('now')"))
 
-  // Relations
-  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@index([apiKey])
-  @@map("project_device_roles")
+  @@unique([api_key, slug], map: "sqlite_autoindex_action_defs_2")
+  @@index([api_key], map: "idx_action_defs_key")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Events & Audit
-// ───────────────────────────────────────────────────────────────────────────
+model agent_context {
+  id           Int     @id @default(autoincrement())
+  api_key      String
+  context_type String
+  content      String
+  created_at   String? @default(dbgenerated("datetime('now')"))
 
-model AuditLog {
-  id         Int     @id @default(autoincrement())
-  createdAt  String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  actor      String
-  actorKind  String
-  actorId    String?
-  userId     Int?
-  apiKey     String?
-  orgId      Int?
-  action     String
-  targetType String?
-  targetId   String?
-  details    String?
-  ip         String?
-
-  // Relations
-  user    User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
-  project ApiKey?       @relation(fields: [apiKey], references: [key], onDelete: SetNull)
-  org     Organization? @relation(fields: [orgId], references: [id], onDelete: SetNull)
-
-  @@index([createdAt])
-  @@index([apiKey, id])
-  @@index([orgId, id])
-  @@index([action])
-  @@map("audit_log")
+  @@index([api_key], map: "idx_agent_context_api_key")
 }
 
-model BusEvent {
+model agent_events {
+  id           Int     @id @default(autoincrement())
+  api_key      String
+  event_type   String
+  description  String?
+  confidence   Float?  @default(0)
+  context_json String?
+  created_at   String? @default(dbgenerated("datetime('now')"))
+
+  @@index([api_key], map: "idx_agent_events_api_key")
+}
+
+model ai_config {
+  api_key            String @id
+  embedding_provider String @default("none")
+  embedding_model    String @default("")
+  embedding_api_key  String @default("")
+  embedding_api_url  String @default("")
+  fuzzy_threshold    Float  @default(0.75)
+  updated_at         Int    @default(dbgenerated("strftime('%s','now')"))
+}
+
+model ai_provider_grants {
+  api_key      String
+  provider_id  String
+  enabled      Int          @default(1)
+  ai_providers ai_providers @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([api_key, provider_id], map: "sqlite_autoindex_ai_provider_grants_1")
+  @@index([api_key], map: "idx_ai_provider_grants_key")
+}
+
+model ai_provider_models {
+  id             Int          @id @default(autoincrement())
+  provider_id    String
+  model_name     String
+  capabilities   String       @default("[]")
+  source         String       @default("manual")
+  enabled        Int          @default(1)
+  parameter_size String?
+  quantization   String?
+  discovered_at  String?
+  last_seen_at   String?
+  ai_providers   ai_providers @relation(fields: [provider_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([provider_id, model_name], map: "sqlite_autoindex_ai_provider_models_1")
+  @@index([provider_id], map: "idx_ai_provider_models_provider")
+}
+
+model ai_providers {
+  id                   String               @id
+  scope                String
+  owner_api_key        String?
+  kind                 String
+  vendor               String               @default("custom")
+  name                 String
+  base_url             String               @default("")
+  api_key_ref          String               @default("")
+  bridge_instance_id   String?
+  enabled              Int                  @default(1)
+  last_discovery_at    String?
+  last_discovery_error String?
+  created_at           String               @default(dbgenerated("datetime('now')"))
+  ai_provider_grants   ai_provider_grants[]
+  ai_provider_models   ai_provider_models[]
+
+  @@index([owner_api_key], map: "idx_ai_providers_owner")
+}
+
+model ai_roles {
+  role_code               String                    @id
+  name                    String
+  description             String                    @default("")
+  input_types             String                    @default("[]")
+  output_type             String
+  runtime_kind            String
+  available_tools         String                    @default("[]")
+  is_builtin              Int                       @default(1)
+  created_at              String                    @default(dbgenerated("datetime('now')"))
+  project_ai_role_configs project_ai_role_configs[]
+}
+
+model api_connectors {
+  id           String         @id
+  api_key      String
+  name         String
+  slug         String
+  base_url     String
+  auth_type    String         @default("none")
+  auth_config  String         @default("{}")
+  headers      String         @default("[]")
+  created_at   String         @default(dbgenerated("datetime('now')"))
+  updated_at   String         @default(dbgenerated("datetime('now')"))
+  api_requests api_requests[]
+
+  @@unique([api_key, slug], map: "sqlite_autoindex_api_connectors_2")
+  @@index([api_key], map: "idx_api_connectors_key")
+}
+
+model api_keys {
+  id                        Int                        @id @default(autoincrement())
+  key                       String                     @unique(map: "sqlite_autoindex_api_keys_1")
+  owner                     String
+  created_at                String                     @default(dbgenerated("datetime('now')"))
+  expires_at                String?
+  active                    Int                        @default(1)
+  email                     String?
+  daily_limit               Int?
+  lifetime_limit            Int?
+  lifetime_used             Int                        @default(0)
+  active_broadcast_id       String?
+  revoked_at                String?
+  sequence                  Int                        @default(0)
+  last_caption_at           String?
+  backend_file_enabled      Int                        @default(0)
+  graphics_enabled          Int                        @default(0)
+  user_id                   Int?
+  org_id                    Int?
+  restricted                Int                        @default(0)
+  org_baseline_role         String                     @default("viewer")
+  relay_allowed             Int                        @default(0)
+  relay_active              Int                        @default(0)
+  radio_enabled             Int                        @default(0)
+  hls_enabled               Int                        @default(0)
+  cea708_delay_ms           Int                        @default(0)
+  embed_cors                String                     @default("*")
+  device_code               String?
+  ingest_stream_key         String?                    @unique(map: "idx_api_keys_ingest_stream_key")
+  public_slug               String?                    @unique(map: "idx_api_keys_public_slug")
+  organizations             organizations?             @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users                     users?                     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  broadcasts                broadcasts[]
+  caption_targets           caption_targets[]
+  platform_credentials      platform_credentials[]
+  project_device_roles      project_device_roles[]
+  project_features          project_features[]
+  project_members           project_members[]
+  translation_targets       translation_targets[]
+  translation_vendor_config translation_vendor_config?
+  videos                    videos[]
+
+  @@index([org_id], map: "idx_api_keys_org")
+}
+
+model api_requests {
+  id                    String                  @id
+  connector_id          String
+  name                  String
+  slug                  String
+  method                String
+  path                  String
+  query_params          String                  @default("[]")
+  body_type             String                  @default("raw")
+  body_content          String?
+  response_type         String                  @default("auto")
+  prefetch_interval_ms  Int                     @default(3000)
+  timeout_ms            Int                     @default(200)
+  constant_poll_enabled Int                     @default(0)
+  created_at            String                  @default(dbgenerated("datetime('now')"))
+  updated_at            String                  @default(dbgenerated("datetime('now')"))
+  api_connectors        api_connectors          @relation(fields: [connector_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  api_response_mappings api_response_mappings[]
+  variables             variables[]
+
+  @@unique([connector_id, slug], map: "sqlite_autoindex_api_requests_2")
+  @@index([connector_id], map: "idx_api_requests_connector")
+}
+
+model api_response_mappings {
+  id            String       @id
+  request_id    String
+  json_path     String       @default("$")
+  variable_name String
+  skip_if_null  Int          @default(1)
+  sort_order    Int          @default(0)
+  api_requests  api_requests @relation(fields: [request_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([request_id], map: "idx_api_response_mappings_request")
+}
+
+model audit_log {
   id          Int     @id @default(autoincrement())
-  projectId   String?
-  topic       String
-  ts          Int
-  payloadJson String?
+  created_at  String  @default(dbgenerated("strftime('%Y-%m-%dT%H:%M:%fZ','now')"))
+  actor       String
+  actor_kind  String
+  actor_id    String?
+  user_id     Int?
+  api_key     String?
+  org_id      Int?
+  action      String
+  target_type String?
+  target_id   String?
+  details     String?
+  ip          String?
 
-  @@index([projectId])
-  @@index([ts])
-  @@map("bus_events")
+  @@index([action], map: "idx_audit_log_action")
+  @@index([org_id, id], map: "idx_audit_log_org")
+  @@index([api_key, id], map: "idx_audit_log_project")
+  @@index([created_at], map: "idx_audit_log_created")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// MCP Tokens
-// ───────────────────────────────────────────────────────────────────────────
+model auth_events {
+  id         Int     @id @default(autoincrement())
+  api_key    String?
+  event_type String
+  timestamp  String
+  domain     String?
+}
 
-model MCPToken {
+model bridge_security_rules {
+  id                    String                @id
+  bridge_instance_id    String
+  rule_kind             String
+  rule_type             String
+  pattern               String
+  description           String?
+  created_at            String                @default(dbgenerated("datetime('now')"))
+  prod_bridge_instances prod_bridge_instances @relation(fields: [bridge_instance_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([bridge_instance_id, rule_kind], map: "idx_bridge_security_rules_instance")
+}
+
+model broadcast_assets {
+  id           Int        @id @default(autoincrement())
+  broadcast_id String
+  asset_type   String
+  asset_ref    String
+  sort_order   Int        @default(0)
+  created_at   String     @default(dbgenerated("datetime('now')"))
+  broadcasts   broadcasts @relation(fields: [broadcast_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([broadcast_id, asset_type, asset_ref], map: "sqlite_autoindex_broadcast_assets_1")
+  @@index([broadcast_id], map: "idx_broadcast_assets_bid")
+}
+
+model broadcast_files {
+  id            Int           @id @default(autoincrement())
+  broadcast_id  String
+  file_id       Int
+  created_at    String        @default(dbgenerated("datetime('now')"))
+  caption_files caption_files @relation(fields: [file_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  broadcasts    broadcasts    @relation(fields: [broadcast_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([broadcast_id, file_id], map: "sqlite_autoindex_broadcast_files_1")
+  @@index([file_id], map: "idx_broadcast_files_fid")
+  @@index([broadcast_id], map: "idx_broadcast_files_bid")
+}
+
+model broadcast_platform_links {
+  id                    Int                   @id @default(autoincrement())
+  broadcast_id          String
+  platform              String
+  credential_id         String?
+  external_broadcast_id String
+  external_stream_id    String?
+  external_video_ids    String?
+  thumbnail_url         String?
+  last_status           String?
+  last_synced_at        String?
+  last_sync_error       String?
+  created_at            String                @default(dbgenerated("datetime('now')"))
+  platform_credentials  platform_credentials? @relation(fields: [credential_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  broadcasts            broadcasts            @relation(fields: [broadcast_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([broadcast_id, platform], map: "sqlite_autoindex_broadcast_platform_links_1")
+  @@index([last_status], map: "idx_bpl_status")
+  @@index([broadcast_id], map: "idx_bpl_broadcast")
+}
+
+model broadcast_platform_stats {
+  id                      Int        @id @default(autoincrement())
+  broadcast_id            String
+  platform                String
+  captured_at             String     @default(dbgenerated("datetime('now')"))
+  kind                    String
+  concurrent_viewers      Int?
+  views                   Int?
+  average_watch_time_s    Int?
+  peak_concurrent_viewers Int?
+  broadcasts              broadcasts @relation(fields: [broadcast_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([broadcast_id, kind, captured_at], map: "idx_bps_broadcast")
+}
+
+model broadcasts {
+  id                       String                     @id
+  api_key                  String
+  title                    String                     @default("")
+  description              String?
+  status                   String                     @default("draft")
+  scheduled_start          String?
+  scheduled_end            String?
+  actual_start             String?
+  actual_end               String?
+  youtube_video_ids        String?
+  youtube_broadcast_id     String?
+  rundown_file_id          Int?
+  record_enabled           Int                        @default(0)
+  privacy_status           String                     @default("unlisted")
+  armed                    Int                        @default(0)
+  archived_at              String?
+  created_at               String                     @default(dbgenerated("datetime('now')"))
+  updated_at               String                     @default(dbgenerated("datetime('now')"))
+  broadcast_assets         broadcast_assets[]
+  broadcast_files          broadcast_files[]
+  broadcast_platform_links broadcast_platform_links[]
+  broadcast_platform_stats broadcast_platform_stats[]
+  api_keys                 api_keys                   @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([api_key, status], map: "idx_broadcasts_status")
+  @@index([api_key], map: "idx_broadcasts_api_key")
+}
+
+model bus_events {
+  id           Int     @id @default(autoincrement())
+  project_id   String?
+  topic        String
+  ts           BigInt
+  payload_json String?
+
+  @@index([ts], map: "idx_bus_events_ts")
+  @@index([project_id], map: "idx_bus_events_project")
+}
+
+model caption_errors {
+  id         Int     @id @default(autoincrement())
+  api_key    String
+  session_id String
+  timestamp  String
+  error_code Int?
+  error_msg  String?
+  batch_size Int     @default(1)
+}
+
+model caption_files {
+  id              Int               @id @default(autoincrement())
+  api_key         String
+  session_id      String?
+  filename        String
+  lang            String?
+  format          String            @default("youtube")
+  type            String            @default("captions")
+  created_at      String            @default(dbgenerated("datetime('now')"))
+  updated_at      String            @default(dbgenerated("datetime('now')"))
+  size_bytes      BigInt            @default(0)
+  broadcast_id    String?
+  shorthand       String?
+  mime_type       String?
+  settings_json   String?
+  broadcast_files broadcast_files[]
+}
+
+model caption_targets {
+  id                  String                @id
+  api_key             String
+  type                String
+  enabled             Int                   @default(1)
+  sort_order          Int                   @default(0)
+  stream_key          String?
+  url                 String?
+  headers             String?
+  viewer_key          String?
+  no_batch            Int                   @default(0)
+  created_at          String                @default(dbgenerated("datetime('now')"))
+  updated_at          String                @default(dbgenerated("datetime('now')"))
+  icon_id             Int?
+  icon_enabled        Int                   @default(0)
+  api_keys            api_keys              @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+  translation_targets translation_targets[]
+
+  @@index([api_key], map: "idx_caption_targets_api_key")
+}
+
+model caption_usage {
+  api_key String
+  date    String
+  count   Int    @default(0)
+
+  @@id([api_key, date])
+}
+
+model connector_network_rules {
+  id          String  @id
+  scope       String
+  org_id      Int?
+  rule_type   String
+  pattern     String
+  description String?
+  created_by  Int?
+  created_at  String  @default(dbgenerated("datetime('now')"))
+
+  @@index([scope, org_id], map: "idx_connector_network_rules_scope")
+}
+
+model crop_config {
+  api_key        String  @id
+  enabled        Int     @default(0)
+  aspect_w       Int     @default(9)
+  aspect_h       Int     @default(16)
+  out_w          Int?
+  out_h          Int?
+  video_bitrate  String?
+  follow_program Int     @default(1)
+  transition_ms  Int     @default(0)
+  active_set_id  String?
+  updated_at     String  @default(dbgenerated("datetime('now')"))
+  auto_follow    Int     @default(0)
+}
+
+model crop_preset_sets {
+  id           String         @id
+  api_key      String
+  name         String
+  sort_order   Int            @default(0)
+  created_at   String         @default(dbgenerated("datetime('now')"))
+  crop_presets crop_presets[]
+
+  @@unique([api_key, name], map: "sqlite_autoindex_crop_preset_sets_2")
+}
+
+model crop_presets {
+  id               String            @id
+  api_key          String
+  set_id           String?
+  name             String
+  x_norm           Float             @default(0.5)
+  y_norm           Float             @default(0.0)
+  sort_order       Int               @default(0)
+  created_at       String            @default(dbgenerated("datetime('now')"))
+  crop_preset_sets crop_preset_sets? @relation(fields: [set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  crop_source_map  crop_source_map[]
+
+  @@unique([api_key, set_id, name], map: "sqlite_autoindex_crop_presets_2")
+  @@index([api_key, set_id], map: "idx_crop_presets_key")
+}
+
+model crop_source_map {
+  id            String       @id
+  api_key       String
+  mixer_id      String?
+  mixer_input   Int?
+  camera_id     String?
+  camera_preset String?
+  preset_id     String
+  crop_presets  crop_presets @relation(fields: [preset_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([api_key], map: "idx_crop_source_map_key")
+}
+
+model cue_events {
+  id        Int     @id @default(autoincrement())
+  api_key   String
+  rule_id   String
+  rule_name String
+  matched   String?
+  action    String  @default("{}")
+  ts        Int     @default(dbgenerated("strftime('%s','now')"))
+
+  @@index([api_key, ts], map: "cue_events_key_ts")
+}
+
+model cue_named_conditions {
+  id             String @id
+  api_key        String
+  name           String
+  condition_tree String
+  source         String @default("api")
+  created_at     String @default(dbgenerated("datetime('now')"))
+
+  @@unique([api_key, name], map: "cue_named_conditions_key_name")
+}
+
+model cue_rules {
+  id              String  @id
+  api_key         String
+  name            String
+  match_type      String  @default("phrase")
+  pattern         String
+  action          String  @default("{}")
+  enabled         Int     @default(1)
+  cooldown_ms     Int     @default(0)
+  created_at      String  @default(dbgenerated("datetime('now')"))
+  fuzzy_threshold Float   @default(0.75)
+  condition_tree  String?
+
+  @@index([api_key], map: "cue_rules_key")
+}
+
+model domain_hourly_stats {
+  date              String
+  hour              Int
+  domain            String
+  sessions_started  Int    @default(0)
+  sessions_ended    Int    @default(0)
+  captions_sent     Int    @default(0)
+  captions_failed   Int    @default(0)
+  batches_sent      Int    @default(0)
+  total_duration_ms BigInt @default(0)
+  peak_sessions     Int    @default(0)
+
+  @@id([date, hour, domain])
+}
+
+model dsk_templates {
+  id            Int    @id @default(autoincrement())
+  api_key       String
+  name          String
+  template_json String
+  created_at    String @default(dbgenerated("datetime('now')"))
+  updated_at    String @default(dbgenerated("datetime('now')"))
+
+  @@unique([api_key, name], map: "sqlite_autoindex_dsk_templates_1")
+}
+
+model dsk_thumbnails {
+  id           Int    @id @default(autoincrement())
+  api_key      String
+  template_id  Int?
+  name         String
+  storage_path String
+  width        Int
+  height       Int
+  size_bytes   BigInt @default(0)
+  created_at   String @default(dbgenerated("datetime('now')"))
+  updated_at   String @default(dbgenerated("datetime('now')"))
+}
+
+model dsk_viewports {
+  id                    Int     @id @default(autoincrement())
+  api_key               String
+  name                  String
+  label                 String?
+  viewport_type         String  @default("landscape")
+  width                 Int     @default(1920)
+  height                Int     @default(1080)
+  created_at            String  @default(dbgenerated("datetime('now')"))
+  updated_at            String  @default(dbgenerated("datetime('now')"))
+  text_layers_json      String?
+  display_settings_json String?
+
+  @@unique([api_key, name], map: "sqlite_autoindex_dsk_viewports_1")
+}
+
+model icons {
+  id            Int    @id @default(autoincrement())
+  api_key       String
+  filename      String
+  disk_filename String
+  mime_type     String @default("image/png")
+  created_at    String @default(dbgenerated("datetime('now')"))
+  size_bytes    BigInt @default(0)
+}
+
+model key_storage_config {
+  api_key           String  @id
+  storage_type      String  @default("s3")
+  bucket            String  @default("")
+  region            String  @default("auto")
+  endpoint          String?
+  prefix            String  @default("captions")
+  access_key_id     String?
+  secret_access_key String?
+  updated_at        String  @default(dbgenerated("datetime('now')"))
+}
+
+model mcp_tokens {
+  id                 Int     @id @default(autoincrement())
+  api_key            String
+  label              String
+  token_hash         String  @unique(map: "sqlite_autoindex_mcp_tokens_1")
+  user_id            Int?
+  project_id         String?
+  scopes             String?
+  created_at         String  @default(dbgenerated("datetime('now')"))
+  last_used_at       String?
+  revoked_at         String?
+  active             Int     @default(1)
+  created_by_user_id Int?
+  created_by_name    String  @default("")
+
+  @@index([api_key], map: "idx_mcp_tokens_key")
+}
+
+model music_config {
+  api_key            String @id
+  enabled            Int    @default(0)
+  silence_threshold  Float  @default(0.01)
+  flatness_threshold Float  @default(0.4)
+  zcr_threshold      Float  @default(0.15)
+  confirm_segments   Int    @default(2)
+  bpm_enabled        Int    @default(1)
+  bpm_min            Int    @default(40)
+  bpm_max            Int    @default(200)
+  auto_start         Int    @default(0)
+  updated_at         Int    @default(dbgenerated("strftime('%s','now')"))
+  auto_calibrate     Int    @default(0)
+}
+
+model music_events {
+  id         Int     @id @default(autoincrement())
+  api_key    String
+  event_type String
+  label      String?
+  bpm        Float?
+  confidence Float?
+  ts         Int     @default(dbgenerated("strftime('%s','now')"))
+
+  @@index([api_key, ts], map: "music_events_key_ts")
+}
+
+model org_feature_overrides {
+  org_id        Int
+  feature_code  String
+  mode          String
+  set_by        Int?
+  set_at        String        @default(dbgenerated("datetime('now')"))
+  users         users?        @relation(fields: [set_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  organizations organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([org_id, feature_code])
+  @@index([org_id], map: "idx_org_feature_overrides_org")
+}
+
+model org_members {
+  id                                  Int           @id @default(autoincrement())
+  org_id                              Int
+  user_id                             Int
+  role                                String        @default("member")
+  invited_by                          Int?
+  joined_at                           String        @default(dbgenerated("datetime('now')"))
+  users_org_members_invited_byTousers users?        @relation("org_members_invited_byTousers", fields: [invited_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_org_members_user_idTousers    users         @relation("org_members_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organizations                       organizations @relation(fields: [org_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([org_id, user_id], map: "sqlite_autoindex_org_members_1")
+  @@index([org_id], map: "idx_org_members_org")
+  @@index([user_id], map: "idx_org_members_user")
+}
+
+model organizations {
+  id                    Int                     @id @default(autoincrement())
+  name                  String
+  slug                  String                  @unique(map: "sqlite_autoindex_organizations_1")
+  owner_user_id         Int
+  created_at            String                  @default(dbgenerated("datetime('now')"))
+  project_slug_policy   String                  @default("none")
+  api_keys              api_keys[]
+  org_feature_overrides org_feature_overrides[]
+  org_members           org_members[]
+  users                 users                   @relation(fields: [owner_user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model platform_credentials {
+  id                       String                     @id
+  api_key                  String
+  platform                 String
+  external_account_id      String
+  account_label            String?
+  access_token_enc         String
+  refresh_token_enc        String
+  expires_at               String
+  scopes                   String?
+  connected_at             String                     @default(dbgenerated("datetime('now')"))
+  revoked_at               String?
+  broadcast_platform_links broadcast_platform_links[]
+  api_keys                 api_keys                   @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([api_key, platform, external_account_id], map: "sqlite_autoindex_platform_credentials_2")
+  @@index([api_key], map: "idx_platform_credentials_key")
+}
+
+model prod_bridge_instances {
+  id                    String                  @id
+  name                  String
+  token                 String                  @unique(map: "sqlite_autoindex_prod_bridge_instances_2")
+  status                String                  @default("disconnected")
+  last_seen             String?
+  created_at            String                  @default(dbgenerated("datetime('now')"))
+  bridge_security_rules bridge_security_rules[]
+  prod_cameras          prod_cameras[]
+  prod_encoders         prod_encoders[]
+  prod_mixers           prod_mixers[]
+}
+
+model prod_camera_preset_thumbnails {
+  camera_id   String
+  preset_id   String
+  captured_at String
+
+  @@id([camera_id, preset_id])
+}
+
+model prod_cameras {
+  id                    String                 @id
+  name                  String
+  mixer_input           Int?
+  control_type          String                 @default("none")
+  control_config        String                 @default("{}")
+  bridge_instance_id    String?
+  sort_order            Int                    @default(0)
+  created_at            String                 @default(dbgenerated("datetime('now')"))
+  connection_source     String                 @default("backend")
+  camera_key            String?
+  thumbnail_captured_at String?
+  perception_enabled    Int                    @default(0)
+  owner_api_key         String?
+  label                 String?
+  zone                  String?
+  overlap_links         String                 @default("[]")
+  mixer_id              String?
+  prod_mixers           prod_mixers?           @relation(fields: [mixer_id], references: [id], onUpdate: NoAction)
+  prod_bridge_instances prod_bridge_instances? @relation(fields: [bridge_instance_id], references: [id], onUpdate: NoAction)
+}
+
+model prod_encoders {
+  id                    String                 @id
+  name                  String
+  type                  String
+  connection_config     String                 @default("{}")
+  connection_source     String                 @default("backend")
+  bridge_instance_id    String?
+  created_at            String                 @default(dbgenerated("datetime('now')"))
+  prod_bridge_instances prod_bridge_instances? @relation(fields: [bridge_instance_id], references: [id], onUpdate: NoAction)
+}
+
+model prod_mixers {
+  id                    String                 @id
+  name                  String
+  type                  String
+  connection_config     String                 @default("{}")
+  bridge_instance_id    String?
+  created_at            String                 @default(dbgenerated("datetime('now')"))
+  connection_source     String                 @default("backend")
+  output_key            String?
+  owner_api_key         String?
+  prod_cameras          prod_cameras[]
+  prod_bridge_instances prod_bridge_instances? @relation(fields: [bridge_instance_id], references: [id], onUpdate: NoAction)
+}
+
+model prod_perception_jobs {
+  job_key    String @id
+  api_key    String
+  job_id     String
+  mode       String
+  spec       String
+  started_at String
+}
+
+model prod_perception_settings {
+  api_key        String @id
+  shared_enabled Int    @default(0)
+}
+
+model project_ai_role_configs {
+  id             Int      @id @default(autoincrement())
+  api_key        String
+  role_code      String
+  enabled        Int      @default(0)
+  provider_id    String?
+  model_name     String   @default("")
+  harness_config String   @default("{}")
+  updated_at     Int      @default(dbgenerated("strftime('%s','now')"))
+  ai_roles       ai_roles @relation(fields: [role_code], references: [role_code], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([api_key, role_code], map: "sqlite_autoindex_project_ai_role_configs_1")
+  @@index([api_key], map: "idx_project_ai_role_configs_key")
+}
+
+model project_device_roles {
+  id          Int      @id @default(autoincrement())
+  api_key     String
+  role_type   String
+  name        String
+  pin_hash    String
+  permissions String   @default("[]")
+  config      String?
+  active      Int      @default(1)
+  created_at  String   @default(dbgenerated("datetime('now')"))
+  expires_at  String?
+  api_keys    api_keys @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([api_key], map: "idx_device_roles_key")
+}
+
+model project_features {
+  api_key      String
+  feature_code String
+  enabled      Int      @default(1)
+  config       String?
+  granted_by   Int?
+  granted_at   String   @default(dbgenerated("datetime('now')"))
+  users        users?   @relation(fields: [granted_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  api_keys     api_keys @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([api_key, feature_code])
+  @@index([api_key], map: "idx_project_features_key")
+}
+
+model project_member_permissions {
+  id              Int             @id @default(autoincrement())
+  member_id       Int
+  permission      String
+  granted         Int             @default(1)
+  project_members project_members @relation(fields: [member_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([member_id, permission], map: "sqlite_autoindex_project_member_permissions_1")
+}
+
+model project_members {
+  id                                      Int                          @id @default(autoincrement())
+  api_key                                 String
+  user_id                                 Int
+  access_level                            String                       @default("editor")
+  invited_by                              Int?
+  joined_at                               String                       @default(dbgenerated("datetime('now')"))
+  project_member_permissions              project_member_permissions[]
+  users_project_members_invited_byTousers users?                       @relation("project_members_invited_byTousers", fields: [invited_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_project_members_user_idTousers    users                        @relation("project_members_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  api_keys                                api_keys                     @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([api_key, user_id], map: "sqlite_autoindex_project_members_1")
+  @@index([api_key], map: "idx_project_members_key")
+  @@index([user_id], map: "idx_project_members_user")
+}
+
+model radio_config {
+  api_key         String  @id
+  title           String?
+  description     String?
+  cover_image_url String?
+  autoplay        Int     @default(0)
+  updated_at      String  @default(dbgenerated("datetime('now')"))
+}
+
+model rtmp_anon_daily_stats {
+  date             String
+  endpoint_type    String
+  caption_mode     String @default("http")
+  streams_count    Int    @default(0)
+  duration_seconds Int    @default(0)
+
+  @@id([date, endpoint_type, caption_mode])
+}
+
+model rtmp_relays {
+  id               Int     @id @default(autoincrement())
+  api_key          String
+  slot             Int     @default(1)
+  target_url       String
+  target_name      String?
+  caption_mode     String  @default("http")
+  record_on_start  Int     @default(0)
+  record_on_button Int     @default(0)
+  created_at       String  @default(dbgenerated("datetime('now')"))
+  updated_at       String  @default(dbgenerated("datetime('now')"))
+  scale            String?
+  fps              Int?
+  video_bitrate    String?
+  audio_bitrate    String?
+  source_view      String  @default("program")
+  source_camera_id String?
+
+  @@unique([api_key, slot], map: "sqlite_autoindex_rtmp_relays_1")
+}
+
+model rtmp_stream_stats {
+  id            Int     @id @default(autoincrement())
+  api_key       String
+  slot          Int     @default(1)
+  target_url    String
+  target_name   String?
+  caption_mode  String  @default("http")
+  started_at    String
+  ended_at      String?
+  duration_ms   BigInt  @default(0)
+  captions_sent Int     @default(0)
+}
+
+model server_settings {
+  key        String  @id
+  value      String
+  updated_at String  @default(dbgenerated("datetime('now')"))
+  updated_by String?
+}
+
+model session_stats {
   id              Int     @id @default(autoincrement())
-  apiKey          String
-  label           String
-  tokenHash       String  @unique
-  userId          Int?
-  projectId       String?
-  scopes          String?
-  createdAt       String  @default(dbgenerated("CURRENT_TIMESTAMP"))
-  lastUsedAt      String?
-  revokedAt       String?
-  active          Int     @default(1)
-  createdByUserId Int?
-  createdByName   String  @default("")
-
-  // Relations
-  project ApiKey @relation(fields: [apiKey], references: [key], onDelete: Cascade)
-
-  @@index([apiKey])
-  @@map("mcp_tokens")
+  session_id      String
+  api_key         String
+  domain          String?
+  started_at      String
+  ended_at        String
+  duration_ms     BigInt
+  captions_sent   Int     @default(0)
+  captions_failed Int     @default(0)
+  final_sequence  Int     @default(0)
+  ended_by        String  @default("client")
+  broadcast_id    String?
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Server Settings
-// ───────────────────────────────────────────────────────────────────────────
+model sessions {
+  session_id    String  @id
+  api_key       String?
+  stream_key    String?
+  domain        String?
+  sequence      Int     @default(0)
+  started_at    String?
+  last_activity String?
+  sync_offset   Int?
+  mic_holder    String?
+  data          String?
+  broadcast_id  String?
+}
 
-model ServerSettings {
-  key       String @id
-  value     String
-  updatedAt String @default(dbgenerated("CURRENT_TIMESTAMP"))
-  updatedBy Int?
+model site_feature_policies {
+  feature_code String @id
+  mode         String @default("denied")
+  updated_by   Int?
+  updated_at   String @default(dbgenerated("datetime('now')"))
+  users        users? @relation(fields: [updated_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
 
-  user User? @relation(fields: [updatedBy], references: [id], onDelete: SetNull)
+model stt_config {
+  api_key              String  @id
+  provider             String  @default("google")
+  language             String  @default("en-US")
+  audio_source         String  @default("hls")
+  stream_key           String?
+  auto_start           Int     @default(0)
+  confidence_threshold Float?
+  created_at           Int     @default(dbgenerated("strftime('%s','now')"))
+  updated_at           Int     @default(dbgenerated("strftime('%s','now')"))
+}
 
-  @@map("server_settings")
+model stt_source_languages {
+  id         Int     @id @default(autoincrement())
+  api_key    String
+  lang       String
+  label      String?
+  sort_order Int     @default(0)
+  created_at Int     @default(dbgenerated("strftime('%s','now')"))
+  updated_at Int     @default(dbgenerated("strftime('%s','now')"))
+
+  @@unique([api_key, lang], map: "sqlite_autoindex_stt_source_languages_1")
+}
+
+model translation_targets {
+  id                String           @id
+  api_key           String
+  enabled           Int              @default(1)
+  lang              String
+  target            String
+  format            String?
+  sort_order        Int              @default(0)
+  created_at        String           @default(dbgenerated("datetime('now')"))
+  updated_at        String           @default(dbgenerated("datetime('now')"))
+  caption_target_id String?
+  show_original     Int              @default(0)
+  caption_targets   caption_targets? @relation(fields: [caption_target_id], references: [id], onUpdate: NoAction)
+  api_keys          api_keys         @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([api_key], map: "idx_translation_targets_api_key")
+}
+
+model translation_vendor_config {
+  api_key        String    @id
+  vendor         String    @default("mymemory")
+  vendor_api_key String?
+  libre_url      String?
+  libre_key      String?
+  show_original  Int       @default(0)
+  updated_at     String    @default(dbgenerated("datetime('now')"))
+  api_keys       api_keys? @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model usage_rollups {
+  api_key      String
+  period_start String
+  grain        String @default("hour")
+  metric       String
+  value        Float  @default(0)
+
+  @@id([api_key, metric, grain, period_start])
+  @@index([metric, period_start], map: "idx_usage_rollups_metric")
+  @@index([period_start], map: "idx_usage_rollups_period")
+}
+
+model user_features {
+  user_id                               Int
+  feature_code                          String
+  enabled                               Int     @default(1)
+  config                                String?
+  granted_by                            Int?
+  granted_at                            String  @default(dbgenerated("datetime('now')"))
+  users_user_features_granted_byTousers users?  @relation("user_features_granted_byTousers", fields: [granted_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users_user_features_user_idTousers    users   @relation("user_features_user_idTousers", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([user_id, feature_code])
+  @@index([user_id], map: "idx_user_features_user")
+}
+
+model users {
+  id                                                Int                     @id @default(autoincrement())
+  email                                             String                  @unique(map: "sqlite_autoindex_users_1")
+  password_hash                                     String
+  name                                              String?
+  created_at                                        String                  @default(dbgenerated("datetime('now')"))
+  active                                            Int                     @default(1)
+  is_admin                                          Int                     @default(0)
+  admin_role                                        String                  @default("full")
+  api_keys                                          api_keys[]
+  org_feature_overrides                             org_feature_overrides[]
+  org_members_org_members_invited_byTousers         org_members[]           @relation("org_members_invited_byTousers")
+  org_members_org_members_user_idTousers            org_members[]           @relation("org_members_user_idTousers")
+  organizations                                     organizations[]
+  project_features                                  project_features[]
+  project_members_project_members_invited_byTousers project_members[]       @relation("project_members_invited_byTousers")
+  project_members_project_members_user_idTousers    project_members[]       @relation("project_members_user_idTousers")
+  site_feature_policies                             site_feature_policies[]
+  user_features_user_features_granted_byTousers     user_features[]         @relation("user_features_granted_byTousers")
+  user_features_user_features_user_idTousers        user_features[]         @relation("user_features_user_idTousers")
+}
+
+model variables {
+  api_key           String
+  name              String
+  current_value     String?
+  default_value     String?
+  source            String        @default("manual")
+  source_request_id String?
+  resolved_at       String?
+  updated_at        String        @default(dbgenerated("datetime('now')"))
+  expires_at        String?
+  expires_at_seq    Int?
+  revert_mode       String?
+  revert_value      String?
+  prev_value        String?
+  api_requests      api_requests? @relation(fields: [source_request_id], references: [id], onUpdate: NoAction)
+
+  @@id([api_key, name])
+}
+
+model videos {
+  id           String   @id
+  api_key      String
+  broadcast_id String?
+  title        String   @default("")
+  status       String   @default("recording")
+  storage_type String   @default("local")
+  storage_key  String?
+  duration_ms  BigInt?
+  size_bytes   BigInt   @default(0)
+  started_at   String?
+  ended_at     String?
+  created_at   String   @default(dbgenerated("datetime('now')"))
+  updated_at   String   @default(dbgenerated("datetime('now')"))
+  api_keys     api_keys @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([broadcast_id], map: "idx_videos_broadcast_id")
+  @@index([api_key], map: "idx_videos_api_key")
+}
+
+model viewer_anon_daily_stats {
+  date  String @id
+  views Int    @default(0)
+}
+
+model viewer_key_daily_stats {
+  date       String
+  api_key    String
+  viewer_key String
+  views      Int    @default(0)
+
+  @@id([date, api_key, viewer_key])
 }
