@@ -105,6 +105,7 @@ Where an implemented plan has known unbuilt parts (deferred phases, optional add
 
 | File | Title | Summary |
 |---|---|---|
+| [plan_saarnavideo_handoff.md](plans/plan_saarnavideo_handoff.md) | Handoff to Saarnavideo and separate clean / DSK / program recordings | Draft, nothing built (2026-10-12): versioned manifest (video, captions, DSK event log, metadata) delivered to Saarnavideo by S3 reference or signed-URL pull; recorder keeps clean, DSK and program feeds as separate files. Companion: saarnavideo `docs/plans/lcyt-import.md`. |
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Partially superseded by implementation: the server-STT gap it targeted was closed via `plan_server_stt.md` Phase 5's `translate-server.js`/`SttManager` mechanism, not the standalone `lcyt-translate` plugin this doc proposes. The API/generic-client gap (`POST /captions` from CLI/API/generic clients gets zero server-side translation) remains genuinely open; this doc's specific proposed architecture shouldn't be revived as-is. |
 | [plan_mixer_feed_sources.md](plans/plan_mixer_feed_sources.md) | Mixer Feed Sources â€” Looping File Sources & Low-Latency Preview Tiles | Adds a looping-video-file source type to the software mixer's program bus plus WHEP live preview tiles; its former 'encoder' source type is now covered by plan_ingest_feeds.md. |
 | [plan_postgres_option.md](plans/plan_postgres_option.md) | PostgreSQL as an Optional Backend | Adds PostgreSQL as optional backend for Node.js backend and plugin-owned DB layers. |
