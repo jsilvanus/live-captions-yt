@@ -139,6 +139,32 @@ describe('getAccessToken', () => {
     assert.deepEqual(tokens, Array(5).fill('access-refreshed'));
   });
 
+  test('two instances sharing a lease refresh a credential once; the other uses the stored token', async () => {
+    const db = await createDb();
+    const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });
+    // A minimal shared lease table, standing in for the cluster leases of two instances.
+    const held = new Map();
+    const leasesFor = (id) => ({
+      async acquire(name, ttl) { const h = held.get(name); if (h && h.owner !== id && h.until > Date.now()) return false; held.set(name, { owner: id, until: Date.now() + ttl }); return true; },
+      async release(name) { if (held.get(name)?.owner === id) held.delete(name); },
+    });
+    const calls = [];
+    const adapter = {
+      platform: 'youtube',
+      async refreshAccessToken(rt) {
+        calls.push(rt);
+        await new Promise((r) => setTimeout(r, 300));
+        return { accessToken: 'access-refreshed', expiresIn: 3600, expiresAt: iso(Date.now() + 3600_000) };
+      },
+    };
+    const mk = (id) => createTokenService({
+      db, getAdapter: () => adapter, getOAuthConfig: () => ({}), getKey, leases: leasesFor(id),
+    });
+    const [x, y] = await Promise.all([mk('a').getAccessToken(row.id), mk('b').getAccessToken(row.id)]);
+    assert.equal(calls.length, 1, 'only the lease holder calls the provider');
+    assert.deepEqual([x, y], ['access-refreshed', 'access-refreshed']);
+  });
+
   test('a failed refresh does not wedge later attempts', async () => {
     const db = await createDb();
     const row = await seed(db, { expiresAt: iso(Date.now() - 1000) });

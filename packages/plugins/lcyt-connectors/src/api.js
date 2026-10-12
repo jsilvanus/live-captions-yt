@@ -44,7 +44,7 @@ export { parseValueTtl } from './ttl.js';
 /**
  * Wire up the bus + resolution engine and restore persisted TTL timers and constant polls.
  * @param {import('lcyt-backend/db').Db} db
- * @param {{ filesControl?: object, eventBus?: import('lcyt/event-bus').EventBus }} [opts]
+ * @param {{ filesControl?: object, eventBus?: import('lcyt/event-bus').EventBus, leases?: object }} [opts]
  * @returns {Promise<{ bus, engine, scheduler, pollScheduler }>}
  */
 export async function initConnectors(db, opts = {}) {
@@ -52,7 +52,7 @@ export async function initConnectors(db, opts = {}) {
   const engine = createResolutionEngine({ db, bus, filesControl: opts.filesControl || null });
   const scheduler = createTtlScheduler({ db, bus });
   await scheduler.restore();
-  const pollScheduler = createPollScheduler({ db, engine });
+  const pollScheduler = createPollScheduler({ db, engine, leases: opts.leases || null });
   await pollScheduler.restore();
   return { bus, engine, scheduler, pollScheduler };
 }

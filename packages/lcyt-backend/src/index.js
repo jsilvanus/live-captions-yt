@@ -7,6 +7,7 @@ import { compactHourlyRollups } from './db/usage-rollups.js';
 import { kindForMetric } from './metrics/registry.js';
 import { isLocalMode, resolveLocalBind } from './local-mode.js';
 import { isMediaStorageS3 } from './storage/media-stores.js';
+import { leasedChore } from './cluster/chores.js';
 import { parseBackupDays, runBackup, cleanOldBackups } from './backup.js';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -50,6 +51,8 @@ function scheduleRearmable(getIntervalMs, fn) {
   return () => clearTimeout(timer);
 }
 
+const once = (name, getIntervalMs, fn) => leasedChore(cluster.leases, name, getIntervalMs, fn, logger);
+
 // ---------------------------------------------------------------------------
 // Database backup
 // ---------------------------------------------------------------------------
@@ -71,8 +74,9 @@ if (BACKUP_DAYS > 0) {
       logger.error('[backup] Error:', err.message);
     }
   }
-  doBackup();
-  scheduleRearmable(() => 86_400_000, doBackup); // 24h — not itself a registry setting
+  const backupOnce = once('backup', () => 86_400_000, doBackup);
+  backupOnce();
+  scheduleRearmable(() => 86_400_000, backupOnce); // 24h — not itself a registry setting
 }
 
 // ---------------------------------------------------------------------------
@@ -80,12 +84,13 @@ if (BACKUP_DAYS > 0) {
 // ---------------------------------------------------------------------------
 
 if (settings.get('retention.revoked_key_ttl_days') > 0) {
-  scheduleRearmable(() => settings.get('retention.revoked_key_cleanup_interval'), async () => {
+  const revokedInterval = () => settings.get('retention.revoked_key_cleanup_interval');
+  scheduleRearmable(revokedInterval, once('revoked-keys', revokedInterval, async () => {
     const days = settings.get('retention.revoked_key_ttl_days');
     if (days <= 0) return;
     const { count } = await cleanRevokedKeys(db, days);
     if (count > 0) logger.info(`[cleanup] Purged ${count} revoked key(s) older than ${days} days`);
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -93,12 +98,13 @@ if (settings.get('retention.revoked_key_ttl_days') > 0) {
 // ---------------------------------------------------------------------------
 
 if (settings.get('retention.event_log_retention_days') > 0) {
-  scheduleRearmable(() => settings.get('retention.event_log_cleanup_interval'), async () => {
+  const eventLogInterval = () => settings.get('retention.event_log_cleanup_interval');
+  scheduleRearmable(eventLogInterval, once('bus-events', eventLogInterval, async () => {
     const days = settings.get('retention.event_log_retention_days');
     if (days <= 0) return;
     const { count } = await deleteBusEventsOlderThan(db, days);
     if (count > 0) logger.info(`[cleanup] Purged ${count} bus event(s) older than ${days} days`);
-  });
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +167,8 @@ async function runRollupMaintenance() {
   }
 }
 
-scheduleRearmable(() => settings.get('retention.rollup_maintenance_interval'), runRollupMaintenance);
+const rollupInterval = () => settings.get('retention.rollup_maintenance_interval');
+scheduleRearmable(rollupInterval, once('rollup-maintenance', rollupInterval, runRollupMaintenance));
 
 // ---------------------------------------------------------------------------
 // Graceful shutdown

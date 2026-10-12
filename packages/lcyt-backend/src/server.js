@@ -431,6 +431,7 @@ const _operatorManager = new OperatorManager({
 const { bus: _connectorsBus, engine: _connectorsEngine, scheduler: _connectorsScheduler, pollScheduler: _connectorsPollScheduler } = await initConnectors(db, {
   filesControl: { resolveStorage },
   eventBus,
+  leases: cluster.leases,
 });
 // Named Actions plugin (action_defs table comes from the core schema).
 await initActions(db);
@@ -516,6 +517,7 @@ _cueActionDispatcher.start();
 // onto api_keys and broadcasts.
 const { tokenService: _platformTokenService, poller: _platformStatsPoller } = await initPlatforms(db, {
   eventBus,
+  leases: cluster.leases,
   getOAuthConfig: () => ({
     clientId: settings.get('app.youtube_client_id'),
     clientSecret: settings.get('app.youtube_client_secret'),
