@@ -1,6 +1,6 @@
 # Plan: Multi-instance behaviour
 
-**Status:** in-progress (approved 2026-10-12). L1, L2 and L3 built; L4 (relay ownership) deferred, relays stay pinned to one instance; L5 docs and deploy later. The Saarnavideo half (S1 to S3) lives in jsilvanus/saarnavideo.
+**Status:** in-progress (approved 2026-10-12). L1, L2 and L3 built; L4 (process ownership for relay, crop and STT) built 2026-10-12; HLS/radio/preview stay on the handling instance; L5 docs and deploy later. The Saarnavideo half (S1 to S3) lives in jsilvanus/saarnavideo.
 
 
 Written from live-captions-yt main (a2cfe32, after #346) and saarnavideo main (57f6c0f), not run.
@@ -87,3 +87,4 @@ Phases (own PRs):
 - **L2 (2026-10-12):** sessions are usable on any instance. `SessionStore.getOrLoad()` loads a session from its row (targets are now stored in `sessions.data`) and rebuilds senders (`restoreSessionRuntime`, `src/session-targets.js`, which also now holds `buildExtraTargets`); `touch()` writes only `last_activity` and a forward-only sequence; `runExclusive()` serialises a session's sends across instances with the lease `session-send:<id>` and syncs the sequence from the database; the TTL sweep consults the stored last activity and deletes with a conditional delete; orphaned rows are swept under a lease; `EventBus.onRemote()` drops sessions ended elsewhere and mirrors the mic holder; `/events` subscribes with `{ remote: true }`; viewer captions are relayed (`setViewerRelay`); CORS knows sessions of other instances (`domainKnown`). Rehydrate at boot is skipped in shared mode. Known gaps are listed in `docs/DEPLOY.md` (per-session counters; plugin lookups by project key).
 
 - **L6 (2026-10-12):** caption send lock replaced by an atomic sequence reservation (`SessionStore.reserveSequence`, `CLUSTER_SEND_LOCK=atomic` default, `lease` keeps the old behaviour); sticky routing by session recommended for strict order. Decided by Juha after the question whether DB-backed captions make the lock unnecessary.
+- **L4 (2026-10-12):** per-key lease `proc:<kind>:<key>` for the relay, crop and STT managers, call forwarding to the holder over `/internal/cluster/call` (HMAC of `JWT_SECRET`), takeover when the lease expires (45 s), `CLUSTER_PROCESS_OWNERSHIP=0` to disable. Not covered: several MediaMTX servers (see `plan_multi_mediamtx.md`), `setDskOverlay` with local paths, fleet jobs orphaned by an owner crash, HLS/radio/preview/perception/music. Never run against real MediaMTX, ffmpeg or a fleet.

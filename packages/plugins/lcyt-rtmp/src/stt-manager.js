@@ -450,12 +450,31 @@ export class SttManager extends EventEmitter {
     }
 
     if (!backendSession) {
-      // No live session — transcript is dropped (no target to deliver to)
+      // Several instances: the session may be served by another one, so load it from its row.
+      // Without that (single instance) the transcript is dropped: no target to deliver to.
+      if (typeof this._store.getOrLoadByApiKey === 'function') {
+        this._store.getOrLoadByApiKey(apiKey).then((loaded) => {
+          if (loaded) this._deliverToSession(loaded, apiKey, trimmed, timestamp, db);
+        }).catch((err) => logger.debug(`[stt] Session lookup failed for ${apiKey.slice(0, 8)}…: ${err.message}`));
+      }
       return;
     }
 
+    this._deliverToSession(backendSession, apiKey, trimmed, timestamp, db);
+  }
+
+  /**
+   * Deliver one transcript to a session: translation, backend caption files and every target.
+   * Serialised through the session's send queue; with several instances the sequence number is
+   * reserved by the store (`runExclusive`) like for POST /captions.
+   */
+  _deliverToSession(backendSession, apiKey, trimmed, timestamp, db) {
+    const exclusive = typeof this._store.runExclusive === 'function'
+      ? (fn) => this._store.runExclusive(backendSession, fn)
+      : (fn) => fn();
+
     // Serialise via _sendQueue so sequence numbers stay monotonic
-    backendSession._sendQueue = backendSession._sendQueue.then(async () => {
+    backendSession._sendQueue = backendSession._sendQueue.then(() => exclusive(async () => {
       try {
         const seq = (backendSession.sequence ?? 0) + 1;
         backendSession.sequence = seq;
@@ -554,9 +573,17 @@ export class SttManager extends EventEmitter {
           });
           backendSession.sequence = backendSession.sender.sequence;
         }
+
+        // Several instances: lift the other YouTube senders and store the highest number used.
+        if (this._store.shared) {
+          this._store.liftSenders?.(backendSession);
+          this._store.persistSequence?.(backendSession);
+        }
       } catch (err) {
         logger.error(`[stt] _deliverTranscript error for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }
+    })).catch((err) => {
+      logger.warn(`[stt] Delivery skipped for ${apiKey.slice(0, 8)}…: ${err.message}`);
     });
   }
 }

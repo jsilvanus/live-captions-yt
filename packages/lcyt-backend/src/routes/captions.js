@@ -4,6 +4,7 @@ import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDom
 import { composeCaptionText, buildVttCue } from '../caption-files.js';
 import { applyMetacodeProcessors } from '../metacode.js';
 import { writeToBackendFile } from 'lcyt-files';
+import { ownedElsewhere } from 'lcyt-rtmp';
 import { createCaptionFanout } from '../caption-fanout.js';
 
 /**
@@ -125,7 +126,8 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         // CEA-708 caption injection: pipe the original (pre-composition) caption text to
         // the ffmpeg stdin SRT pipe when the relay is running in CEA-708 mode.
         // Done after the map so each caption is injected exactly once.
-        if (relayManager?.hasCea708(session.apiKey)) {
+        // With several instances the relay may run elsewhere: writeCaption is then forwarded to its owner.
+        if (relayManager && (relayManager.hasCea708(session.apiKey) || await ownedElsewhere(relayManager, session.apiKey))) {
           for (const caption of resolvedCaptions) {
             relayManager.writeCaption(session.apiKey, caption.text, {
               speechStart: caption.speechStart,

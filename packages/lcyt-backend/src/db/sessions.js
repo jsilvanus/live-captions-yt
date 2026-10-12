@@ -48,6 +48,17 @@ export async function loadSession(db, sessionId) {
 }
 
 /**
+ * The session id of the most recently active session of a project, or null.
+ * @param {import('./connection.js').Db} db
+ * @param {string} apiKey
+ * @returns {Promise<string|null>}
+ */
+export async function findSessionIdByApiKey(db, apiKey) {
+  const row = await db.sessions.findFirst({ where: { api_key: apiKey }, orderBy: { last_activity: 'desc' }, select: { session_id: true } });
+  return row ? row.session_id : null;
+}
+
+/**
  * Delete a persisted session.
  * @param {import('./connection.js').Db} db
  * @param {string} sessionId

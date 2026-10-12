@@ -25,6 +25,7 @@
  */
 
 import { Router } from 'express';
+import { readThrough } from 'lcyt-rtmp';
 import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from '../db/stt.js';
 import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 import { getMetricsInstance } from '../metrics/index.js';
@@ -56,9 +57,9 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── GET /stt/status ────────────────────────────────────────────────────────
 
-  router.get('/status', auth, (req, res) => {
+  router.get('/status', auth, async (req, res) => {
     const { apiKey } = req.session;
-    const status = sttManager.getStatus(apiKey);
+    const status = await readThrough(sttManager, 'getStatus', apiKey);
     res.json(status);
   });
 
@@ -99,7 +100,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
 
   // ── GET /stt/events (SSE) ──────────────────────────────────────────────────
 
-  router.get('/events', (req, res) => {
+  router.get('/events', async (req, res) => {
     // Support both Bearer and ?token= for SSE (EventSource can't set headers)
     const token = extractSseToken(req);
     if (!token) return res.status(401).json({ error: 'Missing Bearer token' });
@@ -112,7 +113,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders();
 
-    const status = sttManager.getStatus(apiKey);
+    const status = await readThrough(sttManager, 'getStatus', apiKey);
     sendEvent(res, 'connected', {
       apiKey,
       provider: status.provider ?? null,
@@ -285,9 +286,9 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     }
 
     // If STT is currently running, restart it with the new language
-    const isRunning = sttManager.isRunning(apiKey);
+    const isRunning = await readThrough(sttManager, 'isRunning', apiKey);
     if (isRunning) {
-      const currentStatus = sttManager.getStatus(apiKey);
+      const currentStatus = await readThrough(sttManager, 'getStatus', apiKey);
       try {
         await sttManager.stop(apiKey);
         // Brief delay to ensure clean shutdown

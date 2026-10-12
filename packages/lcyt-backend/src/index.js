@@ -1,6 +1,6 @@
 import logger from 'lcyt/logger';
 import { closeFileHandles } from 'lcyt-files';
-import { app, db, store, cluster, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
+import { app, db, store, cluster, ownership, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
 import { cleanRevokedKeys, getDialect } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
@@ -190,6 +190,8 @@ async function shutdown() {
     if (session._fileHandles?.size > 0) await closeFileHandles(session._fileHandles).catch(() => {});
   }
   store.stopCleanup();
+  // Give back the relay/crop/STT leases so another instance can take the keys over at once.
+  try { await ownership?.stop(); } catch {}
   try { await cluster.stop(); } catch {}
   // Drain buffered usage rollups before the DB handle goes away.
   try { metrics.flushNow(); } catch {}
