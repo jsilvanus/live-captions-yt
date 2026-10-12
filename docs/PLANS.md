@@ -105,6 +105,7 @@ Where an implemented plan has known unbuilt parts (deferred phases, optional add
 | [plan_translate.md](plans/plan_translate.md) | Server-Side Translation Plugin (`lcyt-translate`) | Partially superseded by implementation: the server-STT gap it targeted was closed via `plan_server_stt.md` Phase 5's `translate-server.js`/`SttManager` mechanism, not the standalone `lcyt-translate` plugin this doc proposes. The API/generic-client gap (`POST /captions` from CLI/API/generic clients gets zero server-side translation) remains genuinely open; this doc's specific proposed architecture shouldn't be revived as-is. |
 | [plan_mixer_feed_sources.md](plans/plan_mixer_feed_sources.md) | Mixer Feed Sources â€” Looping File Sources & Low-Latency Preview Tiles | Adds a looping-video-file source type to the software mixer's program bus plus WHEP live preview tiles; its former 'encoder' source type is now covered by plan_ingest_feeds.md. |
 | [plan_postgres_option.md](plans/plan_postgres_option.md) | PostgreSQL as an Optional Backend | Adds PostgreSQL as optional backend for Node.js backend and plugin-owned DB layers. |
+| [plan_speech_to_sign_language.md](plans/plan_speech_to_sign_language.md) | Possible Future Feature: Speech to Finnish Sign Language (SVK) Avatar | Idea only, not scheduled: spoken Finnish during a livestream rendered as Finnish Sign Language by a signing avatar or signed video, as a separate picture-in-picture source. Staged, Deaf-led validation first; data licensing unresolved. |
 
 ### Reference
 
