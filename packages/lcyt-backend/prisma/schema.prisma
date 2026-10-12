@@ -601,7 +601,7 @@ model icons {
 
 /// One row per running backend process (multi-instance); heartbeat_at is epoch ms.
 model instances {
-  id           String @id
+  id           String  @id
   hostname     String
   url          String?
   started_at   BigInt
