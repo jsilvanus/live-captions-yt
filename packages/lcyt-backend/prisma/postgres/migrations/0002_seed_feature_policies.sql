@@ -1,0 +1,30 @@
+-- Initial deployment-wide feature policies (the SQLite schema seeds the same list in src/db/schema.js).
+-- Existing rows, including operator changes, are left alone.
+INSERT INTO "site_feature_policies" ("feature_code", "mode") VALUES
+  ('captions', 'available'),
+  ('viewer-target', 'available'),
+  ('mic-lock', 'available'),
+  ('stats', 'available'),
+  ('translations', 'available'),
+  ('embed', 'available'),
+  ('files-local', 'available'),
+  ('files-browser-local', 'available'),
+  ('collaboration', 'self_service'),
+  ('file-saving', 'self_service'),
+  ('files-managed-bucket', 'self_service'),
+  ('files-custom-bucket', 'self_service'),
+  ('files-webdav', 'self_service'),
+  ('graphics-client', 'self_service'),
+  ('restream', 'self_service'),
+  ('ingest', 'denied'),
+  ('radio', 'denied'),
+  ('hls-stream', 'denied'),
+  ('preview', 'denied'),
+  ('stt-server', 'denied'),
+  ('device-control', 'denied'),
+  ('graphics-server', 'denied'),
+  ('cea-captions', 'denied'),
+  ('broadcast-platforms', 'self_service'),
+  ('mcp-access', 'self_service'),
+  ('ai-agent', 'denied')
+ON CONFLICT ("feature_code") DO NOTHING;

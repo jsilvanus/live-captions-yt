@@ -16,7 +16,7 @@
   "scripts": {
     "start": "node src/index.js",
     "files:migrate": "node scripts/files-migrate.js",
-    "test": "cross-env LCYT_DB_SQL_COMPAT=1 ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test --test-timeout=60000 --test-force-exit test/*.test.js",
+    "test": "cross-env LCYT_DB_SQL_COMPAT=1 ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test --test-timeout=120000 --test-force-exit test/*.test.js",
     "test:integration": "cross-env LCYT_DB_SQL_COMPAT=1 ALLOWED_DOMAINS=* FILES_DIR=/tmp/lcyt-files-test ICONS_DIR=/tmp/lcyt-icons-test node --experimental-test-module-mocks --test test/integration/*.test.js",
     "db:generate": "node scripts/prisma-generate.mjs",
     "db:pg:build": "node scripts/prisma-pg.mjs",

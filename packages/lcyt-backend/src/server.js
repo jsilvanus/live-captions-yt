@@ -526,7 +526,7 @@ const { tokenService: _platformTokenService, poller: _platformStatsPoller } = aw
 // Capabilities that gained a feature flag after projects already used them (platform
 // connections, MCP tokens, AI roles): enable the flag so nothing switches off. Idempotent.
 try {
-  const added = backfillCapabilityFeatures(db);
+  const added = await backfillCapabilityFeatures(db);
   if (added.projects || added.users) console.log(`[features] capability backfill: ${added.projects} project flag(s), ${added.users} user entitlement(s)`);
 } catch (err) {
   console.warn(`[features] capability backfill skipped: ${err.message}`);

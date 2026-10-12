@@ -453,37 +453,37 @@ const CAPABILITY_BACKFILLS = [
  * Enable the flag (and give the owning user the entitlement) for every project
  * that already uses the capability, so adding the flag does not switch
  * anything off. Idempotent: existing rows, including explicit "disabled" ones,
- * are left alone. Tables owned by plugins that are not installed are skipped.
+ * are left alone. Capabilities whose table cannot be read are skipped.
  * Run after the plugin migrations.
- * @param {import('better-sqlite3').Database} db
- * @returns {{ projects: number, users: number }} rows added
+ * @param {import('./connection.js').Db} db
+ * @returns {Promise<{ projects: number, users: number }>} rows added
  */
-export function backfillCapabilityFeatures(db) {
-  const tableExists = name => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
-  const addProject = db.prepare(`
-    INSERT INTO project_features (api_key, feature_code, enabled, config)
-    VALUES (?, ?, 1, NULL)
-    ON CONFLICT (api_key, feature_code) DO NOTHING
-  `);
-  const addUser = db.prepare(`
-    INSERT INTO user_features (user_id, feature_code, enabled)
-    VALUES (?, ?, 1)
-    ON CONFLICT (user_id, feature_code) DO NOTHING
-  `);
-  const ownerOf = db.prepare('SELECT user_id FROM api_keys WHERE key = ?');
-
+export async function backfillCapabilityFeatures(db) {
   let projects = 0;
   let users = 0;
-  db.transaction(() => {
-    for (const { code, table, keys } of CAPABILITY_BACKFILLS) {
-      if (!tableExists(table)) continue;
-      for (const { api_key: apiKey } of db.prepare(keys).all()) {
-        if (!ownerOf.get(apiKey)) continue; // key no longer exists
-        projects += addProject.run(apiKey, code).changes;
-        const userId = ownerOf.get(apiKey)?.user_id;
-        if (userId != null) users += addUser.run(userId, code).changes;
+  for (const { code, keys } of CAPABILITY_BACKFILLS) {
+    let rows;
+    try {
+      rows = await db.$queryRawUnsafe(keys);
+    } catch {
+      continue; // table not present
+    }
+    for (const { api_key: apiKey } of rows) {
+      const owner = await db.api_keys.findUnique({ where: { key: apiKey }, select: { user_id: true } });
+      if (!owner) continue; // key no longer exists
+      const pk = { api_key_feature_code: { api_key: apiKey, feature_code: code } };
+      if (!(await db.project_features.findUnique({ where: pk, select: { enabled: true } }))) {
+        await db.project_features.create({ data: { api_key: apiKey, feature_code: code, enabled: 1, granted_at: sqlNow() } });
+        projects++;
+      }
+      if (owner.user_id != null) {
+        const uk = { user_id_feature_code: { user_id: owner.user_id, feature_code: code } };
+        if (!(await db.user_features.findUnique({ where: uk, select: { enabled: true } }))) {
+          await db.user_features.create({ data: { user_id: owner.user_id, feature_code: code, enabled: 1, granted_at: sqlNow() } });
+          users++;
+        }
       }
     }
-  })();
+  }
   return { projects, users };
 }

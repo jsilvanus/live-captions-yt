@@ -51,24 +51,23 @@ async function loadClient(kind) {
  */
 export async function applyPostgresMigrations(prisma, dir = join(PKG_ROOT, 'prisma', 'postgres', 'migrations')) {
   const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
-  await prisma.$executeRawUnsafe('SELECT pg_advisory_lock(727401)');
-  try {
-    await prisma.$executeRawUnsafe(
+  // One transaction = one pooled connection, so the lock is taken and released on the same
+  // session (a session-level lock on a pooled client could be unlocked on another connection
+  // and then stay held, blocking every other starter forever).
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SELECT pg_advisory_xact_lock(727401)');
+    await tx.$executeRawUnsafe(
       'CREATE TABLE IF NOT EXISTS _lcyt_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT now())');
-    const done = new Set((await prisma.$queryRawUnsafe('SELECT name FROM _lcyt_migrations')).map((r) => r.name));
+    const done = new Set((await tx.$queryRawUnsafe('SELECT name FROM _lcyt_migrations')).map((r) => r.name));
     for (const file of files) {
       const name = file.replace(/\.sql$/, '');
       if (done.has(name)) continue;
       const sql = readFileSync(join(dir, file), 'utf8');
       const statements = sql.split(/;\s*\n/).map((s) => s.trim()).filter((s) => s && !/^(--[^\n]*\n?)*$/.test(s));
-      await prisma.$transaction(async (tx) => {
-        for (const st of statements) await tx.$executeRawUnsafe(st);
-        await tx.$executeRawUnsafe('INSERT INTO _lcyt_migrations (name) VALUES ($1)', name);
-      });
+      for (const st of statements) await tx.$executeRawUnsafe(st);
+      await tx.$executeRawUnsafe('INSERT INTO _lcyt_migrations (name) VALUES ($1)', name);
     }
-  } finally {
-    await prisma.$executeRawUnsafe('SELECT pg_advisory_unlock(727401)');
-  }
+  }, { maxWait: 120_000, timeout: 120_000 });
 }
 
 async function maybeSqlCompat(prisma, dialect) {
@@ -91,10 +90,13 @@ export async function openPostgresUrl(url, { migrate = true, throwawaySchema = f
   let dbUrl = url;
   if (throwawaySchema) {
     testSchema = `t_${randomBytes(6).toString('hex')}`;
-    const boot = new PrismaClient({ datasources: { db: { url } } });
+    // Tests open many short-lived clients (often never closed); a small pool each keeps the
+    // total below PostgreSQL's max_connections instead of stalling on connection slots.
+    const small = (u) => (/[?&]connection_limit=/.test(u) ? u : `${u}${u.includes('?') ? '&' : '?'}connection_limit=2`);
+    const boot = new PrismaClient({ datasources: { db: { url: small(url) } } });
     await boot.$executeRawUnsafe(`CREATE SCHEMA "${testSchema}"`);
     await boot.$disconnect();
-    dbUrl = `${url}${url.includes('?') ? '&' : '?'}schema=${testSchema}`;
+    dbUrl = small(`${url}${url.includes('?') ? '&' : '?'}schema=${testSchema}`);
   }
   const prisma = new PrismaClient({ datasources: { db: { url: dbUrl } } });
   prisma.$testSchema = testSchema ? { name: testSchema, url } : null;
