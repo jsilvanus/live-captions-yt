@@ -29,6 +29,8 @@ import { createOperatorRouter } from './routes/operator.js';
 import { OperatorManager } from './operator-manager.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { startCluster } from './cluster/index.js';
+import { createOwnership } from './cluster/ownership.js';
+import { createClusterInternalRouter } from './routes/cluster-internal.js';
 import { setHlsSubsManager, setViewerRelay } from './routes/viewer.js';
 import { restoreSessionRuntime } from './session-targets.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
@@ -43,7 +45,7 @@ import {
   initDskControl, createDskRouters,
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
-import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -292,7 +294,12 @@ const mediaStores = await createMediaStores(settings);
 // Always initialized, regardless of RTMP_RELAY_ACTIVE.
 // Pass the session store so SttManager can inject transcripts into session._sendQueue.
 // Pass resolveStorage so HLS manager can publish segments/playlists to storage.
-const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings, hlsSubsStore: isMediaStorageS3(settings) ? mediaStores.hlsSubsStore : null });
+// Several instances: relay, crop and STT calls follow the instance that holds the key's lease
+// (cluster/ownership.js). CLUSTER_PROCESS_OWNERSHIP=0 keeps the old behaviour (pin them to one instance).
+const ownership = cluster.shared && process.env.CLUSTER_PROCESS_OWNERSHIP !== '0'
+  ? createOwnership({ leases: cluster.leases, registry: cluster.registry, instanceId: cluster.instanceId, secret: jwtSecret, log: console })
+  : null;
+const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings, hlsSubsStore: isMediaStorageS3(settings) ? mediaStores.hlsSubsStore : null, ownership });
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer
@@ -1015,7 +1022,7 @@ eventBus.tap((e) => {
 // Opt-in (crop_config.auto_follow): keep the vertical crop on the people the detector sees in the camera on program.
 const _cropFollow = createCropFollowController({
   db, eventBus, cropManager: rtmp.cropManager, attributor: _feedAttributor, getCropConfig,
-  follow: { targetCenter, xNormForCenter, createFollowSmoother },
+  follow: { targetCenter, xNormForCenter, createFollowSmoother, readThrough },
 });
 const _sceneSummary = createSceneSummary({ db, sceneState: _sceneState, attributor: _feedAttributor });
 const _sharedFeedResolver = createSharedFeedResolver({
@@ -1116,6 +1123,11 @@ if (musicManager) {
   apiRouter.use('/music', musicGate(musicRouter), musicGate(musicConfigRouter));
 }
 
+// Forwarded relay/crop/STT calls from other instances (shared mode only; not a public route).
+if (ownership && rtmp.owned) {
+  app.use('/internal/cluster', createClusterInternalRouter({ secret: jwtSecret, owned: rtmp.owned, log: console }));
+}
+
 // Mount all API routes under /api prefix
 app.use('/api/v1', apiRouter);
 
@@ -1137,4 +1149,4 @@ if (process.env.STATIC_DIR) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, settings, eventBus, cluster, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };
+export { app, db, store, settings, eventBus, cluster, ownership, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };

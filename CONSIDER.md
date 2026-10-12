@@ -432,3 +432,9 @@ Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpR
 **Found:** With PostgreSQL a caption session is served by any instance (L2), but the counters in the session object are per instance, and code that looks a session up by api key (not by session id) only sees sessions loaded on its own instance.
 
 **Skipped because:** Persisting counters per request would add a write to the hot caption path, and the `getByApiKey` users are event listeners that would each need their own cross-instance story. Single-instance behaviour is unaffected. Documented as a known gap; revisit with L4 (relay ownership), which has to pin those features to an owner anyway.
+
+## L4 process ownership gaps (2026-10-12)
+
+**Found:** relay/crop/STT ownership (`packages/lcyt-backend/src/cluster/ownership.js`, `packages/plugins/lcyt-rtmp/src/ownership.js`) leaves: `setDskOverlay(apiKey, names, imagePaths)` takes local file paths and is not forwarded; ffmpeg fleet jobs of a crashed owner may keep running; `/stt/events` shows only transcripts of the instance running STT; HLS, radio, preview, perception and music managers are not wrapped; MediaMTX paths from a dead owner stay registered until the next upsert; the 3 s owner cache can briefly report no owner after a takeover.
+**Skipped because:** each needs real MediaMTX/fleet runs to design properly, and single-instance behaviour is unaffected.
+**Where:** see `docs/DEPLOY.md` "Process ownership (L4)".

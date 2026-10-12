@@ -56,8 +56,10 @@ import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { createRadioRouter } from './routes/radio.js';
 import { createPreviewRouter } from './routes/preview.js';
 import { NginxManager } from './nginx-manager.js';
+import { withOwnership, RELAY_OWNERSHIP, CROP_OWNERSHIP, STT_OWNERSHIP } from './ownership.js';
 import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
+export { withOwnership, readThrough, ownedElsewhere, RELAY_OWNERSHIP, CROP_OWNERSHIP, STT_OWNERSHIP } from './ownership.js';
 export { NginxManager } from './nginx-manager.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
@@ -91,7 +93,7 @@ export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follo
  *   stop: () => Promise<void>
  * }>}
  */
-export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null, settings = null, hlsSubsStore = null } = {}) {
+export async function initRtmpControl(db, store = null, { metrics = null, resolveStorage = null, settings = null, hlsSubsStore = null, ownership = null } = {}) {
   const ffmpegCaps = (settings ? settings.get('media.rtmp_relay_active') : process.env.RTMP_RELAY_ACTIVE === '1')
     ? probeFfmpeg()
     : { available: false, hasLibx264: false, hasEia608: false, hasSubrip: false };
@@ -200,7 +202,34 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
     ]);
   }
 
-  return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, cropManager, stop };
+  if (!ownership) {
+    return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, cropManager, owned: null, stop };
+  }
+
+  // Several backend instances on one database: relay, crop and STT starts take a lease and every
+  // start/stop/control call is routed to the instance that holds it (see ownership.js). The
+  // wrappers are what the rest of the backend gets; `owned` lets the internal route run a
+  // forwarded call on this instance without forwarding it again.
+  const wrap = (target, base, extraRouted = {}) => withOwnership(target, {
+    ...base, routed: { ...base.routed, ...extraRouted }, ownership, log: logger,
+  });
+  const ownedRelay = wrap(relayManager, RELAY_OWNERSHIP);
+  const ownedCrop = wrap(cropManager, CROP_OWNERSHIP, {
+    applyForSource: {
+      keyIndex: 1,
+      forwardKeyIndex: 0,
+      forwardArgs: (a) => a.slice(1),
+      localArgs: (a) => [db, ...a],
+    },
+  });
+  const ownedStt = wrap(sttManager, STT_OWNERSHIP);
+  logger.info('[lcyt-rtmp] process ownership active: relay, crop and STT calls follow the lease holder');
+  return {
+    relayManager: ownedRelay, hlsManager, radioManager, previewManager, hlsSubsManager,
+    sttManager: ownedStt, cropManager: ownedCrop,
+    owned: { relay: ownedRelay, crop: ownedCrop, stt: ownedStt },
+    stop,
+  };
 }
 
 /**

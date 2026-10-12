@@ -2,6 +2,7 @@ import { Router } from 'express';
 import express from 'express';
 import { isRelayAllowed, isRelayActive, getRelays, getKey, resolveApiKeyFromIngestStreamKey, getCropConfig } from '../db.js';
 import logger from 'lcyt/logger';
+import { readThrough } from '../ownership.js';
 
 /**
  * Factory for the /rtmp router.
@@ -93,7 +94,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
       if (cropManager) {
         try {
           const cropConfig = await getCropConfig(db, apiKey);
-          if (cropConfig.enabled && !cropManager.isRunning(apiKey)) {
+          if (cropConfig.enabled && !(await readThrough(cropManager, 'isRunning', apiKey))) {
             cropManager.start(apiKey, cropConfig).catch(err => {
               logger.error(`[rtmp] Crop renderer start failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
             });
@@ -137,7 +138,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
       } catch (err) {
         logger.error(`[rtmp] Failed to stop relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }
-      if (cropManager?.isRunning(apiKey)) {
+      if (cropManager && (await readThrough(cropManager, 'isRunning', apiKey))) {
         cropManager.stop(apiKey).catch(err => {
           logger.error(`[rtmp] Crop renderer stop failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
         });

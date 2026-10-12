@@ -18,6 +18,7 @@
  * directly instead of importing lcyt-backend middleware).
  */
 import { Router } from 'express';
+import { readThrough } from '../ownership.js';
 import {
   getCropConfig, setCropConfig,
   listCropPresets, getCropPreset, createCropPreset, updateCropPreset, deleteCropPreset,
@@ -65,7 +66,7 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
     const apiKey = req.session.apiKey;
     res.json({
       ...(await getCropConfig(db, apiKey)),
-      ...cropManager.getStatus(apiKey),
+      ...(await readThrough(cropManager, 'getStatus', apiKey)),
     });
   });
 
@@ -78,20 +79,20 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
     // Start/stop the renderer to match the new config while the source is live.
     const nowEnabled = result.config.enabled;
     try {
-      if (nowEnabled && !cropManager.isRunning(apiKey) && relayManager?.isPublishing(apiKey)) {
+      if (nowEnabled && !(await readThrough(cropManager, 'isRunning', apiKey)) && relayManager && (await readThrough(relayManager, 'isPublishing', apiKey))) {
         await cropManager.start(apiKey, result.config);
-      } else if (!nowEnabled && wasEnabled && cropManager.isRunning(apiKey)) {
+      } else if (!nowEnabled && wasEnabled && (await readThrough(cropManager, 'isRunning', apiKey))) {
         await cropManager.stop(apiKey);
       }
     } catch (err) {
       logger.warn(`[crop] renderer start/stop after config change failed for ${apiKey.slice(0, 8)}: ${err.message}`);
     }
 
-    res.json({ ...result.config, ...cropManager.getStatus(apiKey) });
+    res.json({ ...result.config, ...(await readThrough(cropManager, 'getStatus', apiKey)) });
   });
 
-  router.get('/status', (req, res) => {
-    res.json(cropManager.getStatus(req.session.apiKey));
+  router.get('/status', async (req, res) => {
+    res.json(await readThrough(cropManager, 'getStatus', req.session.apiKey));
   });
 
   // ── free positioning ──────────────────────────────────────────────────────
@@ -102,7 +103,7 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
     if (!Number.isFinite(Number(xNorm)) || !Number.isFinite(Number(yNorm))) {
       return res.status(400).json({ error: 'xNorm and yNorm are required numbers (0-1)' });
     }
-    if (!cropManager.isRunning(apiKey)) {
+    if (!(await readThrough(cropManager, 'isRunning', apiKey))) {
       return res.status(409).json({ error: 'Crop renderer is not running' });
     }
     try {
@@ -149,7 +150,7 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
     const apiKey = req.session.apiKey;
     const preset = await getCropPreset(db, apiKey, req.params.id);
     if (!preset) return res.status(404).json({ error: 'Preset not found' });
-    if (!cropManager.isRunning(apiKey)) {
+    if (!(await readThrough(cropManager, 'isRunning', apiKey))) {
       return res.status(409).json({ error: 'Crop renderer is not running' });
     }
     const transitionMs = Number(req.body?.transitionMs) >= 0
@@ -201,7 +202,7 @@ export function createCropRouter(db, auth, cropManager, relayManager = null, req
     // Re-apply: if the renderer is running and the previously-active preset has
     // a same-named counterpart in the new set, shift to it live.
     let applied = null;
-    const status = cropManager.getStatus(apiKey);
+    const status = await readThrough(cropManager, 'getStatus', apiKey);
     if (status.running && status.activePresetId) {
       const oldPreset = await getCropPreset(db, apiKey, status.activePresetId);
       if (oldPreset) {

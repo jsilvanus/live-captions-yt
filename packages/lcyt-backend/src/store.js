@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { EventBus } from 'lcyt/event-bus';
-import { saveSession, deleteSession, loadSession, incSessionSequence, listSessions, touchSessionRow, raiseSessionSequence, setSessionData, setSessionMicHolder, deleteSessionIfIdle, sessionDomainExists } from './db.js';
+import { saveSession, deleteSession, loadSession, incSessionSequence, listSessions, touchSessionRow, raiseSessionSequence, setSessionData, setSessionMicHolder, deleteSessionIfIdle, sessionDomainExists, findSessionIdByApiKey } from './db.js';
 
 const DEFAULT_SESSION_TTL = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000; // 2 hours
 const DEFAULT_CLEANUP_INTERVAL = Number(process.env.CLEANUP_INTERVAL) || 5 * 60 * 1000; // 5 minutes
@@ -284,6 +284,22 @@ export class SessionStore {
     }
     if (session?._needsRestore && this._restore) await this._restoreRuntime(session);
     return session;
+  }
+
+  /**
+   * The session of a project: the one on this instance, else (several instances) the most recently
+   * active one from the database, loaded here. Used by server-side STT, which can run on another
+   * instance than the one serving the session.
+   * @param {string} apiKey
+   * @returns {Promise<object|undefined>}
+   */
+  async getOrLoadByApiKey(apiKey) {
+    const local = this.getByApiKey(apiKey);
+    if (local) return local;
+    if (!this.shared || !this.db) return undefined;
+    let id;
+    try { id = await findSessionIdByApiKey(this.db, apiKey); } catch { return undefined; }
+    return id ? this.getOrLoad(id) : undefined;
   }
 
   async _loadFromDb(sessionId) {

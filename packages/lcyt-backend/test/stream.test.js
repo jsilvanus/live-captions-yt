@@ -39,6 +39,7 @@ function makeMockRelayManager({ runningKeys = [], publishingKeys = [] } = {}) {
     _stderr: null,
     runningSlots:     function () { return this._slots; },
     liveStderr:       function () { return this._stderr; },
+    lastExit:         () => null,
     start:            async (key, relays) => { startCalls.push({ key, relays }); running.add(key); },
     startAll:         async (key, relays) => { startCalls.push({ key, relays }); running.add(key); },
     stop:             async (key) => { stopCalls.push(key); running.delete(key); },

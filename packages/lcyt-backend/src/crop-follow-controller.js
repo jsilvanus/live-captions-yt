@@ -25,6 +25,8 @@ export function createCropFollowController({
   moveMs = 500, now = () => Date.now(),
 }) {
   const { targetCenter, xNormForCenter, createFollowSmoother } = follow;
+  // Reads go through the manager's ownership wrapper (several instances); a plain manager answers itself.
+  follow = { ...follow, readThrough: follow.readThrough || (async (m, method, key) => m[method](key)) };
   /** @type {Map<string, { smoother: object, presetSeen: string|null }>} */
   const state = new Map();
   let busy = new Set();
@@ -33,12 +35,12 @@ export function createCropFollowController({
     if (busy.has(apiKey)) return;
     const cfg = await getCropConfig(db, apiKey);
     if (busy.has(apiKey)) return;
-    if (!cfg.enabled || !cfg.autoFollow || !cropManager.isRunning(apiKey)) return;
+    if (!cfg.enabled || !cfg.autoFollow || !(await follow.readThrough(cropManager, 'isRunning', apiKey))) return;
     const tag = attributor.getTag(apiKey);
     if (!tag?.cameraId || tag.cameraId !== data.cameraId) return; // only the camera that is on program
     if (!data.visible) return;
 
-    const st = cropManager.getStatus(apiKey);
+    const st = await follow.readThrough(cropManager, 'getStatus', apiKey);
     if (!st.running || !st.inW || !st.cropW) return;
     let s = state.get(apiKey);
     if (!s) { s = { smoother: createFollowSmoother(), presetSeen: null }; state.set(apiKey, s); }

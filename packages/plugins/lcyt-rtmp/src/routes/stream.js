@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceCameraKey } from '../db.js';
 import logger from 'lcyt/logger';
+import { readThrough } from '../ownership.js';
 
 /**
  * Factory for the /stream router.
@@ -184,10 +185,10 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   // GET /stream — get all slots + running status per slot + relay active state
   router.get('/', requireRelayAllowed, async (req, res) => {
     const relays = await getRelays(db, req.session.apiKey);
-    const runningSlots = relayManager.runningSlots(req.session.apiKey);
+    const runningSlots = await readThrough(relayManager, 'runningSlots', req.session.apiKey);
     const active = await isRelayActive(db, req.session.apiKey);
-    const lastExit = runningSlots.length === 0 ? (relayManager.lastExit?.(req.session.apiKey) ?? null) : null;
-    const stderrTail = runningSlots.length > 0 ? (relayManager.liveStderr?.(req.session.apiKey) ?? null) : null;
+    const lastExit = runningSlots.length === 0 ? ((await readThrough(relayManager, 'lastExit', req.session.apiKey)) ?? null) : null;
+    const stderrTail = runningSlots.length > 0 ? ((await readThrough(relayManager, 'liveStderr', req.session.apiKey)) ?? null) : null;
     return res.status(200).json({ relays, runningSlots, active, lastExit, stderrTail });
   });
 
@@ -215,7 +216,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
 
     if (active) {
       // If nginx is currently publishing a stream, start fan-out immediately
-      if (relayManager.isPublishing(apiKey)) {
+      if (await readThrough(relayManager, 'isPublishing', apiKey)) {
         const relays = await getRelays(db, apiKey);
         if (relays.length > 0) {
           try {
@@ -279,7 +280,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
     // Remove from DB first so the restart picks up the updated target list.
     const deleted = await deleteRelaySlot(db, apiKey, slot);
 
-    if (relayManager.isRunning(apiKey)) {
+    if (await readThrough(relayManager, 'isRunning', apiKey)) {
       const remaining = await getRelays(db, apiKey);
       if (remaining.length > 0) {
         // Restart the single ffmpeg process with the remaining tee targets.
