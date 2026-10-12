@@ -22,6 +22,12 @@ before(async () => {
 
 after(() => db.close());
 
+// Delivery is fire-and-forget behind async DB lookups, so poll instead of a fixed sleep.
+async function waitFor(cond, timeoutMs = 2000) {
+  const end = Date.now() + timeoutMs;
+  while (!cond() && Date.now() < end) await new Promise(r => setTimeout(r, 5));
+}
+
 function makeSession(extraTargets) {
   return { apiKey: 'fanout-key', domain: 'https://fanout.test', sequence: 7, extraTargets };
 }
@@ -34,7 +40,7 @@ describe('createCaptionFanout', () => {
     ]);
 
     fanOut(session, [{ text: 'Original', composedText: 'Composed', timestamp: '2026-02-20T12:00:00.000' }]);
-    await new Promise(r => setTimeout(r, 10));
+    await waitFor(() => sends.length > 0);
 
     assert.equal(sends.length, 1);
     assert.equal(sends[0].text, 'Composed');
@@ -58,7 +64,7 @@ describe('createCaptionFanout', () => {
       text: 'Hello', composedText: 'Hello',
       translations: { 'fi-FI': 'Hei' },
     }]);
-    await new Promise(r => setTimeout(r, 10));
+    await waitFor(() => sends.length > 0);
 
     assert.deepEqual(sends, ['Hei']);
   });
@@ -75,7 +81,7 @@ describe('createCaptionFanout', () => {
       showOriginal: true,
       translations: { 'sv-SE': 'Hej' },
     }]);
-    await new Promise(r => setTimeout(r, 10));
+    await waitFor(() => sends.length > 0);
 
     assert.deepEqual(sends, ['Hello<br>Hej']);
   });
@@ -97,7 +103,7 @@ describe('createCaptionFanout', () => {
         translations: { 'sv-SE': 'Hej' }, captionLang: 'sv-SE', showOriginal: false,
         codes: { section: 'intro' },
       }]);
-      await new Promise(r => setTimeout(r, 10));
+      await waitFor(() => fetchCalls.length > 0);
 
       assert.equal(fetchCalls.length, 1);
       const { body } = fetchCalls[0];

@@ -18,7 +18,7 @@ jobs:
   test-matrix:
     name: Test Matrix (${{ matrix.database }})
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
 
     strategy:
       fail-fast: false
@@ -83,6 +83,7 @@ jobs:
       - name: Run tests (${{ matrix.database }})
         working-directory: packages/lcyt-backend
         run: npm test
+        timeout-minutes: 10
         env:
           NODE_ENV: test
           DATABASE_URL: ${{ env.DATABASE_URL }}
