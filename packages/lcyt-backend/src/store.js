@@ -53,6 +53,8 @@ export class SessionStore {
     this.eventBus = eventBus ?? new EventBus();
     /** @type {((session: object, reason: string) => void)|null} */
     this.onSessionEnd = null;
+    /** Called when a session leaves this instance without ending (it ended or moved elsewhere). */
+    this.onSessionDropped = null;
     /** Multi-instance: leases + shared flag from src/cluster (null = single process). */
     this.cluster = cluster;
     /** Shared mode send coordination: 'atomic' (default) reserves each sequence number with one conditional
@@ -93,6 +95,7 @@ export class SessionStore {
     if (!session) return;
     this._sessions.delete(sessionId);
     session.emitter.removeAllListeners();
+    this.onSessionDropped?.(session);
     try { session.sender?.end?.(); } catch {}
     for (const target of (session.extraTargets || [])) {
       if (target.type === 'youtube' && target.sender) {

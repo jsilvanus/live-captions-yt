@@ -239,6 +239,25 @@ describe('writeToBackendFile', () => {
     assert.ok(content.includes('Hello world'));
   });
 
+  test('fileSuffix gives a continuing instance its own file part', async () => {
+    const adapter = createLocalAdapter(baseDir);
+    const db = makeDb();
+    const a = new Map();
+    const b = new Map();
+    const base = { apiKey: 'key1', sessionId: 'sess0001', lang: 'original', format: 'youtube' };
+
+    await writeToBackendFile({ ...base, fileHandles: a }, 'from A', undefined, db, adapter, buildVttCue);
+    await writeToBackendFile({ ...base, fileHandles: b, fileSuffix: 'inst2-abc' }, 'from B', undefined, db, adapter, buildVttCue);
+
+    const pathA = a.get('original:youtube').handle.storedKey;
+    const pathB = b.get('original:youtube').handle.storedKey;
+    assert.notEqual(pathA, pathB);
+    assert.ok(pathB.endsWith('-original-inst2-abc.txt'));
+    assert.ok(fs.readFileSync(pathA, 'utf8').includes('from A'));
+    assert.ok(fs.readFileSync(pathB, 'utf8').includes('from B'));
+    assert.equal(db.registered.length, 2);
+  });
+
   test('reuses existing handle on second call', async () => {
     const adapter = createLocalAdapter(baseDir);
     const db = makeDb();

@@ -20,7 +20,7 @@ import logger from 'lcyt/logger';
  * On first call for a given (lang, format) pair in a session, a new file is
  * created and registered in the DB. Subsequent calls append to the same handle.
  *
- * @param {{ apiKey: string, sessionId: string, lang: string, format: string, fileHandles: Map, sessionStartMs?: number }} context
+ * @param {{ apiKey: string, sessionId: string, lang: string, format: string, fileHandles: Map, sessionStartMs?: number, fileSuffix?: string }} context
  *   `sessionStartMs` (epoch ms, e.g. `session.startedAt`) anchors VTT cue times so they are
  *   relative to the session start. Without it, the first cue written to a file becomes 00:00:00.000
  *   and later cues are relative to that first caption.
@@ -33,7 +33,7 @@ import logger from 'lcyt/logger';
  */
 export async function writeToBackendFile(context, text, timestamp, db, storage, buildVttCue) {
   try {
-    const { apiKey, sessionId, lang, format, fileHandles, sessionStartMs } = context;
+    const { apiKey, sessionId, lang, format, fileHandles, sessionStartMs, fileSuffix } = context;
 
     // Sanitize lang to only allow safe characters for filenames
     const langKey = (lang || 'original').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 20);
@@ -42,7 +42,9 @@ export async function writeToBackendFile(context, text, timestamp, db, storage, 
     if (!fileHandles.has(fileKey)) {
       const ext = format === 'vtt' ? 'vtt' : 'txt';
       const date = new Date().toISOString().slice(0, 10);
-      const filename = `${date}-${sessionId.slice(0, 8)}-${langKey}.${ext}`;
+      // fileSuffix keeps parts apart when another instance (or a restarted one) continues the session.
+      const part = fileSuffix ? `-${String(fileSuffix).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30)}` : '';
+      const filename = `${date}-${sessionId.slice(0, 8)}-${langKey}${part}.${ext}`;
 
       let handle;
       try {
