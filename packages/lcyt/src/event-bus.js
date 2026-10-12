@@ -52,6 +52,8 @@ export class EventBus {
     this._listeners = new Map();
     /** @type {Set<(e:object)=>void>} global taps — called for every publish across all projects (audit log). */
     this._taps = new Set();
+    /** @type {Set<(e:object)=>void>} forwarders — called for locally published events only (cluster bridge). */
+    this._forwarders = new Set();
   }
 
   /**
@@ -69,6 +71,43 @@ export class EventBus {
    */
   publish(projectId, topic, data, meta = null) {
     const envelope = { ...(meta || {}), topic, projectId, ts: Date.now(), data };
+    this._deliver(envelope, true);
+    for (const fwd of this._forwarders) {
+      try {
+        fwd(envelope);
+      } catch (err) {
+        logger.error(`[event-bus] forwarder threw for ${topic}: ${err?.message ?? err}`);
+      }
+    }
+  }
+
+  /**
+   * Deliver an envelope that was published on another backend instance: SSE
+   * subscribers get it exactly as if it had been published here, and so do
+   * in-process listeners that subscribed with `{ remote: true }`. Taps (audit log,
+   * metrics), forwarders and ordinary listeners do not — the origin instance
+   * already recorded and acted on it, and forwarding would echo it around the cluster.
+   * @param {{ topic: string, projectId: string, ts?: number, data?: any }} envelope
+   */
+  publishRemote(envelope) {
+    if (!envelope || typeof envelope.topic !== 'string' || typeof envelope.projectId !== 'string') return;
+    this._deliver(envelope, false);
+  }
+
+  /**
+   * Register a forwarder called with the envelope of every locally published
+   * event (never for `publishRemote`). Used to relay events to other instances.
+   * @param {(envelope:object)=>void} fn
+   * @returns {() => void} unregister
+   */
+  forward(fn) {
+    this._forwarders.add(fn);
+    return () => this._forwarders.delete(fn);
+  }
+
+  /** @private */
+  _deliver(envelope, local) {
+    const { projectId, topic } = envelope;
 
     const subs = this._subscribers.get(projectId);
     if (subs && subs.size > 0) {
@@ -87,6 +126,9 @@ export class EventBus {
     const listeners = this._listeners.get(projectId);
     if (listeners) {
       for (const l of listeners) {
+        // Actors (operator, cue engine, crop follow) must act once per event, on the
+        // instance that published it; only listeners that opt in see remote events.
+        if (!local && !l.remote) continue;
         if (!topicMatches(l.topics, topic)) continue;
         try {
           l.handler(envelope);
@@ -96,6 +138,7 @@ export class EventBus {
       }
     }
 
+    if (!local) return;
     for (const tap of this._taps) {
       try {
         tap(envelope);
@@ -155,10 +198,11 @@ export class EventBus {
    * @param {string} projectId
    * @param {string[]|null} topics  topic patterns; null = all
    * @param {(envelope:object)=>void} handler
+   * @param {{ remote?: boolean }} [opts]  `remote: true` also delivers events published on other instances
    * @returns {() => void} unsubscribe
    */
-  subscribe(projectId, topics, handler) {
-    const listener = { topics: topics ?? null, handler };
+  subscribe(projectId, topics, handler, { remote = false } = {}) {
+    const listener = { topics: topics ?? null, handler, remote };
     if (!this._listeners.has(projectId)) this._listeners.set(projectId, new Set());
     this._listeners.get(projectId).add(listener);
     return () => {

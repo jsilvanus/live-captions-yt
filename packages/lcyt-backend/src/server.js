@@ -28,6 +28,7 @@ import { createEventsPublishRouter } from './routes/events-publish.js';
 import { createOperatorRouter } from './routes/operator.js';
 import { OperatorManager } from './operator-manager.js';
 import { attachBusAuditLog } from './db/bus-events.js';
+import { startCluster } from './cluster/index.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import { backfillCapabilityFeatures } from './db/project-features.js';
@@ -256,6 +257,9 @@ attachBusAuditLog(eventBus, db, { log: (m) => console.warn(m) });
 // Project the same bus traffic onto usage counters (captions, sessions, cues,
 // bridge commands, connector refreshes) — see src/metrics/bus-tap.js.
 attachBusMetrics(eventBus, metrics);
+// Multi-instance coordination: instance id, leases and (on PostgreSQL) event relay between
+// instances. A no-op shell with SQLite. See src/cluster/index.js.
+const cluster = await startCluster({ db, eventBus, log: { info: (m) => console.info(m), warn: (m) => console.warn(m) } });
 // Every ffmpeg process started through the runner factory reports wall-clock
 // seconds × purpose here on close (plan_metering_audit §4.1).
 setFfmpegAccountingSink(({ purpose, apiKey, seconds }) => metrics.ffmpeg({ purpose, apiKey, seconds }));
@@ -800,6 +804,8 @@ app.get('/health', (req, res) => {
     ok: true,
     uptime: Math.floor(process.uptime()),
     activeSessions: store.size(),
+    instance: cluster.instanceId,
+    ...(cluster.shared ? { instances: cluster.peers().length } : {}),
     loginEnabled,
     ...(localMode ? { localMode: true } : {}),
     features,
@@ -1113,4 +1119,4 @@ if (process.env.STATIC_DIR) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, settings, eventBus, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };
+export { app, db, store, settings, eventBus, cluster, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };

@@ -19,6 +19,7 @@ compute setup on an fffleet fleet.
 9. [Updating a running deployment](#updating-a-running-deployment)
 10. [Networking and reverse proxy](#networking-and-reverse-proxy)
 11. [Database and backups](#database-and-backups)
+12. [Several backend instances](#several-backend-instances)
 
 ---
 
@@ -573,3 +574,19 @@ To switch a running install from SQLite (`DB_PATH`) to PostgreSQL (`DATABASE_URL
 
 The script applies the PostgreSQL migrations, copies every table in foreign-key order, converts values to the column types, resets the id sequences and prints the row counts per table; it exits 1 if the target has fewer rows than the source. Files on disk (caption files, graphics, recordings) are not moved. The run is idempotent: after a failure, run it again to finish. Then set `DATABASE_URL` in the environment and restart the backend; `DB_PATH` is no longer read.
 
+
+---
+
+## Several backend instances
+
+**Status: in progress (`docs/plans/plan_multi_instance.md`). Phase L1 is in; run one backend instance until L2 (shared sessions) and L3 (single-owner jobs) are released.** A single instance, with SQLite or PostgreSQL, behaves exactly as before.
+
+What exists today (PostgreSQL only; with SQLite none of it runs):
+- **Instance id.** `INSTANCE_ID` (default `<hostname>-<pid>-<random>`) is shown in logs and `GET /health` (`instance`, and `instances` = live peers). `INSTANCE_URL` is stored for later request forwarding.
+- **Event relay.** Every event published on the shared `EventBus` is also sent to the other instances with PostgreSQL `LISTEN/NOTIFY` (channel `lcyt_bus`, override with `CLUSTER_BUS_CHANNEL`). Receiving instances give it to their SSE subscribers (`/events/stream`, DSK, variables, roles) and to listeners that asked for remote events; the audit log, metrics and in-process actors (operator, cue engine, crop follow) only see events published on their own instance, so nothing acts twice. Events over about 7 KB go through the `bus_payloads` table. Delivery is best-effort: events sent while an instance's listener reconnects are lost, as with a dropped SSE connection.
+- **Leases.** `leases` table, `acquire`/`release`/`withLease` in `src/cluster/leases.js`, used from L3 on for rollups, backups, schedulers and token refresh.
+- **Instance registry.** `instances` table with a 10 s heartbeat.
+
+Requirements: `DATABASE_URL` must reach PostgreSQL **directly or through PgBouncer in session mode** (`LISTEN` does not work in transaction mode); instance clocks must be NTP-synchronised (lease expiry uses each instance's clock); caption files must use `FILE_STORAGE=s3`.
+
+RTMP relays, ffmpeg children and MediaMTX/nginx ingest live on one host and stay pinned to one instance (relay ownership, L4, is not built).
