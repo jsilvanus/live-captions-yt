@@ -37,6 +37,9 @@ export const KNOWN_FEATURE_CODES = new Set([
   'graphics-server',
   'cea-captions',
   'crop',
+  'broadcast-platforms',
+  'ai-agent',
+  'mcp-access',
 ]);
 
 export const BINARY_ONLY_FEATURES = new Set([
@@ -49,6 +52,8 @@ export const BINARY_ONLY_FEATURES = new Set([
   'graphics-server',
   'cea-captions',
   'crop',
+  // Costs money per use (LLM calls): operators grant it, projects cannot self-enable it.
+  'ai-agent',
 ]);
 
 export const FEATURE_DEPS = {
@@ -59,6 +64,8 @@ export const FEATURE_DEPS = {
   'preview':               ['ingest'],
   // Vertical crop rendition (plan_vertical_crop.md) — cut from the RTMP ingest
   'crop':                  ['ingest'],
+  // Server-side platform OAuth (YouTube scheduling, thumbnails, stats) publishes captioned broadcasts
+  'broadcast-platforms':   ['captions'],
   // File storage modes — each requires the base file-saving capability.
   // At most one storage mode should be enabled at a time per project.
   //   files-local          → save to the server's local filesystem (default)
@@ -412,4 +419,71 @@ export async function provisionDefaultProjectFeatures(db, apiKey, extra = [], or
       });
     }
   });
+}
+
+/**
+ * Capabilities that gained a feature flag after projects already used them.
+ * Each entry names the table that shows a project uses the capability and the
+ * query selecting the API keys that do.
+ */
+const CAPABILITY_BACKFILLS = [
+  {
+    code: 'broadcast-platforms',
+    table: 'platform_credentials',
+    keys: 'SELECT DISTINCT api_key FROM platform_credentials WHERE revoked_at IS NULL',
+  },
+  {
+    code: 'mcp-access',
+    table: 'mcp_tokens',
+    keys: 'SELECT DISTINCT api_key FROM mcp_tokens WHERE revoked_at IS NULL',
+  },
+  {
+    code: 'ai-agent',
+    table: 'project_ai_role_configs',
+    keys: 'SELECT DISTINCT api_key FROM project_ai_role_configs WHERE enabled = 1',
+  },
+  {
+    code: 'ai-agent',
+    table: 'ai_config',
+    keys: "SELECT api_key FROM ai_config WHERE embedding_provider != 'none'",
+  },
+];
+
+/**
+ * Enable the flag (and give the owning user the entitlement) for every project
+ * that already uses the capability, so adding the flag does not switch
+ * anything off. Idempotent: existing rows, including explicit "disabled" ones,
+ * are left alone. Tables owned by plugins that are not installed are skipped.
+ * Run after the plugin migrations.
+ * @param {import('better-sqlite3').Database} db
+ * @returns {{ projects: number, users: number }} rows added
+ */
+export function backfillCapabilityFeatures(db) {
+  const tableExists = name => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name);
+  const addProject = db.prepare(`
+    INSERT INTO project_features (api_key, feature_code, enabled, config)
+    VALUES (?, ?, 1, NULL)
+    ON CONFLICT (api_key, feature_code) DO NOTHING
+  `);
+  const addUser = db.prepare(`
+    INSERT INTO user_features (user_id, feature_code, enabled)
+    VALUES (?, ?, 1)
+    ON CONFLICT (user_id, feature_code) DO NOTHING
+  `);
+  const ownerOf = db.prepare('SELECT user_id FROM api_keys WHERE key = ?');
+
+  let projects = 0;
+  let users = 0;
+  db.transaction(() => {
+    for (const { code, table, keys } of CAPABILITY_BACKFILLS) {
+      if (!tableExists(table)) continue;
+      for (const { api_key: apiKey } of db.prepare(keys).all()) {
+        if (!ownerOf.get(apiKey)) continue; // key no longer exists
+        projects += addProject.run(apiKey, code).changes;
+        const userId = ownerOf.get(apiKey)?.user_id;
+        if (userId != null) users += addUser.run(userId, code).changes;
+      }
+    }
+  })();
+  return { projects, users };
 }

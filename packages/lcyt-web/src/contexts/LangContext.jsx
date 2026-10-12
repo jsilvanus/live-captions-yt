@@ -32,3 +32,8 @@ export function useLang() {
   if (!ctx) throw new Error('useLang must be used within LangProvider');
   return ctx;
 }
+
+/** Like useLang() but returns null outside a LangProvider (tests, embeds). */
+export function useLangOptional() {
+  return useContext(LangContext);
+}

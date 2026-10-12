@@ -27,8 +27,13 @@ export const FEATURE_TO_CARD_IDS = {
   'graphics-client': ['viewports'],
   ingest: ['egress', 'ingestion'],
   radio:  ['radio'],
+  'hls-stream': ['viewer-stream'],
+  preview: ['viewer-stream'],
   'stt-server': ['stt'],
   'device-control': ['cameras', 'mixers', 'encoders', 'bridges'],
+  'broadcast-platforms': ['broadcast-platforms'],
+  'ai-agent': ['ai-roles'],
+  'mcp-access': ['mcp-access'],
 };
 
 /**

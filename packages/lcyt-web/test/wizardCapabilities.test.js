@@ -117,9 +117,9 @@ describe('mergeDerivedFeatures()', () => {
 });
 
 describe('describeFlow()', () => {
-  it('is empty for no features and mentions graphics rendering when graphics-server is on', () => {
+  it('is empty for no features and returns flow ids (graphics-server wins over graphics-client)', () => {
     assert.deepEqual(describeFlow(new Set()), []);
-    assert.ok(describeFlow(new Set(['graphics-server', 'graphics-client'])).some(l => l.includes('composited')));
+    assert.deepEqual(describeFlow(new Set(['graphics-server', 'graphics-client'])), ['graphics-server']);
   });
 });
 
@@ -154,5 +154,49 @@ describe('capability tables are consistent', () => {
     const ids = PREREQUISITES.map(p => p.id);
     assert.equal(new Set(ids).size, ids.length);
     for (const p of PREREQUISITES) assert.ok(['configuration', 'operational', 'optional'].includes(p.kind), p.id);
+  });
+});
+
+describe('broadcast, AI and integrations intents', () => {
+  it('YouTube with scheduling → broadcast-platforms (and captions by dependency)', () => {
+    const r = resolveIntent(['broadcast'], { publishYoutube: true, scheduleBroadcasts: true });
+    assert.deepEqual(sorted(r.features), ['broadcast-platforms', 'captions']);
+    assert.deepEqual(r.prerequisites.map(p => p.id), ['platform-connection']);
+    assert.ok(r.hubCards.has('broadcast-platforms'));
+  });
+
+  it('YouTube without scheduling or stats needs no platform flag', () => {
+    const r = resolveIntent(['broadcast'], { publishYoutube: true, scheduleBroadcasts: false, viewerStats: false });
+    assert.deepEqual(sorted(r.features), []);
+  });
+
+  it('own viewer stream → hls-stream and ingest, with the operational prerequisite', () => {
+    const r = resolveIntent(['broadcast'], { publishViewerStream: true });
+    assert.deepEqual(sorted(r.features), ['hls-stream', 'ingest']);
+    assert.deepEqual(r.prerequisites.map(p => [p.id, p.kind]), [['viewer-stream-video', 'operational']]);
+  });
+
+  it('AI roles and an outside assistant → ai-agent and mcp-access with Hub cards', () => {
+    const r = resolveIntent(['ai'], { aiRoles: true, outsideAssistant: true });
+    assert.deepEqual(sorted(r.features), ['ai-agent', 'mcp-access']);
+    assert.deepEqual(sorted(r.hubCards), ['ai-roles', 'mcp-access']);
+    assert.deepEqual(r.prerequisites.map(p => p.id), ['ai-role-model', 'mcp-token']);
+  });
+
+  it('external data and a branded viewer add cards and prerequisites but no feature flag', () => {
+    const r = resolveIntent(['integrations', 'captions'], { externalData: true, captionSource: 'own', broadcastCaptions: false, viewerPage: true, brandedViewer: true });
+    assert.deepEqual(sorted(r.features), ['viewer-target']);
+    assert.ok(r.hubCards.has('connectors') && r.hubCards.has('icons'));
+    const ids = r.prerequisites.map(p => p.id);
+    assert.ok(ids.includes('connector') && ids.includes('viewer-icon'));
+  });
+
+  it('the icon question only shows once a viewer page is wanted', () => {
+    assert.ok(!visibleQuestions(['captions'], {}).some(q => q.id === 'brandedViewer'));
+    assert.ok(visibleQuestions(['captions'], { viewerPage: true }).some(q => q.id === 'brandedViewer'));
+  });
+
+  it('the flow mentions the new capabilities', () => {
+    assert.deepEqual(describeFlow(new Set(['broadcast-platforms', 'ai-agent', 'mcp-access'])), ['broadcast-platforms', 'ai-agent', 'mcp-access']);
   });
 });

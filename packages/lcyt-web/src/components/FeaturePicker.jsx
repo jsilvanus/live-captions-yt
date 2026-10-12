@@ -60,6 +60,7 @@ const FEATURE_GROUPS = [
     label: 'Intelligence',
     features: [
       { code: 'stt-server', label: 'Server-side STT', desc: 'Automatic speech-to-text on the server' },
+      { code: 'ai-agent',   label: 'AI agent',        desc: 'AI roles, cue evaluation and embeddings (operator-granted)' },
     ],
   },
   {
@@ -72,6 +73,8 @@ const FEATURE_GROUPS = [
     label: 'Integration',
     features: [
       { code: 'embed', label: 'Embed widgets', desc: 'Embeddable caption and viewer widgets with CORS policy' },
+      { code: 'broadcast-platforms', label: 'Broadcast platforms', desc: 'Connect YouTube channels: schedule broadcasts, thumbnails, viewer stats' },
+      { code: 'mcp-access', label: 'MCP access', desc: 'Tokens for outside AI assistants and the event stream' },
     ],
   },
 ];

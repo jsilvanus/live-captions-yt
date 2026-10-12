@@ -1,3 +1,10 @@
+import { useSetupT } from '../../lib/useSetupT.js';
+
+/** Localized title of a step descriptor (falls back to its English title). */
+export function stepTitle(t, step) {
+  return step?.titleKey ? t(step.titleKey) : (step?.title || '');
+}
+
 /**
  * WizardProgress — segmented progress bar for the wizard.
  *
@@ -6,6 +13,7 @@
  *   currentIndex: number
  */
 export function WizardProgress({ steps, currentIndex }) {
+  const t = useSetupT();
   if (!steps || steps.length === 0) return null;
 
   return (
@@ -19,7 +27,7 @@ export function WizardProgress({ steps, currentIndex }) {
         ))}
       </div>
       <p style={{ fontSize: 12, color: 'var(--color-text-muted)', margin: '4px 0 0' }}>
-        Step {currentIndex + 1} of {steps.length} — {steps[currentIndex]?.title}
+        {t('stepOf', { n: currentIndex + 1, total: steps.length, title: stepTitle(t, steps[currentIndex]) })}
       </p>
     </div>
   );

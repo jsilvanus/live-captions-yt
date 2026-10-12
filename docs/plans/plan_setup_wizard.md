@@ -7,7 +7,7 @@ summary: "Adds a guided `/setup` wizard: feature selection, dependency auto-enab
 
 # Setup Wizard â€” Implementation Plan
 
-> **2026-10-11 refactor (implemented):** the wizard is now intent-first. New steps `intent` ("What are you producing?") and `questions` precede the old feature picker, which became "Fine-tune features". `lib/capabilities.js` resolves intents + answers into feature flags, steps, Hub cards and prerequisites; the review shows the production flow and what still needs configuring. Feature codes/labels/deps are kept in line with the backend by `test/featureInventoryParity.test.js`; the card map was fixed (`ingest` → egress + ingestion, `restream` → egress, `cea-captions` → caption-targets). Sections below describe the original feature-flag wizard, which still exists as the fine-tune step.
+> **2026-10-11 refactor (implemented):** the wizard is now intent-first. New steps `intent` ("What are you producing?") and `questions` precede the old feature picker, which became "Fine-tune features". `lib/capabilities.js` resolves intents + answers into feature flags, steps, Hub cards and prerequisites; the review shows the production flow and what still needs configuring. Feature codes/labels/deps are kept in line with the backend by `test/featureInventoryParity.test.js`; the card map was fixed (`ingest` → egress + ingestion, `restream` → egress, `cea-captions` → caption-targets). Follow-up: wizard and Hub text is translated (en/fi/sv) and the Hub shows configured vs not-set-up per card. Sections below describe the original feature-flag wizard, which still exists as the fine-tune step.
 
 ## Context
 
@@ -607,3 +607,9 @@ dependency logic, save flow) is unaffected by the route change.
 | `navConfig.js` â€” Setup nav item in NAV_BOTTOM | âœ… done |
 | CCModal/SettingsModal migration to use panels | âœ… done â€” `CCModal.jsx` imports `TargetsPanel`, `TranslationPanel`, `ServicePanel`, `DetailsPanel`; `SettingsModal.jsx` imports `RelayPanel` (confirmed by import grep, 2026-07-20) |
 
+
+### Broadcast, AI and integrations (2026-10-11)
+
+New backend flags `broadcast-platforms` (needs `captions`), `mcp-access` and `ai-agent` (binary-only: operator-granted, also a user entitlement). Site policies are seeded (`self_service`, `self_service`, `denied`). `backfillCapabilityFeatures` (`db/project-features.js`, run in `server.js` after the plugin migrations) enables the flag and the owner's entitlement for projects that already use the capability (live platform connection, live MCP token, enabled AI role or embedding provider); it never overrides an explicit disable. The flags do not gate routes yet (`FEATURE_GATE_ENFORCE` paths unchanged).
+
+Wizard intents `broadcast`, `ai`, `integrations` and the icon question (under `captions`) are in `setup-wizard/lib/capabilities.js`. Icons and API connectors have no flag: `TOPIC_RULES` adds only their Hub cards and prerequisites (`feature: null`). `hls-stream` is offered as "own viewer stream, no platform" and gets a Hub card (`viewer-stream`, with `preview`). Cards still without a mapping: `crop`, `embed`; `mic-lock`, `stats`, `collaboration` have nothing to set up.

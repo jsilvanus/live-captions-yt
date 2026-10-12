@@ -30,6 +30,7 @@ import { OperatorManager } from './operator-manager.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { setHlsSubsManager } from './routes/viewer.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
+import { backfillCapabilityFeatures } from './db/project-features.js';
 import {
   createPerceptionAutostart, setSharedAutostart, getSharedAutostart,
   initProductionControl, createProductionRouter, createProductionCommands, slugifyLabel, createPerceptionManager, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath, thumbnailObjectKey,
@@ -521,6 +522,15 @@ const { tokenService: _platformTokenService, poller: _platformStatsPoller } = aw
   },
   getIntervalMs: () => settings.get('app.platform_stats_poll_interval_s') * 1000,
 });
+
+// Capabilities that gained a feature flag after projects already used them (platform
+// connections, MCP tokens, AI roles): enable the flag so nothing switches off. Idempotent.
+try {
+  const added = backfillCapabilityFeatures(db);
+  if (added.projects || added.users) console.log(`[features] capability backfill: ${added.projects} project flag(s), ${added.users} user entitlement(s)`);
+} catch (err) {
+  console.warn(`[features] capability backfill skipped: ${err.message}`);
+}
 
 /**
  * Where the provider redirects back to. Must match the redirect URI registered
