@@ -37,7 +37,7 @@ export class SessionStore {
   /**
    * @param {{ sessionTtl?: number, cleanupInterval?: number }} [options]
    */
-  constructor({ sessionTtl = DEFAULT_SESSION_TTL, cleanupInterval = DEFAULT_CLEANUP_INTERVAL, db = null, eventBus = null, cluster = null, restore = null } = {}) {
+  constructor({ sessionTtl = DEFAULT_SESSION_TTL, cleanupInterval = DEFAULT_CLEANUP_INTERVAL, db = null, eventBus = null, cluster = null, restore = null, sendLock = null } = {}) {
     /** @type {Map<string, object>} */
     this._sessions = new Map();
     this._sessionTtl = sessionTtl;
@@ -55,6 +55,9 @@ export class SessionStore {
     this.onSessionEnd = null;
     /** Multi-instance: leases + shared flag from src/cluster (null = single process). */
     this.cluster = cluster;
+    /** Shared mode send coordination: 'atomic' (default) reserves each sequence number with one conditional
+     *  database write; 'lease' serialises whole sends across instances with a lease (CLUSTER_SEND_LOCK=lease). */
+    this.sendLock = (sendLock || process.env.CLUSTER_SEND_LOCK || 'atomic') === 'lease' ? 'lease' : 'atomic';
     /** @type {((session: object) => Promise<void>)|null} Rebuilds senders/targets of a session loaded from the DB. */
     this._restore = restore;
     /** @type {Map<string, Promise<object|undefined>>} in-flight getOrLoad() calls, one per session id */
@@ -333,7 +336,8 @@ export class SessionStore {
 
   /**
    * Run `fn` (a caption send) as the only sender of this session across all instances.
-   * Single instance: just `fn()`; the per-session send queue already serialises. Shared mode:
+   * Single instance: just `fn()`; the per-session send queue already serialises. Shared mode with
+   * `CLUSTER_SEND_LOCK=atomic` (default): reserve the sequence number atomically, no lease. With `lease`:
    * take the `session-send:<id>` lease (retrying briefly), then bring the sequence up to what the
    * other instances already used, so numbers keep rising however requests are spread.
    * @template T
@@ -344,6 +348,10 @@ export class SessionStore {
   async runExclusive(session, fn) {
     const leases = this.cluster?.leases;
     if (!this.shared || !leases?.enforce || !this.db) return fn();
+    if (this.sendLock === 'atomic') {
+      await this.reserveSequence(session);
+      return fn();
+    }
     const name = `session-send:${session.sessionId}`;
     const deadline = Date.now() + 8000;
     while (!(await leases.acquire(name, 15_000))) {
@@ -355,6 +363,24 @@ export class SessionStore {
       return await fn();
     } finally {
       await leases.release(name).catch(() => {});
+    }
+  }
+
+  /**
+   * Take the next sequence number for one send with a single atomic increment of the stored counter,
+   * so two instances never use the same number and no lease is needed. The number is put on the
+   * session and on every YouTube sender; each sender then advances itself as usual. Delivery order
+   * between instances serving the same session at the same instant is best effort (route a session
+   * to one instance to avoid it, see docs/DEPLOY.md).
+   */
+  async reserveSequence(session) {
+    const next = await incSessionSequence(this.db, session.sessionId);
+    if (next == null) return; // row gone (session ended elsewhere): keep the local counter
+    const used = next - 1; // stored value is the next free number
+    session.sequence = used;
+    if (session.sender && typeof session.sender.sequence === 'number') session.sender.sequence = used;
+    for (const t of (session.extraTargets || [])) {
+      if (t.type === 'youtube' && t.sender && typeof t.sender.sequence === 'number') t.sender.sequence = used;
     }
   }
 
