@@ -189,6 +189,7 @@ export const RELAY_OWNERSHIP = {
     stop: { stops: true },
     stopKey: { stops: true },
     setDskRtmpSource: {},
+    setDskOverlay: {},
     writeCaption: {},
   },
   marks: ['markPublishing', 'markNotPublishing'],
