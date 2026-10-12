@@ -20,7 +20,7 @@ const FILE_FORMATS = new Set(['text', 'youtube', 'vtt']);
  * @param {{ db: object, resolveStorage: (apiKey: string) => Promise<object> }} deps
  * @returns {(session: object, entry: { text: string, translations?: Record<string,string>, fileFormats?: Record<string,string>, timestamp?: string }) => void}
  */
-export function createSessionCaptionFileWriter({ db, resolveStorage }) {
+export function createSessionCaptionFileWriter({ db, resolveStorage, filePartSuffix }) {
   return async function writeSessionCaptionFiles(session, { text, translations, fileFormats, timestamp } = {}) {
     if (!db || !resolveStorage || !session) return;
 
@@ -39,6 +39,8 @@ export function createSessionCaptionFileWriter({ db, resolveStorage }) {
       sessionId: session.sessionId,
       fileHandles: session._fileHandles,
       sessionStartMs: session.startedAt,
+      // Unset (single instance): file names stay as they were.
+      fileSuffix: filePartSuffix ? filePartSuffix() : undefined,
     };
 
     resolveStorage(session.apiKey).then(storage => {

@@ -1,4 +1,5 @@
 import logger from 'lcyt/logger';
+import { closeFileHandles } from 'lcyt-files';
 import { app, db, store, cluster, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
 import { cleanRevokedKeys, getDialect } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
@@ -185,6 +186,8 @@ async function shutdown() {
   if (musicManager) await musicManager.stopAll();
   for (const session of store.all()) {
     try { await session.sender.end(); } catch {}
+    // Complete open caption files (S3 multipart) so a stopped instance leaves no half-open upload.
+    if (session._fileHandles?.size > 0) await closeFileHandles(session._fileHandles).catch(() => {});
   }
   store.stopCleanup();
   try { await cluster.stop(); } catch {}

@@ -351,7 +351,13 @@ const metricsPollers = startMetricsPollers({
 sttManager?.setDeliveryHelpers({
   getTranslationVendorConfig,
   getTranslationTargets,
-  writeBackendCaptionFiles: createSessionCaptionFileWriter({ db, resolveStorage }),
+  writeBackendCaptionFiles: createSessionCaptionFileWriter({
+    db,
+    resolveStorage,
+    // Several instances: a handle opened here starts its own file part, so another instance
+    // continuing the session never overwrites this one's file.
+    filePartSuffix: cluster.shared ? () => `${String(cluster.instanceId).slice(0, 8)}-${Date.now().toString(36)}` : undefined,
+  }),
   composeCaptionText,
   fanOutToTargets: createCaptionFanout({ db }),
 });
@@ -605,6 +611,11 @@ if (_agent.isServerEmbeddingAvailable()) {
 // With several instances sessions are loaded on demand instead (SessionStore.getOrLoad), so a
 // starting instance does not claim sessions that other instances are serving.
 if (!cluster.shared) store.rehydrate();
+
+// A session that ended on another instance: finish our open caption files (S3 multipart upload).
+store.onSessionDropped = (session) => {
+  if (session._fileHandles?.size > 0) closeFileHandles(session._fileHandles).catch(() => {});
+};
 
 store.onSessionEnd = async (session) => {
   // Close open caption file handles before cleanup.
