@@ -81,3 +81,53 @@ export async function incSessionSequence(db, sessionId) {
   };
   return typeof db.$transaction === 'function' ? db.$transaction(run) : run(db);
 }
+
+/**
+ * Record activity on a session without touching any other column, so one instance's stale view
+ * of a session never overwrites what another instance wrote (sequence, mic holder, data).
+ * @param {import('./connection.js').Db} db
+ * @param {string} sessionId
+ * @param {string} lastActivityIso
+ */
+export async function touchSessionRow(db, sessionId, lastActivityIso) {
+  await db.sessions.updateMany({ where: { session_id: sessionId }, data: { last_activity: lastActivityIso } });
+}
+
+/**
+ * Raise a session's sequence to `n` if it is lower. Never lowers it: with several instances
+ * sending for one session the stored value only moves forward (use `setSessionSequence` for an
+ * explicit reset).
+ * @returns {Promise<number>} rows changed (0 or 1)
+ */
+export async function raiseSessionSequence(db, sessionId, n) {
+  const r = await db.sessions.updateMany({ where: { session_id: sessionId, sequence: { lt: n } }, data: { sequence: n } });
+  return r.count;
+}
+
+/** Set a session's sequence to exactly `n` (explicit client reset). */
+export async function setSessionSequence(db, sessionId, n) {
+  await db.sessions.updateMany({ where: { session_id: sessionId }, data: { sequence: n } });
+}
+
+/** Replace the JSON `data` column of a session row (targets, broadcast, recording). */
+export async function setSessionData(db, sessionId, data) {
+  await db.sessions.updateMany({ where: { session_id: sessionId }, data: { data: data ? JSON.stringify(data) : null } });
+}
+
+/** Persist the soft mic lock holder. */
+export async function setSessionMicHolder(db, sessionId, holder) {
+  await db.sessions.updateMany({ where: { session_id: sessionId }, data: { mic_holder: holder ?? null } });
+}
+
+/** Delete a session row only if nobody has been active since `cutoffIso` (TTL sweep across instances). */
+export async function deleteSessionIfIdle(db, sessionId, cutoffIso) {
+  const r = await db.sessions.deleteMany({
+    where: { session_id: sessionId, OR: [{ last_activity: null }, { last_activity: { lte: cutoffIso } }] },
+  });
+  return r.count;
+}
+
+/** Is any session registered for this domain (browser origin)? */
+export async function sessionDomainExists(db, domain) {
+  return (await db.sessions.count({ where: { domain } })) > 0;
+}

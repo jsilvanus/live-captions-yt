@@ -54,6 +54,8 @@ export class EventBus {
     this._taps = new Set();
     /** @type {Set<(e:object)=>void>} forwarders — called for locally published events only (cluster bridge). */
     this._forwarders = new Set();
+    /** @type {Set<(e:object)=>void>} called for every event relayed from another instance, any project. */
+    this._remoteTaps = new Set();
   }
 
   /**
@@ -92,6 +94,26 @@ export class EventBus {
   publishRemote(envelope) {
     if (!envelope || typeof envelope.topic !== 'string' || typeof envelope.projectId !== 'string') return;
     this._deliver(envelope, false);
+    for (const tap of this._remoteTaps) {
+      try {
+        tap(envelope);
+      } catch (err) {
+        logger.error(`[event-bus] remote tap threw for ${envelope.topic}: ${err?.message ?? err}`);
+      }
+    }
+  }
+
+  /**
+   * Register a hook called for every event relayed from another instance, across all
+   * projects (after SSE/listener delivery). For per-process state that has to follow a
+   * change made elsewhere: drop a session another instance ended, mirror a mic holder,
+   * fan a viewer caption out to local viewers.
+   * @param {(envelope:object)=>void} fn
+   * @returns {() => void} unregister
+   */
+  onRemote(fn) {
+    this._remoteTaps.add(fn);
+    return () => this._remoteTaps.delete(fn);
   }
 
   /**

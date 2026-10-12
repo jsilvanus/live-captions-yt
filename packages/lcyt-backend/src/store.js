@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { EventBus } from 'lcyt/event-bus';
-import { saveSession, deleteSession, loadSession, incSessionSequence, listSessions } from './db.js';
+import { saveSession, deleteSession, loadSession, incSessionSequence, listSessions, touchSessionRow, raiseSessionSequence, setSessionData, setSessionMicHolder, deleteSessionIfIdle, sessionDomainExists } from './db.js';
 
 const DEFAULT_SESSION_TTL = Number(process.env.SESSION_TTL) || 2 * 60 * 60 * 1000; // 2 hours
 const DEFAULT_CLEANUP_INTERVAL = Number(process.env.CLEANUP_INTERVAL) || 5 * 60 * 1000; // 5 minutes
@@ -37,7 +37,7 @@ export class SessionStore {
   /**
    * @param {{ sessionTtl?: number, cleanupInterval?: number }} [options]
    */
-  constructor({ sessionTtl = DEFAULT_SESSION_TTL, cleanupInterval = DEFAULT_CLEANUP_INTERVAL, db = null, eventBus = null } = {}) {
+  constructor({ sessionTtl = DEFAULT_SESSION_TTL, cleanupInterval = DEFAULT_CLEANUP_INTERVAL, db = null, eventBus = null, cluster = null, restore = null } = {}) {
     /** @type {Map<string, object>} */
     this._sessions = new Map();
     this._sessionTtl = sessionTtl;
@@ -53,7 +53,49 @@ export class SessionStore {
     this.eventBus = eventBus ?? new EventBus();
     /** @type {((session: object, reason: string) => void)|null} */
     this.onSessionEnd = null;
+    /** Multi-instance: leases + shared flag from src/cluster (null = single process). */
+    this.cluster = cluster;
+    /** @type {((session: object) => Promise<void>)|null} Rebuilds senders/targets of a session loaded from the DB. */
+    this._restore = restore;
+    /** @type {Map<string, Promise<object|undefined>>} in-flight getOrLoad() calls, one per session id */
+    this._loading = new Map();
     this._startCleanup();
+    this._followOtherInstances();
+  }
+
+  /** True when several backend instances share the database (PostgreSQL). */
+  get shared() {
+    return Boolean(this.cluster?.shared);
+  }
+
+  /**
+   * Keep this instance's in-memory copies in step with changes made on other instances.
+   * A session another instance ended is dropped here without ending it again; a mic holder
+   * changed elsewhere is mirrored.
+   */
+  _followOtherInstances() {
+    this.eventBus.onRemote?.((env) => {
+      if (!env.sessionId) return;
+      if (env.topic === 'session.closed') this._dropLocal(env.sessionId);
+      else if (env.topic === 'session.mic_state') {
+        const session = this._sessions.get(env.sessionId);
+        if (session) session.micHolder = env.data?.holder ?? null;
+      }
+    });
+  }
+
+  /** Forget a session that ended on another instance: stop its senders, no events, no DB writes. */
+  _dropLocal(sessionId) {
+    const session = this._sessions.get(sessionId);
+    if (!session) return;
+    this._sessions.delete(sessionId);
+    session.emitter.removeAllListeners();
+    try { session.sender?.end?.(); } catch {}
+    for (const target of (session.extraTargets || [])) {
+      if (target.type === 'youtube' && target.sender) {
+        try { Promise.resolve(target.sender.end()).catch(() => {}); } catch {}
+      }
+    }
   }
 
   /**
@@ -111,7 +153,7 @@ export class SessionStore {
   * @param {object} [params.sender] - YoutubeLiveCaptionSender instance (optional; rehydrated sessions may have no sender)
    * @returns {object} The created session object
    */
-  create({ apiKey, streamKey, domain, jwt, sequence = 0, syncOffset = 0, sender, extraTargets = [] }) {
+  create({ apiKey, streamKey, domain, jwt, sequence = 0, syncOffset = 0, sender, extraTargets = [], persist = true }) {
     // Normalise streamKey: treat null/undefined/'' consistently so session IDs are stable
     // across target-array mode (no streamKey) and legacy single-target mode.
     const sessionId = makeSessionId(apiKey, streamKey || '', domain);
@@ -137,7 +179,8 @@ export class SessionStore {
     this._bridgeEmitterToBus(session);
     this._sessions.set(sessionId, session);
     // Persistence is write-behind: a DB failure never fails session create.
-    this._persist(async () => await saveSession(this.db, {
+    // A session being loaded back from its own row (persist: false) must not rewrite that row.
+    if (persist) this._persist(async () => await saveSession(this.db, {
       sessionId: session.sessionId,
       apiKey: session.apiKey,
       streamKey: session.streamKey,
@@ -178,7 +221,9 @@ export class SessionStore {
           sequence: r.sequence || 0,
           syncOffset: r.syncOffset || 0,
           sender: null,
+          persist: false,
         });
+        this._applyRow(session, r);
         // Restore timestamps
         try { session.startedAt = r.startedAt ? Date.parse(r.startedAt) : Date.now(); } catch(_) { session.startedAt = Date.now(); }
         // Use lastActivity if available; fall back to startedAt so that old sessions
@@ -198,6 +243,147 @@ export class SessionStore {
     } catch (e) {
       // Best-effort: do not crash startup on DB read errors
     }
+  }
+
+  /** Copy what a persisted row knows onto a freshly created in-memory session. */
+  _applyRow(session, r) {
+    if (r.micHolder) session.micHolder = r.micHolder;
+    const data = r.data && typeof r.data === 'object' ? r.data : null;
+    if (data) {
+      if (Array.isArray(data.targets)) session.rawTargets = data.targets;
+      if (data.broadcastId) session.broadcastId = data.broadcastId;
+      if (data.recordingVideoId) session.recordingVideoId = data.recordingVideoId;
+    }
+    // Sessions written by this version carry their targets; only those can be rebuilt.
+    session._needsRestore = Boolean(session.rawTargets) || Boolean(session.streamKey);
+  }
+
+  /**
+   * Like `get()`, but also finds a session that another instance created: it is loaded from the
+   * database, given a fresh emitter (so plugin listeners attach here), and its senders and targets
+   * are rebuilt from the stored target list. Sessions that were rehydrated at start-up are
+   * restored the same way on first use. Without a database this is `get()`.
+   * @param {string} sessionId
+   * @returns {Promise<object|undefined>}
+   */
+  async getOrLoad(sessionId) {
+    let session = this._sessions.get(sessionId);
+    if (!session && this.db) {
+      let pending = this._loading.get(sessionId);
+      if (!pending) {
+        pending = this._loadFromDb(sessionId).finally(() => this._loading.delete(sessionId));
+        this._loading.set(sessionId, pending);
+      }
+      session = await pending;
+    }
+    if (session?._needsRestore && this._restore) await this._restoreRuntime(session);
+    return session;
+  }
+
+  async _loadFromDb(sessionId) {
+    let row;
+    try { row = await loadSession(this.db, sessionId); } catch { return undefined; }
+    if (!row) return undefined;
+    const existing = this._sessions.get(sessionId);
+    if (existing) return existing; // another caller finished first
+    const session = this.create({
+      apiKey: row.apiKey, streamKey: row.streamKey, domain: row.domain, jwt: null,
+      sequence: row.sequence || 0, syncOffset: row.syncOffset || 0, sender: null, persist: false,
+    });
+    session.startedAt = row.startedAt ? (Date.parse(row.startedAt) || Date.now()) : Date.now();
+    session.lastActivityAt = row.lastActivity ? new Date(row.lastActivity) : new Date(session.startedAt);
+    this._applyRow(session, row);
+    return session;
+  }
+
+  async _restoreRuntime(session) {
+    if (!session._restoring) {
+      session._restoring = (async () => {
+        try { await this._restore(session); } catch { /* the route reports "no targets" as before */ }
+        session._needsRestore = false;
+      })().finally(() => { session._restoring = null; });
+    }
+    await session._restoring;
+  }
+
+  /** Persist the soft mic lock holder so other instances see it. */
+  saveMicHolder(session) {
+    this._persist(async () => await setSessionMicHolder(this.db, session.sessionId, session.micHolder ?? null));
+  }
+
+  /** Persist what another instance needs to rebuild this session (targets, broadcast, recording). */
+  saveRuntimeData(session) {
+    this._persist(async () => await setSessionData(this.db, session.sessionId, {
+      targets: session.rawTargets ?? [],
+      broadcastId: session.broadcastId ?? null,
+      recordingVideoId: session.recordingVideoId ?? null,
+    }));
+  }
+
+  /**
+   * Is a browser origin the domain of any session, on this or (shared mode) another instance?
+   * @param {string} origin
+   * @returns {Promise<boolean>}
+   */
+  async domainKnown(origin) {
+    if (this.getByDomain(origin).length > 0) return true;
+    if (!this.shared || !this.db) return false;
+    try { return await sessionDomainExists(this.db, origin); } catch { return false; }
+  }
+
+  /**
+   * Run `fn` (a caption send) as the only sender of this session across all instances.
+   * Single instance: just `fn()`; the per-session send queue already serialises. Shared mode:
+   * take the `session-send:<id>` lease (retrying briefly), then bring the sequence up to what the
+   * other instances already used, so numbers keep rising however requests are spread.
+   * @template T
+   * @param {object} session
+   * @param {() => Promise<T>} fn
+   * @returns {Promise<T>}
+   */
+  async runExclusive(session, fn) {
+    const leases = this.cluster?.leases;
+    if (!this.shared || !leases?.enforce || !this.db) return fn();
+    const name = `session-send:${session.sessionId}`;
+    const deadline = Date.now() + 8000;
+    while (!(await leases.acquire(name, 15_000))) {
+      if (Date.now() > deadline) throw Object.assign(new Error('Session is busy on another instance'), { statusCode: 503 });
+      await new Promise((r) => setTimeout(r, 20 + Math.random() * 30));
+    }
+    try {
+      await this.syncSequenceFromDb(session);
+      return await fn();
+    } finally {
+      await leases.release(name).catch(() => {});
+    }
+  }
+
+  /** Raise this session's sequence (and its senders') to the highest value any instance stored. */
+  async syncSequenceFromDb(session) {
+    const row = await loadSession(this.db, session.sessionId);
+    if (!row) return;
+    if (row.sequence > (session.sequence || 0)) session.sequence = row.sequence;
+    this.liftSenders(session);
+  }
+
+  /** Make every YouTube sender's counter at least the session sequence (never lowers one). */
+  liftSenders(session) {
+    const n = session.sequence || 0;
+    if (session.sender && typeof session.sender.sequence === 'number' && session.sender.sequence < n) session.sender.sequence = n;
+    for (const t of (session.extraTargets || [])) {
+      if (t.type === 'youtube' && t.sender && typeof t.sender.sequence === 'number' && t.sender.sequence < n) t.sender.sequence = n;
+    }
+  }
+
+  /** Store the highest sequence in use (session counter and sender counters) without ever lowering the stored one. */
+  persistSequence(session) {
+    let n = session.sequence || 0;
+    if (typeof session.sender?.sequence === 'number') n = Math.max(n, session.sender.sequence);
+    for (const t of (session.extraTargets || [])) {
+      if (typeof t.sender?.sequence === 'number') n = Math.max(n, t.sender.sequence);
+    }
+    session.sequence = n;
+    this._persist(async () => { await raiseSessionSequence(this.db, session.sessionId, n); });
   }
 
   /**
@@ -287,16 +473,12 @@ export class SessionStore {
     const session = this._sessions.get(sessionId);
     if (session) session.lastActivityAt = new Date();
     if (session) {
-      this._persist(async () => await saveSession(this.db, {
-        sessionId: session.sessionId,
-        apiKey: session.apiKey,
-        streamKey: session.streamKey,
-        domain: session.domain,
-        sequence: session.sequence,
-        startedAt: typeof session.startedAt === 'string' ? session.startedAt : new Date(session.startedAt).toISOString(),
-        lastActivity: new Date(session.lastActivityAt).toISOString(),
-        syncOffset: session.syncOffset,
-      }));
+      // Only activity (and a sequence that moved forward) is written, never the whole row: another
+      // instance may have changed the mic holder, data or a higher sequence in the meantime.
+      this._persist(async () => {
+        await touchSessionRow(this.db, session.sessionId, new Date(session.lastActivityAt).toISOString());
+        if (session.sequence) await raiseSessionSequence(this.db, session.sessionId, session.sequence);
+      });
     }
   }
 
@@ -358,6 +540,18 @@ export class SessionStore {
     const cutoff = Date.now() - this._sessionTtl;
     for (const [sessionId, session] of this._sessions) {
       if (session.lastActivityAt.getTime() < cutoff) {
+        if (this.shared && this.db) {
+          // Another instance may have been serving this session: the database row is the truth.
+          // Only the instance that wins the conditional delete ends it.
+          let row;
+          try { row = await loadSession(this.db, sessionId); } catch { continue; }
+          if (!row) { this._dropLocal(sessionId); continue; }
+          const seen = row.lastActivity ? Date.parse(row.lastActivity) : 0;
+          if (seen >= cutoff) { session.lastActivityAt = new Date(seen); continue; }
+          let deleted = 0;
+          try { deleted = await deleteSessionIfIdle(this.db, sessionId, new Date(cutoff).toISOString()); } catch { continue; }
+          if (!deleted) continue;
+        }
         this.onSessionEnd?.(session, 'ttl');
         session.emitter.emit('session:closed');
         session.emitter.removeAllListeners();
@@ -381,6 +575,14 @@ export class SessionStore {
           }
         }
       }
+    }
+    if (this.shared && this.db && this.cluster?.leases) {
+      // Rows nobody holds in memory (the instance that served them died) would otherwise stay forever.
+      const iso = new Date(cutoff).toISOString();
+      // After the loop, so a session held in memory is ended properly (event, statistics) before its row goes.
+      await this.cluster.leases.withLease('session-orphan-sweep', 60_000, async () => {
+        await this.db.sessions.deleteMany({ where: { last_activity: { lt: iso } } });
+      }).catch(() => {});
     }
   }
 

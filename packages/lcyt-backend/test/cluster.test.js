@@ -170,6 +170,7 @@ describe('cluster coordination', () => {
       assert.equal(b.sse.length, 20);
       assert.equal(b.localOnlySeen.length, 0, 'plain listeners must not see remote events');
       await a.relay.flush();
+      assert.equal(a.relay.stats().sent, 20, 'every notify must complete without an error');
       await new Promise((r) => setTimeout(r, 200));
       assert.equal(a.sse.length, 20, 'sender must not receive its own events again');
       assert.equal(a.localOnlySeen.length, 20);

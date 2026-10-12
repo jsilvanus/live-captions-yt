@@ -13,7 +13,7 @@ const CORS_METHODS = 'GET, POST, PUT, DELETE, PATCH, OPTIONS';
  * @param {import('../store.js').SessionStore} store
  */
 export function createCorsMiddleware(store) {
-  return function corsMiddleware(req, res, next) {
+  return async function corsMiddleware(req, res, next) {
     const origin = req.headers['origin'];
     const path = req.path;
     const method = req.method;
@@ -77,8 +77,10 @@ export function createCorsMiddleware(store) {
 
     // Dynamic origin matching for session-authenticated routes
     if (origin) {
-      const matches = store.getByDomain(origin);
-      if (matches.length > 0) {
+      // Shared mode: a session served by another instance counts too (it is only in the database here).
+      let known = store.getByDomain(origin).length > 0;
+      if (!known && store.shared) known = await store.domainKnown(origin).catch(() => false);
+      if (known) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Access-Control-Allow-Methods', CORS_METHODS);
         res.setHeader('Access-Control-Allow-Headers', CORS_HEADERS);
