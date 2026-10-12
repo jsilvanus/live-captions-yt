@@ -65,7 +65,7 @@ export function startPgBus({
         db.bus_payloads.deleteMany({ where: { created_at: { lt: BigInt(t - PAYLOAD_TTL_MS) } } }).catch(() => {});
       }
     }
-    await db.$queryRawUnsafe('SELECT pg_notify($1, $2)', channel, text);
+    await db.$queryRawUnsafe('SELECT pg_notify($1, $2)::text AS r', channel, text);
     stats.sent++;
   }
 
