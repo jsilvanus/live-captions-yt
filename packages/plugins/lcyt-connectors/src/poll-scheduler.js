@@ -39,14 +39,19 @@ const MIN_INTERVAL_MS = 1000;
  * @param {object} deps
  * @param {import('lcyt-backend/db').Db} deps.db
  * @param {ReturnType<import('./resolution-engine.js').createResolutionEngine>} deps.engine
+ * @param {{ acquire: (name: string, ttlMs: number) => Promise<boolean> }} [deps.leases]  with several instances, only the one that wins
+ *   the per-request lease for this tick calls the third-party API (every instance restores every poll)
  */
-export function createPollScheduler({ db, engine }) {
+export function createPollScheduler({ db, engine, leases = null }) {
+  /** requestId -> interval, to size the lease */
+  const delays = new Map();
   /** @type {Map<string, NodeJS.Timeout>} requestId -> interval handle */
   const timers = new Map();
 
   function stop(requestId) {
     const t = timers.get(requestId);
     if (t) { clearInterval(t); timers.delete(requestId); }
+    delays.delete(requestId);
   }
 
   // Failures here would otherwise vanish silently for the rest of the server
@@ -60,6 +65,15 @@ export function createPollScheduler({ db, engine }) {
     } catch (err) {
       logger.warn(`[poll-scheduler] ${requestId} lookup failed: ${err?.message ?? err}`);
       return;
+    }
+    if (target && leases) {
+      const ttl = Math.max(500, Math.floor((delays.get(requestId) ?? MIN_INTERVAL_MS) * 0.8));
+      try {
+        if (!(await leases.acquire(`connector-poll:${requestId}`, ttl))) return;
+      } catch (err) {
+        logger.warn(`[poll-scheduler] ${requestId} lease failed: ${err?.message ?? err}`);
+        return;
+      }
     }
     if (!target || !target.constant_poll_enabled) {
       // The request was deleted, or polling was disabled through some path
@@ -85,6 +99,7 @@ export function createPollScheduler({ db, engine }) {
     const t = setInterval(() => { fireAndLog(requestId); }, delay);
     if (typeof t.unref === 'function') t.unref();
     timers.set(requestId, t);
+    delays.set(requestId, delay);
     // Fire once immediately (mirrors the frontend prefetch tier's "refresh on
     // arrival" behavior) rather than waiting a full interval for the first
     // value. Registering the timer first means fireAndLog's self-heal (an

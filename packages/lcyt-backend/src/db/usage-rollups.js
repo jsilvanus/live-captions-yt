@@ -83,8 +83,15 @@ export async function compactHourlyRollups(db, { olderThanDays = 90, kindForMetr
   });
   if (rows.length === 0) return 0;
 
+  // Each hourly row is claimed by deleting it first and only folded into the day row when this
+  // transaction really deleted it, so two instances compacting at once cannot count a row twice.
+  let moved = 0;
   await db.$transaction(async (tx) => {
     for (const row of rows) {
+      const claimed = await tx.usage_rollups.deleteMany({
+        where: { api_key: row.api_key, metric: row.metric, grain: 'hour', period_start: row.period_start },
+      });
+      if (claimed.count === 0) continue;
       await upsertRollup(tx, {
         apiKey: row.api_key,
         metric: row.metric,
@@ -93,10 +100,10 @@ export async function compactHourlyRollups(db, { olderThanDays = 90, kindForMetr
         grain: 'day',
         periodStart: row.period_start.slice(0, 10),
       });
+      moved++;
     }
-    await tx.usage_rollups.deleteMany({ where: { grain: 'hour', period_start: { lt: cutoffIso } } });
   });
-  return rows.length;
+  return moved;
 }
 
 /**

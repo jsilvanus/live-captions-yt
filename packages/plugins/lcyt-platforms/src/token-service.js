@@ -47,8 +47,10 @@ export class CredentialUnusableError extends Error {
  * @param {() => object} deps.getOAuthConfig  called per refresh so a settings
  *   change takes effect without a restart
  * @param {() => Buffer} [deps.getKey]        injectable for tests
+ * @param {{ acquire: Function, release: Function }} [deps.leases]  across instances only one refreshes a credential
+ *   at a time; the others wait and then use the token the winner stored
  */
-export function createTokenService({ db, getAdapter, getOAuthConfig, getKey = loadCredentialKey }) {
+export function createTokenService({ db, getAdapter, getOAuthConfig, getKey = loadCredentialKey, leases = null }) {
   /** @type {Map<string, Promise<string>>} credentialId -> in-flight refresh */
   const inFlight = new Map();
 
@@ -106,6 +108,24 @@ export function createTokenService({ db, getAdapter, getOAuthConfig, getKey = lo
     return tokens.accessToken;
   }
 
+  /** Refresh under a lease; a caller that does not get it waits for the winner's stored token. */
+  async function refreshAcrossInstances(row, key, credentialId, now) {
+    if (!leases) return doRefresh(row, key);
+    const name = `platform-refresh:${credentialId}`;
+    if (await leases.acquire(name, 30_000)) {
+      try { return await doRefresh(row, key); } finally { await leases.release(name).catch(() => {}); }
+    }
+    const end = Date.now() + 10_000;
+    while (Date.now() < end) {
+      await new Promise((r) => setTimeout(r, 200));
+      const fresh = await getCredentialById(db, credentialId);
+      if (fresh && !fresh.revoked_at && !isExpiring(fresh.expires_at, now)) {
+        try { return decryptSecret(fresh.access_token_enc, key); } catch { break; }
+      }
+    }
+    return doRefresh(row, key); // winner failed or took too long: refresh ourselves rather than fail
+  }
+
   /**
    * Decrypt (and refresh if needed) the access token for a credential.
    *
@@ -138,7 +158,7 @@ export function createTokenService({ db, getAdapter, getOAuthConfig, getKey = lo
     const existing = inFlight.get(credentialId);
     if (existing) return existing;
 
-    const promise = doRefresh(row, key).finally(() => inFlight.delete(credentialId));
+    const promise = refreshAcrossInstances(row, key, credentialId, now).finally(() => inFlight.delete(credentialId));
     inFlight.set(credentialId, promise);
     return promise;
   }

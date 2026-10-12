@@ -42,10 +42,11 @@ const QUOTA_REASONS = new Set(['quotaExceeded', 'rateLimitExceeded', 'userRateLi
  * @param {(broadcastId: string) => string|null|Promise<string|null>} deps.getProjectForBroadcast  broadcast → api_key, for per-project event delivery
  * @param {{ publish: (projectId: string, topic: string, data: object) => void }} [deps.eventBus]
  * @param {() => number} [deps.getIntervalMs]
+ * @param {{ acquire: (name: string, ttlMs: number) => Promise<boolean> }} [deps.leases]  with several instances, one sweep per interval
  */
 export function createStatsPoller({
   db, getAdapter, getAccessToken, getProjectForBroadcast,
-  eventBus = null, getIntervalMs = () => DEFAULT_INTERVAL_MS,
+  eventBus = null, getIntervalMs = () => DEFAULT_INTERVAL_MS, leases = null,
 }) {
   /** @type {NodeJS.Timeout|null} */
   let timer = null;
@@ -123,6 +124,14 @@ export function createStatsPoller({
   /** One sweep over every currently-live link. */
   async function tick(now = Date.now()) {
     if (now < cooldownUntil) return;
+    if (leases) {
+      try {
+        if (!(await leases.acquire('platforms-stats-poll', Math.max(2_000, Math.floor(currentIntervalMs * 0.8))))) return;
+      } catch (err) {
+        logger.warn(`[platforms] stats lease failed: ${err.message}`);
+        return;
+      }
+    }
 
     let links;
     try {

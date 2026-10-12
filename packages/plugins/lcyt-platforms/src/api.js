@@ -60,6 +60,7 @@ export async function initPlatforms(db, opts = {}) {
     getProjectForBroadcast = () => null,
     getIntervalMs = () => DEFAULT_INTERVAL_MS,
     getAdapter = registryGetAdapter,
+    leases = null,
   } = opts;
 
   // Warn, don't throw. A server with no key must still boot and serve
@@ -72,7 +73,7 @@ export async function initPlatforms(db, opts = {}) {
     );
   }
 
-  const tokenService = createTokenService({ db, getAdapter, getOAuthConfig });
+  const tokenService = createTokenService({ db, getAdapter, getOAuthConfig, leases });
 
   const poller = createStatsPoller({
     db,
@@ -81,6 +82,7 @@ export async function initPlatforms(db, opts = {}) {
     getProjectForBroadcast,
     eventBus,
     getIntervalMs,
+    leases,
   });
   await poller.restore();
 

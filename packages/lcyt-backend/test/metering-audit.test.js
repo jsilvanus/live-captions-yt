@@ -142,6 +142,22 @@ describe('usage rollup kinds and compaction', () => {
     }
   });
 
+  it('compacting from two instances at once counts every hourly row exactly once', async () => {
+    const db = await initDb(':memory:');
+    try {
+      const oldDay = new Date(Date.now() - 100 * 86_400_000).toISOString().slice(0, 10);
+      for (const hour of ['05', '06', '07']) {
+        await writeUsageRollup(db, { apiKey: 'p', metric: 'captions.sent', kind: 'counter', value: 10, periodStart: `${oldDay}T${hour}:00:00Z` });
+      }
+      const results = await Promise.all([1, 2, 3].map(() => compactHourlyRollups(db, { olderThanDays: 90, kindForMetric }).catch(() => 0)));
+      assert.strictEqual(results.reduce((a, b) => a + b, 0), 3, 'each row moved by exactly one caller');
+      const day = await db.prepare("SELECT value FROM usage_rollups WHERE grain = 'day' AND metric = 'captions.sent'").get();
+      assert.strictEqual(day.value, 30);
+    } finally {
+      await db.close();
+    }
+  });
+
   it('groups rollup series by project and joins org attribution', async () => {
     const db = await initDb(':memory:');
     try {

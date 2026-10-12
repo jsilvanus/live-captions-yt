@@ -8,6 +8,7 @@ import { createLeases } from '../src/cluster/leases.js';
 import { createInstanceRegistry } from '../src/cluster/instances.js';
 import { startPgBus, toPgConnectionString } from '../src/cluster/pg-bus.js';
 import { startCluster } from '../src/cluster/index.js';
+import { leasedChore } from '../src/cluster/chores.js';
 
 const silent = { info() {}, warn() {} };
 const PG = () => getDialect() === 'postgres';
@@ -209,5 +210,44 @@ describe('cluster coordination', () => {
   it('toPgConnectionString drops Prisma-only parameters', () => {
     assert.equal(toPgConnectionString('postgresql://u:p@h:5432/d?schema=t1&connection_limit=1&sslmode=require'),
       'postgresql://u:p@h:5432/d?sslmode=require');
+  });
+});
+
+describe('leased chores', () => {
+  it('two instances ticking one after the other run the chore once per interval', async () => {
+    const db = await initDb(':memory:');
+    try {
+      let t = 1_000_000;
+      const a = createLeases(db, { instanceId: 'a', enforce: true, now: () => t });
+      const b = createLeases(db, { instanceId: 'b', enforce: true, now: () => t });
+      const ran = [];
+      const day = () => 86_400_000;
+      const runA = leasedChore(a, 'backup', day, () => { ran.push('a'); });
+      const runB = leasedChore(b, 'backup', day, () => { ran.push('b'); });
+      await Promise.all([runA(), runB()]);
+      assert.equal(ran.length, 1, 'one run in the first interval');
+      const loser = ran[0] === 'a' ? runB : runA;
+      t += 60_000; // the other instance ticks a minute later
+      await loser();
+      assert.equal(ran.length, 1, 'still held');
+      t += day(); // next interval
+      await loser();
+      assert.equal(ran.length, 2, 'the next interval is won by whoever ticks first');
+    } finally {
+      await db.close();
+    }
+  });
+
+  it('without enforcement (single instance) every tick runs', async () => {
+    const db = await initDb(':memory:');
+    try {
+      const leases = createLeases(db, { instanceId: 'solo', enforce: false });
+      let n = 0;
+      const run = leasedChore(leases, 'x', () => 1000, () => { n++; });
+      await run(); await run(); await run();
+      assert.equal(n, 3);
+    } finally {
+      await db.close();
+    }
   });
 });
