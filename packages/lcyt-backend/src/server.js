@@ -29,7 +29,8 @@ import { createOperatorRouter } from './routes/operator.js';
 import { OperatorManager } from './operator-manager.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { startCluster } from './cluster/index.js';
-import { setHlsSubsManager } from './routes/viewer.js';
+import { setHlsSubsManager, setViewerRelay } from './routes/viewer.js';
+import { restoreSessionRuntime } from './session-targets.js';
 import { getTranslationVendorConfig, getTranslationTargets } from './db/translation-config.js';
 import { backfillCapabilityFeatures } from './db/project-features.js';
 import {
@@ -266,7 +267,7 @@ setFfmpegAccountingSink(({ purpose, apiKey, seconds }) => metrics.ffmpeg({ purpo
 // All bus-backed SSE subscriptions (events-stream, DskBus, VariablesBus,
 // RolesBus) in one lazily-read gauge; the viewer registry adds its own.
 metrics.setSseGauge('event-bus', () => eventBus.sseSubscriberCount());
-const store = new SessionStore({ db, eventBus });
+const store = new SessionStore({ db, eventBus, cluster, restore: restoreSessionRuntime });
 const dskBus = new DskBus(eventBus);
 
 // Production control — run DB migrations, start device registry and bridge manager
@@ -316,6 +317,8 @@ productionRegistry.onCameraPresetRecalled(({ apiKey, cameraId, preset }) => {
 
 // Wire hlsSubsManager into the viewer route for subtitle sidecar delivery.
 setHlsSubsManager(hlsSubsManager);
+// Several instances: viewer captions reach viewers connected to any of them.
+if (cluster.shared) setViewerRelay(eventBus);
 
 hlsSubsManager.sweepStaleDir().catch(() => {});
 
@@ -597,7 +600,9 @@ if (_agent.isServerEmbeddingAvailable()) {
 }
 
 // Rehydrate persisted sessions so sequence counters and metadata survive restarts.
-store.rehydrate();
+// With several instances sessions are loaded on demand instead (SessionStore.getOrLoad), so a
+// starting instance does not claim sessions that other instances are serving.
+if (!cluster.shared) store.rehydrate();
 
 store.onSessionEnd = async (session) => {
   // Close open caption file handles before cleanup.

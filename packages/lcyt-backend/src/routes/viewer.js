@@ -45,15 +45,14 @@ export function setHlsSubsManager(mgr) {
  * @param {{ text: string, sequence: number, timestamp?: string, translations?: object }} data
  */
 export function broadcastToViewers(viewerKey, data) {
-  const clients = viewerSubs.get(viewerKey);
-  if (clients && clients.size > 0) {
-    const msg = `event: caption\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const client of clients) {
-      try { client.res.write(msg); } catch {}
-    }
-  }
+  deliverToViewers(viewerKey, data);
 
-  // Feed caption cues to HLS subtitle sidecar
+  // Viewers connected to other instances get the caption through the event relay.
+  // `owner` lets them attribute the view statistics to the right project.
+  _relayBus?.publish(VIEWER_RELAY_PROJECT, 'viewer.caption', { viewerKey, payload: data, owner: viewerKeyOwners.get(viewerKey) ?? null });
+
+  // Feed caption cues to HLS subtitle sidecar. Only on the instance that processed the caption:
+  // the cue window lives in this process and the segments go to the shared store.
   if (_hlsSubsManager && data.timestamp) {
     if (data.text) {
       _hlsSubsManager.addCue(viewerKey, 'original', data.text, data.timestamp);
@@ -64,6 +63,37 @@ export function broadcastToViewers(viewerKey, data) {
       }
     }
   }
+}
+
+/** Write one caption to the SSE viewers connected to this process. */
+function deliverToViewers(viewerKey, data) {
+  const clients = viewerSubs.get(viewerKey);
+  if (clients && clients.size > 0) {
+    const msg = `event: caption\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const client of clients) {
+      try { client.res.write(msg); } catch {}
+    }
+  }
+}
+
+/** Pseudo-project the viewer captions are published under on the event bus (never a real project key). */
+const VIEWER_RELAY_PROJECT = '_viewer';
+
+/** @type {import('lcyt/event-bus').EventBus | null} */
+let _relayBus = null;
+
+/**
+ * Multi-instance: relay viewer captions between instances over the event bus. Call once with the
+ * shared bus when several instances run; a single instance leaves it unset and nothing changes.
+ * @param {import('lcyt/event-bus').EventBus} bus
+ */
+export function setViewerRelay(bus) {
+  _relayBus = bus;
+  bus.onRemote((env) => {
+    if (env.topic !== 'viewer.caption' || !env.data?.viewerKey) return;
+    if (env.data.owner) viewerKeyOwners.set(env.data.viewerKey, env.data.owner);
+    deliverToViewers(env.data.viewerKey, env.data.payload);
+  });
 }
 
 /**

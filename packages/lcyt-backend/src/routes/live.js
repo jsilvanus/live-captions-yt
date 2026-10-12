@@ -3,12 +3,13 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast, armOnGoLive, disarmOnEnd, loadSession } from '../db.js';
+import { setSessionSequence, validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast, armOnGoLive, disarmOnEnd, loadSession } from '../db.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
 import { startVideoRecording, finishVideoRecording, getVideoStorageDir, syncVideoRecordingToStorage } from '../db/videos.js';
 import { getMetricsInstance } from '../metrics/index.js';
+import { buildExtraTargets } from '../session-targets.js';
 
 /**
  * Relay-slot lookup used only for the `recordOnStart` check (plan/broadcasts).
@@ -33,78 +34,6 @@ async function safeGetRelaySlots(db, apiKey) {
     logger.warn(`[live] getRelaySlots failed for ${apiKey}: ${err?.message}`);
     return [];
   }
-}
-
-/**
- * Validate and build the extraTargets array from the client-supplied targets list.
- * Returns { ok: true, extraTargets } or { ok: false, error }.
- *
- * Each enabled YouTube target gets a new YoutubeLiveCaptionSender started.
- * Each enabled generic target is stored with its parsed headers object.
- *
- * When `targets` is `undefined` (the field was omitted entirely, as opposed to
- * an explicit empty array) and `db`/`apiKey` are supplied, the project's saved
- * caption-target defaults are loaded and used instead — this lets a thin client
- * start a session with just `{ apiKey, domain }` and still get its configured
- * delivery targets. An explicit array (including `[]`) is always used as-is.
- *
- * @param {Array|undefined} targets  Raw array from POST/PATCH /live body
- * @param {{ db?: import('better-sqlite3').Database, apiKey?: string }} [opts]
- * @returns {{ ok: boolean, extraTargets?: Array, error?: string }}
- */
-async function buildExtraTargets(targets, { db, apiKey } = {}) {
-  if (targets === undefined) {
-    targets = (db && apiKey)
-      ? (await getCaptionTargets(db, apiKey))
-        .filter(t => t.enabled)
-        .map(t => ({ id: t.id, type: t.type, streamKey: t.streamKey, url: t.url, headers: t.headers, viewerKey: t.viewerKey, noBatch: t.noBatch }))
-      : [];
-  }
-  if (!Array.isArray(targets) || targets.length === 0) return { ok: true, extraTargets: [] };
-
-  const extraTargets = [];
-  for (const target of targets) {
-    if (!target || !['youtube', 'generic', 'viewer'].includes(target.type)) {
-      return { ok: false, error: `Invalid target type: ${target?.type}` };
-    }
-
-    if (target.type === 'youtube') {
-      if (!target.streamKey || typeof target.streamKey !== 'string') continue;
-      const sender = new YoutubeLiveCaptionSender({ streamKey: target.streamKey.trim() });
-      try { sender.start(); } catch (err) {
-        logger.warn(`[live] Failed to start extra YouTube target ${target.id}: ${err?.message}`);
-      }
-      extraTargets.push({ id: target.id, type: 'youtube', sender });
-
-    } else if (target.type === 'generic') {
-      if (!target.url || typeof target.url !== 'string') {
-        return { ok: false, error: 'Generic target requires a url field' };
-      }
-      try {
-        const u = new URL(target.url);
-        if (u.protocol !== 'https:' && u.protocol !== 'http:') {
-          return { ok: false, error: `Generic target URL must use http or https: ${target.url}` };
-        }
-      } catch {
-        return { ok: false, error: `Invalid generic target URL: ${target.url}` };
-      }
-      // headers arrive pre-parsed as an object (the client JSON.parse'd the textarea string)
-      const headers = (target.headers && typeof target.headers === 'object' && !Array.isArray(target.headers))
-        ? target.headers
-        : {};
-      extraTargets.push({ id: target.id, type: 'generic', url: target.url, headers });
-
-    } else if (target.type === 'viewer') {
-      if (!target.viewerKey || typeof target.viewerKey !== 'string') {
-        return { ok: false, error: 'Viewer target requires a viewerKey field' };
-      }
-      if (!/^[a-zA-Z0-9_-]{3,}$/.test(target.viewerKey)) {
-        return { ok: false, error: `Invalid viewerKey "${target.viewerKey}": must be at least 3 characters (letters, digits, hyphens, underscores)` };
-      }
-      extraTargets.push({ id: target.id, type: 'viewer', viewerKey: target.viewerKey });
-    }
-  }
-  return { ok: true, extraTargets };
 }
 
 async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, enabled }) {
@@ -252,7 +181,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     
     // If session not found in memory and no streamKey was provided,
     // try loading from database with the default empty streamKey first
-    if (!store.has(sessionId) && !streamKey) {
+    if (!(await store.getOrLoad(sessionId)) && !streamKey) {
       try {
         const dbSession = await loadSession(db, sessionId);
         if (dbSession && dbSession.streamKey) {
@@ -267,8 +196,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     // Idempotent: if session already exists, return existing JWT. If session
     // was rehydrated (no in-memory sender) and has no JWT, generate a fresh
     // token so the client can obtain a usable Bearer token and open SSE.
-    if (store.has(sessionId)) {
-      const existing = store.get(sessionId);
+    const existing = await store.getOrLoad(sessionId);
+    if (existing) {
 
       // Only touch the running session's targets when the caller explicitly
       // supplied a `targets` field (including an explicit empty array) —
@@ -290,6 +219,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
           await Promise.all(cleanupPromises);
         }
         existing.extraTargets = targetsResult.extraTargets;
+        existing.rawTargets = targetsResult.rawTargets;
+        store.saveRuntimeData(existing);
       }
 
       // Recreate primary sender for rehydrated sessions that have no active sender,
@@ -425,6 +356,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     });
     session.broadcastId = boundBroadcastId;
     session.recordingVideoId = recordingVideo?.id ?? null;
+    // What another instance needs to rebuild this session (see SessionStore.getOrLoad).
+    session.rawTargets = targetsResult.rawTargets;
+    store.saveRuntimeData(session);
 
     await incrementDomainHourlySessionStart(db, domain, store.size());
     // sessions.count / sessions.seconds are tallied by the bus tap on
@@ -446,7 +380,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
   // POST /live/recording — Start/stop recording for this session.
   router.post('/recording', recordingLimiter, auth, async (req, res) => {
     const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -471,17 +405,19 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     if (enabled) {
       const result = await startSessionRecording(db, session, { mediamtxClient, recordingsStore });
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to start recording' });
+      store.saveRuntimeData(session);
       return res.status(200).json({ ok: true, recording: true });
     }
     const result = await stopSessionRecording(db, session, { mediamtxClient, recordingsStore }, recordingUploadDelayMs);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to stop recording' });
+    store.saveRuntimeData(session);
     return res.status(200).json({ ok: true, recording: false });
   });
 
   // GET /live — Session status
-  router.get('/', auth, (req, res) => {
+  router.get('/', auth, async (req, res) => {
     const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
@@ -497,7 +433,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
   // PATCH /live — Update session fields (e.g. sequence, targets)
   router.patch('/', auth, async (req, res) => {
     const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
@@ -518,6 +454,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         // Ignore sender errors but continue to update session value
       }
       session.sequence = seq;
+      // An explicit set may lower the stored value (touch() only ever raises it).
+      try { await setSessionSequence(db, sessionId, seq); } catch (_) {}
       // Persist to per-API-key store; seq=0 is an explicit reset (clears last_caption_at)
       if (db) {
         try {
@@ -547,6 +485,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         }
       }
       session.extraTargets = result.extraTargets;
+      session.rawTargets = result.rawTargets;
+      store.saveRuntimeData(session);
       store.touch(sessionId);
     }
 
@@ -559,7 +499,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
   // DELETE /live — Remove session
   router.delete('/', auth, async (req, res) => {
     const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
 
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });

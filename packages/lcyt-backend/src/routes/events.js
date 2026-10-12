@@ -28,7 +28,7 @@ import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 export function createEventsRouter(store, jwtSecret) {
   const router = Router();
 
-  router.get('/', (req, res) => {
+  router.get('/', async (req, res) => {
     const token = extractSseToken(req);
     if (!token) {
       return res.status(401).json({ error: 'Authorization required' });
@@ -40,7 +40,7 @@ export function createEventsRouter(store, jwtSecret) {
     }
 
     const { sessionId } = payload;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -91,6 +91,9 @@ export function createEventsRouter(store, jwtSecret) {
                 if (env.topic.startsWith('plugin.')) send(env.topic.slice('plugin.'.length), env.data);
             }
           },
+          // Also events published on other instances: the client may be connected to a different
+          // instance than the one that processes its captions.
+          { remote: true },
         )
       : () => {};
 

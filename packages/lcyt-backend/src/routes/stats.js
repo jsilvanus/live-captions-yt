@@ -70,7 +70,7 @@ export function createStatsRouter(db, auth, store, { resolveStorage, settings = 
 
     // Terminate the active in-memory session without writing a TTL stats record
     if (store && sessionId) {
-      const session = store.get(sessionId);
+      const session = await store.getOrLoad(sessionId);
       if (session) {
         session.emitter.emit('session_closed');
         store.remove(sessionId);

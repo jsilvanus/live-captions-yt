@@ -257,3 +257,19 @@ describe('EventBus cross-instance hooks', () => {
     assert.deepEqual(seen, ['x.y']);
   });
 });
+
+describe('EventBus.onRemote', () => {
+  it('sees every relayed event of any project, never local publishes, and survives a throwing hook', () => {
+    const bus = new EventBus();
+    const seen = [];
+    bus.onRemote(() => { throw new Error('boom'); });
+    const off = bus.onRemote((e) => seen.push(`${e.projectId}:${e.topic}`));
+    bus.publish('p1', 'local.one', {});
+    bus.publishRemote({ topic: 'a.b', projectId: 'p1', data: {} });
+    bus.publishRemote({ topic: 'c.d', projectId: 'p2', data: {} });
+    assert.deepEqual(seen, ['p1:a.b', 'p2:c.d']);
+    off();
+    bus.publishRemote({ topic: 'e.f', projectId: 'p1', data: {} });
+    assert.equal(seen.length, 2);
+  });
+});

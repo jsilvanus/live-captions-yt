@@ -464,7 +464,7 @@ export function createFilesRouter(db, auth, store, jwtSecret, resolveStorage, in
     if (!rawToken) return res.status(401).json({ error: 'Authorization required' });
     try {
       const payload = jwt.verify(rawToken, jwtSecret);
-      const session = store.get(payload.sessionId);
+      const session = await (store.getOrLoad ? store.getOrLoad(payload.sessionId) : store.get(payload.sessionId));
       if (!session) return res.status(404).json({ error: 'Session not found' });
       apiKey = session.apiKey;
     } catch {

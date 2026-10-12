@@ -18,9 +18,9 @@ import { Router } from 'express';
 export function createMicRouter(store, auth) {
   const router = Router();
 
-  router.post('/', auth, (req, res) => {
+  router.post('/', auth, async (req, res) => {
     const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
     if (!session) return res.status(404).json({ error: 'Session not found' });
 
     const { action, clientId } = req.body;
@@ -39,6 +39,7 @@ export function createMicRouter(store, auth) {
     }
 
     const holder = session.micHolder ?? null;
+    store.saveMicHolder?.(session);
     session.emitter.emit('mic_state', { holder });
     res.json({ ok: true, holder });
   });

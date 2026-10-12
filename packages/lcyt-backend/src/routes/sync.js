@@ -26,7 +26,7 @@ export function createSyncRouter(store, auth) {
 
     if (sessionId) {
       // Direct session lookup using sessionId from session JWT
-      session = store.get(sessionId);
+      session = await store.getOrLoad(sessionId);
     } else if (apiKey || projectId) {
       // Project-scoped JWT: find a session for this project/apiKey
       // Search through all sessions to find one matching the apiKey

@@ -36,7 +36,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
 
     // Look up session
     const { sessionId } = req.session;
-    const session = store.get(sessionId);
+    const session = await store.getOrLoad(sessionId);
     if (!session) {
       return res.status(404).json({ error: 'Session not found' });
     }
@@ -79,7 +79,7 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
     // are serialised and sequence numbers stay monotonically increasing.
     const isBatch = resolvedCaptions.length > 1;
 
-    session._sendQueue = session._sendQueue.then(async () => {
+    session._sendQueue = session._sendQueue.then(() => store.runExclusive(session, async () => {
       let result;
       try {
         // Apply core backend metacode processors in the canonical order.
@@ -151,6 +151,13 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           result = { statusCode: 200, sequence: session.sequence, serverTimestamp: null };
         }
 
+        // Lift the other YouTube senders to the shared counter and store the highest value used
+        // (never lowers it, so a second instance's higher number survives).
+        if (store.shared) {
+          store.liftSenders(session);
+          store.persistSequence(session);
+        }
+
         // Persist per-API-key sequence so it survives session expiry
         if (db) {
           try { await updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
@@ -213,6 +220,14 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
           statusCode: err.statusCode || 502,
         });
       }
+    })).catch((err) => {
+      // runExclusive could not get the session (another instance holds it too long).
+      session.captionsFailed++;
+      session.emitter.emit('caption_error', {
+        requestId,
+        error: err.message || 'Failed to send captions',
+        statusCode: err.statusCode || 502,
+      });
     });
 
     return res.status(202).json({ ok: true, requestId });
