@@ -1,6 +1,6 @@
 # Plan: Multi-instance behaviour
 
-**Status:** in-progress (approved 2026-10-12). L1 foundations built; L2, L3 next; L4 (relay ownership) deferred, relays stay pinned to one instance; L5 docs and deploy later. The Saarnavideo half (S1 to S3) lives in jsilvanus/saarnavideo.
+**Status:** in-progress (approved 2026-10-12). L1, L2 and L3 built; L4 (relay ownership) deferred, relays stay pinned to one instance; L5 docs and deploy later. The Saarnavideo half (S1 to S3) lives in jsilvanus/saarnavideo.
 
 
 Written from live-captions-yt main (a2cfe32, after #346) and saarnavideo main (57f6c0f), not run.
