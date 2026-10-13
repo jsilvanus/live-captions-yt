@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createFfmpegRunner } from 'lcyt-compute/ffmpeg';
 import { makeFifo, createFifoWriter } from 'lcyt-compute/ffmpeg/pipe-utils';
+import { FanoutSupervisor } from './fanout-supervisor.js';
 import * as fs from 'node:fs';
 import { MediaMtxClient } from './mediamtx-client.js';
 import logger from 'lcyt/logger';
@@ -329,6 +330,8 @@ export class RtmpRelayManager {
         user: this._settings.get('mediamtx.api_user') || null,
         password: this._settings.get('mediamtx.api_password') || null,
       } : undefined) : null);
+    // Fan-outs (path -> relay targets): MediaMTX runOnPublish hooks or fleet/local runners, see fanout-supervisor.js.
+    this._fanout = this._mediamtx ? new FanoutSupervisor({ mediamtx: this._mediamtx, settings: this._settings }) : null;
   }
 
   /** @returns {string} MediaMTX RTSP base URL, trailing slash stripped, settings-aware. */
@@ -495,9 +498,8 @@ export class RtmpRelayManager {
           // Single output back into MediaMTX; MediaMTX fans out via runOnPublish.
           args.push('-f', 'flv', outRtmpUrl(apiKey, 'out', this._settings));
           const teeTargets = _buildTeeTargets(relays);
-          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey, 'out', this._settings)} -c copy -f tee "${teeTargets}"`;
           try {
-            await this._upsertPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
+            await this._fanout.set(outPathName(apiKey), { sourcePath: outPathName(apiKey), tee: teeTargets, apiKey, label: `out:${apiKey.slice(0, 8)}` });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
           } catch (err) {
             logger.warn(`[rtmp] MediaMTX addPath (cea708 out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -570,9 +572,8 @@ export class RtmpRelayManager {
             if (!nameOk || !SAFE_RTMP_RE.test(targetUrl)) {
               throw new Error(`Target URL or name unsafe for transcode slot ${i}: ${String(targetUrl).slice(0, 80)}`);
             }
-            const cmd = `ffmpeg -re -i ${outRtspUrl(apiKey, suffix, this._settings)} -c copy -f flv ${targetUrl}`;
             try {
-              await this._upsertPath(outPathName(apiKey, suffix), { runOnPublish: cmd, runOnPublishRestart: true });
+              await this._fanout.set(outPathName(apiKey, suffix), { sourcePath: outPathName(apiKey, suffix), flvUrl: targetUrl, apiKey, label: `${suffix}:${apiKey.slice(0, 8)}` });
               slotPaths.push(outPathName(apiKey, suffix));
             } catch (err) {
               logger.warn(`[rtmp] MediaMTX addPath (transcode slot ${i}) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -629,9 +630,8 @@ export class RtmpRelayManager {
           // Single output back into MediaMTX; fan-out via runOnPublish.
           args.push('-f', 'flv', outRtmpUrl(apiKey, 'out', this._settings));
           const teeTargets = _buildTeeTargets(relays);
-          const fanOutCmd  = `ffmpeg -re -i ${outRtspUrl(apiKey, 'out', this._settings)} -c copy -f tee "${teeTargets}"`;
           try {
-            await this._upsertPath(outPathName(apiKey), { runOnPublish: fanOutCmd, runOnPublishRestart: true });
+            await this._fanout.set(outPathName(apiKey), { sourcePath: outPathName(apiKey), tee: teeTargets, apiKey, label: `out:${apiKey.slice(0, 8)}` });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
           } catch (err) {
             logger.warn(`[rtmp] MediaMTX addPath (dsk out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -665,17 +665,13 @@ export class RtmpRelayManager {
 
         // Escape double-quotes as a safety measure (shouldn't be present after validation).
         const safeTee = teeTargets.replace(/"/g, '');
-        const runOnPublish = `ffmpeg -re -i ${this._rtspBase()}/${encodeURIComponent(apiKey)} -c copy -f tee "${safeTee}"`;
-
         try {
-          await this._upsertPath(apiKey, { runOnPublish, runOnPublishRestart: true });
+          // Hook mode also kicks the current publisher so MediaMTX fires runOnPublish immediately.
+          await this._fanout.set(apiKey, { sourcePath: encodeURIComponent(apiKey), tee: safeTee, apiKey, kick: true, label: `plain:${apiKey.slice(0, 8)}` });
           logger.info(`[rtmp] Plain relay for ${apiKey.slice(0,8)} configured via MediaMTX (${relays.length} slot(s))`);
         } catch (err) {
           logger.warn(`[rtmp] MediaMTX addPath failed for ${apiKey.slice(0,8)}: ${err.message} — stream may not forward`);
         }
-
-        // Kick the current publisher so MediaMTX fires runOnPublish immediately.
-        this._mediamtx.kickPath(apiKey).catch(() => {});
 
         const startedAt = new Date();
         this._mediamtxRelays.set(apiKey, { slots: relays.map(r => ({ ...r })), startedAt });
@@ -876,16 +872,12 @@ export class RtmpRelayManager {
       throw new Error(`'${pathName}' contains unsafe characters for MediaMTX runOnPublish`);
     }
     const teeTargets = _buildTeeTargets(slots);
-    const runOnPublish = `ffmpeg -re -i ${this._rtspBase()}/${pathName} -c copy -f tee "${teeTargets}"`;
     try {
-      await this._upsertPath(pathName, { runOnPublish, runOnPublishRestart: true });
+      await this._fanout.set(pathName, { sourcePath: pathName, tee: teeTargets, kick: true, label: pathName });
       logger.info(`[rtmp] ${logLabel} configured via MediaMTX on '${pathName}' (${slots.length} slot(s))`);
     } catch (err) {
       logger.warn(`[rtmp] MediaMTX addPath (${logLabel}) failed on '${pathName}': ${err.message} — slots may not forward`);
     }
-    // Kick any current publisher so the hook fires immediately for a source
-    // that is already mid-publish.
-    this._mediamtx.kickPath(pathName).catch(() => {});
   }
 
   /**
@@ -927,7 +919,7 @@ export class RtmpRelayManager {
     if (!meta) return;
     this._cropRelays.delete(apiKey);
     if (this._mediamtx) {
-      try { await this._mediamtx.deletePath(`${apiKey}-crop`); } catch {}
+      try { await this._fanout.clear(`${apiKey}-crop`); } catch {}
     }
     const endedAt = new Date();
     const durationMs = endedAt.getTime() - meta.startedAt.getTime();
@@ -964,7 +956,7 @@ export class RtmpRelayManager {
     }
     if (mergedSlots.length === 0) {
       if (this._mediamtx) {
-        try { await this._mediamtx.deletePath(cameraKey); } catch {}
+        try { await this._fanout.clear(cameraKey); } catch {}
       }
       return;
     }
@@ -1045,7 +1037,7 @@ export class RtmpRelayManager {
     if (!meta) return;
     this._mediamtxRelays.delete(apiKey);
     if (this._mediamtx) {
-      try { await this._mediamtx.deletePath(apiKey); } catch {}
+      try { await this._fanout.clear(apiKey); } catch {}
     }
     const endedAt = new Date();
     const durationMs = endedAt.getTime() - meta.startedAt.getTime();
@@ -1095,6 +1087,24 @@ export class RtmpRelayManager {
   async stopAll() {
     const keys = new Set([...this._procs.keys(), ...this._mediamtxRelays.keys(), ...this._cropRelays.keys(), ...this._cameraRelays.keys()]);
     await Promise.all([...keys].map(k => this.stop(k)));
+    await this._fanout?.stopAll();
+  }
+
+  /**
+   * MediaMTX told us a path became ready or not ready (runOnReady/runOnNotReady hook,
+   * routes/mediamtx-hook.js). Only does anything for fan-outs this instance runs in
+   * `runner` mode; otherwise the reconcile poll of the owner instance catches up.
+   * @param {string} pathName
+   * @param {boolean} ready
+   * @returns {Promise<boolean>} whether this instance has a fan-out on that path
+   */
+  async fanoutPathEvent(pathName, ready) {
+    return (await this._fanout?.onPathEvent(pathName, ready)) ?? false;
+  }
+
+  /** Running fan-outs (runner mode): [{ path, running, where, jobId, restarts }]. */
+  fanoutStatus() {
+    return this._fanout?.status() ?? [];
   }
 
   // ---------------------------------------------------------------------------
@@ -1472,7 +1482,7 @@ export class RtmpRelayManager {
     const outputPaths = this._outputPaths.get(apiKey);
     if (outputPaths && this._mediamtx) {
       for (const p of outputPaths) {
-        deletions.push(this._mediamtx.deletePath(p).catch(() => {}));
+        deletions.push(this._fanout.clear(p).catch(() => {}));
       }
     }
     this._outputPaths.delete(apiKey);

@@ -1105,13 +1105,15 @@ function gatedRouter(getEnabled) {
   // translation.js/stt.js — the public/callback sub-routers below never
   // consume `auth` at all, so they're unaffected (plan_project_roles.md;
   // previously left ungated, see CONSIDER.md).
-  const { rtmpRouter, feedRtmpRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
+  const { rtmpRouter, feedRtmpRouter, mediamtxHookRouter, ingestionRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
     createRtmpRouters(db, scopedAuth('rtmp'), rtmp, {
       allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
       requireSetup: requireProjectRole(db, 'setup'),
     });
   apiRouter.use('/rtmp',       deprecatedRoute('/rtmp', NGINX_RTMP_MESSAGE), rtmpGate(rtmpRouter));
   apiRouter.use('/feed-rtmp',  deprecatedRoute('/feed-rtmp', NGINX_RTMP_MESSAGE), rtmpGate(feedRtmpRouter));
+  // MediaMTX runOnReady/runOnNotReady ping (fan-out supervisor); internal, keep off the public proxy.
+  app.use('/internal/mediamtx', rtmpGate(mediamtxHookRouter));
   apiRouter.use('/ingestion',  rtmpGate(ingestionRouter));
   apiRouter.use('/stream',     rtmpGate(streamRouter));
   apiRouter.use('/stream-hls', rtmpGate(streamHlsRouter));
