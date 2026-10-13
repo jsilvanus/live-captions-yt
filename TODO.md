@@ -1,8 +1,12 @@
 # TODO
 
-Open work only. Finished items live in git history and `docs/PLANS.md`; skipped review findings in `CONSIDER.md`. Last reviewed 2026-10-06.
+Open work only. Finished items live in git history and `docs/PLANS.md`; skipped review findings in `CONSIDER.md`. Last reviewed 2026-10-13.
 
 ## Verification against real systems (highest priority)
+
+- [ ] **CI on `main` is red.** "Tests" fails on every `main` push since at least 2026-10-12 (run #600 on 73585c4): the `Unit: <package>` jobs never start on `main` (PR runs of the same workflow start them and pass), so the Vitest, backend integration, Docker build and Playwright jobs that depend on them are skipped. Cause not found yet; start with the matrix output of "Prepare unit test matrix" when `IS_MAIN=true`. "Publish images" for `lcyt` failed at `npm ci` because `packages/lcyt-backend/scripts/prisma-generate.mjs` (the postinstall) was not copied before `npm ci` in the `Dockerfile`; fixed 2026-10-13, so `ghcr.io/jsilvanus/lcyt:latest` predates the Prisma move (#346) until the next publish succeeds.
+- [ ] **Windows Docker Desktop run** of the deploy-media stack: checklist in `deploy-media/docs/windows-test.md` (recorder with clean/program/DSK feeds, hand-off to SaarnaVideo, `MEDIAMTX_FANOUT_MODE=runner`, then flip the default).
+- [ ] **MediaMTX fan-out follow-ups** (`CONSIDER.md`): hook landing on a non-owner instance, orphan job reaping after an owner crash, local fallback when no worker takes the job. nginx-rtmp removal phase 3 (`docs/plans/plan_nginx_rtmp_deprecation.md`) not started.
 
 - [ ] **Stack bring-up with real services.** Everything that talks to another machine is tested against fakes only: the fffleet fleet (relay, STT, music, PCM, DSK, perception, crop stdin), the auditor STT service (`STT_PROVIDER=auditor`), MediaMTX, YouTube platform sync/OAuth and local `deer` embeddings. Run one rehearsal with LCYT + MediaMTX + fffleet + auditor.
 - [ ] **Perception on real footage.** Build and run `docker/lcyt-perception-worker` with native `onnxruntime-node` on service video and a real fleet; tune tracker, framing and visual-match thresholds. Also open: Describer text into World State per camera, a frame upload path and `FrameProvider` if the preview-JPEG lag matters, and the church-data-protection pass on the perception privacy text.
