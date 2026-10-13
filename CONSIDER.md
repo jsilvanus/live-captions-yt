@@ -438,3 +438,10 @@ Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpR
 **Found:** relay/crop/STT ownership (`packages/lcyt-backend/src/cluster/ownership.js`, `packages/plugins/lcyt-rtmp/src/ownership.js`) leaves: `setDskOverlay(apiKey, names, imagePaths)` is forwarded to the owner but the image files live in `GRAPHICS_DIR` on the instance that stored them, so it works only when that directory is a shared volume (moving graphics to S3 would remove the limit); ffmpeg fleet jobs of a crashed owner may keep running; `/stt/events` shows only transcripts of the instance running STT; HLS, radio, preview, perception and music managers are not wrapped; MediaMTX paths from a dead owner stay registered until the next upsert; the 3 s owner cache can briefly report no owner after a takeover.
 **Skipped because:** each needs real MediaMTX/fleet runs to design properly, and single-instance behaviour is unaffected.
 **Where:** see `docs/DEPLOY.md` "Process ownership (L4)".
+
+## MediaMTX fan-out via runner/fleet (fanout-supervisor.js)
+- A `runOnReady` hook that lands on an instance that does not own the key is dropped (`fanoutPathEvent` returns false); the owner's reconcile poll starts the relay within `mediamtx.fanout_poll_ms` (30 s with a hook secret). Forward it through the L4 ownership call instead.
+- No orphan reaping: if the owner dies, its fleet fan-out job keeps running until its RTSP input ends. Needs a `fanout_jobs` table or a label filter on the fleet job list.
+- No queue-timeout fallback to local when no worker satisfies `mediamtx.fleet_requires`; the job just waits.
+- Hook mode (default) still needs an ffmpeg-capable MediaMTX image; check what `bluenviron/mediamtx:latest` contains before relying on it.
+- `RtmpRelayManager` reads `FFMPEG_RUNNER` from `process.env` for the processing ffmpeg while the supervisor uses `compute.ffmpeg_runner`; align them.

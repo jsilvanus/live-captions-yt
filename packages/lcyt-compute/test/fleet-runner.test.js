@@ -85,3 +85,15 @@ test('live stderr from the job is exposed and emitted while it runs', async () =
   assert.equal(r.stderrTail, 'frame=  10 fps=25\nConnection refused');
   assert.deepEqual(seen, ['frame=  10 fps=25\nConnection refused']);
 });
+
+test('a caller-chosen jobId, class and priority go into the submitted spec', async () => {
+  const { EventEmitter } = await import('node:events');
+  let spec;
+  const job = Object.assign(new EventEmitter(), { id: 'fanout-abc-0', where: 'w1', state: 'running', done: new Promise(() => {}), cancel: async () => {} });
+  const r = new FleetFfmpegRunner({ fleet: { submit: async (s) => { spec = s; return job; } }, args: ['-i', 'x'], purpose: 'relay', jobId: 'fanout-abc-0', class: 'stream', priority: 500, requires: ['net:mediamtx'] });
+  await r.start();
+  assert.equal(spec.id, 'fanout-abc-0');
+  assert.equal(spec.class, 'stream');
+  assert.equal(spec.priority, 500);
+  assert.deepEqual(spec.requires, ['net:mediamtx']);
+});

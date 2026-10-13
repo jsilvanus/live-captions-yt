@@ -38,6 +38,7 @@
  *   await rtmp.stop();
  */
 
+import { createMediaMtxHookRouter } from './routes/mediamtx-hook.js';
 import { writeRtmpStreamStart, writeRtmpStreamEnd, incrementRtmpAnonDailyStat } from './db.js';
 import { RtmpRelayManager, probeFfmpeg } from './rtmp-manager.js';
 import logger from 'lcyt/logger';
@@ -256,6 +257,7 @@ export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioMan
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager, settings),
     feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
+    mediamtxHookRouter: createMediaMtxHookRouter({ relayManager, settings }),
     ingestionRouter: createIngestionRouter(db, auth, relayManager, settings, requireSetup),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains, requireSetup),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),

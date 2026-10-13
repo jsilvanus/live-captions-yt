@@ -57,7 +57,7 @@ export async function closeFleet() {
 }
 
 export class FleetFfmpegRunner extends EventEmitter {
-  constructor({ fleet = null, args = [], name = 'ffmpeg', stdin = 'ignore', stdout = 'ignore', apiKey = '', purpose = 'unknown', timeoutMs = null, requires = [], ...rest } = {}) {
+  constructor({ fleet = null, args = [], name = 'ffmpeg', stdin = 'ignore', stdout = 'ignore', apiKey = '', purpose = 'unknown', timeoutMs = null, requires = [], jobId = null, class: jobClass = null, priority = null, ...rest } = {}) {
     super();
     this._fleet = fleet;
     this.args = args;
@@ -68,6 +68,9 @@ export class FleetFfmpegRunner extends EventEmitter {
     this.purpose = purpose;
     this.timeoutMs = timeoutMs;
     this.requires = requires;
+    this._jobIdHint = jobId;
+    this._jobClass = jobClass;
+    this._priority = priority;
     this.extra = rest;
     this.jobId = null;
     this.job = null;
@@ -87,8 +90,11 @@ export class FleetFfmpegRunner extends EventEmitter {
     const fleet = this._fleet || await getFleet();
     const wantsStdin = this._stdinMode === 'pipe';
     const spec = {
-      id: `${this.purpose}-${randomUUID()}`.slice(0, 63),
+      // A caller-chosen id makes the submit idempotent: the same id and spec return the running job.
+      id: this._jobIdHint || `${this.purpose}-${randomUUID()}`.slice(0, 63),
       kind: 'stream',
+      ...(this._jobClass ? { class: this._jobClass } : {}),
+      ...(this._priority !== null ? { priority: this._priority } : {}),
       owner: this.owner || undefined,
       labels: { purpose: this.purpose, name: this.name },
       requires: this.requires,

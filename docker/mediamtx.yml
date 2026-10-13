@@ -119,6 +119,16 @@ paths:
     # runOnPublishRestart: no
     # runOnUnpublish: curl -s -X POST http://lcyt-site:3000/radio/on_publish_done -d "name=$$MTX_PATH"
 
+    # ── Relay fan-out without ffmpeg inside MediaMTX (MEDIAMTX_FANOUT_MODE=runner) ──
+    # The backend starts the fan-out ffmpeg itself (FFMPEG_RUNNER=spawn here, or fleet on an
+    # fffleet worker) while a path is ready. These hooks only tell it when that changes, so it
+    # starts at once instead of at the next reconcile poll. Needs a MediaMTX image that has a
+    # shell and curl (not the minimal `bluenviron/mediamtx:latest`, probably; check your tag).
+    # LCYT_HOOK_URL, e.g. http://lcyt:3000/internal/mediamtx/path, and MEDIAMTX_HOOK_SECRET
+    # (same value as the backend's) go into the MediaMTX container environment.
+    # runOnReady: curl -fsS -m 5 -X POST -H "x-lcyt-hook-secret: $MEDIAMTX_HOOK_SECRET" -d "path=$MTX_PATH&ready=1" $LCYT_HOOK_URL
+    # runOnNotReady: curl -fsS -m 5 -X POST -H "x-lcyt-hook-secret: $MEDIAMTX_HOOK_SECRET" -d "path=$MTX_PATH&ready=0" $LCYT_HOOK_URL
+
 # ── Notes for production ──────────────────────────────────────────────────────
 #
 # 1. API security: bind apiAddress to an internal/loopback address only.
