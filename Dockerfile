@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssl ca-cert
 COPY package.json package-lock.json ./
 COPY packages/lcyt/package.json packages/lcyt/
 COPY packages/lcyt-backend/package.json packages/lcyt-backend/
+# postinstall runs scripts/prisma-generate.mjs --soft, so the script must exist before npm ci
+COPY packages/lcyt-backend/scripts/ packages/lcyt-backend/scripts/
 COPY packages/lcyt-web/package.json packages/lcyt-web/
 COPY packages/shared-styles/package.json packages/shared-styles/
 COPY packages/lcyt-mcp-http/package.json packages/lcyt-mcp-http/

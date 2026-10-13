@@ -28,7 +28,7 @@ compute setup on an fffleet fleet.
 | Mode | Tooling | When to use |
 |------|---------|-------------|
 | **LCYT only** | `docker-compose.lcyt.yml` | One container, no sidecars (no MediaMTX, fffleet or auditor): captions to YouTube/viewers/generic targets, cues, connectors, MCP. Rebuild with `--build-arg RTMP_RELAY_ACTIVE=1` to get ffmpeg in the image for relay/radio |
-| **Local (single VM)** | `docker-compose.yml` | Development, personal use, single small event; adds MediaMTX (and an opt-in docker socket proxy for `FFMPEG_RUNNER=docker`) |
+| **Local (single VM)** | `docker-compose.yml` | Development, personal use, single small event; adds MediaMTX |
 | **fffleet fleet** | `FFMPEG_RUNNER=fleet` + an [fffleet](https://github.com/jsilvanus/fffleet) orchestrator and workers (its own compose file and autoscaling for Docker or Hetzner) | Production, moderate scale, ffmpeg offloaded to other machines |
 | **Cloudfleet (Kubernetes)** | `k8s/cloudfleet/` manifests | Managed HA cluster, rolling deploys, minimal ops overhead |
 
@@ -159,7 +159,7 @@ in `docker-compose.yml`. See `scripts/build.env.example` for a template.
 | Arg | Default | Effect |
 |-----|---------|--------|
 | `APT_MIRROR` | _(unset)_ | Replace `deb.debian.org` with a faster mirror during build. Example for Hetzner: `http://mirror.hetzner.com/debian/packages` |
-| `RTMP_RELAY_ACTIVE` | `0` | Install ffmpeg for RTMP relay in local-spawn mode. **Not needed** when `FFMPEG_RUNNER=docker` or `FFMPEG_RUNNER=worker`. |
+| `RTMP_RELAY_ACTIVE` | `0` | Install ffmpeg for RTMP relay in local-spawn mode. **Not needed** when `FFMPEG_RUNNER=fleet`. |
 | `RADIO_ACTIVE` | `0` | Install ffmpeg for audio-only HLS (radio) in local-spawn mode. **Not needed** when `RADIO_HLS_SOURCE=mediamtx`. |
 | `HLS_ACTIVE` | `0` | Install ffmpeg for video+audio HLS in local-spawn mode. |
 | `PREVIEW_ACTIVE` | `0` | Install ffmpeg for JPEG thumbnail generation in local-spawn mode. |
@@ -169,7 +169,7 @@ in `docker-compose.yml`. See `scripts/build.env.example` for a template.
 
 ffmpeg is only installed in `lcyt-site` when one of the four feature flags
 above is set to `1` **and** `FFMPEG_RUNNER=spawn` (the default). If you use
-`FFMPEG_RUNNER=docker` (ephemeral containers) or `FFMPEG_RUNNER=fleet`
+`FFMPEG_RUNNER=fleet`
 (fffleet workers), ffmpeg is never called inside this image, so all four flags
 can stay at `0`.
 
@@ -280,6 +280,32 @@ Used when `RADIO_HLS_SOURCE=mediamtx` or when MediaMTX manages RTMP paths.
 | `MEDIAMTX_HLS_BASE_URL` | `http://mediamtx:8080` | HLS base URL used by NginxManager for internal `proxy_pass` |
 | `MEDIAMTX_API_USER` | _(unset)_ | Basic-auth username for the MediaMTX API |
 | `MEDIAMTX_API_PASSWORD` | _(unset)_ | Basic-auth password for the MediaMTX API |
+| `MEDIAMTX_RTSP_BASE_URL` | `rtsp://127.0.0.1:8554` | RTSP base URL the backend's own ffmpeg reads from |
+| `MEDIAMTX_RTMP_BASE_URL` | `rtmp://127.0.0.1:1935` | RTMP base URL the processing ffmpeg pushes back into |
+| `MEDIAMTX_FANOUT_MODE` | `hook` | Where relay fan-out ffmpeg runs. `hook`: started by MediaMTX `runOnPublish` (needs the ffmpeg-capable MediaMTX image, `bluenviron/mediamtx:latest-ffmpeg`). `runner`: started by the backend through `FFMPEG_RUNNER` (`spawn` or `fleet`); MediaMTX only reports path state through the `runOnReady`/`runOnNotReady` hooks (`docker/mediamtx.yml`) |
+| `MEDIAMTX_HOOK_SECRET` | _(unset)_ | Shared secret for `POST /internal/mediamtx/path` (header `x-lcyt-hook-secret`). The route is closed while empty. Keep `/internal` off the public proxy |
+| `MEDIAMTX_FANOUT_POLL_MS` | `0` | Runner mode: reconcile poll against the MediaMTX API (0 = 2 s without a hook secret, 30 s with one) |
+| `MEDIAMTX_RTSP_FLEET_BASE_URL` | _(unset)_ | RTSP address fleet workers read from when they are on another host (private address of MediaMTX); empty = `MEDIAMTX_RTSP_BASE_URL` |
+| `MEDIAMTX_FLEET_REQUIRES` | _(unset)_ | Capabilities fan-out jobs require, e.g. `net:mediamtx` (worker started with `FFFLEET_PROBE=mediamtx=<host>:8554`) |
+
+`runner` mode is new (2026-10-13) and has not been run against a real MediaMTX or fleet; `hook` stays the default until it has. Plan: `docs/plans/plan_mediamtx_fanout_fleet.md`.
+
+### Recording feeds and hand-off to SaarnaVideo
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RECORD_FEEDS` | `clean,program,dsk` | Feeds recorded per broadcast (`clean` is always recorded) |
+| `MEDIAMTX_RECORD_DIR` | `VIDEOS_STORAGE_DIR` | Recordings root as MediaMTX sees it; must be the same volume as `VIDEOS_STORAGE_DIR` |
+| `MEDIAMTX_RECORD_TZ` | `utc` | Whether MediaMTX names segments in `utc` or `local` time |
+| `SAARNAVIDEO_URL`, `SAARNAVIDEO_TOKEN` | _(unset)_ | SaarnaVideo base URL and its `ACCESS_SECRET` (sent as Bearer); `POST /handoff/:id/send` calls `<url>/api/imports/lcyt` |
+| `PUBLIC_URL` | _(unset)_ | Must be reachable from SaarnaVideo: it fetches the manifest and the feed files back from here |
+| `HANDOFF_AUTO_SEND` | off | `1` sends the hand-off when a broadcast's recordings are finalized |
+
+Details: `packages/lcyt-backend/CLAUDE.md`, `docs/plans/plan_saarnavideo_handoff.md`.
+
+### nginx-rtmp (deprecated)
+
+The nginx-rtmp callbacks `/rtmp`, `/feed-rtmp` and `/dsk-rtmp` still work but answer with `Deprecation: true` and log a warning. MediaMTX is the broker; the replacement is the `runOnReady`/`runOnNotReady` hook to `/internal/mediamtx/path`. Removal plan: `docs/plans/plan_nginx_rtmp_deprecation.md`. In a multi-instance setup the web UI is one static frontend behind the stack's reverse proxy; serving it from the backend is for single-process local mode only.
 
 ### nginx radio proxy (NginxManager)
 
