@@ -6,6 +6,8 @@ summary: "Backs the Assets page's 'Stored videos' card with a real recording pip
 related: plan/assets_page, plan/broadcasts, plan/asset_backends, plan/mediamtx, plan/hls_sidecar, plan/cloudfleet
 ---
 
+> **Update 2026-10-13 (`src/recording/recorder.js`):** MediaMTX is given a real `recordPath` template (`%path` + time variables, `MEDIAMTX_RECORD_DIR`), boolean/duration settings, and after `record:false` the backend settles the files, stream-copies the fMP4 segments into a real HLS VOD (`playlist.m3u8` + `.ts`, no placeholder files any more), uploads to S3 and sets the status `processing` -> `completed` (`failed` when nothing was recorded). The S3 object key no longer contains the API key (`videos/<videoId>`; existing rows keep their stored key). Not verified against a real MediaMTX.
+
 # Recording & VOD Pipeline â€” Stored Videos from Broadcasts
 
 Backs the third placeholder card from `plan_assets_page.md` (Stored videos) with

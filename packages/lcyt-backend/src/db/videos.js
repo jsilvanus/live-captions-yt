@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, existsSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { mkdirSync, rmSync, existsSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { getMetricsInstance } from '../metrics/index.js';
@@ -25,7 +25,8 @@ function safeSlug(value) {
 
 export function buildVideoStorageKey(apiKey, videoId, storageKey = null) {
   if (storageKey) return storageKey;
-  return `${safeSlug(apiKey)}/${videoId}`;
+  // The API key is a credential and must not end up in object keys or URLs: key by video id only.
+  return `videos/${videoId}`;
 }
 
 export function getVideosStorageRoot() {
@@ -36,17 +37,14 @@ export function getVideoStorageDir(apiKey, videoId) {
   return join(getVideosStorageRoot(), safeSlug(apiKey), String(videoId));
 }
 
-function ensureVideoArtifacts(apiKey, videoId) {
+/** Key of a video's files inside a local recordings store (the on-disk layout, unlike the S3 key, includes the key slug). */
+export function localVideoPrefix(apiKey, videoId) {
+  return `${safeSlug(apiKey)}/${videoId}`;
+}
+
+function ensureVideoDir(apiKey, videoId) {
   const dir = getVideoStorageDir(apiKey, videoId);
   mkdirSync(dir, { recursive: true });
-  const playlistPath = join(dir, 'playlist.m3u8');
-  if (!existsSync(playlistPath)) {
-    writeFileSync(playlistPath, `#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-PLAYLIST-TYPE:VOD\n#EXTINF:1.0,placeholder\nsegment0.ts\n#EXT-X-ENDLIST\n`);
-  }
-  const segmentPath = join(dir, 'segment0.ts');
-  if (!existsSync(segmentPath)) {
-    writeFileSync(segmentPath, '');
-  }
   return dir;
 }
 
@@ -110,7 +108,7 @@ export async function createVideo(db, apiKey, fields = {}) {
 
   const resolvedStorageKey = storageKey ?? (storageType === 's3' ? buildVideoStorageKey(apiKey, id) : null);
 
-  ensureVideoArtifacts(apiKey, id);
+  ensureVideoDir(apiKey, id);
   await db.videos.create({
     data: {
       id,

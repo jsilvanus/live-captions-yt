@@ -37,6 +37,7 @@ function formatDate(value) {
 function statusBadge(status) {
   const colors = {
     recording: '#facc15',
+    processing: '#38bdf8',
     completed: '#22c55e',
     failed: '#ef4444',
   };

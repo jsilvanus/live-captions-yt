@@ -7,7 +7,8 @@ import { setSessionSequence, validateApiKey, writeSessionStat, writeAuthEvent, i
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
-import { startVideoRecording, finishVideoRecording, getVideoStorageDir, syncVideoRecordingToStorage } from '../db/videos.js';
+import { startVideoRecording, finishVideoRecording } from '../db/videos.js';
+import { configureMediaMtxRecording, finalizeVideoRecording } from '../recording/recorder.js';
 import { getMetricsInstance } from '../metrics/index.js';
 import { buildExtraTargets } from '../session-targets.js';
 
@@ -36,41 +37,12 @@ async function safeGetRelaySlots(db, apiKey) {
   }
 }
 
-async function configureMediaMtxRecording(mediamtxClient, { pathName, videoDir, enabled }) {
-  if (!mediamtxClient || !pathName) return;
-  const config = enabled
-    ? {
-        record: 'yes',
-        recordFormat: 'fmp4',
-        recordPath: videoDir,
-        recordSegmentDuration: '4s',
-        recordDeleteAfter: 0,
-      }
-    : { record: 'no' };
-
-  try {
-    try {
-      await mediamtxClient.addPath(pathName, { source: 'publisher' });
-    } catch (err) {
-      if (err?.statusCode && [400, 404, 409, 422].includes(err.statusCode)) {
-        // Path already exists or is not yet configured; continue to patch it.
-      } else {
-        throw err;
-      }
-    }
-    await mediamtxClient.patchPath(pathName, config);
-  } catch (err) {
-    logger.warn(`[videos] MediaMTX recording ${enabled ? 'start' : 'stop'} failed for ${pathName}: ${err?.message}`);
-  }
-}
-
-// MediaMTX may still be flushing the final segment to disk right after the
-// record:no patch is acknowledged; give it a brief grace window before an
-// S3-backed recording's local artifacts are read for upload.
+// MediaMTX may still be flushing the final segment right after the record:false patch is
+// acknowledged; finalize waits for the files to settle, builds the HLS VOD and uploads it.
 function scheduleRecordingStorageSync(db, apiKey, videoId, delayMs = 3000, recordingsStore = null) {
-  setTimeout(async () => {
-    (await syncVideoRecordingToStorage(db, apiKey, videoId, { recordingsStore })).catch((err) => {
-      logger.warn(`[videos] recording storage sync failed (videoId=${videoId}): ${err?.message}`);
+  setTimeout(() => {
+    finalizeVideoRecording(db, apiKey, videoId, { recordingsStore }).catch((err) => {
+      logger.warn(`[videos] recording finalize failed (videoId=${videoId}): ${err?.message}`);
     });
   }, delayMs).unref?.();
 }
@@ -90,10 +62,9 @@ async function startSessionRecording(db, session, { mediamtxClient, recordingsSt
   session.recordingVideoId = videoResult.video.id;
   const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
   const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
-  const recordingVideoDir = getVideoStorageDir(session.apiKey, videoResult.video.id);
   await configureMediaMtxRecording(mediamtxClient, {
     pathName: recordingPathName,
-    videoDir: recordingVideoDir,
+    apiKey: session.apiKey, videoId: videoResult.video.id,
     enabled: true,
   });
   return { ok: true, active: true, video: videoResult.video };
@@ -109,6 +80,7 @@ async function stopSessionRecording(db, session, { mediamtxClient, recordingsSto
     ? Number(session.startedAt)
     : Date.parse(session.startedAt || new Date().toISOString());
   await finishVideoRecording(db, session.apiKey, recordingVideoId, {
+    status: 'processing',
     endedAt,
     durationMs: Math.max(0, Date.now() - startedAtMs),
   });
@@ -116,7 +88,7 @@ async function stopSessionRecording(db, session, { mediamtxClient, recordingsSto
   const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
   await configureMediaMtxRecording(mediamtxClient, {
     pathName: recordingPathName,
-    videoDir: getVideoStorageDir(session.apiKey, recordingVideoId),
+    apiKey: session.apiKey, videoId: recordingVideoId,
     enabled: false,
   });
   session.recordingVideoId = null;
@@ -330,10 +302,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         recordingVideo = videoResult.video;
         const keyRow = await db.api_keys.findUnique({ where: { key: apiKey }, select: { ingest_stream_key: true } });
         const recordingPathName = keyRow?.ingest_stream_key || apiKey;
-        const recordingVideoDir = getVideoStorageDir(apiKey, recordingVideo.id);
         await configureMediaMtxRecording(mediamtxClient, {
           pathName: recordingPathName,
-          videoDir: recordingVideoDir,
+          apiKey, videoId: recordingVideo.id,
           enabled: true,
         });
       }
@@ -542,6 +513,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
             ? Number(removed.startedAt)
             : Date.parse(removed.startedAt);
           await finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
+            status: 'processing',
             endedAt,
             durationMs: Math.max(0, Date.now() - startedAtMs),
           });
@@ -549,7 +521,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
           const recordingPathName = keyRow?.ingest_stream_key || removed.apiKey;
           await configureMediaMtxRecording(mediamtxClient, {
             pathName: recordingPathName,
-            videoDir: getVideoStorageDir(removed.apiKey, removed.recordingVideoId),
+            apiKey: removed.apiKey, videoId: removed.recordingVideoId,
             enabled: false,
           });
           scheduleRecordingStorageSync(db, removed.apiKey, removed.recordingVideoId, recordingUploadDelayMs, recordingsStore);

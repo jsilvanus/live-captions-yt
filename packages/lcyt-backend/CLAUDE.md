@@ -21,6 +21,7 @@ HTTP relay: clients authenticate with API keys + JWT tokens, backend sends capti
 | `ICONS_DIR` | Directory for icon assets served at `/icons/*` | none |
 | `BACKEND_URL` | Server's own URL (used internally for DSK renderer etc.); also the base URL a remote perception worker (`FFFLEET_URL`) is given for `frameUrl`/`callbackUrl` — falls back to `lcyt-production`'s `DEFAULT_PREVIEW_BASE_URL` (`http://localhost:$PORT`) when unset, which is only correct for a same-host/dev setup, not a real remote worker | none |
 | `VIDEOS_STORAGE_DIR` | Local directory MediaMTX recordings + VOD playback artifacts are written to/served from | `./recordings` |
+| `MEDIAMTX_RECORD_DIR` | Recordings root as **MediaMTX** sees it (differs from `VIDEOS_STORAGE_DIR` when MediaMTX runs in a container; both must be the same volume). MediaMTX gets the `recordPath` template `<dir>/<slug>/<videoId>/%path/%Y-%m-%d_%H-%M-%S-%f` | `VIDEOS_STORAGE_DIR` |
 | `FILE_SERVE` | `proxy` (default) streams S3 recordings through the backend; `redirect` answers segments and video files with a 302 to a presigned bucket URL (playlists stay proxied; bucket CORS needed) | `proxy` |
 | `FILE_SERVE_TTL_SECONDS` | Lifetime of a signed redirect URL | `300` |
 | `S3_PUBLIC_ENDPOINT` | Endpoint browsers reach the bucket at; redirect URLs are signed for it (SigV4 covers the Host header) | `S3_ENDPOINT` |
