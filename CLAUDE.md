@@ -42,7 +42,6 @@ live-captions-yt/
 ├── android/                    # Native Android apps
 │   └── lcyt-tv/                # Android TV caption viewer (Kotlin + Compose for TV)
 ├── docker/                     # Docker build contexts for containerised services
-│   ├── lcyt-ffmpeg/            # ffmpeg Docker image (used by DockerFfmpegRunner)
 │   ├── lcyt-dsk-renderer/      # Chromium DSK renderer Docker image
 │   ├── lcyt-fleet-worker/      # Fat fffleet worker image (DSK + perception); published by publish-images.yml
 │   ├── lcyt-web/               # Web UI bundle image (copies dist into a volume); published by publish-images.yml

@@ -43,7 +43,6 @@ Welcome to the LCYT documentation. This is your navigation hub for all guides, A
 - [**Distributed compute (fffleet)**](./DEPLOY.md#distributed-mode-fffleet) â€” `FFMPEG_RUNNER=fleet`, FFFLEET_URL
 
 ### Platform-Specific
-- [ffmpeg Docker usage](./ffmpeg-docker-usage.md) â€” FFmpeg container guide
 
 ## ðŸ“– API Reference
 
@@ -150,7 +149,7 @@ All plans in [docs/plans/](./plans/) â€” See [PLANS.md](./PLANS.md) for ful
 - [plan_backend_split.md](./plans/plan_backend_split.md) â€” Microservices split
 - [plan_cache.md](./plans/plan_cache.md) â€” Caching strategy
 - [plan_cloudfleet.md](./plans/plan_cloudfleet.md) â€” Kubernetes deployment
-- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) â€” Docker ffmpeg runner â†’ distributed Hetzner compute (implemented, then superseded by the external fffleet project; the orchestrator and worker daemon were retired 2026-10-05)
+- [plan_dock_ffmpeg.md](./plans/plan_dock_ffmpeg.md) â€” Docker ffmpeg runner â†’ distributed Hetzner compute (implemented, then superseded by the external fffleet project, and the Docker runner was removed 2026-10-13; the orchestrator and worker daemon were retired 2026-10-05)
 - [plan_mediamtx.md](./plans/plan_mediamtx.md) â€” MediaMTX integration
 - [plan_metacode_refactor.md](./plans/plan_metacode_refactor.md) â€” Metacode system refactor
 
@@ -199,7 +198,6 @@ All plans in [docs/plans/](./plans/) â€” See [PLANS.md](./PLANS.md) for ful
 | Package | README |
 |---------|--------|
 | **tcp-echo-server** | [packages/tools/tcp-echo-server/README.md](../packages/tools/tcp-echo-server/README.md) |
-| **lcyt-ffmpeg Docker** | [docker/lcyt-ffmpeg/README.md](../docker/lcyt-ffmpeg/README.md) |
 | **lcyt-dsk-renderer Docker** | [docker/lcyt-dsk-renderer/README.md](../docker/lcyt-dsk-renderer/README.md) |
 | **Kubernetes CloudFleet** | [k8s/cloudfleet/README.md](../k8s/cloudfleet/README.md) |
 
@@ -215,7 +213,6 @@ docs/
 â”œâ”€â”€ FIREWALL.md                 â† Network setup
 â”œâ”€â”€ METACODE.md                 â† Metacode system
 â”œâ”€â”€ env-vars.md                 â† Environment variables
-â”œâ”€â”€ ffmpeg-docker-usage.md      â† Docker ffmpeg
 â”‚
 â”œâ”€â”€ api/                        â† API endpoint docs
 â”‚   â”œâ”€â”€ README.md

@@ -120,12 +120,6 @@ describe('CropManager', () => {
     await mgr.stop('key3b');
   });
 
-  test('repositionMode() is restart for the docker runner (no stdin exposure)', () => {
-    const mgr = new CropManager({ ffmpegCaps: { available: true }, settings: { get: k => (k === 'compute.ffmpeg_runner' ? 'docker' : undefined) } });
-    assert.equal(mgr.repositionMode(), 'restart');
-    assert.equal(makeManager().repositionMode(), 'live');
-  });
-
   test('position carries across restarts when not overridden', async () => {
     const mgr = makeManager();
     await mgr.start('key4', CONFIG, { position: { xNorm: 0.25, yNorm: 0 } });

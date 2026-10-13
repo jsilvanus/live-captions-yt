@@ -341,7 +341,6 @@ jobs:
           chmod +x hadolint
           ./hadolint --failure-threshold error \
             Dockerfile \
-            docker/lcyt-ffmpeg/Dockerfile \
             docker/lcyt-dsk-renderer/Dockerfile \
             packages/lcyt-mcp-http/Dockerfile \
             packages/lcyt-mcp-stdio/Dockerfile
@@ -359,9 +358,6 @@ jobs:
           - image: lcyt-site
             context: .
             file: Dockerfile
-          - image: lcyt-ffmpeg
-            context: docker/lcyt-ffmpeg
-            file: docker/lcyt-ffmpeg/Dockerfile
           - image: lcyt-mcp-http
             context: .
             file: packages/lcyt-mcp-http/Dockerfile

@@ -1,5 +1,4 @@
 import { LocalFfmpegRunner } from './local-runner.js';
-import { DockerFfmpegRunner } from './docker-runner.js';
 import { FleetFfmpegRunner } from './fleet-runner.js';
 
 /**
@@ -16,7 +15,6 @@ import { FleetFfmpegRunner } from './fleet-runner.js';
 
 // Environment-driven defaults
 const ENV_RUNNER = process.env.FFMPEG_RUNNER || 'spawn';
-const ENV_IMAGE = process.env.FFMPEG_IMAGE || 'lcyt-ffmpeg:latest';
 const ENV_WRAPPER = process.env.FFMPEG_WRAPPER || '';
 
 // ---------------------------------------------------------------------------
@@ -76,6 +74,8 @@ function wrapRunnerAccounting(runner, purpose, apiKey) {
   return runner;
 }
 
+let _warnedDocker = false;
+
 export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', apiKey = '', ...opts } = {}) {
   const withAccounting = (instance) => wrapRunnerAccounting(instance, purpose, apiKey);
 
@@ -90,8 +90,12 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
     case 'local':
       return withAccounting(new LocalFfmpegRunner(opts));
     case 'docker':
-      // ensure image default is taken from env when not provided
-      return withAccounting(new DockerFfmpegRunner(Object.assign({ image: ENV_IMAGE }, opts)));
+      // The program no longer starts containers itself; only spawn and fleet remain.
+      if (!_warnedDocker) {
+        _warnedDocker = true;
+        console.warn("[ffmpeg] FFMPEG_RUNNER=docker was removed; running ffmpeg with 'spawn'. Use FFMPEG_RUNNER=fleet to run it on an fffleet fleet.");
+      }
+      return withAccounting(new LocalFfmpegRunner(opts));
     case 'fleet':
       return withAccounting(new FleetFfmpegRunner(opts));
     case 'worker':
@@ -101,6 +105,6 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
   }
 }
 
-export { LocalFfmpegRunner, DockerFfmpegRunner, FleetFfmpegRunner };
+export { LocalFfmpegRunner, FleetFfmpegRunner };
 export { getFleet, closeFleet } from './fleet-runner.js';
 export { spawnFfmpeg } from './spawn.js';

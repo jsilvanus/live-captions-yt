@@ -6,6 +6,8 @@ summary: "All phases implemented: DockerFfmpegRunner abstraction behind FFMPEG_R
 supersedes: "plan/rtmp (partially: execution model â€” adds Docker/worker as opt-in alternative execution runners alongside the still-default bare spawn(); see 'Key constraints' below)"
 ---
 
+> **Superseded (2026-10-13):** programs no longer start Docker containers. The Docker runner, `docker-socket-proxy` and the `lcyt-ffmpeg` image were removed; only `FFMPEG_RUNNER=spawn` and `fleet` remain. Kept as history.
+
 # Plan: FFmpeg Compute Containers â†’ Distributed Hetzner Architecture
 
 **Date:** 2026-03-19 (revised 2026-03-20, completed 2026-06-30)  

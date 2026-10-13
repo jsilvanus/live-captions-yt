@@ -186,7 +186,7 @@ describe('snapshot()', () => {
     const svc = await freshService();
     const before = svc.snapshot().find(s => s.key === 'compute.ffmpeg_runner');
     assert.equal(before.pendingRestart, false);
-    await svc.set('compute.ffmpeg_runner', 'docker');
+    await svc.set('compute.ffmpeg_runner', 'fleet');
     const after = svc.snapshot().find(s => s.key === 'compute.ffmpeg_runner');
     assert.equal(after.pendingRestart, true);
   });
