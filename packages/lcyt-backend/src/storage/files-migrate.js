@@ -1,5 +1,5 @@
 import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
-import { buildVideoStorageKey } from '../db/videos.js';
+import { buildVideoStorageKey, localVideoPrefix } from '../db/videos.js';
 import { sqlNow } from '../db/helpers.js';
 
 /**
@@ -20,7 +20,7 @@ export const MIGRATE_AREAS = ['graphics', 'icons', 'dskThumbnails', 'cameraThumb
 
 const emptyStats = () => ({ copied: 0, skipped: 0, failed: 0, deleted: 0, bytes: 0 });
 
-async function copyObject(src, dst, key, stats, { dryRun, deleteSource, log }) {
+async function copyObject(src, dst, key, stats, { dryRun, deleteSource, log }, dstKey = key) {
   let srcMeta;
   try {
     srcMeta = await src.stat(key);
@@ -30,7 +30,7 @@ async function copyObject(src, dst, key, stats, { dryRun, deleteSource, log }) {
     return false;
   }
   let dstMeta = null;
-  try { dstMeta = await dst.stat(key); } catch { /* not there yet */ }
+  try { dstMeta = await dst.stat(dstKey); } catch { /* not there yet */ }
   if (dstMeta && dstMeta.size === srcMeta.size) {
     stats.skipped++;
   } else if (dryRun) {
@@ -40,8 +40,8 @@ async function copyObject(src, dst, key, stats, { dryRun, deleteSource, log }) {
   } else {
     try {
       const opened = await src.stream(key);
-      const stored = await dst.put(key, opened.stream, { contentType: srcMeta.contentType });
-      const verified = stored && stored.size != null ? stored : await dst.stat(key);
+      const stored = await dst.put(dstKey, opened.stream, { contentType: srcMeta.contentType });
+      const verified = stored && stored.size != null ? stored : await dst.stat(dstKey);
       if (verified.size !== srcMeta.size) throw new Error(`size mismatch (${srcMeta.size} vs ${verified.size})`);
       stats.copied++;
       stats.bytes += srcMeta.size;
@@ -105,20 +105,24 @@ async function migrateRecordings(db, direction, from, to, opts, stats) {
   const wantType = direction === 's3' ? 'local' : 's3';
   const videos = await db.videos.findMany({ where: { storage_type: wantType }, select: { id: true, api_key: true, storage_key: true } });
   for (const video of videos) {
-    const prefix = buildVideoStorageKey(video.api_key, video.id, video.storage_key);
-    const keys = await listAll(src, `${prefix}/`);
+    const s3Prefix = buildVideoStorageKey(video.api_key, video.id, video.storage_key);
+    const localPrefix = localVideoPrefix(video.api_key, video.id);
+    const srcPrefix = direction === 's3' ? localPrefix : s3Prefix;
+    const dstPrefix = direction === 's3' ? s3Prefix : localPrefix;
+    const keys = await listAll(src, `${srcPrefix}/`);
     if (keys.length === 0) {
-      opts.log(`recording ${video.id}: no files under ${prefix}, row left as is`);
+      opts.log(`recording ${video.id}: no files under ${srcPrefix}, row left as is`);
       stats.failed++;
       continue;
     }
     let ok = true;
-    for (const key of keys) ok = (await copyObject(src, dst, key, stats, { ...opts, deleteSource: false })) && ok;
+    const dstKeyOf = (key) => dstPrefix + key.slice(srcPrefix.length);
+    for (const key of keys) ok = (await copyObject(src, dst, key, stats, { ...opts, deleteSource: false }, dstKeyOf(key))) && ok;
     if (!ok) continue; // never switch a row whose files are not all verified
     if (!opts.dryRun) {
       await db.videos.updateMany({
         where: { id: video.id },
-        data: { storage_type: direction === 's3' ? 's3' : 'local', storage_key: direction === 's3' ? prefix : null, updated_at: sqlNow() },
+        data: { storage_type: direction === 's3' ? 's3' : 'local', storage_key: direction === 's3' ? s3Prefix : null, updated_at: sqlNow() },
       });
     }
     stats.rowsUpdated = (stats.rowsUpdated || 0) + 1;

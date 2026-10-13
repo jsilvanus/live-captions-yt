@@ -33,7 +33,9 @@ describe('migrateFiles', () => {
     await local.stores.graphics.put(`${apiKey}/logo.png`, 'png-bytes');
     await local.stores.icons.put(`${apiKey}/i.svg`, '<svg/>');
     videoId = (await createVideo(db, apiKey, { title: 'rec' })).video.id;
-    await writeFile(join(process.env.VIDEOS_STORAGE_DIR, apiKey.replace(/[^a-zA-Z0-9._-]+/g, '-'), videoId, 'segment1.ts'), 'segment-bytes').catch(() => {});
+    const videoDir = join(process.env.VIDEOS_STORAGE_DIR, apiKey.replace(/[^a-zA-Z0-9._-]+/g, '-'), videoId);
+    await mkdir(videoDir, { recursive: true });
+    await writeFile(join(videoDir, 'segment1.ts'), 'segment-bytes');
     const handle = local.captions.openAppend(apiKey, 'a.txt');
     await handle.write('hello captions');
     await handle.close();

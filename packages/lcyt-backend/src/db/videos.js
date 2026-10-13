@@ -37,6 +37,11 @@ export function getVideoStorageDir(apiKey, videoId) {
   return join(getVideosStorageRoot(), safeSlug(apiKey), String(videoId));
 }
 
+/** Key of a video's files inside a local recordings store (the on-disk layout, unlike the S3 key, includes the key slug). */
+export function localVideoPrefix(apiKey, videoId) {
+  return `${safeSlug(apiKey)}/${videoId}`;
+}
+
 function ensureVideoDir(apiKey, videoId) {
   const dir = getVideoStorageDir(apiKey, videoId);
   mkdirSync(dir, { recursive: true });
