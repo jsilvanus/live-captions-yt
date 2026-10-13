@@ -204,8 +204,11 @@ describe('videos router', () => {
       assert.ok(result.ok);
       const videoId = result.video.id;
 
-      // Simulate MediaMTX having written a real recorded segment alongside the placeholders.
-      writeFileSync(join(getVideoStorageDir('demo-key', videoId), 'segment1.ts'), 'segment-bytes');
+      // Simulate a finished HLS VOD (what finalizeVideoRecording leaves behind).
+      const videoDir = getVideoStorageDir('demo-key', videoId);
+      writeFileSync(join(videoDir, 'playlist.m3u8'), '#EXTM3U\n#EXTINF:1.0,x\nsegment0.ts\nsegment1.ts\n');
+      writeFileSync(join(videoDir, 'segment0.ts'), 'seg-zero');
+      writeFileSync(join(videoDir, 'segment1.ts'), 'segment-bytes');
 
       recordingsStore = await createS3ObjectStore({
         bucket: 'demo-bucket',
@@ -218,6 +221,7 @@ describe('videos router', () => {
       await syncVideoRecordingToStorage(db, 'demo-key', videoId, { recordingsStore, settleMs: 0 });
 
       const storageKey = (await getVideo(db, 'demo-key', videoId)).storageKey;
+      assert.ok(!storageKey.includes('demo-key'), 'the API key must not be part of the S3 object key');
       assert.ok(mockS3.objects.has(`demo-bucket/recordings/${storageKey}/playlist.m3u8`));
       assert.ok(mockS3.objects.has(`demo-bucket/recordings/${storageKey}/segment0.ts`));
       assert.equal(mockS3.objects.get(`demo-bucket/recordings/${storageKey}/segment1.ts`)?.toString(), 'segment-bytes');
@@ -240,6 +244,7 @@ describe('videos router', () => {
       const result = await startVideoRecording(db, 'demo-key', { title: 'S3 sync failure', storageType: 's3' });
       assert.ok(result.ok);
       const videoId = result.video.id;
+      writeFileSync(join(getVideoStorageDir('demo-key', videoId), 'segment0.ts'), 'x');
 
       const brokenStore = {
         type: 's3',
@@ -258,6 +263,8 @@ describe('videos router', () => {
   it('syncVideoRecordingToStorage removes a half-uploaded copy when the upload fails', async () => {
     const result = await startVideoRecording(db, 'demo-key', { title: 'S3 partial', storageType: 's3' });
     const videoId = result.video.id;
+    writeFileSync(join(getVideoStorageDir('demo-key', videoId), 'a.ts'), 'a');
+    writeFileSync(join(getVideoStorageDir('demo-key', videoId), 'b.ts'), 'b');
     const removed = [];
     let calls = 0;
     const flakyStore = {
