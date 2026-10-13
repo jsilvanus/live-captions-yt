@@ -456,6 +456,35 @@ export function initSqliteSchema(dbPath) {
   db.exec('CREATE INDEX IF NOT EXISTS idx_videos_api_key ON videos(api_key)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_videos_broadcast_id ON videos(broadcast_id)');
 
+  // Feeds of a broadcast recording (clean / program / dsk) and the handoff to Saarnavideo.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS video_feeds (
+      video_id   TEXT PRIMARY KEY,
+      api_key    TEXT NOT NULL,
+      group_id   TEXT NOT NULL,
+      role       TEXT NOT NULL,
+      meta_json  TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_video_feeds_group ON video_feeds(group_id)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_video_feeds_api_key ON video_feeds(api_key)');
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS handoffs (
+      id            TEXT PRIMARY KEY,
+      api_key       TEXT NOT NULL,
+      broadcast_id  TEXT,
+      status        TEXT NOT NULL DEFAULT 'pending',
+      manifest_json TEXT,
+      error         TEXT,
+      sent_at       TEXT,
+      created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_handoffs_api_key ON handoffs(api_key)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_handoffs_broadcast_id ON handoffs(broadcast_id)');
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS broadcast_assets (
       id            INTEGER PRIMARY KEY AUTOINCREMENT,

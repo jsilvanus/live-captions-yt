@@ -193,7 +193,9 @@ describe('POST /live', () => {
         assert.strictEqual(startRes.status, 200);
         const startBody = await startRes.json();
         const startPatch = calls.filter(([op, , config]) => op === 'patch' && config?.record === true);
-        assert.strictEqual(startPatch.length, 1);
+        // One recording per feed: clean (ingest), program (the relay's output path) and dsk.
+        assert.strictEqual(startPatch.length, 3);
+        assert.deepStrictEqual(startPatch.map((c) => c[1]).sort(), [key, `${key}-out`, `dsk/${key}`].sort());
         // MediaMTX recording is keyed by the project's RTMP ingest identity
         // (api_keys.ingest_stream_key, falling back to the bare apiKey), never
         // by the legacy caption-relay `streamKey` from the POST body — those
@@ -209,7 +211,7 @@ describe('POST /live', () => {
         });
         assert.strictEqual(stopRes.status, 200);
         const stopPatch = calls.filter(([op, , config]) => op === 'patch' && config?.record === false);
-        assert.strictEqual(stopPatch.length, 1);
+        assert.strictEqual(stopPatch.length, 3);
       } finally {
         await new Promise((resolve) => testServer.close(resolve));
       }

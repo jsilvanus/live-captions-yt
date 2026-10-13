@@ -121,6 +121,26 @@ function outPathName(apiKey, suffix = 'out') {
 }
 
 /**
+ * MediaMTX path of the program feed: the output of the relay's processing ffmpeg (ingest plus the
+ * DSK composite). It only carries video while a DSK composite is running; without one the program
+ * is the raw ingest.
+ * @param {string} apiKey
+ */
+export function programPathName(apiKey) {
+  return outPathName(apiKey);
+}
+
+/**
+ * MediaMTX path the DSK renderer's stream arrives on (the relay reads it back from here).
+ * @param {string} apiKey
+ * @param {{ get: (key: string) => * }} [settings]
+ */
+export function dskPathName(apiKey, settings = null) {
+  const app = settings ? settings.get('graphics.dsk_rtmp_app') : DEFAULT_DSK_RTMP_APP;
+  return `${app}/${apiKey}`;
+}
+
+/**
  * RTMP URL for the processing ffmpeg to push its single output back into MediaMTX.
  * MediaMTX uses the full URL path as the path name, so this must NOT include an
  * RTMP application prefix — otherwise the push lands on "app/{key}-out" while the

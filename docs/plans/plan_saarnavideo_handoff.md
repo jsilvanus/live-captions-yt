@@ -1,10 +1,12 @@
 ---
 id: plan/saarnavideo_handoff
 title: "Handoff to Saarnavideo and separate clean / DSK / program recordings"
-status: draft
-summary: "Plan only, nothing built (2026-10-12). After a broadcast, LCYT hands the produced material (finished video files, captions, DSK event log, broadcast metadata) to Saarnavideo for editing. A versioned handoff manifest is the contract; media moves by S3 reference when both apps share a bucket, otherwise by signed-URL pull. In the same change the recorder stops saving only one feed: it records the clean feed (camera/mixer ingest), the DSK feed (graphics only) and the program feed (clean plus DSK, what went out) as separate files, so each can be edited later."
+status: in-progress
+summary: "LCYT side built 2026-10-13 (recorder fix L0, feed model L1, program and DSK recording L2/L3, manifest/finalise/delivery L4/L5; Saarnavideo import on hold). Not verified against a real MediaMTX. Original plan text follows. Plan only, After a broadcast, LCYT hands the produced material (finished video files, captions, DSK event log, broadcast metadata) to Saarnavideo for editing. A versioned handoff manifest is the contract; media moves by S3 reference when both apps share a bucket, otherwise by signed-URL pull. In the same change the recorder stops saving only one feed: it records the clean feed (camera/mixer ingest), the DSK feed (graphics only) and the program feed (clean plus DSK, what went out) as separate files, so each can be edited later."
 related: plan/recording_vod, plan/dsk_viewport_settings, plan/ingest_feeds, plan/broadcasts, plan/named_actions, plan/multi_instance, plan/multi_mediamtx
 ---
+
+> **Implementation status (2026-10-13).** Built: L0 (#357), L1 `video_feeds` + `handoffs` tables and `RECORD_FEEDS`, L2 program recording (MediaMTX path `<key>-out`, no ffmpeg change needed), L3 DSK feed recording (path `<dsk app>/<key>`, chroma key kept in the feed meta) and the DSK change log from the event bus, L4 gap-aware parts, MP4 remux, caption alignment, manifest v1, signed downloads, L5 `POST /handoff`, `/handoff/:id/send`, `HANDOFF_AUTO_SEND`, and a button on the Stored videos page. Differences from the text below: delivery URLs are `https` download links (S3 stores redirect to presigned URLs; `s3://` references are not implemented); MP4 files are made at handoff time from the HLS VOD, not at recording time; program/dsk recording only covers the periods a composite or renderer stream was publishing, so feeds can have several `parts` with their own `startMs`; per-project opt-in is not built (env switch). Not done: real alpha DSK encode, markers, L6 delete-with-group and size estimate, a run against a real MediaMTX, and everything on the Saarnavideo side.
 
 # Handoff to Saarnavideo and separate clean / DSK / program recordings
 

@@ -19,6 +19,7 @@ import { createSttRouter } from './stt.js';
 import { createTargetsRouter } from './targets.js';
 import { createBroadcastsRouter } from './broadcasts.js';
 import { createVideosRouter } from './videos.js';
+import { createHandoffRouter } from './handoff.js';
 import { createTranslationRouter } from './translation.js';
 import { createBridgeDownloadRouter } from './bridge-download.js';
 import { createFilesRouter } from 'lcyt-files';
@@ -33,7 +34,7 @@ import { requireProjectRole } from '../middleware/project-access.js';
  * @param {import('express').RequestHandler} [projectAuth]
  * @returns {Router}
  */
-export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, recordingsStore = null, mediaStores = null, settings = null, platforms = null } = {}, makeScopedAuth = null) {
+export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = null, hlsSubsManager = null, sttManager = null, resolveStorage = null, invalidateStorageCache = null, recordingsStore = null, mediaStores = null, settings = null, platforms = null, handoffService = null } = {}, makeScopedAuth = null) {
   const router = Router();
   // Per-resource project access for scoped external tokens; falls back to the
   // session-JWT `auth` when no factory is supplied (isolated tests).
@@ -62,6 +63,7 @@ export function createContentRouters(db, auth, store, jwtSecret, { hlsManager = 
   }
   router.use('/broadcasts',      createBroadcastsRouter(scoped('broadcast'), db));
   router.use('/videos',          createVideosRouter(scoped('video'), db, { recordingsStore, settings }));
+  if (handoffService) router.use('/handoff', createHandoffRouter(scoped('video'), db, handoffService));
   router.use('/translation',     createTranslationRouter(scoped('translation'), db));
   router.use('/bridge-download', createBridgeDownloadRouter(settings));
   return router;

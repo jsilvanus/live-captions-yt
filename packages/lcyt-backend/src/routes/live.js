@@ -7,8 +7,9 @@ import { setSessionSequence, validateApiKey, writeSessionStat, writeAuthEvent, i
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
-import { startVideoRecording, finishVideoRecording } from '../db/videos.js';
+import { finishVideoRecording } from '../db/videos.js';
 import { configureMediaMtxRecording, finalizeVideoRecording } from '../recording/recorder.js';
+import { startRecordingGroup, stopRecordingGroup } from '../recording/feeds.js';
 import { getMetricsInstance } from '../metrics/index.js';
 import { buildExtraTargets } from '../session-targets.js';
 
@@ -37,62 +38,59 @@ async function safeGetRelaySlots(db, apiKey) {
   }
 }
 
+// Start/stop the recording of every feed (clean, program, dsk) of a session.
 // MediaMTX may still be flushing the final segment right after the record:false patch is
-// acknowledged; finalize waits for the files to settle, builds the HLS VOD and uploads it.
-function scheduleRecordingStorageSync(db, apiKey, videoId, delayMs = 3000, recordingsStore = null) {
-  setTimeout(() => {
-    finalizeVideoRecording(db, apiKey, videoId, { recordingsStore }).catch((err) => {
-      logger.warn(`[videos] recording finalize failed (videoId=${videoId}): ${err?.message}`);
-    });
-  }, delayMs).unref?.();
-}
-
-async function startSessionRecording(db, session, { mediamtxClient, recordingsStore = null }) {
+// acknowledged; stopRecordingGroup waits before it finalizes (HLS VOD, S3 upload, handoff).
+async function startSessionRecording(db, session, { mediamtxClient, recordingsStore = null, settings = null, eventBus = null, broadcastTitle = null }) {
   if (!session?.apiKey) return { ok: false, status: 400, error: 'apiKey missing' };
   if (session.recordingVideoId) {
     return { ok: true, active: true };
   }
-  const videoResult = await startVideoRecording(db, session.apiKey, {
+  const group = await startRecordingGroup(db, {
+    apiKey: session.apiKey,
     broadcastId: session.broadcastId || null,
-    title: 'Recorded broadcast',
-    startedAt: new Date().toISOString(),
-    storageType: recordingsStore?.type === 's3' ? 's3' : 'local',
+    title: broadcastTitle || 'Recorded broadcast',
+    recordingsStore, mediamtxClient, settings, eventBus,
   });
-  if (!videoResult.ok) return videoResult;
-  session.recordingVideoId = videoResult.video.id;
-  const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
-  const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
-  await configureMediaMtxRecording(mediamtxClient, {
-    pathName: recordingPathName,
-    apiKey: session.apiKey, videoId: videoResult.video.id,
-    enabled: true,
-  });
-  return { ok: true, active: true, video: videoResult.video };
+  if (!group.cleanVideoId) return { ok: false, status: 500, error: 'Could not start recording' };
+  session.recordingVideoId = group.cleanVideoId;
+  session.recordingGroupId = group.groupId;
+  return { ok: true, active: true, groupId: group.groupId };
 }
 
-async function stopSessionRecording(db, session, { mediamtxClient, recordingsStore = null }, recordingUploadDelayMs = 3000) {
+/** End the recording of a session or of a removed one (`removed`), whichever fields it carries. */
+async function endSessionRecording(db, session, { mediamtxClient, recordingsStore = null, settings = null, onRecordingFinalized = null }, delayMs = 3000, endedAt = new Date().toISOString()) {
+  const startedAtMs = Number.isFinite(Number(session.startedAt)) ? Number(session.startedAt) : Date.parse(session.startedAt || endedAt);
+  const durationMs = Math.max(0, Date.now() - startedAtMs);
+  if (session.recordingGroupId) {
+    return stopRecordingGroup(db, {
+      apiKey: session.apiKey, groupId: session.recordingGroupId, endedAt, durationMs,
+      mediamtxClient, recordingsStore, settings, delayMs, onGroupFinalized: onRecordingFinalized,
+    });
+  }
+  // A session started before feeds existed: one clean video, no group.
+  await finishVideoRecording(db, session.apiKey, session.recordingVideoId, { status: 'processing', endedAt, durationMs });
+  const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
+  await configureMediaMtxRecording(mediamtxClient, {
+    pathName: keyRow?.ingest_stream_key || session.apiKey,
+    apiKey: session.apiKey, videoId: session.recordingVideoId, enabled: false,
+  });
+  const timer = setTimeout(() => {
+    finalizeVideoRecording(db, session.apiKey, session.recordingVideoId, { recordingsStore }).catch((err) => {
+      logger.warn(`[videos] recording finalize failed (videoId=${session.recordingVideoId}): ${err?.message}`);
+    });
+  }, delayMs);
+  timer.unref?.();
+  return null;
+}
+
+async function stopSessionRecording(db, session, deps, recordingUploadDelayMs = 3000) {
   if (!session?.recordingVideoId) {
     return { ok: true, active: false };
   }
-  const recordingVideoId = session.recordingVideoId;
-  const endedAt = new Date().toISOString();
-  const startedAtMs = Number.isFinite(Number(session.startedAt))
-    ? Number(session.startedAt)
-    : Date.parse(session.startedAt || new Date().toISOString());
-  await finishVideoRecording(db, session.apiKey, recordingVideoId, {
-    status: 'processing',
-    endedAt,
-    durationMs: Math.max(0, Date.now() - startedAtMs),
-  });
-  const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
-  const recordingPathName = keyRow?.ingest_stream_key || session.apiKey;
-  await configureMediaMtxRecording(mediamtxClient, {
-    pathName: recordingPathName,
-    apiKey: session.apiKey, videoId: recordingVideoId,
-    enabled: false,
-  });
+  await endSessionRecording(db, session, deps, recordingUploadDelayMs);
   session.recordingVideoId = null;
-  scheduleRecordingStorageSync(db, session.apiKey, recordingVideoId, recordingUploadDelayMs, recordingsStore);
+  session.recordingGroupId = null;
   return { ok: true, active: false };
 }
 
@@ -110,7 +108,7 @@ async function stopSessionRecording(db, session, { mediamtxClient, recordingsSto
  * @param {{ mediamtxClient?: object | null }} [opts]
  * @returns {Router}
  */
-export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, recordingsStore = null, settings = null } = {}) {
+export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, recordingsStore = null, settings = null, onRecordingFinalized = null } = {}) {
   const router = Router();
   const auth = createAuthMiddleware(jwtSecret);
   const recordingLimiter = rateLimit({
@@ -277,7 +275,6 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     // omitting it auto-creates a fresh `live` broadcast so every session always
     // has exactly one and produced content attaches back to it.
     let boundBroadcastId = null;
-    let recordingVideo = null;
     if (broadcastId) {
       const bind = await bindSessionStart(db, apiKey, broadcastId, { recordEnabled: broadcastRecordEnabled });
       if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
@@ -291,23 +288,12 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     const broadcast = boundBroadcastId ? await getBroadcast(db, apiKey, boundBroadcastId) : null;
     const relaySlots = await safeGetRelaySlots(db, apiKey);
     const shouldRecord = Boolean(broadcastRecordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
+    let recordingGroup = null;
     if (shouldRecord) {
-      const videoResult = await startVideoRecording(db, apiKey, {
-        broadcastId: boundBroadcastId,
-        title: broadcast?.title || 'Recorded broadcast',
-        startedAt: new Date().toISOString(),
-        storageType: recordingsStore?.type === 's3' ? 's3' : 'local',
+      recordingGroup = await startRecordingGroup(db, {
+        apiKey, broadcastId: boundBroadcastId, title: broadcast?.title || 'Recorded broadcast',
+        recordingsStore, mediamtxClient, settings, eventBus: store.eventBus,
       });
-      if (videoResult.ok) {
-        recordingVideo = videoResult.video;
-        const keyRow = await db.api_keys.findUnique({ where: { key: apiKey }, select: { ingest_stream_key: true } });
-        const recordingPathName = keyRow?.ingest_stream_key || apiKey;
-        await configureMediaMtxRecording(mediamtxClient, {
-          pathName: recordingPathName,
-          apiKey, videoId: recordingVideo.id,
-          enabled: true,
-        });
-      }
     }
 
     // Sign JWT — omit streamKey and domain from payload (sensitive; not needed by route handlers)
@@ -326,7 +312,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       extraTargets,
     });
     session.broadcastId = boundBroadcastId;
-    session.recordingVideoId = recordingVideo?.id ?? null;
+    session.recordingVideoId = recordingGroup?.cleanVideoId ?? null;
+    session.recordingGroupId = recordingGroup?.groupId ?? null;
     // What another instance needs to rebuild this session (see SessionStore.getOrLoad).
     session.rawTargets = targetsResult.rawTargets;
     store.saveRuntimeData(session);
@@ -374,12 +361,12 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       return res.status(400).json({ error: 'This relay slot is not configured for manual recording' });
     }
     if (enabled) {
-      const result = await startSessionRecording(db, session, { mediamtxClient, recordingsStore });
+      const result = await startSessionRecording(db, session, { mediamtxClient, recordingsStore, settings, eventBus: store.eventBus });
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to start recording' });
       store.saveRuntimeData(session);
       return res.status(200).json({ ok: true, recording: true });
     }
-    const result = await stopSessionRecording(db, session, { mediamtxClient, recordingsStore }, recordingUploadDelayMs);
+    const result = await stopSessionRecording(db, session, { mediamtxClient, recordingsStore, settings, onRecordingFinalized }, recordingUploadDelayMs);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to stop recording' });
     store.saveRuntimeData(session);
     return res.status(200).json({ ok: true, recording: false });
@@ -509,24 +496,9 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       });
       if (removed.recordingVideoId) {
         try {
-          const startedAtMs = Number.isFinite(Number(removed.startedAt))
-            ? Number(removed.startedAt)
-            : Date.parse(removed.startedAt);
-          await finishVideoRecording(db, removed.apiKey, removed.recordingVideoId, {
-            status: 'processing',
-            endedAt,
-            durationMs: Math.max(0, Date.now() - startedAtMs),
-          });
-          const keyRow = await db.api_keys.findUnique({ where: { key: removed.apiKey }, select: { ingest_stream_key: true } });
-          const recordingPathName = keyRow?.ingest_stream_key || removed.apiKey;
-          await configureMediaMtxRecording(mediamtxClient, {
-            pathName: recordingPathName,
-            apiKey: removed.apiKey, videoId: removed.recordingVideoId,
-            enabled: false,
-          });
-          scheduleRecordingStorageSync(db, removed.apiKey, removed.recordingVideoId, recordingUploadDelayMs, recordingsStore);
+          await endSessionRecording(db, removed, { mediamtxClient, recordingsStore, settings, onRecordingFinalized }, recordingUploadDelayMs, endedAt);
         } catch (err) {
-          logger.warn(`[videos] finishVideoRecording failed (videoId=${removed.recordingVideoId})`, err);
+          logger.warn(`[videos] ending the recording failed (videoId=${removed.recordingVideoId})`, err);
         }
       }
       // Transition the bound broadcast to completed (plan/broadcasts).

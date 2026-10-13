@@ -84,7 +84,15 @@ export function createVideosRouter(auth, db, { recordingsStore = null, settings 
 
   router.get('/', auth, async (req, res) => {
     const videos = await listVideos(db, req.session.apiKey);
-    res.json({ videos: videos.map((video) => withPlaybackUrl(req, video)) });
+    const feeds = await db.video_feeds.findMany({ where: { api_key: req.session.apiKey } });
+    const feedOf = new Map(feeds.map((f) => [f.video_id, f]));
+    res.json({
+      videos: videos.map((video) => ({
+        ...withPlaybackUrl(req, video),
+        feedRole: feedOf.get(video.id)?.role ?? 'clean',
+        groupId: feedOf.get(video.id)?.group_id ?? null,
+      })),
+    });
   });
 
   router.post('/', auth, async (req, res) => {

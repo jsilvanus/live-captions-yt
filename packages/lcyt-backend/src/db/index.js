@@ -23,6 +23,8 @@ export * from './caption-targets.js';
 export * from './broadcasts.js';
 export * from './arming.js';
 export * from './videos.js';
+export * from './video-feeds.js';
+export * from './handoffs.js';
 export * from './translation-config.js';
 export * from './mcp-tokens.js';
 export * from './admin.js';

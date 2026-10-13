@@ -174,6 +174,7 @@ export async function deleteVideo(db, apiKey, id, { recordingsStore = null } = {
   }
   if (existsSync(dir)) rmSync(dir, { recursive: true, force: true });
   await db.videos.deleteMany({ where: { api_key: apiKey, id } });
+  await db.video_feeds.deleteMany({ where: { video_id: id } });
   return { ok: true };
 }
 

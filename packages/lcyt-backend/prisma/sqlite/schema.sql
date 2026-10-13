@@ -1031,6 +1031,29 @@ CREATE TABLE IF NOT EXISTS "videos" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "video_feeds" (
+    "video_id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "group_id" TEXT NOT NULL,
+    "role" TEXT NOT NULL,
+    "meta_json" TEXT,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "handoffs" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "broadcast_id" TEXT,
+    "status" TEXT NOT NULL DEFAULT 'pending',
+    "manifest_json" TEXT,
+    "error" TEXT,
+    "sent_at" TEXT,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "viewer_anon_daily_stats" (
     "date" TEXT NOT NULL PRIMARY KEY,
     "views" INTEGER NOT NULL DEFAULT 0
@@ -1321,4 +1344,16 @@ CREATE INDEX IF NOT EXISTS "idx_videos_broadcast_id" ON "videos"("broadcast_id")
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_videos_api_key" ON "videos"("api_key");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_video_feeds_group" ON "video_feeds"("group_id");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_video_feeds_api_key" ON "video_feeds"("api_key");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_handoffs_api_key" ON "handoffs"("api_key");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_handoffs_broadcast_id" ON "handoffs"("broadcast_id");
 
