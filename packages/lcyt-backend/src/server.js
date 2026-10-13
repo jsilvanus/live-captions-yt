@@ -46,6 +46,7 @@ import {
   initDskControl, createDskRouters,
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
+import { deprecatedRoute, NGINX_RTMP_MESSAGE } from './middleware/deprecation.js';
 import { initRtmpControl, createRtmpRouters, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
@@ -243,9 +244,9 @@ if (settings.get('app.youtube_client_id') && settings.get('app.youtube_client_se
 // Nginx configuration reminder
 console.info('ℹ nginx: see scripts/nginx-app.conf.sample for an example nginx vhost configuration.');
 if (settings.get('media.rtmp_relay_active')) {
-  console.info('  RTMP relay is active. Ensure nginx-rtmp is configured with on_publish/on_publish_done pointing to /rtmp.');
+  console.info('  RTMP relay is active. nginx-rtmp callbacks (/rtmp, /feed-rtmp, /dsk-rtmp) are deprecated; use MediaMTX (docs/plans/plan_nginx_rtmp_deprecation.md).');
 } else {
-  console.info('  RTMP relay is inactive. Set RTMP_RELAY_ACTIVE=1 and configure nginx-rtmp to enable it.');
+  console.info('  RTMP relay is inactive. Set RTMP_RELAY_ACTIVE=1 to enable it (MediaMTX; nginx-rtmp is deprecated).');
 }
 
 const metrics = createMetrics(db, settings);
@@ -892,7 +893,7 @@ apiRouter.use('/images',   imagesRouter);
 apiRouter.use('/dsk',      dskRouter);
 apiRouter.use('/dsk',      dskTemplatesRouter);
 apiRouter.use('/dsk',      dskViewportsRouter);
-apiRouter.use('/dsk-rtmp', dskRtmpRouter);
+apiRouter.use('/dsk-rtmp', deprecatedRoute('/dsk-rtmp', NGINX_RTMP_MESSAGE), dskRtmpRouter);
 apiRouter.use(createContentRouters(
   db,
   auth,
@@ -1109,8 +1110,8 @@ function gatedRouter(getEnabled) {
       allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
       requireSetup: requireProjectRole(db, 'setup'),
     });
-  apiRouter.use('/rtmp',       rtmpGate(rtmpRouter));
-  apiRouter.use('/feed-rtmp',  rtmpGate(feedRtmpRouter));
+  apiRouter.use('/rtmp',       deprecatedRoute('/rtmp', NGINX_RTMP_MESSAGE), rtmpGate(rtmpRouter));
+  apiRouter.use('/feed-rtmp',  deprecatedRoute('/feed-rtmp', NGINX_RTMP_MESSAGE), rtmpGate(feedRtmpRouter));
   apiRouter.use('/ingestion',  rtmpGate(ingestionRouter));
   apiRouter.use('/stream',     rtmpGate(streamRouter));
   apiRouter.use('/stream-hls', rtmpGate(streamHlsRouter));

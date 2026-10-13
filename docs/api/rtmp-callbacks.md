@@ -7,6 +7,8 @@ auth: [none]
 
 # /rtmp â€” nginx-rtmp Publish Callbacks
 
+> **Deprecated.** nginx-rtmp is being replaced by MediaMTX. `/rtmp`, `/feed-rtmp` and `/dsk-rtmp` respond with a `Deprecation: true` header and log a warning. See [plan_nginx_rtmp_deprecation.md](../plans/plan_nginx_rtmp_deprecation.md).
+
 A single endpoint called by nginx-rtmp when a broadcaster starts or stops publishing to the RTMP ingest server. This is the entry point for the RTMP relay fan-out system.
 
 **Authentication:** None (nginx is the caller â€” restrict at the network level). Optionally validated against the `RTMP_APPLICATION` environment variable.
