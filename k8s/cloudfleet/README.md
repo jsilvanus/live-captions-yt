@@ -55,9 +55,6 @@ REGISTRY=registry.<your-cluster>.cloudfleet.io
 
 docker build -t $REGISTRY/lcyt/lcyt-site:latest .
 docker push $REGISTRY/lcyt/lcyt-site:latest
-
-docker build -t $REGISTRY/lcyt/lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
-docker push $REGISTRY/lcyt/lcyt-ffmpeg:latest
 ```
 
 Then update `image:` in `10-backend-deployment.yaml` and

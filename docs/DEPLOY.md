@@ -135,14 +135,12 @@ directory.
 | Image | Build context | Purpose |
 |-------|--------------|---------|
 | `lcyt-site:latest` | `.` (repo root) | Backend API + MCP Streamable HTTP server |
-| `lcyt-ffmpeg:latest` | `docker/lcyt-ffmpeg/` | Ephemeral ffmpeg runner (`FFMPEG_RUNNER=docker`) |
 | `lcyt-dsk-renderer:latest` | `docker/lcyt-dsk-renderer/` | Playwright + ffmpeg DSK graphics renderer |
 
 Build all images locally:
 
 ```bash
 docker build -t lcyt-site:latest .
-docker build -t lcyt-ffmpeg:latest docker/lcyt-ffmpeg/
 docker build -t lcyt-dsk-renderer:latest docker/lcyt-dsk-renderer/
 ```
 
@@ -405,7 +403,7 @@ Areas: `graphics,icons,dskThumbnails,cameraThumbnails,recordings,captions,backup
 
 ## ffmpeg runner modes
 
-The backend can run ffmpeg in four ways, controlled by `FFMPEG_RUNNER`:
+The backend can run ffmpeg in two ways, controlled by `FFMPEG_RUNNER`:
 
 ### `spawn` (default)
 
@@ -414,24 +412,6 @@ Requires ffmpeg to be installed in the image (set the appropriate build args).
 
 ```
 FFMPEG_RUNNER=spawn
-```
-
-### `docker`
-
-The backend spawns ephemeral `lcyt-ffmpeg` containers per job via the Docker
-socket. The `lcyt-site` image does **not** need ffmpeg installed. A Docker
-socket proxy is recommended for security.
-
-```
-FFMPEG_RUNNER=docker
-FFMPEG_IMAGE=lcyt-ffmpeg:latest
-DOCKER_HOST=http://docker-socket-proxy:2375   # recommended
-```
-
-Enable the socket proxy profile in the compose file:
-
-```bash
-docker compose --profile docker-runner up -d
 ```
 
 ### `fleet`

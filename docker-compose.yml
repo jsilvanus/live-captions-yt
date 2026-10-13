@@ -3,7 +3,6 @@
 # Includes:
 #   lcyt-site       — LCYT backend API + MCP SSE server
 #   mediamtx        — MediaMTX RTMP/HLS broker (replaces ffmpeg HLS/radio)
-#   docker-socket-proxy — secure Docker socket proxy (Phases 2–3 ffmpeg containers)
 #
 # Quick start:
 #   cp .env.example .env   # fill in JWT_SECRET, ADMIN_KEY, etc.
@@ -75,11 +74,9 @@ services:
       # Leave empty to serve radio HLS directly from the Node.js backend instead.
       NGINX_RADIO_CONFIG_PATH: ${NGINX_RADIO_CONFIG_PATH:-}
       NGINX_RELOAD_CMD: ${NGINX_RELOAD_CMD:-nginx -s reload}
-      # ── ffmpeg runner (Phases 2–3: docker, Phase 4+: worker) ─────────────
+      # ── ffmpeg runner (spawn or fleet) ─────────────
       # DSK rendering still uses ffmpeg. For other jobs RADIO_HLS_SOURCE controls it.
       FFMPEG_RUNNER: ${FFMPEG_RUNNER:-spawn}
-      FFMPEG_IMAGE: ${FFMPEG_IMAGE:-lcyt-ffmpeg:latest}
-      DOCKER_HOST: ${DOCKER_HOST:-}
       # ── Self-hosted STT (docs/plans/plan_local_stt.md) ───────────────────
       # The self-hosted service is no longer built from this repo — it moved to,
       # and was substantially extended in, the sibling `liturgos-auditor` repo.
@@ -128,22 +125,6 @@ services:
   # has been substantially extended in, the sibling `liturgos-auditor` repo.
   # Deploy that repo's service separately and point WHISPER_HTTP_URL above at
   # it. See docs/plans/plan_local_stt.md for the history.
-
-  # ── Docker socket proxy (Phases 2–3 only) ──────────────────────────────────
-  # Allows the backend to launch ephemeral ffmpeg compute containers without
-  # direct root-socket access. Only needed when FFMPEG_RUNNER=docker.
-  docker-socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
-    container_name: docker-socket-proxy
-    restart: unless-stopped
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    environment:
-      CONTAINERS: 1
-      POST: 1
-      DELETE: 1
-    profiles:
-      - docker-runner   # opt-in: `docker compose --profile docker-runner up`
 
 volumes:
   lcyt-db: {}

@@ -15,8 +15,7 @@
  * written to it retarget the named crop filter on the next frames - no black
  * gap, no libzmq build, no control port. This needs a runner that exposes
  * ffmpeg's stdin (the local `spawn` runner and the fffleet
- * runner do); the docker runner does not, so there (and whenever stdin is
- * unusable) the manager falls back to a restart per position change
+ * runner do); whenever stdin is unusable the manager falls back to a restart per position change
  * (`repositionMode: 'restart'`), relying on MediaMTX to keep serving the path
  * across the swap.
  *
@@ -128,8 +127,7 @@ export function probeInputResolution(url, { timeoutMs = 8000 } = {}) {
  * ffmpeg's stdin Writable from a runner handle, or null. The fffleet runner
  * exposes `handle.stdin`; the local runner keeps its child process on
  * `handle.proc` (stdin is a pipe because we asked for `stdin: 'pipe'`); the
- * docker runner starts the container with stdin ignored, so it yields null
- * and the crop renderer stays restart-only there.
+ * a null result keeps the crop renderer restart-only.
  */
 function runnerStdin(handle) {
   return handle?.stdin ?? handle?.proc?.stdin ?? null;
@@ -180,13 +178,12 @@ export class CropManager {
 
   /**
    * `'live'` when position changes go over ffmpeg stdin commands, `'restart'`
-   * when they need a process swap. Manager level: 'live' unless the configured
-   * runner cannot give us ffmpeg's stdin (docker); a running session reports
-   * its own mode in getStatus().
+   * when they need a process swap. Manager level: always 'live' (spawn and
+   * fleet both expose ffmpeg's stdin); a running session reports its own mode
+   * in getStatus().
    */
   repositionMode() {
-    const runner = (this._settings ? this._settings.get('compute.ffmpeg_runner') : process.env.FFMPEG_RUNNER) ?? 'spawn';
-    return runner === 'docker' ? 'restart' : 'live';
+    return 'live';
   }
 
   getStatus(apiKey) {
@@ -291,7 +288,7 @@ export class CropManager {
       config,
       position: pos,
       activePresetId,
-      // null for runners that cannot expose ffmpeg's stdin (docker) -> restart mode.
+      // null when the runner cannot expose ffmpeg's stdin -> restart mode.
       stdin: runnerStdin(handle),
       startedAt: new Date(),
       transitionTimer: null,

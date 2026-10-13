@@ -212,7 +212,7 @@ If you'd like, I can:
 
 ## Compute fleet and STT (added 2026-10-06)
 
-- `FFMPEG_RUNNER` â€” `spawn` (default), `local`, `docker` or `fleet`. `worker` was removed.
+- `FFMPEG_RUNNER` â€” `spawn` (default), `local` or `fleet`. `docker` and `worker` were removed (a stored `docker` runs as `spawn`).
   - Files: packages/lcyt-compute/src/ffmpeg/index.js
 - `FFFLEET_URL`, `FFFLEET_CLIENT_ID`, `FFFLEET_CLIENT_SECRET`, `FFFLEET_TOKEN`, `FFFLEET_FALLBACK` â€” fffleet orchestrator address, login and local fallback (`none` fails instead of running ffmpeg here).
   - Files: packages/lcyt-compute/src/ffmpeg/fleet-runner.js, packages/plugins/lcyt-production/src/perception-manager.js

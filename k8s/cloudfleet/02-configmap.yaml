@@ -58,7 +58,6 @@ data:
   # 'spawn'  — local ffmpeg binary (default)
   # 'fleet'  — fffleet fleet (set FFFLEET_URL)
   FFMPEG_RUNNER: "spawn"
-  FFMPEG_IMAGE: "lcyt-ffmpeg:latest"
 
   # ── DSK renderer ─────────────────────────────────────────────────────────────
   DSK_LOCAL_SERVER: "http://localhost:3000"

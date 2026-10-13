@@ -1,4 +1,5 @@
 ﻿> **Historical (2026-10-05):** `lcyt-orchestrator` and `lcyt-worker-daemon` were removed; remote execution is `FFMPEG_RUNNER=fleet` (fffleet). See `docs/DEPLOY.md`.
+> **Superseded (2026-10-13):** programs no longer start Docker containers. The Docker runner, `docker-socket-proxy` and the `lcyt-ffmpeg` image were removed; only `FFMPEG_RUNNER=spawn` and `fleet` remain. Kept as history.
 
 # TODO: FFmpeg Container Migration â€” Phase-by-Phase Checklist
 
