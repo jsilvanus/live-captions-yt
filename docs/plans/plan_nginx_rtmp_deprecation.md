@@ -23,3 +23,14 @@ MediaMTX has replaced nginx-rtmp as the RTMP/HLS broker (`plan_mediamtx.md`; the
 ## Phase 3 — remove
 
 Delete `routes/rtmp.js` callback handling, `routes/feed-rtmp.js`, `lcyt-dsk/src/routes/dsk-rtmp.js`, `nginx-manager.js` and its settings (`NGINX_RADIO_CONFIG_PATH`, `NGINX_TEST_CMD`, `NGINX_RELOAD_CMD`, `RTMP_APPLICATION`), `scripts/nginxbot.sh`, `scripts/golive-local` nginx parts, nginx-rtmp comments in `docker/mediamtx.yml` and `docker-compose.yml`, the k8s config map entries, and the docs. Release as a breaking change with a changelog note. Do this only once no deployment still points an nginx-rtmp at the callbacks.
+
+## Frontend serving (multi-instance)
+
+The plain nginx web server that serves the web UI is not nginx-rtmp, but it is the last nginx dependency once phase 3 is done. Decision (Juha, 2026-10-13): in a multi-instance setup serve **one static frontend in front of all instances**, not from each backend.
+
+- The UI is a Vite SPA with no server rendering, so it is just files. One place to serve means every user gets the same version; serving from each backend would mix versions during a rolling deploy and let a stale `index.html` point at deleted hashed assets.
+- Backends stay API / SSE / media only, so they scale for that load.
+- Serve it from the reverse proxy of the stack (Traefik or a small static container in deploy-media), using the existing `lcyt-web` image that copies the bundle into a volume. nginx may remain for existing installs (`scripts/nginx-app.conf.sample`).
+- Rules: build the bundle once and ship the same artifact everywhere; `index.html` with `no-cache`, hashed `/assets/` immutable; keep old hashed assets for a short while after a deploy; SPA fallback to `/index.html`.
+- Backend-served frontend stays only for the single-process local install mode (`LCYT_INSTALL_MODE=local`).
+- Later option: a CDN or S3 bucket in front of the same files.
