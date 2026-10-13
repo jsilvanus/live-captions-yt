@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { isLocalInstall } from '../lib/localMode.js';
 
 const STORAGE_KEY = 'lcyt-user';
 
@@ -90,6 +91,15 @@ export function useUserAuth() {
     setUser({ userId: data.userId, email: data.email, name: data.name, isAdmin: !!data.isAdmin });
     return data;
   }, []);
+
+  // Local install: the page is served by the local backend, so its origin is the
+  // backend. Sign in as the local admin once, without a login page.
+  useEffect(() => {
+    if (loadStored()?.token || !isLocalInstall()) return;
+    loginLocal(window.location.origin).catch(() => {
+      // Backend unreachable: the pages show their own "not signed in" state.
+    });
+  }, [loginLocal]);
 
   const register = useCallback(async (url, email, password, name) => {
     const base = url.replace(/\/$/, '');

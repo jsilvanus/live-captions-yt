@@ -1,7 +1,8 @@
 import { StrictMode, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Router, Route, Switch, Redirect } from 'wouter';
+import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
 import { migrateStorageKeys } from './lib/storageKeys.js';
+import { isLocalInstall, isLocalModeFeatures, isHiddenInLocalMode } from './lib/localMode.js';
 import 'shared-styles';
 import './styles/reset.css';
 import './styles/layout.css';
@@ -113,7 +114,9 @@ function AuthGate({ children }) {
       const featuresRaw = localStorage.getItem('lcyt.backend.features');
       if (featuresRaw) {
         const features = JSON.parse(featuresRaw);
-        // Local mode is handled in LoginPage, but allow access if no login feature
+        // Local install signs in on its own (useUserAuth), so no login page is needed
+        if (isLocalModeFeatures(features)) return true;
+        // Allow access if no login feature
         if (Array.isArray(features) && !features.includes('login')) {
           const cfg = JSON.parse(localStorage.getItem('lcyt.session.config') || '{}');
           if (cfg.backendUrl && cfg.apiKey) return true;
@@ -128,6 +131,13 @@ function AuthGate({ children }) {
     window.location.replace('/login');
     return null;
   }
+  return children;
+}
+
+// Local install: multi-user pages send the visitor to the start page
+function LocalModeGuard({ children }) {
+  const [location] = useLocation();
+  if (isLocalInstall() && isHiddenInLocalMode(location)) return <Redirect to="/" />;
   return children;
 }
 
@@ -201,6 +211,7 @@ function SidebarApp() {
       <Router>
         <SidebarLayout>
           <Suspense fallback={null}>
+          <LocalModeGuard>
           <Switch>
             <Route path="/" component={RootRoute} />
             <Route path="/captions">{() => <AppLayout standalone={false} />}</Route>
@@ -251,6 +262,7 @@ function SidebarApp() {
             {/* Fallback */}
             <Route><Redirect to="/" /></Route>
           </Switch>
+          </LocalModeGuard>
           </Suspense>
         </SidebarLayout>
       </Router>
