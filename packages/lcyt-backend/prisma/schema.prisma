@@ -1127,12 +1127,12 @@ model videos {
 /// One row per recorded feed (clean, program, dsk) of a broadcast; the video row holds the files.
 /// group_id ties the feeds of one broadcast together. meta_json: parts, offsets, key parameters.
 model video_feeds {
-  video_id   String @id
+  video_id   String  @id
   api_key    String
   group_id   String
   role       String
   meta_json  String?
-  created_at String @default(dbgenerated("datetime('now')"))
+  created_at String  @default(dbgenerated("datetime('now')"))
 
   @@index([group_id], map: "idx_video_feeds_group")
   @@index([api_key], map: "idx_video_feeds_api_key")
