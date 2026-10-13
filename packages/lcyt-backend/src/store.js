@@ -259,6 +259,7 @@ export class SessionStore {
       if (Array.isArray(data.targets)) session.rawTargets = data.targets;
       if (data.broadcastId) session.broadcastId = data.broadcastId;
       if (data.recordingVideoId) session.recordingVideoId = data.recordingVideoId;
+      if (data.recordingGroupId) session.recordingGroupId = data.recordingGroupId;
     }
     // Sessions written by this version carry their targets; only those can be rebuilt.
     session._needsRestore = Boolean(session.rawTargets) || Boolean(session.streamKey);
@@ -339,6 +340,7 @@ export class SessionStore {
       targets: session.rawTargets ?? [],
       broadcastId: session.broadcastId ?? null,
       recordingVideoId: session.recordingVideoId ?? null,
+      recordingGroupId: session.recordingGroupId ?? null,
     }));
   }
 

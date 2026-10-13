@@ -2,6 +2,7 @@ import { randomBytes, createHmac } from 'node:crypto';
 import express from 'express';
 import { EventBus } from 'lcyt/event-bus';
 import { DskBus } from './dsk-bus.js';
+import { createHandoffService } from './handoff/service.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
@@ -866,7 +867,10 @@ apiRouter.get('/contact', (req, res) => {
   res.status(200).json({ name, email, ...(phone ? { phone } : {}), ...(website ? { website } : {}) });
 });
 
+const handoffService = createHandoffService({ db, recordingsStore: mediaStores.recordingsStore, resolveStorage, jwtSecret, settings });
+
 apiRouter.use(createSessionRouters(db, store, jwtSecret, auth, {
+  onRecordingFinalized: handoffService.onRecordingFinalized,
   relayManager,
   dskCaptionProcessor: _dskCaptionProcessor,
   soundCaptionProcessor: _soundCaptionProcessor,
@@ -904,6 +908,7 @@ apiRouter.use(createContentRouters(
     mediaStores,
     settings,
     platforms: platformDeps,
+    handoffService,
   },
   scopedAuth
 ));

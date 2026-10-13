@@ -1124,6 +1124,36 @@ model videos {
   @@index([api_key], map: "idx_videos_api_key")
 }
 
+/// One row per recorded feed (clean, program, dsk) of a broadcast; the video row holds the files.
+/// group_id ties the feeds of one broadcast together. meta_json: parts, offsets, key parameters.
+model video_feeds {
+  video_id   String @id
+  api_key    String
+  group_id   String
+  role       String
+  meta_json  String?
+  created_at String @default(dbgenerated("datetime('now')"))
+
+  @@index([group_id], map: "idx_video_feeds_group")
+  @@index([api_key], map: "idx_video_feeds_api_key")
+}
+
+/// A broadcast made available to Saarnavideo: manifest, delivery state (id = feed group id).
+model handoffs {
+  id            String  @id
+  api_key       String
+  broadcast_id  String?
+  status        String  @default("pending")
+  manifest_json String?
+  error         String?
+  sent_at       String?
+  created_at    String  @default(dbgenerated("datetime('now')"))
+  updated_at    String  @default(dbgenerated("datetime('now')"))
+
+  @@index([api_key], map: "idx_handoffs_api_key")
+  @@index([broadcast_id], map: "idx_handoffs_broadcast_id")
+}
+
 model viewer_anon_daily_stats {
   date  String @id
   views Int    @default(0)

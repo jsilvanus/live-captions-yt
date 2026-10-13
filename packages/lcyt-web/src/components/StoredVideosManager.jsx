@@ -163,6 +163,34 @@ export function StoredVideosManager() {
 
   useEffect(() => { load(); }, [load]);
 
+  const [handoffMessage, setHandoffMessage] = useState(null);
+
+  // Build the handoff of a recorded broadcast and tell Saarnavideo to import it.
+  async function handleSend(video) {
+    if (!token || !backendUrl || !video.groupId) return;
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+    setHandoffMessage({ id: video.id, text: 'Preparing…' });
+    try {
+      let res = await fetch(`${backendUrl}/handoff`, { method: 'POST', headers, body: JSON.stringify({ groupId: video.groupId }) });
+      let data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not prepare the handoff');
+      for (let i = 0; i < 120; i += 1) {
+        await new Promise((r) => setTimeout(r, 2000));
+        res = await fetch(`${backendUrl}/handoff/${video.groupId}`, { headers });
+        data = await res.json();
+        if (data.handoff?.status === 'ready' || data.handoff?.status === 'sent') break;
+        if (data.handoff?.status === 'failed') throw new Error(data.handoff.error || 'Preparing failed');
+      }
+      if (data.handoff?.status !== 'ready' && data.handoff?.status !== 'sent') throw new Error('Preparing takes longer than expected');
+      res = await fetch(`${backendUrl}/handoff/${video.groupId}/send`, { method: 'POST', headers });
+      data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not send');
+      setHandoffMessage({ id: video.id, text: 'Sent to Saarnavideo' });
+    } catch (err) {
+      setHandoffMessage({ id: video.id, text: err.message, error: true });
+    }
+  }
+
   async function handleDelete(id, title) {
     if (!token || !backendUrl || !confirm(`Delete "${title}"?`)) return;
     try {
@@ -202,7 +230,7 @@ export function StoredVideosManager() {
       <div>
         <h2 style={{ margin: '0 0 12px 0', fontSize: 16, fontWeight: 600 }}>Recorded Broadcasts</h2>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {['all', 'recording', 'completed', 'failed'].map(status => (
+          {['all', 'recording', 'processing', 'completed', 'failed'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -266,6 +294,11 @@ export function StoredVideosManager() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
                   <h3 style={{ margin: '0 0 4px 0', fontSize: 14, fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {video.title || `Video ${video.id.slice(0, 6)}`}
+                    {video.feedRole && video.feedRole !== 'clean' && (
+                      <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 400, color: '#666' }}>
+                        {video.feedRole === 'dsk' ? 'graphics' : video.feedRole}
+                      </span>
+                    )}
                   </h3>
                   <div style={{ marginLeft: 8 }}>
                     {statusBadge(video.status)}
@@ -278,7 +311,10 @@ export function StoredVideosManager() {
                   {video.startedAt && <div>▶ {formatDate(video.startedAt)}</div>}
                 </div>
 
-                <div style={{ display: 'flex', gap: 6 }}>
+                {handoffMessage?.id === video.id && (
+                  <div style={{ fontSize: 12, marginBottom: 6, color: handoffMessage.error ? '#c33' : '#666' }}>{handoffMessage.text}</div>
+                )}
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                   <button
                     className="btn btn--sm"
                     onClick={() => setPlayingVideo(video)}
@@ -286,6 +322,11 @@ export function StoredVideosManager() {
                   >
                     Play
                   </button>
+                  {video.status === 'completed' && video.feedRole === 'clean' && video.groupId && (
+                    <button className="btn btn--sm" onClick={() => handleSend(video)} style={{ flex: 1 }}>
+                      Send to Saarnavideo
+                    </button>
+                  )}
                   <button
                     className="btn btn--danger btn--sm"
                     onClick={() => handleDelete(video.id, video.title || 'Video')}

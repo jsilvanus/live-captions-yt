@@ -30,6 +30,7 @@ import { createDskTemplatesRouter } from './routes/dsk-templates.js';
 import { createDskViewportsRouter } from './routes/dsk-viewports.js';
 import { createImagesRouter } from './routes/images.js';
 import { createDskRtmpRouter } from './routes/dsk-rtmp.js';
+export { getCompositeChromaKey } from './db/viewports.js';
 export { deleteAllImages, listImages, getImageByKey, updateImageSettings, deleteImage, safeApiKey } from './db/images.js';
 
 /**

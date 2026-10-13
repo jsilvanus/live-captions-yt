@@ -59,6 +59,7 @@ import { NginxManager } from './nginx-manager.js';
 import { withOwnership, RELAY_OWNERSHIP, CROP_OWNERSHIP, STT_OWNERSHIP } from './ownership.js';
 import { MediaMtxClient } from './mediamtx-client.js';
 export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
+export { programPathName, dskPathName } from './rtmp-manager.js';
 export { withOwnership, readThrough, ownedElsewhere, RELAY_OWNERSHIP, CROP_OWNERSHIP, STT_OWNERSHIP } from './ownership.js';
 export { NginxManager } from './nginx-manager.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
