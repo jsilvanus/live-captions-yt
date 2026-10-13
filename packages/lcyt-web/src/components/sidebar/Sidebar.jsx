@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useLocation, Link } from 'wouter';
 import { useSessionContext } from '../../contexts/SessionContext';
 import { useUserAuth } from '../../hooks/useUserAuth';
+import { isLocalModeFeatures, isHiddenInLocalMode } from '../../lib/localMode.js';
 import { StatusPopover } from './StatusPopover.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM, ProjectIcon } from './navConfig.jsx';
@@ -274,10 +275,13 @@ export function Sidebar({ onNavigate }) {
   const isUserAdmin = !!user?.isAdmin;
 
   // Filter nav items/groups based on backend features and admin status
+  const localInstall = isLocalModeFeatures(features);
+
   const visibleItems = useMemo(() => {
     if (!features) return NAV_ITEMS;
-    return NAV_ITEMS.filter(item => !item.feature || features.includes(item.feature));
-  }, [features]);
+    return NAV_ITEMS.filter(item => (!item.feature || features.includes(item.feature))
+      && !(localInstall && isHiddenInLocalMode(item.path)));
+  }, [features, localInstall]);
 
   const visibleGroups = useMemo(() => {
     if (!features) return NAV_GROUPS;
@@ -287,6 +291,8 @@ export function Sidebar({ onNavigate }) {
   const visibleBottom = useMemo(() => {
     if (!features && !isUserAdmin) return NAV_BOTTOM;
     return NAV_BOTTOM.filter(item => {
+      // Local install: multi-user pages stay hidden whatever the features say
+      if (localInstall && isHiddenInLocalMode(item.path)) return false;
       // Admin items: show if feature is present OR user is admin
       if (item.feature === 'admin') return (features?.includes('admin') || isUserAdmin) && (!item.hideable || showAdvanced);
       // Hideable items: show only if showAdvanced is true
@@ -294,7 +300,7 @@ export function Sidebar({ onNavigate }) {
       // Other items: show if feature is not required or is present
       return !item.feature || features?.includes(item.feature);
     });
-  }, [features, isUserAdmin, showAdvanced]);
+  }, [features, isUserAdmin, showAdvanced, localInstall]);
 
   function toggleAdvanced() {
     const next = !showAdvanced;
