@@ -720,6 +720,19 @@ const { dskRouter, dskTemplatesRouter, dskViewportsRouter, imagesRouter, dskRtmp
 // that OPTIONS preflight requests are handled and CORS headers are set.
 app.use(createCorsMiddleware(store));
 
+// Local install mode middleware: for credential-less requests, inject the local
+// admin's token. Must run before any auth-gated routers (e.g. /icons) so they can
+// verify a token on all requests. Does not require parsed JSON body.
+if (localMode) {
+  const localIdentity = await ensureLocalIdentity(db);
+  const localAuth = createLocalModeMiddleware(db, jwtSecret, localIdentity);
+  app.use(localAuth);
+  // Lets the web UI pick up the local identity as if it had logged in.
+  app.post('/auth/local', (req, res) => {
+    res.json({ token: localAuth.token, userId: localIdentity.userId, email: localIdentity.email, name: 'Local user', isAdmin: true, projectId: localIdentity.projectId });
+  });
+}
+
 // Mount /icons BEFORE the global JSON body parser so uploads can use the
 // router-local 400kb parser without hitting the global 64kb limit first.
 // Setup-tier writes (plan_project_roles.md) — GET stays open to any project
@@ -737,16 +750,6 @@ app.use('/icons', createIconRouter(
 // JSON body parser — 64KB limit prevents abuse
 // NOTE: /icons must be mounted before this to use its own 400kb parser for uploads.
 app.use(express.json({ limit: '64kb' }));
-
-if (localMode) {
-  const localIdentity = await ensureLocalIdentity(db);
-  const localAuth = createLocalModeMiddleware(db, jwtSecret, localIdentity);
-  app.use(localAuth);
-  // Lets the web UI pick up the local identity as if it had logged in.
-  app.post('/auth/local', (req, res) => {
-    res.json({ token: localAuth.token, userId: localIdentity.userId, email: localIdentity.email, name: 'Local user', isAdmin: true, projectId: localIdentity.projectId });
-  });
-}
 
 app.use(createWriteAuditMiddleware(db));
 
