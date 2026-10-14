@@ -841,7 +841,7 @@ app.get('/health', (req, res) => {
     features,
     ...(rtmpActive ? {
       rtmpIngest: {
-        host: settings.get('media.rtmp_host'),
+        host: localMode ? 'localhost' : settings.get('media.rtmp_host'),
         app:  settings.get('media.rtmp_app'),
       },
     } : {}),
