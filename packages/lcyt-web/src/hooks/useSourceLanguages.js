@@ -20,7 +20,7 @@ export function useSourceLanguages() {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
-  }, [session]);
+  }, [session?.backendUrl, session?.getSessionToken]);
 
   const load = useCallback(async () => {
     if (!session?.connected) {
@@ -43,7 +43,7 @@ export function useSourceLanguages() {
     } finally {
       setLoading(false);
     }
-  }, [session?.connected, authedFetch]);
+  }, [session?.connected, session?.backendUrl, session?.getSessionToken]);
 
   useEffect(() => {
     load();
