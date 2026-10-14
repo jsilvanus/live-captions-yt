@@ -28,6 +28,7 @@ services:
       - "127.0.0.1:3000:3000"
       - "127.0.0.1:3001:3001"
     environment:
+      LCYT_INSTALL_MODE: ${LCYT_INSTALL_MODE:-local}
       RTMP_RELAY_ACTIVE: ${RTMP_RELAY_ACTIVE:-0}
       JWT_SECRET: ${JWT_SECRET}
       DB_PATH: /data/lcyt.sqlite
