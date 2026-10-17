@@ -25,7 +25,7 @@ export function useVariables({ backendUrl, connected, getToken }) {
     if (!token) return;
 
     let cancelled = false;
-    fetch(`${backendUrl}/variables`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${backendUrl}/api/v1/variables`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => { if (!cancelled && data) setVariables(data.variables || {}); })
       .catch(() => {});
@@ -67,7 +67,7 @@ export function useVariables({ backendUrl, connected, getToken }) {
     const token = getToken?.();
     if (!token || !backendUrl) return null;
     try {
-      const res = await fetch(`${backendUrl}/variables/refresh`, {
+      const res = await fetch(`${backendUrl}/api/v1/variables/refresh`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ connectorSlug, requestSlug, waitMs }),
@@ -89,7 +89,7 @@ export function useVariables({ backendUrl, connected, getToken }) {
     const token = getToken?.();
     if (!token || !backendUrl || !name) return null;
     try {
-      const res = await fetch(`${backendUrl}/variables/${encodeURIComponent(name)}`, {
+      const res = await fetch(`${backendUrl}/api/v1/variables/${encodeURIComponent(name)}`, {
         method: 'PUT',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: value == null ? '' : String(value), ttl: ttl || undefined, source: 'file' }),
