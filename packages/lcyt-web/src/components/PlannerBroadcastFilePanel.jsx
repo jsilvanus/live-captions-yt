@@ -27,8 +27,8 @@ export function PlannerBroadcastFilePanel({ backendUrl, token, projectKey, serve
     setError(null);
     try {
       const [listRes, activeRes] = await Promise.all([
-        fetch(`${backendUrl}/broadcasts`, { headers }),
-        fetch(`${backendUrl}/broadcasts/active`, { headers }),
+        fetch(`${backendUrl}/api/v1/broadcasts`, { headers }),
+        fetch(`${backendUrl}/api/v1/broadcasts/active`, { headers }),
       ]);
       const listData = await listRes.json().catch(() => ({}));
       const activeData = await activeRes.json().catch(() => ({}));
@@ -41,7 +41,7 @@ export function PlannerBroadcastFilePanel({ backendUrl, token, projectKey, serve
       if (!nextActiveId) {
         setPinnedFileIds(new Set());
       } else {
-        const filesRes = await fetch(`${backendUrl}/broadcasts/${encodeURIComponent(nextActiveId)}/files`, { headers });
+        const filesRes = await fetch(`${backendUrl}/api/v1/broadcasts/${encodeURIComponent(nextActiveId)}/files`, { headers });
         const filesData = await filesRes.json().catch(() => ({}));
         if (!filesRes.ok) throw new Error(filesData.error || `HTTP ${filesRes.status}`);
         // Rows are broadcast_files join rows: `.id` is the link-row id, `.fileId`
@@ -69,7 +69,7 @@ export function PlannerBroadcastFilePanel({ backendUrl, token, projectKey, serve
     if (!activeBroadcastId) return;
     const fileId = String(file.id);
     const alreadyPinned = pinnedFileIds.has(fileId);
-    const url = `${backendUrl}/broadcasts/${encodeURIComponent(activeBroadcastId)}/files${alreadyPinned ? `/${encodeURIComponent(fileId)}` : ''}`;
+    const url = `${backendUrl}/api/v1/broadcasts/${encodeURIComponent(activeBroadcastId)}/files${alreadyPinned ? `/${encodeURIComponent(fileId)}` : ''}`;
     setBusyFileId(fileId);
     try {
       const res = await fetch(url, {
