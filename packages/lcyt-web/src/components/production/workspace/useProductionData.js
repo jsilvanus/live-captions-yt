@@ -121,7 +121,7 @@ export function useProductionData() {
   const loadBroadcast = useCallback(async () => {
     if (!backendUrl || !token) return;
     try {
-      const r = await jfetch('/broadcasts/active');
+      const r = await jfetch('/api/v1/broadcasts/active');
       if (r.ok) { const d = await r.json(); setBroadcast(d.broadcast ?? null); }
     } catch { /* ignore */ }
   }, [backendUrl, token, jfetch]);
