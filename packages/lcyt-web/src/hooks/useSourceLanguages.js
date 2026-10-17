@@ -31,7 +31,7 @@ export function useSourceLanguages() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authedFetch('/stt/source-languages');
+      const res = await authedFetch('/api/v1/stt/source-languages');
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setSourceLanguages(data.languages || []);
