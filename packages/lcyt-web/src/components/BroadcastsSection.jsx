@@ -28,8 +28,8 @@ export function BroadcastsSection({ project, backendUrl, token, onActivated }) {
     setError(null);
     try {
      const [listRes, activeRes] = await Promise.all([
-       fetch(`${backendUrl}/broadcasts`, { headers: requestHeaders }),
-       fetch(`${backendUrl}/broadcasts/active`, { headers: requestHeaders }),
+       fetch(`${backendUrl}/api/v1/broadcasts`, { headers: requestHeaders }),
+       fetch(`${backendUrl}/api/v1/broadcasts/active`, { headers: requestHeaders }),
      ]);
       const listData = await listRes.json().catch(() => ({}));
       const activeData = await activeRes.json().catch(() => ({}));
@@ -50,7 +50,7 @@ export function BroadcastsSection({ project, backendUrl, token, onActivated }) {
 
   async function toggleBroadcast(broadcast) {
     const isActive = String(activeBroadcastId) === String(broadcast.id);
-    const url = isActive ? `${backendUrl}/broadcasts/active` : `${backendUrl}/broadcasts/${encodeURIComponent(broadcast.id)}/activate`;
+    const url = isActive ? `${backendUrl}/api/v1/broadcasts/active` : `${backendUrl}/api/v1/broadcasts/${encodeURIComponent(broadcast.id)}/activate`;
     setBusyId(broadcast.id);
     try {
      const res = await fetch(url, {
