@@ -41,7 +41,7 @@ export function useUserAuth() {
       return;
     }
     const base = stored.backendUrl.replace(/\/$/, '');
-    fetch(`${base}/auth/me`, {
+    fetch(`${base}/api/v1/auth/me`, {
       headers: { Authorization: `Bearer ${stored.token}` },
     })
       .then(r => r.ok ? r.json() : null)
@@ -64,7 +64,7 @@ export function useUserAuth() {
 
   const login = useCallback(async (url, email, password) => {
     const base = url.replace(/\/$/, '');
-    const res = await fetch(`${base}/auth/login`, {
+    const res = await fetch(`${base}/api/v1/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
@@ -103,7 +103,7 @@ export function useUserAuth() {
 
   const register = useCallback(async (url, email, password, name) => {
     const base = url.replace(/\/$/, '');
-    const res = await fetch(`${base}/auth/register`, {
+    const res = await fetch(`${base}/api/v1/auth/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
@@ -127,7 +127,7 @@ export function useUserAuth() {
   const requestProjectAccessToken = useCallback(async (projectId) => {
     if (!token || !backendUrl) throw new Error('Not logged in');
     const base = backendUrl.replace(/\/$/, '');
-    const res = await fetch(`${base}/auth/project-token`, {
+    const res = await fetch(`${base}/api/v1/auth/project-token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -149,7 +149,7 @@ export function useUserAuth() {
 
   const changePassword = useCallback(async (currentPassword, newPassword) => {
     if (!token || !backendUrl) throw new Error('Not logged in');
-    const res = await fetch(`${backendUrl}/auth/change-password`, {
+    const res = await fetch(`${backendUrl}/api/v1/auth/change-password`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -165,7 +165,7 @@ export function useUserAuth() {
   // Self-service display-name update (BACKEND_PROJECT.md item 1).
   const updateProfile = useCallback(async (name) => {
     if (!token || !backendUrl) throw new Error('Not logged in');
-    const res = await fetch(`${backendUrl}/auth/me`, {
+    const res = await fetch(`${backendUrl}/api/v1/auth/me`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -182,7 +182,7 @@ export function useUserAuth() {
   // Self-service GDPR data export (BACKEND_PROJECT.md item 2).
   const exportData = useCallback(async () => {
     if (!token || !backendUrl) throw new Error('Not logged in');
-    const res = await fetch(`${backendUrl}/auth/me/export`, {
+    const res = await fetch(`${backendUrl}/api/v1/auth/me/export`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     const data = await res.json();
@@ -193,7 +193,7 @@ export function useUserAuth() {
   // Self-service "remove all my data" — deletes owned projects, keeps the account (BACKEND_PROJECT.md item 3).
   const removeData = useCallback(async () => {
     if (!token || !backendUrl) throw new Error('Not logged in');
-    const res = await fetch(`${backendUrl}/auth/me/data`, {
+    const res = await fetch(`${backendUrl}/api/v1/auth/me/data`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -205,7 +205,7 @@ export function useUserAuth() {
   // Self-service full account deletion (BACKEND_PROJECT.md item 4).
   const deleteAccount = useCallback(async () => {
     if (!token || !backendUrl) throw new Error('Not logged in');
-    const res = await fetch(`${backendUrl}/auth/me`, {
+    const res = await fetch(`${backendUrl}/api/v1/auth/me`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
