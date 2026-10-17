@@ -28,17 +28,17 @@ app.get('/health', (_req, res) => {
 const DEMO_USER = { userId: 1, email: 'juha@lcyt.fi', name: 'Juha Korhonen', isAdmin: true };
 let demoUser = { ...DEMO_USER };
 
-app.post('/auth/login', (_req, res) => res.json({ token: 'dev-user-token', ...demoUser }));
-app.post('/auth/register', (_req, res) => res.json({ token: 'dev-user-token', ...demoUser }));
-app.get('/auth/me', (_req, res) => res.json(demoUser));
-app.post('/auth/change-password', (_req, res) => res.json({ ok: true }));
-app.patch('/auth/me', (req, res) => {
+app.post('/api/v1/auth/login', (_req, res) => res.json({ token: 'dev-user-token', ...demoUser }));
+app.post('/api/v1/auth/register', (_req, res) => res.json({ token: 'dev-user-token', ...demoUser }));
+app.get('/api/v1/auth/me', (_req, res) => res.json(demoUser));
+app.post('/api/v1/auth/change-password', (_req, res) => res.json({ ok: true }));
+app.patch('/api/v1/auth/me', (req, res) => {
   demoUser = { ...demoUser, name: (req.body || {}).name ?? demoUser.name };
   res.json(demoUser);
 });
-app.get('/auth/me/export', (_req, res) => res.json({ user: demoUser, projects: [], orgs: [...orgs.values()] }));
-app.delete('/auth/me/data', (_req, res) => res.json({ deletedProjectCount: 0 }));
-app.delete('/auth/me', (_req, res) => res.json({ deleted: true }));
+app.get('/api/v1/auth/me/export', (_req, res) => res.json({ user: demoUser, projects: [], orgs: [...orgs.values()] }));
+app.delete('/api/v1/auth/me/data', (_req, res) => res.json({ deletedProjectCount: 0 }));
+app.delete('/api/v1/auth/me', (_req, res) => res.json({ deleted: true }));
 
 const orgs = new Map(); // id -> { id, name, slug, role, memberCount, projectCount }
 const orgMembers = new Map(); // orgId -> [{ userId, email, name, role, joinedAt, projectCount }]
