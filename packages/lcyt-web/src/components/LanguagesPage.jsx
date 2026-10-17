@@ -77,10 +77,10 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
     setError(null);
     try {
       const [translationRes, sttRes, sourceRes, targetsRes] = await Promise.all([
-        authedFetch('/translation/config'),
-        authedFetch('/stt/config'),
-        authedFetch('/stt/source-languages'),
-        authedFetch('/targets'),
+        authedFetch('/api/v1/translation/config'),
+        authedFetch('/api/v1/stt/config'),
+        authedFetch('/api/v1/stt/source-languages'),
+        authedFetch('/api/v1/targets'),
       ]);
       const translationData = await translationRes.json();
       if (!translationRes.ok) throw new Error(translationData.error || `HTTP ${translationRes.status}`);
