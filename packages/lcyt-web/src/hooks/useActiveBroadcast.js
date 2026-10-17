@@ -29,7 +29,7 @@ export function useActiveBroadcast({ backendUrl, token, projectKey = null, enabl
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${backendUrl}/broadcasts/active`, {
+      const res = await fetch(`${backendUrl}/api/v1/broadcasts/active`, {
         headers: {
           Authorization: `Bearer ${token}`,
           ...(projectKey ? { 'X-Project-Id': projectKey } : {}),
