@@ -546,7 +546,7 @@ See root `CLAUDE.md` for the Caption Target Architecture and Plugin Architecture
 
 `LCYT_INSTALL_MODE=local` (`src/local-mode.js`, wired in `server.js`/`index.js`) drops login for a single-user install on the operator's own machine. A middleware mounted after the body parser (before the write-audit and every auth-gated router) gives each request that carries **no credentials** (no bearer/query/body/cookie token and no `X-Admin-Key`) the token of a built-in admin user (`local@lcyt.localhost`, `is_admin=1`, created on first start with a default project). That user is made owner of every active project on each such request, so setup-tier checks pass and keys created later work immediately. Supplied credentials are still verified (bad token = 401, revoked project key = 401, MCP token scopes unchanged), so existing clients and the revoked-key check behave as before.
 
-- `/health` reports `localMode: true` and a `local-mode` feature; `POST /api/v1/auth/local` (local mode only) returns the local token so the web LoginPage can skip the form (`useUserAuth().loginLocal`).
+- `/health` reports `localMode: true` and a `local-mode` feature; `POST /auth/local` (local mode only; intentionally outside the versioned API router) returns the local token so the web LoginPage can skip the form (`useUserAuth().loginLocal`).
 - Startup prints a warning. Listens on `127.0.0.1` (or `HOST`); a non-loopback `HOST` aborts startup unless `LCYT_LOCAL_ALLOW_REMOTE=1` (set it in Docker and publish the port on `127.0.0.1`). `HOST` is ignored outside local mode.
 - Env-only on purpose (not in the settings registry): auth must not be switchable from the UI/DB. Invalid values throw at startup.
 - Tests: `test/local-mode.test.js`.
