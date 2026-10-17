@@ -49,7 +49,7 @@ await page.route('**/keys', (route) => {
     }),
   });
 });
-await page.route('**/auth/me', (route) => {
+await page.route('**/api/v1/auth/me', (route) => {
   route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ userId: 'u1', email: 'demo@lcyt.fi', name: 'Demo User' }) });
 });
 await page.route('**/keys/*/members', (route) => {
