@@ -95,7 +95,7 @@ function CreateProjectForm({ onCreated, onCancel, backendUrl, token }) {
     setSaving(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,7 +170,7 @@ export function ProjectsPage() {
     setLoadingProjects(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await r.json();
