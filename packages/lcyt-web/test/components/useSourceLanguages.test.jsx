@@ -85,7 +85,7 @@ describe('useSourceLanguages hook', () => {
     });
 
     const callArgs = global.fetch.mock.calls[0];
-    expect(callArgs[0]).toBe('http://localhost:3000/stt/source-languages');
+    expect(callArgs[0]).toBe('http://localhost:3000/api/v1/stt/source-languages');
     expect(callArgs[1].headers.Authorization).toBe('Bearer test-token');
   });
 
