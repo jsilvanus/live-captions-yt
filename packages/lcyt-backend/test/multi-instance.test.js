@@ -207,7 +207,9 @@ describe('two instances on one PostgreSQL', () => {
         const n = i % 2 ? X : Y;
         return fetch(`${n.url}/captions`, { method: 'POST', headers: json(token), body: JSON.stringify({ captions: [{ text: `race ${i}` }] }) });
       }));
-      assert.ok(await until(() => sse.events.filter((e) => e.event === 'caption_result' || e.event === 'caption_error').length === total, 10000));
+      // Lease mode makes concurrent sends queue behind one lease, which a loaded CI runner can stretch past 10 s.
+      const finished = () => sse.events.filter((e) => e.event === 'caption_result' || e.event === 'caption_error').length;
+      assert.ok(await until(() => finished() === total, 30000), `only ${finished()} of ${total} sends finished`);
       const seqs = sse.events.filter((e) => e.event === 'caption_result').map((e) => e.data.sequence);
       assert.equal(seqs.length, total, 'no send failed');
       assert.equal(new Set(seqs).size, total, `all numbers distinct: ${seqs}`);
