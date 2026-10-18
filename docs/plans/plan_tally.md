@@ -21,3 +21,7 @@ A light that shows whether the stream is on (red when live; usable as an operato
 
 ## Not verified
 YouTube live endpoints, Tally-MA lamp behaviour (init packet, resend interval, interplay with its own server software) and ATEM events were written from documentation and tested against fakes only.
+
+
+## Mixer camera tally (added)
+Camera lights can follow LCYT's own software mixer (`source.type: lcyt`, stream-light #2): backend-fed from the production registry's program changes, PGM/OFF only. Setup Hub: "Camera source" → "LCYT software mixer".

@@ -762,11 +762,18 @@ export default {
         atemHost: 'ATEM address',
         atemInput: 'Input',
         atemMe: 'M/E',
+        camSource: 'Camera source',
+        mixer: 'LCYT mixer',
         lampHost: 'Lamp address (Tally-MA)',
         runner: 'Where it runs',
         bridge: 'Bridge',
         enabled: 'Enabled',
       },
+      camSource: {
+        atem: 'Switcher (ATEM, on a bridge)',
+        lcyt: 'LCYT software mixer',
+      },
+      mixerNone: 'Choose a mixer',
       mode: {
         A: 'My YouTube login (finds the broadcast itself)',
         B: 'A video id (needs an API key on the server)',

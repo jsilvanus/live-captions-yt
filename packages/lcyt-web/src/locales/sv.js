@@ -719,11 +719,18 @@ export default {
         atemHost: 'ATEM-adress',
         atemInput: 'Ingång',
         atemMe: 'M/E',
+        camSource: 'Kamerakälla',
+        mixer: 'LCYT-mixer',
         lampHost: 'Lampans adress (Tally-MA)',
         runner: 'Var den körs',
         bridge: 'Brygga',
         enabled: 'Aktiv',
       },
+      camSource: {
+        atem: 'Växel (ATEM, via en brygga)',
+        lcyt: 'LCYT:s programvarumixer',
+      },
+      mixerNone: 'Välj en mixer',
       mode: {
         A: 'Min YouTube-inloggning (hittar sändningen själv)',
         B: 'Ett video-id (kräver API-nyckel på servern)',

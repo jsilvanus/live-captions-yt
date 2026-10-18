@@ -115,7 +115,7 @@ export function createTallyBridgeRouter(db, { bridgeManager, localMode = false }
     const instance = await bridgeManager.authenticate(token);
     if (!instance) return res.status(401).json({ error: 'Invalid bridge token' });
     const rows = await listLightsForBridge(db, instance.id);
-    const lights = rows.map(rowToConfig).filter((cfg) => cfg.kind === 'camera' && resolveRunner(cfg, { localMode }).runner === 'bridge');
+    const lights = rows.map(rowToConfig).filter((cfg) => cfg.kind === 'camera' && cfg.source.type !== 'lcyt' && resolveRunner(cfg, { localMode }).runner === 'bridge');
     res.json({ lights });
   });
   return router;

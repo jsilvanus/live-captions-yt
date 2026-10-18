@@ -26,6 +26,7 @@ beforeEach(() => {
     const path = String(url).replace('http://backend.test', '');
     calls.push({ path, method: opts.method || 'GET', body: opts.body ? JSON.parse(opts.body) : undefined, auth: opts.headers?.Authorization });
     if (path === '/api/v1/tally/lights' && (opts.method || 'GET') === 'GET') return { ok: true, status: 200, json: async () => ({ lights }) };
+    if (path === '/api/v1/production/mixers') return { ok: true, status: 200, json: async () => [{ id: 'm1', name: 'Church mixer', type: 'lcyt' }, { id: 'm2', name: 'Hardware', type: 'atem' }] };
     if (path === '/api/v1/production/bridge/instances') return { ok: true, status: 200, json: async () => [{ id: 'b1', name: 'Church bridge' }] };
     return { ok: true, status: 200, json: async () => ({ ok: true }) };
   });
@@ -88,6 +89,25 @@ describe('TallySection', () => {
       kind: 'camera', runner: 'bridge', bridgeInstanceId: 'b1',
       source: { type: 'atem', host: '192.168.1.60', input: 3, meIndex: 0 },
       output: { type: 'tally-ma', host: '192.168.1.51' },
+    });
+  });
+
+  it('creates a camera light that follows the LCYT software mixer', async () => {
+    renderSection();
+    fireEvent.click(await screen.findByRole('button', { name: 'Add' }));
+    const dialog = screen.getByRole('dialog');
+    fireEvent.change(within(dialog).getByLabelText('Name'), { target: { value: 'Cam 2' } });
+    fireEvent.change(within(dialog).getByLabelText('Kind'), { target: { value: 'camera' } });
+    fireEvent.change(within(dialog).getByLabelText('Camera source'), { target: { value: 'lcyt' } });
+    await within(dialog).findByRole('option', { name: 'Church mixer' });
+    expect(within(dialog).queryByRole('option', { name: 'Hardware' })).toBeNull();
+    fireEvent.change(within(dialog).getByLabelText('LCYT mixer'), { target: { value: 'm1' } });
+    fireEvent.change(within(dialog).getByLabelText('Input'), { target: { value: '2' } });
+    fireEvent.change(within(dialog).getByLabelText('Lamp address (Tally-MA)'), { target: { value: '192.168.1.51' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
+    expect(calls.find((c) => c.method === 'POST').body).toMatchObject({
+      kind: 'camera', source: { type: 'lcyt', mixerId: 'm1', input: 2 }, output: { type: 'tally-ma', host: '192.168.1.51' },
     });
   });
 

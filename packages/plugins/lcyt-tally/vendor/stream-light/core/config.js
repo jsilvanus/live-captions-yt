@@ -8,6 +8,7 @@
  *     output: { type: 'tally-ma', host, port? } | { type: 'webhook', url } | { type: 'console' } | { type: 'web' },
  *     source: live-signal: { type: 'youtube', mode?: 'A' | 'B', videoId?, credentialId? }
  *             camera:      { type: 'atem', host?, meIndex?, input } | { type: 'obs', sceneName }
+ *                          | { type: 'lcyt', mixerId, input }   (the host's own software mixer pushes the program input)
  *     look?:  { [STATE]: '#rrggbb' | 'blink:#rrggbb' | { rgb, blink } },
  *     ttlMs?, activeMs?, idleMs?
  *   }
@@ -17,7 +18,7 @@ import { KINDS, STATES, parseHexColor } from './states.js';
 export const OUTPUT_TYPES = Object.freeze(['tally-ma', 'webhook', 'console', 'web']);
 export const SOURCE_TYPES = Object.freeze({
   'live-signal': Object.freeze(['youtube']),
-  camera: Object.freeze(['atem', 'obs']),
+  camera: Object.freeze(['atem', 'obs', 'lcyt']),
 });
 export const RUNNERS = Object.freeze(['auto', 'backend', 'bridge']);
 export const TALLY_MA_DEFAULT_PORT = 21324;
@@ -81,6 +82,11 @@ function validateSource(kind, source, errors) {
     if (source.host) out.host = source.host;
     if (source.mixerId) out.mixerId = String(source.mixerId);
     return out;
+  }
+  if (source.type === 'lcyt') {
+    if (typeof source.mixerId !== 'string' || !source.mixerId.trim()) errors.push('source.mixerId is required');
+    if (!Number.isInteger(source.input) || source.input < 1 || source.input > 99) errors.push('source.input must be an input number 1-99');
+    return { type: 'lcyt', mixerId: String(source.mixerId ?? ''), input: source.input };
   }
   return null;
 }
