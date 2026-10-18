@@ -14,6 +14,10 @@ function listen(handler) {
 }
 const send = (res, status, body) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(body)); };
 
+// The service reads the auditor/orchestrator with a 1.5 s timeout (AUDITOR_TIMEOUT_MS). On a loaded CI runner a
+// cold local request can exceed it, the rows then silently vanish and the assertions fail. Drop the timeout signal.
+const patientFetch = (url, opts = {}) => fetch(url, { ...opts, signal: undefined });
+
 const KEY_A = 'projectaaaa1111';
 const KEY_B = 'projectbbbb2222';
 let auditor, fleet, app, base;
@@ -44,7 +48,7 @@ before(async () => {
     return send(res, 404, {});
   });
   const service = createJobsPanelService({
-    env: { FFFLEET_URL: fleet.url, FFFLEET_TOKEN: 'fleet-token' },
+    env: { FFFLEET_URL: fleet.url, FFFLEET_TOKEN: 'fleet-token' }, fetch: patientFetch,
     getAuditor: () => ({ url: auditor.url, apiKey: 'auditor-key' }),
     listRuns: () => runs,
     now: (() => { let t = 0; return () => (t += 10_000); })(), // every call is past the cache
@@ -145,7 +149,7 @@ describe('POST /jobs/:id/cancel', { timeout: 20_000 }, () => {
       { id: 'ffmpeg-n1', purpose: 'batch-test', apiKey: KEY_A, runner: 'spawn', startedAt: 4, stop: null },
     ];
     const service = createJobsPanelService({
-      env: {}, getAuditor: () => ({ url: cauditor.url }), listRuns: () => runsNow,
+      env: {}, fetch: patientFetch, getAuditor: () => ({ url: cauditor.url }), listRuns: () => runsNow,
       cancellablePurposes: new Set(['batch-test']), now: (() => { let t = 0; return () => (t += 10_000); })(),
     });
     const auth = (req, res, next) => {
