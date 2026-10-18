@@ -9,6 +9,8 @@
     ".": "./src/index.js",
     "./ffmpeg": "./src/ffmpeg/index.js",
     "./ffmpeg/*": "./src/ffmpeg/*.js",
+    "./fleet-status": "./src/fleet-status.js",
+    "./jobs-panel": "./src/jobs-panel.js",
     "./perception/*": "./src/perception/*.js"
   },
   "files": [

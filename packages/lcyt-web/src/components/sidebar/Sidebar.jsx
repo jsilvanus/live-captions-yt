@@ -3,6 +3,7 @@ import { useLocation, Link } from 'wouter';
 import { useSessionContext } from '../../contexts/SessionContext';
 import { useUserAuth } from '../../hooks/useUserAuth';
 import { StatusPopover } from './StatusPopover.jsx';
+import JobsIndicator from '../JobsIndicator.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM, ProjectIcon } from './navConfig.jsx';
 import { KEYS } from '../../lib/storageKeys.js';
@@ -194,6 +195,7 @@ export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
       <TopBarContext />
       <TopBarBadges />
       <span className="top-bar__spacer" />
+      <JobsIndicator />
       <QuickActionsPopover />
       {onOpenCommandPalette && (
         <button

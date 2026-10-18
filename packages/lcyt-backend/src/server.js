@@ -19,6 +19,8 @@ import { createIconRouter } from './routes/icons.js';
 import { createArmingRouter } from './routes/arming.js';
 import { createAdminRouter } from './routes/admin.js';
 import { createAdminMetricsRouter } from './routes/metrics.js';
+import { createJobsRouter } from './routes/jobs.js';
+import { createJobsPanelService } from 'lcyt-compute/jobs-panel';
 import { createAdminSettingsRouter } from './routes/admin-settings.js';
 import { SettingsService } from './settings/service.js';
 import { createMcpTokensRouter } from './routes/mcp-tokens.js';
@@ -941,6 +943,10 @@ apiRouter.use('/mcp', createProjectAccessMiddleware(db, jwtSecret, { requiredSco
 // Phase 2 — Hosted operator (autonomous event-fed agent). Start/stop/status +
 // confirm/reject pending actions.
 apiRouter.use('/operator', scopedAuth('operator'), createOperatorRouter(_operatorManager));
+// Jobs panel (read-only): running ffmpeg runs, the auditor live session, fleet and auditor queue strip.
+apiRouter.use('/jobs', createJobsRouter(scopedAuth('jobs'), createJobsPanelService({
+  getAuditor: () => ({ url: settings.get('stt.auditor_url') || undefined, apiKey: settings.get('stt.auditor_api_key') || undefined }),
+})));
 apiRouter.use('/ai/providers', createProjectAiProvidersRouter(db, scopedAuth('ai'), {
   bridgeManager: productionBridgeManager,
   // 'setup' tier: explicit project owner/admin, or an org owner/admin's
