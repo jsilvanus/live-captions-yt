@@ -43,6 +43,7 @@
     "lcyt-music": "*",
     "lcyt-production": "*",
     "lcyt-rtmp": "*",
+    "lcyt-tally": "*",
     "lcyt-tools": "*",
     "pg": "^8.23.1",
     "prisma": "^5.22.0",

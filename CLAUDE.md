@@ -34,7 +34,8 @@ live-captions-yt/
 │       ├── lcyt-music/         # Music detection plugin (audio classification, BPM estimation)
 │       ├── lcyt-platforms/     # Broadcast platform sync (server-side OAuth, YouTube scheduling/thumbnails/stats)
 │       ├── lcyt-production/    # Production control library (cameras, mixers, bridge)
-│       └── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
+│       ├── lcyt-rtmp/          # RTMP relay plugin (HLS, radio, preview, STT, caption injection)
+│       └── lcyt-tally/         # Tally lights (live signal / camera tally; stream-light engine)
 ├── python-packages/            # Python packages
 │   ├── lcyt/                   # Core Python library (published to PyPI as `lcyt`)
 │   ├── lcyt-backend/           # Flask backend (cPanel/Passenger compatible)
@@ -133,6 +134,7 @@ Each row's `CLAUDE.md` is only loaded when Claude reads or edits files in that d
 | API Connectors & Variables plugin | `packages/plugins/lcyt-connectors/CLAUDE.md` |
 | Broadcast platform sync plugin | `packages/plugins/lcyt-platforms/CLAUDE.md` |
 | Named Actions plugin | `packages/plugins/lcyt-actions/CLAUDE.md` |
+| Tally lights plugin | `packages/plugins/lcyt-tally/CLAUDE.md` |
 | Core library (Python) | `python-packages/lcyt/CLAUDE.md` |
 | Flask backend (Python) | `python-packages/lcyt-backend/CLAUDE.md` |
 | MCP server (Python) | `python-packages/lcyt-mcp/CLAUDE.md` |

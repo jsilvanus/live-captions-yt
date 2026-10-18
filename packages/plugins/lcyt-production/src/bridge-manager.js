@@ -249,6 +249,14 @@ export class BridgeManager {
       if (!command.host) return [];
       return [{ host: command.host, port: command.port != null ? Number(command.port) : null }];
     }
+    if (type === 'light_set') {
+      // The lamp the bridge will talk to: a tally-ma host:port, or a webhook URL.
+      const out = command.output;
+      if (!out) return [];
+      if (out.type === 'tally-ma' && out.host) return [{ host: out.host, port: out.port != null ? Number(out.port) : 21324 }];
+      if (out.type === 'webhook' && out.url) return this._resolveIpTargets('http_request', { url: out.url });
+      return [];
+    }
     if (type === 'http_request' || type === 'model_call') {
       const urls = type === 'http_request'
         ? [command.url]

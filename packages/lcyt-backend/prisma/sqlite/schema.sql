@@ -1054,6 +1054,22 @@ CREATE TABLE IF NOT EXISTS "handoffs" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "tally_lights" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "kind" TEXT NOT NULL,
+    "enabled" INTEGER NOT NULL DEFAULT 1,
+    "runner" TEXT NOT NULL DEFAULT 'auto',
+    "bridge_instance_id" TEXT,
+    "source_json" TEXT NOT NULL,
+    "output_json" TEXT NOT NULL,
+    "look_json" TEXT,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "viewer_anon_daily_stats" (
     "date" TEXT NOT NULL PRIMARY KEY,
     "views" INTEGER NOT NULL DEFAULT 0
@@ -1356,4 +1372,7 @@ CREATE INDEX IF NOT EXISTS "idx_handoffs_api_key" ON "handoffs"("api_key");
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_handoffs_broadcast_id" ON "handoffs"("broadcast_id");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_tally_lights_api_key" ON "tally_lights"("api_key");
 
