@@ -26,6 +26,7 @@ COPY packages/plugins/lcyt-connectors/package.json packages/plugins/lcyt-connect
 COPY packages/plugins/lcyt-music/package.json packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/package.json packages/plugins/lcyt-actions/
 COPY packages/plugins/lcyt-platforms/package.json packages/plugins/lcyt-platforms/
+COPY packages/plugins/lcyt-tally/package.json packages/plugins/lcyt-tally/
 
 # Install workspace dependencies (including lcyt-web for frontend build).
 RUN npm ci \
@@ -45,7 +46,8 @@ RUN npm ci \
   --workspace=packages/plugins/lcyt-connectors \
   --workspace=packages/plugins/lcyt-music \
   --workspace=packages/plugins/lcyt-platforms \
-  --workspace=packages/plugins/lcyt-actions
+  --workspace=packages/plugins/lcyt-actions \
+  --workspace=packages/plugins/lcyt-tally
 
 # Copy source
 COPY packages/lcyt/ packages/lcyt/
@@ -65,6 +67,7 @@ COPY packages/plugins/lcyt-connectors/ packages/plugins/lcyt-connectors/
 COPY packages/plugins/lcyt-music/ packages/plugins/lcyt-music/
 COPY packages/plugins/lcyt-actions/ packages/plugins/lcyt-actions/
 COPY packages/plugins/lcyt-platforms/ packages/plugins/lcyt-platforms/
+COPY packages/plugins/lcyt-tally/ packages/plugins/lcyt-tally/
 
 # Prisma clients (SQLite + PostgreSQL) for the backend; needs the schema, so after the source copy
 RUN npm run db:generate -w packages/lcyt-backend
