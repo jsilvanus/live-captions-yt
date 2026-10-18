@@ -19,6 +19,7 @@ import { StorageSection } from './StorageSection.jsx';
 import { McpAccessSection } from './McpAccessSection.jsx';
 import { ConnectorsSection } from './ConnectorsSection.jsx';
 import { AiRoleModelsSection } from './AiRoleModelsSection.jsx';
+import { TallySection } from './TallySection.jsx';
 import { useCardFavorites } from '../../lib/cardFavorites.js';
 import { useUserAuth } from '../../hooks/useUserAuth.js';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
@@ -166,6 +167,9 @@ export function SetupHubPage() {
             {isVisible('connectors') && <ConnectorsSection />}
             {isVisible('broadcast-platforms') && <PlatformsSection />}
             {isVisible('ai-roles') && <AiRoleModelsSection />}
+
+            {/* ── Live status lights ── */}
+            {isVisible('tally') && <TallySection />}
 
             {/* ── Workflows — always visible regardless of the active filter
                  pill (matches the mockup's own "Workflows (always visible)"

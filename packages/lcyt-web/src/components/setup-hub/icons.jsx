@@ -235,3 +235,14 @@ export function StarIcon({ filled = false }) {
     </svg>
   );
 }
+
+/** Tally lamp: a lit bulb with rays. */
+export function TallyIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="7" r="3.2" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6.5 11.5H9.5M7 13.5H9" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M8 1.5V2.5M2.7 3.7L3.4 4.4M13.3 3.7L12.6 4.4M1.5 7H2.5M13.5 7H14.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
