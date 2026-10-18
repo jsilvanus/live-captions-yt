@@ -9,6 +9,7 @@
  *   'atem:connected'    (host)
  *   'atem:disconnected' (host)
  *   'atem:error'        (host, err)
+ *   'atem:state'        (host, state)   on connect and on every state change (tally lights)
  */
 
 import { EventEmitter } from 'node:events';
@@ -43,6 +44,17 @@ export class AtemPool extends EventEmitter {
     }
     // changeProgramInput(input, me) — input first, me second
     await entry.atem.changeProgramInput(inputNumber, meIndex);
+  }
+
+  /** Open a connection to the host if there is none yet (tally lights read state without switching). */
+  connect(host) {
+    if (!this._pool.has(host)) this._open(host);
+  }
+
+  /** The last known ATEM state of a host, or null while it is not connected. */
+  state(host) {
+    const entry = this._pool.get(host);
+    return entry?.connected ? entry.atem.state ?? null : null;
   }
 
   /**
@@ -93,6 +105,11 @@ export class AtemPool extends EventEmitter {
       entry._reconnectDelay = RECONNECT_DELAY_INITIAL_MS;
       console.info(`[atem-pool] Connected to ${host}`);
       this.emit('atem:connected', host);
+      this.emit('atem:state', host, entry.atem.state);
+    });
+
+    entry.atem.on('stateChanged', () => {
+      if (entry.connected) this.emit('atem:state', host, entry.atem.state);
     });
 
     entry.atem.on('disconnected', () => {

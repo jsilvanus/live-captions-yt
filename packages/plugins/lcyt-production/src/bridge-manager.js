@@ -207,6 +207,18 @@ export class BridgeManager {
     this._write(conn.res, 'rules_updated', {});
   }
 
+  /**
+   * Tell a connected bridge that its tally lights changed, so it refetches
+   * GET /tally/bridge/lights. No-op if the bridge isn't connected (it fetches
+   * on connect anyway).
+   * @param {string} instanceId
+   */
+  broadcastTallyUpdated(instanceId) {
+    const conn = this._connections.get(instanceId);
+    if (!conn) return;
+    this._write(conn.res, 'tally_updated', {});
+  }
+
   // ---------------------------------------------------------------------------
   // Internal
   // ---------------------------------------------------------------------------

@@ -10,7 +10,7 @@
  * (vendor/stream-light, MIT, shared with the standalone program). The tally_lights
  * table comes from lcyt-backend's schema.
  */
-export { createTallyRouter } from './routes/tally.js';
+export { createTallyRouter, createTallyBridgeRouter } from './routes/tally.js';
 export { createTallyManager, resolveRunner } from './manager.js';
 export * from './db.js';
 export { validateConfig, clashError } from './validate.js';

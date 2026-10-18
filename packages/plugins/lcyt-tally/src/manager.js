@@ -28,7 +28,11 @@ const TEST_TTL_MS = 10_000;
 export function resolveRunner(cfg, { localMode }) {
   if (STATUS_ONLY.has(cfg.output.type)) return { runner: 'backend' };
   let runner = cfg.runner ?? 'auto';
-  if (runner === 'auto') runner = localMode ? 'backend' : (cfg.bridgeInstanceId ? 'bridge' : 'none');
+  if (runner === 'auto') {
+    // A camera light needs the switcher's state, which only a bridge reads for now, so a named bridge wins.
+    if (cfg.kind === 'camera' && cfg.bridgeInstanceId) runner = 'bridge';
+    else runner = localMode ? 'backend' : (cfg.bridgeInstanceId ? 'bridge' : 'none');
+  }
   if (runner === 'none') return { runner: 'none', reason: 'Choose a bridge: this server cannot reach a lamp itself' };
   if (runner === 'backend' && !localMode) {
     return { runner: 'none', reason: 'The server only drives lamps itself in local install mode; use a bridge' };
@@ -130,6 +134,26 @@ export function createTallyManager({
     entries.delete(id);
   }
 
+  /**
+   * A light that ran on a bridge and no longer does (deleted, disabled, another lamp or bridge)
+   * must not leave its lamp lit: tell the bridge to darken it. Bridges that gained or lost a
+   * camera light are told to look at their light list again.
+   */
+  async function handOver(old, next) {
+    if (!bridgeManager) return;
+    const was = old && old.status.runner === 'bridge' ? old.cfg : null;
+    const is = next && next.status.runner === 'bridge' ? next.cfg : null;
+    const sameLamp = was && is && was.bridgeInstanceId === is.bridgeInstanceId
+      && JSON.stringify(was.output) === JSON.stringify(is.output);
+    if (was && was.kind === 'live-signal' && !sameLamp) {
+      try {
+        await bridgeManager.sendCommand(was.bridgeInstanceId, { type: 'light_set', lightId: was.id, kind: was.kind, output: was.output, release: true });
+      } catch (err) { log(`[tally] could not release the lamp of "${was.name}": ${err.message}`); }
+    }
+    const notify = new Set([was?.bridgeInstanceId, is?.bridgeInstanceId].filter(Boolean));
+    for (const id of notify) bridgeManager.broadcastTallyUpdated?.(id);
+  }
+
   return {
     async start() {
       for (const row of await listAllLights(db)) await startEntry(row);
@@ -138,11 +162,17 @@ export function createTallyManager({
 
     /** (Re)start one light after it was created or changed. */
     async sync(apiKey, id) {
+      const old = entries.get(id);
       stopEntry(id);
       const row = await getLight(db, apiKey, id);
-      if (row) await startEntry(row);
+      const entry = row ? await startEntry(row) : null;
+      await handOver(old, entry);
     },
-    remove(id) { stopEntry(id); },
+    async remove(id) {
+      const old = entries.get(id);
+      stopEntry(id);
+      await handOver(old, null);
+    },
 
     /** Status of every light of a project. */
     status(apiKey) {

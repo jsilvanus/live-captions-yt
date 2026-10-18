@@ -19,6 +19,7 @@ import { AtemPool } from './atem-pool.js';
 import { ObsPool } from './obs-pool.js';
 import { SecurityPolicy } from './security-policy.js';
 import { LocalSecurityFloor } from './local-security-floor.js';
+import { TallyHost } from './tally-host.js';
 
 const RECONNECT_DELAY_MS = 5_000;
 const RECONNECT_DELAY_MAX_MS = 60_000;
@@ -26,7 +27,7 @@ const RECONNECT_DELAY_MAX_MS = 60_000;
 // buffering, brief disconnect). The SSE push keeps this from mattering in
 // the common case.
 const SECURITY_POLICY_REFRESH_MS = 60_000;
-const SECURED_COMMAND_TYPES = new Set(['tcp_send', 'atem_switch', 'obs_switch', 'http_request', 'model_call']);
+const SECURED_COMMAND_TYPES = new Set(['tcp_send', 'atem_switch', 'obs_switch', 'http_request', 'model_call', 'light_set']);
 
 export class Bridge extends EventEmitter {
   /**
@@ -53,12 +54,18 @@ export class Bridge extends EventEmitter {
       this._localSecurityFloor.watch((summary) => this.emit('security:floor-reloaded', summary));
     }
     this._policyFetchSeq = 0;
+    this._tallySyncSeq = 0;
+    this._tallyHost = new TallyHost({
+      atemPool: this._atemPool,
+      check: (type, cmd) => this._checkSecurity(type, cmd),
+      onError: (err) => this.emit('tally:error', err),
+    });
     this._es = null;
     this._destroyed = false;
     this._reconnectDelay = RECONNECT_DELAY_MS;
     this._reconnectTimer = null;
     this._securityPolicyTimer = setInterval(() => {
-      if (!this._destroyed) this._fetchSecurityPolicy();
+      if (!this._destroyed) { this._fetchSecurityPolicy(); this._fetchTallyLights(); }
     }, SECURITY_POLICY_REFRESH_MS);
     this._securityPolicyTimer.unref?.();
 
@@ -89,6 +96,7 @@ export class Bridge extends EventEmitter {
   start() {
     this._connect();
     this._fetchSecurityPolicy();
+    this._fetchTallyLights();
   }
 
   /** Trigger reconnect of all SSE and TCP connections. */
@@ -106,6 +114,7 @@ export class Bridge extends EventEmitter {
     if (this._es) { try { this._es.close(); } catch { /* ignore */ } }
     this._localSecurityFloor.close();
     this._tcpPool.destroy();
+    this._tallyHost.destroy().catch(() => {});
     this._atemPool.destroy();
     this._obsPool.destroy();
   }
@@ -132,6 +141,7 @@ export class Bridge extends EventEmitter {
       tcp:  this._tcpPool.status(),
       atem: this._atemPool.status(),
       obs:  this._obsPool.status(),
+      tally: this._tallyHost.status(),
     };
   }
 
@@ -175,10 +185,15 @@ export class Bridge extends EventEmitter {
       // fetch and the periodic/rules_updated ones — cheap, and covers a
       // rules_updated push that arrived while this bridge was disconnected.
       this._fetchSecurityPolicy();
+      this._fetchTallyLights();
     });
 
     es.addEventListener('rules_updated', () => {
       this._fetchSecurityPolicy();
+    });
+
+    es.addEventListener('tally_updated', () => {
+      this._fetchTallyLights();
     });
 
     es.addEventListener('command', (evt) => {
@@ -267,6 +282,15 @@ export class Bridge extends EventEmitter {
         await this._postStatus({ requestId, ok: false, error: err.message });
         this.emit('command:error', { type: 'model_call', endpoint, error: err.message });
       }
+    } else if (cmd.type === 'light_set') {
+      // A tally lamp on this LAN: the backend polls YouTube and sends every reading.
+      // Each reading carries a ttl; the lamp output shows the UNKNOWN look when none
+      // arrives in time (see tally-host.js), so a lost link never leaves a lamp "live".
+      const { requestId } = cmd;
+      const result = await this._tallyHost.lightSet(cmd);
+      await this._postStatus({ requestId, ok: result.ok, ...(result.ok ? {} : { error: result.error }) });
+      if (result.ok) this.emit('command:ok', { type: 'light_set', lightId: cmd.lightId, state: cmd.reading?.state });
+      else this.emit('command:error', { type: 'light_set', lightId: cmd.lightId, error: result.error });
     } else if (cmd.type === 'obs_switch') {
       const { requestId, host, port, password, sceneName } = cmd;
       try {
@@ -326,6 +350,13 @@ export class Bridge extends EventEmitter {
       if (!cmd.host) return [];
       return [{ host: cmd.host, port: cmd.port != null ? Number(cmd.port) : null }];
     }
+    if (type === 'light_set') {
+      const out = cmd.output;
+      if (!out) return [];
+      if (out.type === 'tally-ma' && out.host) return [{ host: out.host, port: out.port != null ? Number(out.port) : 21324 }];
+      if (out.type === 'webhook' && out.url) return this._resolveIpTargets('http_request', { url: out.url });
+      return [];
+    }
     if (type === 'http_request' || type === 'model_call') {
       const urls = type === 'http_request' ? [cmd.url] : [cmd.endpoint, cmd.sourceUrl];
       const targets = [];
@@ -364,8 +395,31 @@ export class Bridge extends EventEmitter {
       if (seq !== this._policyFetchSeq) return; // superseded by a newer fetch
       this._securityPolicy.update(body);
       this.emit('security-policy:updated');
+      // Camera lights are checked against the rules, so look again once rules are known.
+      this._fetchTallyLights();
     } catch (err) {
       this.emit('error', new Error(`Security policy fetch failed: ${err.message}`));
+    }
+  }
+
+  /**
+   * Fetch the camera tally lights this bridge runs itself
+   * (GET /api/v1/tally/bridge/lights, authenticated by bridge token) and make the
+   * TallyHost match. Live-signal lights are not in the list: the backend pushes those
+   * as `light_set`. A backend without the route (older version) is silently ignored.
+   */
+  async _fetchTallyLights() {
+    const seq = ++this._tallySyncSeq;
+    try {
+      const url = `${this._backendUrl}/api/v1/tally/bridge/lights?token=${encodeURIComponent(this._token)}`;
+      const res = await fetch(url);
+      if (res.status === 404) return;
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const body = await res.json();
+      if (seq !== this._tallySyncSeq || this._destroyed) return;
+      await this._tallyHost.syncCameraLights(body.lights);
+    } catch (err) {
+      this.emit('tally:error', new Error(`Tally lights fetch failed: ${err.message}`));
     }
   }
 

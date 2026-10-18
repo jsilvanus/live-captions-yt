@@ -124,6 +124,10 @@ function injectFakeEventSource(bridge) {
       this._fetchSecurityPolicy();
     });
 
+    fakeEs.addEventListener('tally_updated', () => {
+      this._fetchTallyLights();
+    });
+
     fakeEs.addEventListener('command', (evt) => {
       this._handleCommand(evt.data);
     });
@@ -1337,6 +1341,8 @@ describe('Bridge â€” security policy fetch wiring', () => {
 
     const fetchCalls = [];
     global.fetch = async (url) => {
+      // The tally-lights fetch (a separate request) is not what this test is about.
+      if (String(url).includes('/tally/')) return { ok: false, status: 404 };
       fetchCalls.push(url);
       return { ok: true, json: async () => ({ ipRules: [{ ruleType: 'deny', pattern: '10.0.0.1' }], commandRules: [] }) };
     };
@@ -1359,7 +1365,8 @@ describe('Bridge â€” security policy fetch wiring', () => {
     const getEs = injectFakeEventSource(bridge);
 
     let fetchCount = 0;
-    global.fetch = async () => {
+    global.fetch = async (url) => {
+      if (String(url).includes('/tally/')) return { ok: false, status: 404 };
       fetchCount += 1;
       return { ok: true, json: async () => ({ ipRules: [], commandRules: [] }) };
     };
@@ -1443,3 +1450,106 @@ describe('Bridge â€” security policy fetch wiring', () => {
   });
 });
 
+
+// ---------------------------------------------------------------------------
+// Tally lights (light_set + camera lights run by the bridge)
+// ---------------------------------------------------------------------------
+
+describe('Bridge — tally lights', () => {
+  const origFetch = global.fetch;
+  afterEach(() => { global.fetch = origFetch; });
+
+  const lightSet = (over = {}) => JSON.stringify({
+    type: 'light_set', requestId: 'req-light', lightId: 'l1', kind: 'live-signal',
+    output: { type: 'tally-ma', host: '192.168.1.50', port: 21324 },
+    reading: { v: 1, state: 'LIVE', checkedAt: Date.now(), ttlMs: 15000 },
+    looks: { LIVE: { rgb: [255, 0, 0], blink: false } },
+    ...over,
+  });
+
+  it('light_set reaches the tally host and is acknowledged', async () => {
+    const bridge = makeBridge();
+    const applied = [];
+    bridge._tallyHost.lightSet = async (cmd) => { applied.push(cmd.lightId); return { ok: true }; };
+    const statusCalls = mockFetch(bridge);
+    await bridge._handleCommand(lightSet());
+    assert.deepEqual(applied, ['l1']);
+    assert.equal(statusCalls.find(c => c.requestId === 'req-light').ok, true);
+    bridge.destroy();
+  });
+
+  it('light_set reports a tally host refusal as a failed command', async () => {
+    const bridge = makeBridge();
+    const statusCalls = mockFetch(bridge);
+    await bridge._handleCommand(lightSet({ kind: 'nope' }));
+    const call = statusCalls.find(c => c.requestId === 'req-light');
+    assert.equal(call.ok, false);
+    assert.match(call.error, /kind/);
+    bridge.destroy();
+  });
+
+  it('light_set to a denied lamp is blocked before the tally host is reached', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    bridge._securityPolicy.update({ ipRules: [{ ruleType: 'deny', pattern: '192.168.1.50' }], commandRules: [] });
+    let reached = false;
+    bridge._tallyHost.lightSet = async () => { reached = true; return { ok: true }; };
+    const statusCalls = mockFetch(bridge);
+    await bridge._handleCommand(lightSet());
+    assert.equal(reached, false);
+    assert.match(statusCalls.find(c => c.requestId === 'req-light').error, /Blocked by local bridge security policy/);
+    bridge.destroy();
+  });
+
+  it('light_set fails closed before the security policy has loaded', async () => {
+    const bridge = new Bridge({ backendUrl: 'http://backend.test', token: 'tok' });
+    const statusCalls = mockFetch(bridge);
+    await bridge._handleCommand(lightSet());
+    assert.match(statusCalls.find(c => c.requestId === 'req-light').error, /not yet loaded/);
+    bridge.destroy();
+  });
+
+  it('fetches its camera lights from the token-authenticated route and syncs them', async () => {
+    const bridge = makeBridge();
+    const urls = [];
+    global.fetch = async (url) => {
+      urls.push(String(url));
+      return { ok: true, status: 200, json: async () => ({ lights: [{ id: 'c1' }] }) };
+    };
+    let synced = null;
+    bridge._tallyHost.syncCameraLights = async (lights) => { synced = lights; };
+    await bridge._fetchTallyLights();
+    assert.equal(urls[0], 'http://backend.test/api/v1/tally/bridge/lights?token=tok');
+    assert.deepEqual(synced, [{ id: 'c1' }]);
+    bridge.destroy();
+  });
+
+  it('a backend without the route is ignored quietly; other failures are reported', async () => {
+    const bridge = makeBridge();
+    const errors = [];
+    bridge.on('tally:error', (e) => errors.push(e.message));
+    global.fetch = async () => ({ ok: false, status: 404 });
+    await bridge._fetchTallyLights();
+    assert.deepEqual(errors, []);
+    global.fetch = async () => ({ ok: false, status: 500 });
+    await bridge._fetchTallyLights();
+    assert.match(errors[0], /HTTP 500/);
+    bridge.destroy();
+  });
+
+  it('a tally_updated event refetches the camera lights', async () => {
+    const bridge = makeBridge();
+    const getEs = injectFakeEventSource(bridge);
+    let fetches = 0;
+    global.fetch = async (url) => {
+      if (String(url).includes('/tally/')) fetches += 1;
+      return { ok: true, status: 200, json: async () => ({ lights: [], ipRules: [], commandRules: [] }) };
+    };
+    bridge.start();
+    await new Promise(r => setImmediate(r));
+    const before = fetches;
+    getEs().simulateEvent('tally_updated', {});
+    await new Promise(r => setImmediate(r));
+    assert.equal(fetches, before + 1);
+    bridge.destroy();
+  });
+});

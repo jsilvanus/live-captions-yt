@@ -14,8 +14,8 @@ Live-signal lights ("is the stream on", from YouTube) and camera tally (program/
 
 ## Where a light runs (`runner`)
 - `backend`: the server sends UDP/HTTP to the lamp itself. **Only in local install mode** (`LCYT_INSTALL_MODE=local`): a hosted server is not on the lamp's LAN and must not be a way to probe other networks. Outside local mode the light is stored but not run, with a note saying why.
-- `bridge`: the backend polls YouTube and sends every reading to the bridge as a `light_set` command (the bridge enforces its IP rules and holds the deadman). Camera lights on a bridge are run by the bridge itself.
-- `auto`: backend in local mode, else the named bridge.
+- `bridge`: the backend polls YouTube and sends every reading to the bridge as a `light_set` command (the bridge enforces its IP rules and holds the deadman). Camera lights on a bridge are run by the bridge itself: it fetches them from `GET /api/v1/tally/bridge/lights?token=` (`createTallyBridgeRouter`, bridge-token auth, mounted before the project-scoped router) and is told to refetch with the SSE event `tally_updated` (`BridgeManager.broadcastTallyUpdated`). When a bridge live-signal light is deleted, disabled or moved to another lamp, the manager sends `light_set` with `release: true` so the lamp goes dark.
+- `auto`: backend in local mode, else the named bridge; a camera light with a named bridge always uses it (the backend has no switcher feed yet).
 - Outputs `console`/`web` only feed the status API and run anywhere.
 
 ## Fail-safe

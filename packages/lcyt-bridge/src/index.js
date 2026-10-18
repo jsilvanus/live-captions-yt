@@ -132,6 +132,7 @@ async function main() {
     }
   }
   bridge.on('security:floor-reloaded', (summary) => logFloorSummary(summary, { reload: true }));
+  bridge.on('tally:error', (err) => console.warn(`[lcyt-bridge] tally: ${err.message}`));
 
   // System tray (optional — gracefully skipped if unavailable)
   await createTray({

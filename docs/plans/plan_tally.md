@@ -1,6 +1,6 @@
 # Plan: Tally lights (stream-light)
 
-**Status:** L1 (backend plugin) implemented; L2 (bridge), L3 (web) follow.
+**Status:** L1 (backend plugin) and L2 (bridge) implemented; L3 (web) follows.
 
 A light that shows whether the stream is on (red when live; usable as an operator reminder or an entrance notice) and camera tally lights. Hardware: Tally-MA Wi-Fi tally lamp (ordered by Juha). The engine lives in https://github.com/jsilvanus/stream-light (MIT) and is shared by three homes: the standalone program, the LCYT backend (local install mode) and the LCYT bridge.
 
