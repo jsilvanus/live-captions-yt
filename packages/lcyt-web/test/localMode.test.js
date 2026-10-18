@@ -10,13 +10,13 @@ test('isLocalModeFeatures detects the local-mode feature', () => {
 });
 
 test('isHiddenInLocalMode hides multi-user pages', () => {
-  for (const path of ['/admin/users', '/admin', '/team', '/account', '/projects', '/projects/abc123']) {
+  for (const path of ['/admin/users', '/admin', '/team', '/account']) {
     assert.equal(isHiddenInLocalMode(path), true, path);
   }
 });
 
 test('isHiddenInLocalMode keeps local pages and does not match look-alike prefixes', () => {
-  for (const path of ['/', '/assets', '/setup', '/production', '/graphics/editor', '/projectsX', '/teams']) {
+  for (const path of ['/', '/assets', '/setup', '/production', '/graphics/editor', '/projects', '/projects/abc123', '/projectsX', '/teams']) {
     assert.equal(isHiddenInLocalMode(path), false, path);
   }
 });
