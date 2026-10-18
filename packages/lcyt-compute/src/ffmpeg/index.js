@@ -59,7 +59,7 @@ function wrapRunnerAccounting(runner, purpose, apiKey, kind) {
     const handle = await originalStart(...args);
     const startedAt = Date.now();
     _running.set(purpose, (_running.get(purpose) || 0) + 1);
-    const untrack = trackFfmpegRun({ purpose, apiKey, runner: kind });
+    const untrack = trackFfmpegRun({ purpose, apiKey, runner: kind, stop: () => runner.stop() });
     let reported = false;
     const report = () => {
       if (reported) return;

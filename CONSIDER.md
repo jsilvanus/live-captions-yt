@@ -456,3 +456,11 @@ Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpR
 - `docs/` pages (API reference) do not list `GET /jobs` yet.
 - The auditor `/status` queue depth counts the running item (one is shown as running); the real GPU slot state is not exposed by the service.
 - Never run against a real orchestrator or auditor (fakes in `test/jobs-routes.test.js`); backend tests were run without better-sqlite3 built (`npm install --ignore-scripts`), so DB-backed backend tests were not run here.
+
+---
+
+## Jobs panel cancel has nothing to cancel yet
+
+**Where:** `packages/lcyt-compute/src/jobs-panel.js` (`CANCELLABLE_PURPOSES`), `POST /jobs/:id/cancel` in `packages/lcyt-backend/src/routes/jobs.js`, cancel confirmation in `packages/lcyt-web/src/components/jobs-panel/`.
+
+The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel this job? Yes / No") is built and tested, but the allow-list is empty on purpose: every ffmpeg purpose LCYT starts (relay, crop, stt, dsk, music, pcm, perception) belongs to a live broadcast or is restarted by its manager, and the auditor live session is never cancellable. The registry cannot yet tell a finite fleet batch job from a stream job (no batch jobs are submitted through lcyt-compute). When one exists, give it a purpose, register it with a `stop`, and add the purpose to the set. Also: `mode: 'push'` is supported by the row shape but no row has it today (the auditor adapter is pull only; other STT providers send audio through the audio path and are not listed).

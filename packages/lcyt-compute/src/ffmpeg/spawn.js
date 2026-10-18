@@ -22,8 +22,8 @@ import { trackFfmpegRun } from './run-registry.js';
  */
 export function spawnFfmpeg(args, { purpose = 'unknown', apiKey = '', stdio = ['pipe', 'pipe', 'pipe'], runner, cmd = 'ffmpeg', env } = {}) {
   runner = runner || process.env.FFMPEG_RUNNER || 'spawn';
-  const untrack = trackFfmpegRun({ purpose, apiKey, runner });
   let proc;
+  const untrack = trackFfmpegRun({ purpose, apiKey, runner, stop: () => proc?.kill() });
   try {
     proc = runner !== 'fleet' ? spawn(cmd, args, env ? { stdio, env } : { stdio }) : new FleetProcess(args, { purpose, apiKey, stdio });
   } catch (err) {

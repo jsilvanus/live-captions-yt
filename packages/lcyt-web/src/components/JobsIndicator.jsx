@@ -18,7 +18,7 @@ export function makePanelT(messages) {
 /**
  * LCYT's wiring of the jobs panel (`components/jobs-panel/`, a component that is copied between apps, see its
  * README): where the jobs and the fleet strip come from (lcyt-backend `GET /jobs` and `/jobs/strip`, session token),
- * and what the types are called. No cancel button: running processes are not cancelled from here.
+ * and what the types are called. `cancelJob` posts `/jobs/:id/cancel`; the backend marks rows `cancellable` (an allow-list that is empty today), so no button shows for live/relay rows.
  */
 export default function JobsIndicator() {
   const session = useSessionContext();
@@ -35,10 +35,17 @@ export default function JobsIndicator() {
     return res.json();
   }, [backendUrl, getToken]);
 
+  const cancelJob = useCallback(async (job) => {
+    const token = getToken?.();
+    if (!backendUrl || !token) throw new Error('not connected');
+    const res = await fetch(`${backendUrl}/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  }, [backendUrl, getToken]);
+
   const loadJobs = useCallback(() => get('/jobs'), [get]);
   const loadStrip = useCallback(() => get('/jobs/strip').catch(() => null), [get]);
   const typeLabel = useCallback((type) => (TYPE_KEYS.has(type) ? t(`jobs.type.${type}`) : type), [t]);
 
   if (!session.connected) return null;
-  return <JobsPanel t={t} loadJobs={loadJobs} loadStrip={loadStrip} typeLabel={typeLabel} />;
+  return <JobsPanel t={t} loadJobs={loadJobs} loadStrip={loadStrip} typeLabel={typeLabel} cancelJob={cancelJob} />;
 }

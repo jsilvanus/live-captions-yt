@@ -35,7 +35,7 @@ describe('job panel helpers', { timeout: 10_000 }, () => {
 describe('panel translations', { timeout: 10_000 }, () => {
   const KEYS = [
     'jobs.title', 'jobs.open', 'jobs.close', 'jobs.empty', 'jobs.badge', 'jobs.cancel', 'jobs.cancelling', 'jobs.cancelFailed', 'jobs.loadFailed',
-    'jobs.cancelRequested', 'jobs.section.active', 'jobs.section.recent', 'jobs.ago.s', 'jobs.ago.m', 'jobs.ago.h', 'jobs.ago.d',
+    'jobs.cancelRequested', 'jobs.cancelConfirm', 'jobs.cancelYes', 'jobs.cancelNo', 'jobs.mode.pull', 'jobs.mode.push', 'jobs.section.active', 'jobs.section.recent', 'jobs.ago.s', 'jobs.ago.m', 'jobs.ago.h', 'jobs.ago.d',
     'jobs.type.FFMPEG', 'jobs.type.AUDITOR_LIVE',
     ...['QUEUED', 'RUNNING', 'COMPLETED', 'FAILED', 'CANCELLED'].map((s) => `jobStatus.${s}`),
     ...['offline', 'workers', 'slots', 'queue', 'draining', 'local', 'localWorkers', 'lanes', 'app', 'stt', 'sttBusy', 'live'].map((k) => `fleetStrip.${k}`),
@@ -59,5 +59,29 @@ describe('panel translations', { timeout: 10_000 }, () => {
   });
   it('falls back to the raw status for an unknown job status', () => {
     expect(t('jobStatus.WEIRD')).toBe('WEIRD');
+  });
+});
+
+import { canCancelJob, nextConfirm, modeSymbol } from '../../../src/components/jobs-panel/job-panel.js';
+describe('cancel and mode helpers', { timeout: 10_000 }, () => {
+  it('canCancelJob', () => {
+    const j = { status: 'RUNNING', cancelRequested: false };
+    expect(canCancelJob(j)).toBe(true);
+    expect(canCancelJob({ ...j, cancellable: false })).toBe(false);
+    expect(canCancelJob({ ...j, cancellable: true })).toBe(true);
+    expect(canCancelJob(j, false)).toBe(false);
+    expect(canCancelJob({ ...j, cancelRequested: true })).toBe(false);
+    expect(canCancelJob({ ...j, status: 'COMPLETED' })).toBe(false);
+  });
+  it('nextConfirm', () => {
+    expect(nextConfirm(null, 'ask', 'a')).toBe('a');
+    expect(nextConfirm('a', 'ask', 'b')).toBe('b');
+    expect(nextConfirm('a', 'no', 'a')).toBeNull();
+    expect(nextConfirm('a', 'no', 'b')).toBe('a');
+  });
+  it('modeSymbol', () => {
+    expect(modeSymbol('pull')).toEqual({ symbol: '↓', key: 'jobs.mode.pull' });
+    expect(modeSymbol('push').symbol).toBe('↑');
+    expect(modeSymbol(undefined)).toBeNull();
   });
 });

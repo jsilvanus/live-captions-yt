@@ -22,4 +22,14 @@ describe('ffmpeg run registry', { timeout: 10_000 }, () => {
     assert.ok(listRunningFfmpegRuns().some((r) => r.purpose === 'x'));
     untrack();
   });
+
+  it('keeps an optional stop function, null otherwise', () => {
+    const stop = () => {};
+    const a = trackFfmpegRun({ purpose: 'with-stop', stop });
+    const b = trackFfmpegRun({ purpose: 'without-stop' });
+    const runs = listRunningFfmpegRuns();
+    assert.equal(runs.find((r) => r.purpose === 'with-stop').stop, stop);
+    assert.equal(runs.find((r) => r.purpose === 'without-stop').stop, null);
+    a(); b();
+  });
 });

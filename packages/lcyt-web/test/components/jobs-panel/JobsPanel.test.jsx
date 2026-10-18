@@ -42,6 +42,36 @@ describe('JobsPanel', { timeout: 20_000 }, () => {
     render(<JobsPanel t={t} loadJobs={loadJobs} cancelJob={cancelJob} />);
     fireEvent.click(screen.getByRole('button', { name: 'Open the jobs panel' }));
     fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    // first click only asks
+    expect(cancelJob).not.toHaveBeenCalled();
+    expect(screen.getByText('Cancel this job?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Yes' }));
     await waitFor(() => expect(cancelJob).toHaveBeenCalledWith(expect.objectContaining({ id: 'j1' })));
+  });
+
+  it('does not cancel when the answer is No', async () => {
+    const cancelJob = vi.fn().mockResolvedValue();
+    const loadJobs = vi.fn().mockResolvedValue({ jobs: [job({ id: 'j1' })], counts: { running: 1, queued: 0 } });
+    render(<JobsPanel t={t} loadJobs={loadJobs} cancelJob={cancelJob} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open the jobs panel' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    fireEvent.click(screen.getByRole('button', { name: 'No' }));
+    expect(cancelJob).not.toHaveBeenCalled();
+    expect(screen.queryByText('Cancel this job?')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+  });
+
+  it('shows no cancel button for a row that is not cancellable, and a pull symbol on a live row', async () => {
+    const cancelJob = vi.fn().mockResolvedValue();
+    const loadJobs = vi.fn().mockResolvedValue({
+      jobs: [job({ id: 'ffmpeg-1', cancellable: false }), job({ id: 'auditor-s1', type: 'AUDITOR_LIVE', projectTitle: 'fi', cancellable: false, mode: 'pull' }), job({ id: 'x', projectTitle: 'push-row', cancellable: false, mode: 'push' })],
+      counts: { running: 3, queued: 0 },
+    });
+    render(<JobsPanel t={t} loadJobs={loadJobs} cancelJob={cancelJob} typeLabel={typeLabel} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open the jobs panel' }));
+    await screen.findByRole('region', { name: 'Jobs' });
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    expect(screen.getByRole('img', { name: 'Pull: the service pulls the stream itself' })).toHaveAttribute('title', 'Pull: the service pulls the stream itself');
+    expect(screen.getByRole('img', { name: 'Push: audio is sent to the service' })).toBeInTheDocument();
   });
 });

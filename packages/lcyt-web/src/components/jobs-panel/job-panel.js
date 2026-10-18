@@ -21,12 +21,32 @@
  * @property {string | null} error
  * @property {string | null} workerId
  * @property {boolean} cancelRequested
+ * @property {boolean} [cancellable]  false = no cancel button (live/relay rows); absent = the app did not say, button allowed
+ * @property {'pull' | 'push'} [mode]  live rows only: pull = the service pulls the stream itself, push = we send it the audio
  * @property {string} createdAt
  * @property {string | null} startedAt
  * @property {string | null} completedAt
  */
 
 export const isActiveJob = (job) => job.status === 'QUEUED' || job.status === 'RUNNING';
+
+/** Whether the cancel button is offered (needs a cancel handler, an active job and no cancel already requested). */
+export function canCancelJob(job, hasHandler = true) {
+  if (!hasHandler || !isActiveJob(job) || job.cancelRequested) return false;
+  return job.cancellable === undefined ? true : job.cancellable === true;
+}
+
+/** Two-step confirm: "ask" opens the question for a job, "no" or "yes" closes it (a new "ask" replaces another job's). */
+export function nextConfirm(current, action, jobId) {
+  return action === 'ask' ? jobId : current === jobId ? null : current;
+}
+
+/** Symbol and message key of a job's mode; null when the row has none. */
+export function modeSymbol(mode) {
+  if (mode === 'pull') return { symbol: '\u2193', key: 'jobs.mode.pull' };
+  if (mode === 'push') return { symbol: '\u2191', key: 'jobs.mode.push' };
+  return null;
+}
 
 export const POLL_ACTIVE_MS = 3000;
 export const POLL_IDLE_MS = 15000;

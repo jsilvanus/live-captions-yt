@@ -126,3 +126,75 @@ describe('jobs panel service without fleet or auditor', { timeout: 10_000 }, () 
     assert.equal((await service.jobs({ projectId: KEY_B })).jobs.length, 0);
   });
 });
+
+describe('POST /jobs/:id/cancel', { timeout: 20_000 }, () => {
+  let stops = [];
+  let cbase, cserver, cauditor;
+  const post = (path, headers = { 'x-key': KEY_A }) => fetch(cbase + path, { method: 'POST', headers, signal: AbortSignal.timeout(5000) });
+
+  before(async () => {
+    cauditor = await listen((req, res) => {
+      if (req.url === '/status') return send(res, 200, { queue: {} });
+      if (req.url === '/v1/live') return send(res, 200, { sessions: [{ id: 's1', status: 'running', client_ref: liveClientRef(KEY_A), language: 'fi', transcripts: 1, created: '2026-10-18T10:00:00.000Z' }] });
+      return send(res, 404, {});
+    });
+    const runsNow = [
+      { id: 'ffmpeg-b1', purpose: 'batch-test', apiKey: KEY_A, runner: 'fleet', startedAt: 1, stop: async () => { stops.push('b1'); } },
+      { id: 'ffmpeg-b2', purpose: 'batch-test', apiKey: KEY_B, runner: 'fleet', startedAt: 2, stop: async () => { stops.push('b2'); } },
+      { id: 'ffmpeg-r1', purpose: 'relay', apiKey: KEY_A, runner: 'spawn', startedAt: 3, stop: async () => { stops.push('r1'); } },
+      { id: 'ffmpeg-n1', purpose: 'batch-test', apiKey: KEY_A, runner: 'spawn', startedAt: 4, stop: null },
+    ];
+    const service = createJobsPanelService({
+      env: {}, getAuditor: () => ({ url: cauditor.url }), listRuns: () => runsNow,
+      cancellablePurposes: new Set(['batch-test']), now: (() => { let t = 0; return () => (t += 10_000); })(),
+    });
+    const auth = (req, res, next) => {
+      const key = req.headers['x-key'];
+      if (!key) return res.status(401).json({ error: 'no' });
+      req.session = { apiKey: key };
+      if (req.headers['x-admin']) req.user = { isAdmin: true };
+      next();
+    };
+    const a = express();
+    a.use('/jobs', createJobsRouter(auth, service));
+    const s = await listen(a);
+    cbase = `${s.url}/jobs`;
+    cserver = s.server;
+  });
+  after(() => { cserver.close(); cauditor.server.close(); });
+
+  it('flags only allow-listed runs with a stop as cancellable, and live rows never, with their mode', async () => {
+    const { jobs } = await (await fetch(`${cbase}`, { headers: { 'x-key': KEY_A } })).json();
+    const by = Object.fromEntries(jobs.map((j) => [j.id, j]));
+    assert.equal(by['ffmpeg-b1'].cancellable, true);
+    assert.equal(by['ffmpeg-r1'].cancellable, false);
+    assert.equal(by['ffmpeg-n1'].cancellable, false);
+    assert.equal(by['auditor-s1'].cancellable, false);
+    assert.equal(by['auditor-s1'].mode, 'pull');
+    assert.equal(by['ffmpeg-r1'].mode, undefined);
+  });
+
+  it('stops an allow-listed run', async () => {
+    const res = await post('/ffmpeg-b1/cancel');
+    assert.equal(res.status, 200);
+    assert.deepEqual(stops, ['b1']);
+  });
+
+  it('answers 409 for a relay run, a run without stop and a live session, and stops none', async () => {
+    stops = [];
+    for (const id of ['ffmpeg-r1', 'ffmpeg-n1', 'auditor-s1']) assert.equal((await post(`/${id}/cancel`)).status, 409, id);
+    assert.deepEqual(stops, []);
+  });
+
+  it('answers 404 for an unknown job and for another project, but an admin may cancel it', async () => {
+    assert.equal((await post('/nope/cancel')).status, 404);
+    assert.equal((await post('/ffmpeg-b2/cancel')).status, 404);
+    assert.deepEqual(stops, []);
+    assert.equal((await post('/ffmpeg-b2/cancel', { 'x-key': KEY_A, 'x-admin': '1' })).status, 200);
+    assert.deepEqual(stops, ['b2']);
+  });
+
+  it('needs the auth middleware', async () => {
+    assert.equal((await post('/ffmpeg-b1/cancel', {})).status, 401);
+  });
+});
