@@ -33,7 +33,7 @@ export function DskViewportsPage() {
   // ── API helpers ──────────────────────────────────────────────────────────
 
   const apiFetch = useCallback((path, opts = {}) =>
-    fetch(`${serverUrl}${path}`, {
+    fetch(`${serverUrl}/api/v1${path}`, {
       ...opts,
       headers: {
         'Content-Type': 'application/json',

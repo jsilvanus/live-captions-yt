@@ -43,7 +43,7 @@ export function adminFetch(backendUrl, path, opts = {}) {
     ? { Authorization: `Bearer ${userToken}` }
     : legacyKey ? { 'X-Admin-Key': legacyKey } : {};
 
-  return fetch(`${backendUrl}${path}`, {
+  return fetch(`${backendUrl}/api/v1${path}`, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',

@@ -16,7 +16,7 @@ export function useSourceLanguages() {
   const authedFetch = useCallback((path, opts = {}) => {
     const token = session?.getSessionToken?.();
     const backendUrl = session?.backendUrl || '';
-    return fetch(`${backendUrl}${path}`, {
+    return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
@@ -31,7 +31,7 @@ export function useSourceLanguages() {
     setLoading(true);
     setError(null);
     try {
-      const res = await authedFetch('/api/v1/stt/source-languages');
+      const res = await authedFetch('/stt/source-languages');
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setSourceLanguages(data.languages || []);

@@ -20,7 +20,7 @@ describe('JobsIndicator', { timeout: 20_000 }, () => {
     }));
     mount(session());
     await waitFor(() => expect(screen.getByTitle('1 running or queued')).toBeInTheDocument());
-    expect([...new Set(calls.map((c) => c[0]))].sort()).toEqual(['http://backend/jobs', 'http://backend/jobs/strip']);
+    expect([...new Set(calls.map((c) => c[0]))].sort()).toEqual(['http://backend/api/v1/jobs', 'http://backend/api/v1/jobs/strip']);
     expect(calls.every((c) => c[1] === 'Bearer sess-token')).toBe(true);
   });
 

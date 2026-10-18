@@ -18,8 +18,8 @@ export function ViewerStreamSection() {
   const [copied, setCopied] = useState(null);
   const ready = Boolean(session?.connected && backendUrl && apiKey);
   const key = apiKey ? encodeURIComponent(apiKey) : '';
-  const hlsUrl = `${backendUrl}/stream-hls/${key}/index.m3u8`;
-  const previewUrl = `${backendUrl}/preview/${key}/incoming.jpg`;
+  const hlsUrl = `${backendUrl}/api/v1/stream-hls/${key}/index.m3u8`;
+  const previewUrl = `${backendUrl}/api/v1/preview/${key}/incoming.jpg`;
 
   async function copy(id, text) {
     try {

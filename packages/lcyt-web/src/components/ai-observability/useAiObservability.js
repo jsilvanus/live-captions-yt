@@ -48,7 +48,7 @@ export function useAiObservability() {
       headers['Content-Type'] = 'application/json';
       body = JSON.stringify(body);
     }
-    return fetch(`${backendUrl}${path}`, { ...opts, headers, body });
+    return fetch(`${backendUrl}/api/v1${path}`, { ...opts, headers, body });
   }, [backendUrl, getSessionToken]);
 
   const loadStatus = useCallback(async (roleCode) => {
@@ -178,13 +178,13 @@ export function useAiObservability() {
   }, [api]);
 
   const previewUrl = backendUrl && apiKey
-    ? `${backendUrl}/preview/${encodeURIComponent(apiKey)}/incoming?t=${previewTick}`
+    ? `${backendUrl}/api/v1/preview/${encodeURIComponent(apiKey)}/incoming?t=${previewTick}`
     : null;
 
   const frameUrl = useCallback((roleCode, captureId) => {
     if (!backendUrl || !captureId) return null;
     const token = getSessionToken?.() || '';
-    return `${backendUrl}/roles/${roleCode}/captures/${encodeURIComponent(captureId)}/frame?token=${encodeURIComponent(token)}`;
+    return `${backendUrl}/api/v1/roles/${roleCode}/captures/${encodeURIComponent(captureId)}/frame?token=${encodeURIComponent(token)}`;
   }, [backendUrl, getSessionToken]);
 
   return {

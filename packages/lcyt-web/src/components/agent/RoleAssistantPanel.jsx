@@ -35,7 +35,7 @@ export function RoleAssistantPanel({ roleCode, title, subtitle, showHeader = tru
     const token = session?.getSessionToken?.();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    return fetch(`${backendUrl}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    return fetch(`${backendUrl}/api/v1${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
   }
 
   async function handleSend(text) {

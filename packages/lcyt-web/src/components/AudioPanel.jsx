@@ -218,7 +218,7 @@ export const AudioPanel = forwardRef(function AudioPanel(
     if (!backendUrl) return;
 
     const token = session.getSessionToken?.();
-    let sseUrl = `${backendUrl}/stt/events`;
+    let sseUrl = `${backendUrl}/api/v1/stt/events`;
     if (token) sseUrl += `?token=${encodeURIComponent(token)}`;
 
     const es = new EventSource(sseUrl);

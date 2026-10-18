@@ -44,7 +44,7 @@ export function CameraStreamPage() {
       return;
     }
 
-    fetch(`${backendUrl}/production/cameras/${cameraId}/whip-url`, { headers: authHeaders })
+    fetch(`${backendUrl}/api/v1/production/cameras/${cameraId}/whip-url`, { headers: authHeaders })
       .then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error ?? 'Failed to load camera info')))
       .then(info => setCameraInfo(info))
       .catch(err => setError(String(err)));
@@ -124,7 +124,7 @@ export function CameraStreamPage() {
       });
 
       const sdpOffer = pc.localDescription.sdp;
-      const whipUrl = `${backendUrl}${cameraInfo.whipUrl}`;
+      const whipUrl = `${backendUrl}/api/v1${cameraInfo.whipUrl}`;
 
       const res = await fetch(whipUrl, {
         method: 'POST',
@@ -155,7 +155,7 @@ export function CameraStreamPage() {
     }
     // Tell backend to kick the publisher
     if (cameraInfo) {
-      fetch(`${backendUrl}${cameraInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
+      fetch(`${backendUrl}/api/v1${cameraInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
     }
     setState('media_ready');
   }, [cameraInfo, backendUrl]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -167,7 +167,7 @@ export function CameraStreamPage() {
       streamRef.current = null;
     }
     if (cameraInfo) {
-      fetch(`${backendUrl}${cameraInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
+      fetch(`${backendUrl}/api/v1${cameraInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
     }
   }
 

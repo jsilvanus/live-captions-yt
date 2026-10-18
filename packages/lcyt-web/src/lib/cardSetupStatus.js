@@ -47,7 +47,7 @@ export async function loadCardStatuses({ backendUrl, token, apiKey, cardIds, fet
     const check = CARD_STATUS_CHECKS[id];
     if (!check || !backendUrl || !token) { result.set(id, { status: 'unknown', count: null }); return; }
     try {
-      const r = await fetchFn(`${backendUrl}${check.path(apiKey)}`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetchFn(`${backendUrl}/api/v1${check.path(apiKey)}`, { headers: { Authorization: `Bearer ${token}` } });
       if (!r.ok) { result.set(id, { status: 'unknown', count: null }); return; }
       const count = check.count(await r.json());
       result.set(id, { status: classifyCount(count), count });

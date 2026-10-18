@@ -305,10 +305,10 @@ export function useCropEditor() {
   const sources = useMemo(() => cameras.flatMap(cameraPresetSources), [cameras]);
 
   const previewUrl = backendUrl && apiKey
-    ? `${backendUrl}/preview/${encodeURIComponent(apiKey)}/incoming.jpg?t=${previewTick}`
+    ? `${backendUrl}/api/v1/preview/${encodeURIComponent(apiKey)}/incoming.jpg?t=${previewTick}`
     : null;
   const monitorUrl = backendUrl && apiKey
-    ? `${backendUrl}/stream-hls/${encodeURIComponent(apiKey)}-crop/index.m3u8`
+    ? `${backendUrl}/api/v1/stream-hls/${encodeURIComponent(apiKey)}-crop/index.m3u8`
     : null;
 
   return {

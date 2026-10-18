@@ -756,7 +756,7 @@ export function PlannerPage() {
       return;
     }
     try {
-      const res = await fetch(`${backendUrl}/file?type=rundown`, {
+      const res = await fetch(`${backendUrl}/api/v1/file?type=rundown`, {
         headers: { Authorization: 'Bearer ' + sessionToken },
       });
       if (!res.ok) throw new Error(await res.text());
@@ -902,7 +902,7 @@ export function PlannerPage() {
       const text = serializePlan(blocks);
       const targetName = normalizeProjectFilename(filename, 'md');
       const method = selectedServerRundownId ? 'PUT' : 'POST';
-      const url = `${backendUrl}/file${selectedServerRundownId ? `/${selectedServerRundownId}` : ''}`;
+      const url = `${backendUrl}/api/v1/file${selectedServerRundownId ? `/${selectedServerRundownId}` : ''}`;
       const res = await fetch(url, {
         method,
         headers: {
@@ -935,7 +935,7 @@ export function PlannerPage() {
     setProjectLoading(true);
     try {
       const id = Number(selectedServerRundownId);
-      const res = await fetch(`${backendUrl}/file/${id}`, {
+      const res = await fetch(`${backendUrl}/api/v1/file/${id}`, {
         headers: { Authorization: 'Bearer ' + sessionToken },
       });
       if (!res.ok) throw new Error(await res.text());
@@ -1006,7 +1006,7 @@ export function PlannerPage() {
       const body = { goal: trimmedText };
       if (!isNewPlan) body.currentPlan = serializePlan(blocks);
 
-      const res = await fetch(`${backendUrl}/roles/planner/assist`, {
+      const res = await fetch(`${backendUrl}/api/v1/roles/planner/assist`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${sessionToken}` },
         body: JSON.stringify(body),

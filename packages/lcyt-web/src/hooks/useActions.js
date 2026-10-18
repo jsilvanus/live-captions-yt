@@ -19,7 +19,7 @@ export function useActions({ backendUrl, connected, getToken }) {
   const load = useCallback(() => {
     const token = getToken?.();
     if (!connected || !backendUrl || !token) { setDefs({}); return; }
-    fetch(`${backendUrl}/actions`, { headers: { Authorization: `Bearer ${token}` } })
+    fetch(`${backendUrl}/api/v1/actions`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (!data?.actions) return;

@@ -24,7 +24,7 @@ export function useImageAssets({ backendUrl, headers, connected }) {
     if (!connected || !backendUrl) { setImages([]); return; }
     setLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/images`, { headers });
+      const res = await fetch(`${backendUrl}/api/v1/images`, { headers });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText || 'Request failed');
       const data = await res.json();
       setImages(Array.isArray(data?.images) ? data.images : []);
@@ -61,7 +61,7 @@ export function useImageAssets({ backendUrl, headers, connected }) {
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) { setEdit(e => ({ ...e, error: 'Settings must be a JSON object.' })); return; }
     setEdit(e => ({ ...e, saving: true, error: '' }));
     try {
-      const res = await fetch(`${backendUrl}/images/${edit.id}`, {
+      const res = await fetch(`${backendUrl}/api/v1/images/${edit.id}`, {
         method: 'PUT',
         headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ settingsJson: parsed }),
@@ -77,7 +77,7 @@ export function useImageAssets({ backendUrl, headers, connected }) {
   async function confirmDelete() {
     setDel(d => ({ ...d, saving: true, error: '' }));
     try {
-      const res = await fetch(`${backendUrl}/images/${del.id}`, { method: 'DELETE', headers });
+      const res = await fetch(`${backendUrl}/api/v1/images/${del.id}`, { method: 'DELETE', headers });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Delete failed');
       setImages(list => list.filter(i => i.id !== del.id));
       setDel(null);

@@ -109,7 +109,7 @@ function EncoderForm({ initial, bridges, onSave, onCancel, backendUrl, headers }
     }
     setTesting(true); setTestResult(null);
     try {
-      const r = await fetch(`${backendUrl}/production/encoders/${initial.id}/test`,
+      const r = await fetch(`${backendUrl}/api/v1/production/encoders/${initial.id}/test`,
         { method: 'POST', headers });
       setTestResult(await r.json());
     } catch (e) {
@@ -277,8 +277,8 @@ export const EncodersManager = forwardRef(function EncodersManager({ embedded = 
     setError(null);
     try {
       const [encRes, bridgeRes] = await Promise.all([
-        fetch(`${backendUrl}/production/encoders`,           { headers }),
-        fetch(`${backendUrl}/production/bridge/instances`,   { headers }),
+        fetch(`${backendUrl}/api/v1/production/encoders`,           { headers }),
+        fetch(`${backendUrl}/api/v1/production/bridge/instances`,   { headers }),
       ]);
       if (!encRes.ok)    throw new Error(`encoders: HTTP ${encRes.status}`);
       if (!bridgeRes.ok) throw new Error(`bridges: HTTP ${bridgeRes.status}`);
@@ -298,8 +298,8 @@ export const EncodersManager = forwardRef(function EncodersManager({ embedded = 
   async function handleSave(data) {
     const isNew = editing === 'new';
     const url   = isNew
-      ? `${backendUrl}/production/encoders`
-      : `${backendUrl}/production/encoders/${editing.id}`;
+      ? `${backendUrl}/api/v1/production/encoders`
+      : `${backendUrl}/api/v1/production/encoders/${editing.id}`;
     try {
       const r = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers, body: JSON.stringify(data) });
       if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || `HTTP ${r.status}`); }
@@ -312,7 +312,7 @@ export const EncodersManager = forwardRef(function EncodersManager({ embedded = 
 
   async function handleDelete(encoder) {
     try {
-      const r = await fetch(`${backendUrl}/production/encoders/${encoder.id}`, { method: 'DELETE', headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/encoders/${encoder.id}`, { method: 'DELETE', headers });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setConfirmDelete(null);
       fetchAll();

@@ -140,7 +140,7 @@ export function DskControlPage() {
   // ── API helper ──────────────────────────────────────────────────────────
 
   function apiFetch(path, opts = {}) {
-    return fetch(`${serverUrl}${path}`, {
+    return fetch(`${serverUrl}/api/v1${path}`, {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
@@ -175,7 +175,7 @@ export function DskControlPage() {
   const fetchImages = useCallback(async () => {
     if (!serverUrl || !apiKey) return;
     try {
-      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/images`);
+      const res = await fetch(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/images`);
       if (!res.ok) return;
       const data = await res.json();
       setImages(data.images || []);
@@ -185,7 +185,7 @@ export function DskControlPage() {
   const fetchPublicViewports = useCallback(async () => {
     if (!serverUrl || !apiKey) return;
     try {
-      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
+      const res = await fetch(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
       if (!res.ok) return;
       const data = await res.json();
       setViewportsList(data.viewports || []);

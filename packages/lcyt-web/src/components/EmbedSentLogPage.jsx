@@ -50,7 +50,7 @@ export function EmbedSentLogPage() {
 
   function openEventSource(backendUrl, token) {
     esRef.current?.close();
-    const es = new EventSource(`${backendUrl}/events?token=${encodeURIComponent(token)}`);
+    const es = new EventSource(`${backendUrl}/api/v1/events?token=${encodeURIComponent(token)}`);
     esRef.current = es;
 
     es.addEventListener('connected', () => setConnected(true));

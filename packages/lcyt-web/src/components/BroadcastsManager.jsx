@@ -65,7 +65,7 @@ export function BroadcastsManager() {
       params.append('includeArchived', '1');
 
       const response = await fetch(
-        `${backendUrl}/broadcasts?${params}`,
+        `${backendUrl}/api/v1/broadcasts?${params}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       const text = await response.text();
@@ -90,7 +90,7 @@ export function BroadcastsManager() {
     if (!token || !backendUrl) return;
     try {
       const response = await fetch(
-        `${backendUrl}/broadcasts`,
+        `${backendUrl}/api/v1/broadcasts`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -116,7 +116,7 @@ export function BroadcastsManager() {
     if (!token || !backendUrl) return;
     try {
       const response = await fetch(
-        `${backendUrl}/broadcasts/${id}`,
+        `${backendUrl}/api/v1/broadcasts/${id}`,
         {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -142,7 +142,7 @@ export function BroadcastsManager() {
     if (!token || !backendUrl || !confirm('Delete this broadcast?')) return;
     try {
       const response = await fetch(
-        `${backendUrl}/broadcasts/${id}`,
+        `${backendUrl}/api/v1/broadcasts/${id}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } }
       );
       const text = await response.text();

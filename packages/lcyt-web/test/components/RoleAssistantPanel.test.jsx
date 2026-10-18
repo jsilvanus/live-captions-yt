@@ -39,7 +39,7 @@ describe('RoleAssistantPanel', () => {
 
     await waitFor(() => expect(screen.getByText('Sure, here is the current setup.')).toBeInTheDocument());
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://api.test/roles/setup_assistant/message',
+      'https://api.test/api/v1/roles/setup_assistant/message',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({ Authorization: 'Bearer tok' }),

@@ -105,7 +105,7 @@ export function DskPage() {
   async function fetchImages() {
     if (!serverUrl || !apiKey) return;
     try {
-      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/images`);
+      const res = await fetch(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/images`);
       if (!res.ok) return;
       const data = await res.json();
       setImages(data.images || []);
@@ -116,7 +116,7 @@ export function DskPage() {
   async function fetchViewportDimensions() {
     if (!serverUrl || !apiKey || !viewportName) return;
     try {
-      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
+      const res = await fetch(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
       if (!res.ok) return;
       const data = await res.json();
       const vp = (data.viewports || []).find(v => v.name === viewportName);
@@ -135,7 +135,7 @@ export function DskPage() {
       return;
     }
 
-    const es = new EventSource(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/events`);
+    const es = new EventSource(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/events`);
     esRef.current = es;
 
     es.addEventListener('connected', () => {
@@ -320,7 +320,7 @@ export function DskPage() {
       {images.map(img => (
         <img
           key={`preload-${img.id}`}
-          src={`${serverUrl}/images/${img.id}`}
+          src={`${serverUrl}/api/v1/images/${img.id}`}
           alt=""
           style={{ display: 'none' }}
           crossOrigin="anonymous"
@@ -347,7 +347,7 @@ export function DskPage() {
         return (
           <img
             key={`active-${img.id}`}
-            src={`${serverUrl}/images/${img.id}`}
+            src={`${serverUrl}/api/v1/images/${img.id}`}
             alt=""
             aria-hidden="true"
             style={buildImageStyle(layerIdx, effectiveSettings, vpDimensions)}

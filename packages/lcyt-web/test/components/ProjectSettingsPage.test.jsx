@@ -163,10 +163,10 @@ describe('ProjectSettingsPage', () => {
       let current = { ...initialProject };
       global.fetch = vi.fn((url, opts) => {
         const method = opts?.method || 'GET';
-        if (url === 'https://api.test/keys' && method === 'GET') {
+        if (url === 'https://api.test/api/v1/keys' && method === 'GET') {
           return Promise.resolve({ ok: true, json: async () => ({ keys: [current] }) });
         }
-        if (url === `https://api.test/keys/${current.key}/visibility` && method === 'PATCH') {
+        if (url === `https://api.test/api/v1/keys/${current.key}/visibility` && method === 'PATCH') {
           current = { ...current, ...JSON.parse(opts.body) };
           return Promise.resolve({ ok: true, json: async () => current });
         }
@@ -250,16 +250,16 @@ describe('ProjectSettingsPage', () => {
       // fetch on mount, so an ordered mockResolvedValueOnce chain isn't safe.
       global.fetch = vi.fn((url, opts) => {
         const method = opts?.method || 'GET';
-        if (url === 'https://api.test/keys' && method === 'GET') {
+        if (url === 'https://api.test/api/v1/keys' && method === 'GET') {
           return Promise.resolve({ ok: true, json: async () => ({ keys: MOCK_PROJECTS }) });
         }
-        if (url === `https://api.test/keys/${MOCK_PROJECTS[0].key}/members` && method === 'GET') {
+        if (url === `https://api.test/api/v1/keys/${MOCK_PROJECTS[0].key}/members` && method === 'GET') {
           return Promise.resolve({
             ok: true,
             json: async () => ({ members: [{ userId: 'u2', email: 'member@example.com', accessLevel: 'editor', permissions: [] }] }),
           });
         }
-        if (url === `https://api.test/keys/${MOCK_PROJECTS[0].key}/members/u2` && method === 'PATCH') {
+        if (url === `https://api.test/api/v1/keys/${MOCK_PROJECTS[0].key}/members/u2` && method === 'PATCH') {
           return Promise.resolve({ ok: true, json: async () => ({ userId: 'u2', accessLevel: 'operator', permissions: [] }) });
         }
         return Promise.resolve({ ok: false, json: async () => ({ error: 'not found' }) });

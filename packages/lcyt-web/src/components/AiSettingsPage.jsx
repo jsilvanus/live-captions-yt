@@ -25,7 +25,7 @@ export function AiSettingsPage() {
     try {
       const token = session.getSessionToken?.();
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
-      const res = await fetch(`${session.backendUrl}/ai/config`, { headers });
+      const res = await fetch(`${session.backendUrl}/api/v1/ai/config`, { headers });
       if (res.ok) {
         const data = await res.json();
         setConfig(data.config);
@@ -36,7 +36,7 @@ export function AiSettingsPage() {
   const fetchStatus = useCallback(async () => {
     if (!session.backendUrl) return;
     try {
-      const res = await fetch(`${session.backendUrl}/ai/status`);
+      const res = await fetch(`${session.backendUrl}/api/v1/ai/status`);
       if (res.ok) {
         const data = await res.json();
         setServerStatus(data);
@@ -54,7 +54,7 @@ export function AiSettingsPage() {
     try {
       const token = session.getSessionToken?.();
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-      const res = await fetch(`${session.backendUrl}/ai/config`, {
+      const res = await fetch(`${session.backendUrl}/api/v1/ai/config`, {
         method: 'PUT',
         headers,
         body: JSON.stringify(config),

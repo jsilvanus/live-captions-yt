@@ -44,7 +44,7 @@ function ImageRow({ img, settings, isExpanded, onToggleExpand, onSave, serverUrl
     <div style={{ borderBottom: `1px solid ${dark.border}` }}>
       <div style={{ display: 'grid', gridTemplateColumns: '48px 1fr 80px 80px', gap: 8, padding: '6px 8px', alignItems: 'center' }}>
         <img
-          src={`${serverUrl}/images/${img.id}`}
+          src={`${serverUrl}/api/v1/images/${img.id}`}
           alt=""
           style={{ width: 40, height: 40, objectFit: 'contain', background: '#111', borderRadius: 4, border: `1px solid ${dark.border}` }}
           crossOrigin="anonymous"

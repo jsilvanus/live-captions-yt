@@ -54,8 +54,8 @@ export function LcytMixerPage() {
     }
 
     Promise.all([
-      fetch(`${backendUrl}/production/mixers/${mixerId}/sources`, { headers: authHeaders }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
-      fetch(`${backendUrl}/production/mixers/${mixerId}/whip-url`, { headers: authHeaders }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
+      fetch(`${backendUrl}/api/v1/production/mixers/${mixerId}/sources`, { headers: authHeaders }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
+      fetch(`${backendUrl}/api/v1/production/mixers/${mixerId}/whip-url`, { headers: authHeaders }).then(r => r.ok ? r.json() : r.json().then(j => Promise.reject(j.error))),
     ])
       .then(([srcs, whipInfo]) => {
         setSources(srcs);
@@ -75,7 +75,7 @@ export function LcytMixerPage() {
     for (const src of sources) {
       if (!src.thumbUrl) continue;
       const fetchThumb = () => {
-        fetch(`${backendUrl}${new URL(src.thumbUrl).pathname}?_t=${Date.now()}`)
+        fetch(`${backendUrl}/api/v1${new URL(src.thumbUrl).pathname}?_t=${Date.now()}`)
           .then(r => r.ok ? r.blob() : null)
           .then(blob => {
             if (!blob) return;
@@ -263,7 +263,7 @@ export function LcytMixerPage() {
         };
       });
 
-      const whipUrl = `${backendUrl}${mixerInfo.whipUrl}`;
+      const whipUrl = `${backendUrl}/api/v1${mixerInfo.whipUrl}`;
       const res = await fetch(whipUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/sdp', ...authHeaders },
@@ -291,7 +291,7 @@ export function LcytMixerPage() {
     stopDrawLoop();
     if (pcRef.current) { pcRef.current.close(); pcRef.current = null; }
     if (mixerInfo) {
-      fetch(`${backendUrl}${mixerInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
+      fetch(`${backendUrl}/api/v1${mixerInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
     }
     setOutputState('idle');
   }, [mixerInfo, backendUrl, stopDrawLoop]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -304,7 +304,7 @@ export function LcytMixerPage() {
     const src = sources[idx];
     if (!src) return;
     // Notify backend about the switch
-    fetch(`${backendUrl}/production/mixers/${mixerId}/switch/${src.mixerInput}`, { method: 'POST', headers: authHeaders })
+    fetch(`${backendUrl}/api/v1/production/mixers/${mixerId}/switch/${src.mixerInput}`, { method: 'POST', headers: authHeaders })
       .catch(() => {});
   }, [sources, backendUrl, mixerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -316,7 +316,7 @@ export function LcytMixerPage() {
       stopDrawLoop();
       if (pcRef.current) pcRef.current.close();
       if (mixerInfo) {
-        fetch(`${backendUrl}${mixerInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
+        fetch(`${backendUrl}/api/v1${mixerInfo.whipUrl}`, { method: 'DELETE', headers: authHeaders }).catch(() => {});
       }
       for (const hls of Object.values(hlsRefs.current)) hls.destroy();
       if (audioCtxRef.current) audioCtxRef.current.close();

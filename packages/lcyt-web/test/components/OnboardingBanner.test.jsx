@@ -38,7 +38,7 @@ describe('OnboardingBanner', () => {
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ targets: [] }) });
     renderWith();
     await waitFor(() => expect(screen.getByText(/isn't configured yet/)).toBeInTheDocument());
-    expect(global.fetch).toHaveBeenCalledWith('https://api.test/targets', { headers: { Authorization: 'Bearer tok' } });
+    expect(global.fetch).toHaveBeenCalledWith('https://api.test/api/v1/targets', { headers: { Authorization: 'Bearer tok' } });
   });
 
   it('stays hidden when the project already has a caption target', async () => {

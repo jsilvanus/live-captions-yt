@@ -34,7 +34,7 @@ export function AdminKeyGate({ backendUrl, userIsAdmin = false, children }) {
     setChecking(true);
     setError('');
     try {
-      const res = await fetch(`${backendUrl}/admin/users?limit=1`, {
+      const res = await fetch(`${backendUrl}/api/v1/admin/users?limit=1`, {
         headers: { 'X-Admin-Key': k },
       });
       if (res.ok) {

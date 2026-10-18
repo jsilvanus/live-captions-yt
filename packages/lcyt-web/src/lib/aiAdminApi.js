@@ -7,7 +7,7 @@ function makeAuthHeaders({ token, apiKey }) {
 
 async function requestJson(backendUrl, path, { token, apiKey, method = 'GET', body } = {}) {
   const headers = { ...(body ? { 'Content-Type': 'application/json' } : {}), ...makeAuthHeaders({ token, apiKey }) };
-  const res = await fetch(`${backendUrl}${path}`, {
+  const res = await fetch(`${backendUrl}/api/v1${path}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

@@ -458,13 +458,13 @@ function UsageTab({ orgId, backendUrl, token, canManage }) {
         const from = new Date(Date.now() - range.days * 86_400_000);
         const fromStr = range.grain === 'day' ? from.toISOString().slice(0, 10) : `${from.toISOString().slice(0, 13)}:00:00Z`;
         const params = new URLSearchParams({ grain: range.grain, from: fromStr });
-        const res = await fetch(`${backendUrl}/orgs/${orgId}/usage?${params}`, { headers: authHeaders(token) });
+        const res = await fetch(`${backendUrl}/api/v1/orgs/${orgId}/usage?${params}`, { headers: authHeaders(token) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Could not load usage');
         if (stopped) return;
         setSeries(data.series || []);
         if (canManage) {
-          const projRes = await fetch(`${backendUrl}/orgs/${orgId}/usage?${params}&groupBy=project&metrics=captions.sent`, { headers: authHeaders(token) });
+          const projRes = await fetch(`${backendUrl}/api/v1/orgs/${orgId}/usage?${params}&groupBy=project&metrics=captions.sent`, { headers: authHeaders(token) });
           const projData = await projRes.json();
           if (projRes.ok && !stopped) {
             setByProject((projData.series || []).map(s => ({
@@ -614,7 +614,7 @@ export function TeamPage() {
     if (!token || !backendUrl) return;
     setError('');
     try {
-      const res = await fetch(`${backendUrl}/orgs`, { headers: authHeaders(token) });
+      const res = await fetch(`${backendUrl}/api/v1/orgs`, { headers: authHeaders(token) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not load teams');
       const list = data.organizations || [];
@@ -637,9 +637,9 @@ export function TeamPage() {
     setError('');
     try {
       const [orgRes, membersRes, projectsRes] = await Promise.all([
-        fetch(`${backendUrl}/orgs/${activeOrgId}`, { headers: authHeaders(token) }),
-        fetch(`${backendUrl}/orgs/${activeOrgId}/members`, { headers: authHeaders(token) }),
-        fetch(`${backendUrl}/orgs/${activeOrgId}/projects`, { headers: authHeaders(token) }),
+        fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}`, { headers: authHeaders(token) }),
+        fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/members`, { headers: authHeaders(token) }),
+        fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/projects`, { headers: authHeaders(token) }),
       ]);
       const orgData = await orgRes.json();
       const membersData = await membersRes.json();
@@ -665,7 +665,7 @@ export function TeamPage() {
     setFeaturesLoading(true);
     setFeaturesError('');
     try {
-      const res = await fetch(`${backendUrl}/orgs/${activeOrgId}/features`, { headers: authHeaders(token) });
+      const res = await fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/features`, { headers: authHeaders(token) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not load team defaults');
       setFeatures(new Set(data.features || []));
@@ -700,7 +700,7 @@ export function TeamPage() {
   }
 
   async function handleCreateTeam(name) {
-    const res = await fetch(`${backendUrl}/orgs`, {
+    const res = await fetch(`${backendUrl}/api/v1/orgs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ name }),
@@ -712,7 +712,7 @@ export function TeamPage() {
   }
 
   async function handleInvite(email, role) {
-    const res = await fetch(`${backendUrl}/orgs/${activeOrgId}/members`, {
+    const res = await fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/members`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ email, role }),
@@ -723,7 +723,7 @@ export function TeamPage() {
   }
 
   async function handleChangeRole(member, role) {
-    const res = await fetch(`${backendUrl}/orgs/${activeOrgId}/members/${member.userId}`, {
+    const res = await fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/members/${member.userId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
       body: JSON.stringify({ role }),
@@ -734,7 +734,7 @@ export function TeamPage() {
   }
 
   async function handleRemoveMember(member) {
-    const res = await fetch(`${backendUrl}/orgs/${activeOrgId}/members/${member.userId}`, {
+    const res = await fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/members/${member.userId}`, {
       method: 'DELETE',
       headers: authHeaders(token),
     });
@@ -747,7 +747,7 @@ export function TeamPage() {
     setFeaturesSaving(true);
     setFeaturesError('');
     try {
-      const res = await fetch(`${backendUrl}/orgs/${activeOrgId}/features`, {
+      const res = await fetch(`${backendUrl}/api/v1/orgs/${activeOrgId}/features`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...authHeaders(token) },
         body: JSON.stringify({ features: [...features] }),

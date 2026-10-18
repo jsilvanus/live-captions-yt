@@ -17,7 +17,7 @@ export function CreateDeviceRoleForm({ backendUrl, token, apiKey, onCreated }) {
     setSaving(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(apiKey)}/device-roles`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(apiKey)}/device-roles`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

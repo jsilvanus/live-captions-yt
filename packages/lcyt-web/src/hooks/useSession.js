@@ -498,7 +498,7 @@ export function useSession({
     const url = backendUrlRef.current;
     if (!token || !url) return;
     try {
-      await fetch(`${url}/api/mic`, {
+      await fetch(`${url}/api/v1/mic`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -557,7 +557,7 @@ export function useSession({
     const form = new FormData();
     form.append('file', file);
     form.append('shorthand', shorthand);
-    const res = await fetch(`${url}/api/images`, {
+    const res = await fetch(`${url}/api/v1/images`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },
       body: form,
@@ -573,7 +573,7 @@ export function useSession({
     const token = senderRef.current?._token;
     if (!token) throw new Error('Not connected');
     const url = backendUrlRef.current;
-    const res = await fetch(`${url}/api/images`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${url}/api/v1/images`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`Failed to list images (${res.status})`);
     return res.json();
   }, []);
@@ -582,7 +582,7 @@ export function useSession({
     const token = senderRef.current?._token;
     if (!token) throw new Error('Not connected');
     const url = backendUrlRef.current;
-    const res = await fetch(`${url}/api/images/${id}`, {
+    const res = await fetch(`${url}/api/v1/images/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -592,13 +592,13 @@ export function useSession({
 
   const updateImageSettings = useCallback(async function updateImageSettings(id, settings) {
     // settings: object that will be stored as settingsJson on the image row
-    return api.put(`/api/images/${id}`, { settingsJson: settings });
+    return api.put(`/api/v1/images/${id}`, { settingsJson: settings });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getImageViewUrl = useCallback(function getImageViewUrl(id) {
     const url = backendUrlRef.current;
     if (!url) return null;
-    return `${url}/api/images/${id}`;
+    return `${url}/api/v1/images/${id}`;
   }, []);
 
   const getDskUrl = useCallback(function getDskUrl(opts = {}) {
@@ -632,18 +632,18 @@ export function useSession({
     const params = new URLSearchParams();
     if (Number.isFinite(limit) && limit > 0) params.set('limit', String(Math.trunc(limit)));
     const qs = params.toString();
-    return api.get(`/api/file/library${qs ? `?${qs}` : ''}`);
+    return api.get(`/api/v1/file/library${qs ? `?${qs}` : ''}`);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getFileDownloadUrl = useCallback(function getFileDownloadUrl(fileId) {
     const token = senderRef.current?._token;
     const url = backendUrlRef.current;
     if (!token || !url) return null;
-    return `${url}/api/file/${fileId}?token=${encodeURIComponent(token)}`;
+    return `${url}/api/v1/file/${fileId}?token=${encodeURIComponent(token)}`;
   }, []);
 
   const deleteFile = useCallback(async function deleteFile(fileId) {
-    return api.del(`/api/file/${fileId}`);
+    return api.del(`/api/v1/file/${fileId}`);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const getSessionFeatures = useCallback(async function getSessionFeatures() {
@@ -665,15 +665,15 @@ export function useSession({
   // â”€â”€â”€ Icons â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const listIcons = useCallback(async function listIcons() {
-    return api.get('/api/v1/icons');
+    return api.get('/icons');
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const uploadIcon = useCallback(async function uploadIcon({ filename, mimeType, data }) {
-    return api.post('/api/v1/icons', { filename, mimeType, data });
+    return api.post('/icons', { filename, mimeType, data });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteIcon = useCallback(async function deleteIcon(iconId) {
-    return api.del(`/api/icons/${iconId}`, { parseErrorBody: true });
+    return api.del(`/icons/${iconId}`, { parseErrorBody: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const eraseSelfRef = useRef(eraseSelf);
@@ -703,11 +703,11 @@ export function useSession({
     if (audioBitrate) body.audioBitrate = audioBitrate;
     if (sourceCameraId) body.sourceCameraId = sourceCameraId;
     else if (sourceView) body.sourceView = sourceView;
-    return api.put(`/api/stream/${slot}`, body);
+    return api.put(`/api/v1/stream/${slot}`, body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopRelaySlot = useCallback(async function stopRelaySlot({ slot = 1 } = {}) {
-    return api.del(`/api/stream/${slot}`, { parseErrorBody: true });
+    return api.del(`/api/v1/stream/${slot}`, { parseErrorBody: true });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const stopRelay = useCallback(async function stopRelay() {
@@ -756,7 +756,7 @@ export function useSession({
     if (offset != null) params.set('offset', offset);
     if (eventType) params.set('eventType', eventType);
     const qs = params.toString();
-    return api.get(`/api/music/events/history${qs ? `?${qs}` : ''}`);
+    return api.get(`/api/v1/music/events/history${qs ? `?${qs}` : ''}`);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   return {

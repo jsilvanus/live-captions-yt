@@ -32,7 +32,7 @@ export function ViewportsSection() {
   const [editingName, setEditingName] = useState(null);
   const [editDraft, setEditDraft] = useState(null);
 
-  const apiFetch = useCallback((path, opts = {}) => fetch(`${backendUrl}${path}`, {
+  const apiFetch = useCallback((path, opts = {}) => fetch(`${backendUrl}/api/v1${path}`, {
     ...opts,
     headers: {
       'Content-Type': 'application/json',

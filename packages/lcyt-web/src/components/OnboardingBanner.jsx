@@ -30,7 +30,7 @@ export function OnboardingBanner() {
       try {
         const token = session?.getSessionToken?.();
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        const res = await fetch(`${backendUrl}/targets`, { headers });
+        const res = await fetch(`${backendUrl}/api/v1/targets`, { headers });
         if (!res.ok) return;
         const data = await res.json().catch(() => ({}));
         const hasTargets = Array.isArray(data.targets) && data.targets.length > 0;

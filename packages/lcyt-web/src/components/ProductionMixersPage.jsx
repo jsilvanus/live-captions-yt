@@ -118,7 +118,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
     if (!initial?.id) { setTestResult({ ok: false, error: 'Save the mixer first to test.' }); return; }
     setTesting(true); setTestResult(null);
     try {
-      const r = await fetch(`${backendUrl}/production/mixers/${initial.id}/test`, { method: 'POST', headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/mixers/${initial.id}/test`, { method: 'POST', headers });
       setTestResult(await r.json());
     } catch (e) {
       setTestResult({ ok: false, error: e.message });
@@ -390,8 +390,8 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
     setError(null);
     try {
       const [mixRes, bridgeRes] = await Promise.all([
-        fetch(`${backendUrl}/production/mixers`,           { headers }),
-        fetch(`${backendUrl}/production/bridge/instances`, { headers }),
+        fetch(`${backendUrl}/api/v1/production/mixers`,           { headers }),
+        fetch(`${backendUrl}/api/v1/production/bridge/instances`, { headers }),
       ]);
       if (!mixRes.ok)    throw new Error(`mixers: HTTP ${mixRes.status}`);
       if (!bridgeRes.ok) throw new Error(`bridges: HTTP ${bridgeRes.status}`);
@@ -429,8 +429,8 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
   async function handleSave(data) {
     const isNew = editing === 'new';
     const url   = isNew
-      ? `${backendUrl}/production/mixers`
-      : `${backendUrl}/production/mixers/${editing.id}`;
+      ? `${backendUrl}/api/v1/production/mixers`
+      : `${backendUrl}/api/v1/production/mixers/${editing.id}`;
     try {
       const r = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers, body: JSON.stringify(data) });
       if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.error || `HTTP ${r.status}`); }
@@ -443,7 +443,7 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
 
   async function handleDelete(mixer) {
     try {
-      const r = await fetch(`${backendUrl}/production/mixers/${mixer.id}`, { method: 'DELETE', headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/mixers/${mixer.id}`, { method: 'DELETE', headers });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setConfirmDelete(null);
       fetchAll();

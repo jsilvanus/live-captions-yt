@@ -362,8 +362,8 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
     setError(null);
     try {
       const [camRes, bridgeRes] = await Promise.all([
-        fetch(`${backendUrl}/production/cameras`, { headers }),
-        fetch(`${backendUrl}/production/bridge/instances`, { headers }),
+        fetch(`${backendUrl}/api/v1/production/cameras`, { headers }),
+        fetch(`${backendUrl}/api/v1/production/bridge/instances`, { headers }),
       ]);
       if (!camRes.ok)    throw new Error(`cameras: HTTP ${camRes.status}`);
       if (!bridgeRes.ok) throw new Error(`bridges: HTTP ${bridgeRes.status}`);
@@ -414,8 +414,8 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
   async function handleSave(data) {
     const isNew = editing === 'new';
     const url   = isNew
-      ? `${backendUrl}/production/cameras`
-      : `${backendUrl}/production/cameras/${editing.id}`;
+      ? `${backendUrl}/api/v1/production/cameras`
+      : `${backendUrl}/api/v1/production/cameras/${editing.id}`;
     try {
       const r = await fetch(url, { method: isNew ? 'POST' : 'PUT', headers, body: JSON.stringify(data) });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -428,7 +428,7 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
 
   async function handleDelete(camera) {
     try {
-      const r = await fetch(`${backendUrl}/production/cameras/${camera.id}`, { method: 'DELETE', headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/cameras/${camera.id}`, { method: 'DELETE', headers });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setConfirmDelete(null);
       fetchAll();
