@@ -1151,6 +1151,23 @@ model handoffs {
   @@index([broadcast_id], map: "idx_handoffs_broadcast_id")
 }
 
+model tally_lights {
+  id                 String  @id
+  api_key            String
+  name               String
+  kind               String
+  enabled            Int     @default(1)
+  runner             String  @default("auto")
+  bridge_instance_id String?
+  source_json        String
+  output_json        String
+  look_json          String?
+  created_at         String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  updated_at         String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+
+  @@index([api_key], map: "idx_tally_lights_api_key")
+}
+
 model viewer_anon_daily_stats {
   date  String @id
   views Int    @default(0)

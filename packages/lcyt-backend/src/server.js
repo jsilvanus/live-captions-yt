@@ -101,7 +101,8 @@ import {
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
-import { initPlatforms, createOAuthRouter as createPlatformsRouter } from 'lcyt-platforms';
+import { initPlatforms, createOAuthRouter as createPlatformsRouter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
+import { initTally, createTallyRouter } from 'lcyt-tally';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
@@ -983,6 +984,31 @@ apiRouter.use('/actions', createActionsRouter(db, scopedAuth('action'), {
   checkProjectRole: _checkProjectRole,
 }));
 apiRouter.use('/platforms', createPlatformsRouter(db, scopedAuth('platform'), platformDeps));
+// Tally lights (plan: stream-light). The server drives a lamp itself only in local
+// install mode (it is then on the lamp's LAN); otherwise it polls YouTube and hands
+// readings to a bridge (`light_set`). The YouTube login is the project's platform credential.
+const { manager: _tallyManager } = await initTally(db, {
+  localMode,
+  bridgeManager: productionBridgeManager,
+  youtubeApiKey: process.env.TALLY_YOUTUBE_API_KEY || '',
+  log: (line) => console.warn(line),
+  getAccessToken: async (apiKey, credentialId, opts) => {
+    let id = credentialId;
+    if (id) {
+      if (!(await getPlatformCredential(db, apiKey, id))) throw new Error('YouTube login not found for this project');
+    } else {
+      const found = await getDefaultPlatformCredential(db, apiKey, 'youtube');
+      if (!found.ok) throw new Error(found.reason === 'ambiguous' ? 'Several YouTube logins: choose one on the light' : 'No YouTube login connected');
+      id = found.credential.id;
+    }
+    return _platformTokenService.getAccessToken(id, opts);
+  },
+});
+// Light addresses are configuration: writes need the setup tier, like connectors.
+apiRouter.use('/tally', scopedAuth('tally'), requireProjectRole(db, 'setup'), createTallyRouter(db, scopedAuth('tally'), {
+  manager: _tallyManager,
+  bridgeBelongsToProject: async (_apiKey, instanceId) => !!(await db.prod_bridge_instances.findUnique({ where: { id: instanceId }, select: { id: true } })),
+}));
 apiRouter.use('/variables', createVariablesRouter(db, scopedAuth('variable'), _connectorsBus, _connectorsEngine, _connectorsScheduler, jwtSecret));
 apiRouter.use('/admin/connector-network-rules', createGlobalNetworkRulesRouter(db, createAdminMiddleware(db, jwtSecret)));
 apiRouter.use(createOrgNetworkRulesRouter(db, createUserAuthMiddleware(jwtSecret)));

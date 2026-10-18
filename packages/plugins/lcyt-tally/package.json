@@ -1,0 +1,24 @@
+{
+  "name": "lcyt-tally",
+  "version": "0.1.0",
+  "description": "Tally plugin for LCYT — live-signal and camera tally lights (stream-light), run by the backend in local mode or by a bridge",
+  "type": "module",
+  "main": "src/api.js",
+  "scripts": {
+    "test": "node --test --test-timeout=60000 test/*.test.js",
+    "sync:stream-light": "node scripts/sync-stream-light.mjs"
+  },
+  "dependencies": {
+    "express": "^4.21"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-tally"
+  }
+}

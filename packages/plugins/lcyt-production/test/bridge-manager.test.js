@@ -348,6 +348,27 @@ describe('BridgeManager.sendCommand — security enforcement', () => {
     await mgr.disconnect(id);
   });
 
+  it('checks the lamp of a light_set command against the IP rules', async () => {
+    const db = await makeDb();
+    const { id } = await insertInstance(db);
+    await createBridgeSecurityRule(db, { id: randomUUID(), bridgeInstanceId: id, ruleKind: 'ip', ruleType: 'deny', pattern: '192.168.1.50' });
+    const mgr = new BridgeManager(db);
+    const res = makeSseRes();
+    await mgr.connect(id, res);
+
+    const reading = { v: 1, state: 'LIVE', checkedAt: Date.now(), ttlMs: 15000 };
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'light_set', lightId: 'l1', kind: 'live-signal', output: { type: 'tally-ma', host: '192.168.1.50' }, reading }),
+      /Blocked by bridge security policy/,
+    );
+    await assert.rejects(
+      () => mgr.sendCommand(id, { type: 'light_set', lightId: 'l1', kind: 'live-signal', output: { type: 'webhook', url: 'http://192.168.1.50:8080/x' }, reading }),
+      /Blocked by bridge security policy/,
+    );
+    assert.equal(extractCommandData(res.chunks), null);
+    await mgr.disconnect(id);
+  });
+
   it('rejects an atem_switch blocked by a deny IP rule', async () => {
     const db = await makeDb();
     const { id } = await insertInstance(db);
