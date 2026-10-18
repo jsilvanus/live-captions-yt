@@ -106,13 +106,13 @@ lcyt-web uses a **two-phase login** flow that adapts to backend capabilities:
 - **Minimal** (`https://minimal.lcyt.fi`) — Python minimal backend (captions only)
 - **Custom** — user enters a self-hosted URL
 
-After selection, the frontend probes `GET /api/v1/health` to discover the backend's feature list.
+After selection, the frontend probes `GET /health` to discover the backend's feature list.
 
 **Phase 2 — Authentication:** Based on the features returned:
 - If `login` is in the features list → show email/password login form (user account mode)
 - If `login` is NOT in the features list → show API key entry only (minimal mode, no user account needed)
 
-**Feature-based UI gating:** Backend features from `GET /api/v1/health` are stored in `localStorage` (`lcyt.backend.features`) and exposed via `ConnectionContext.backendFeatures`. Sidebar navigation items have an optional `feature` property in `navConfig.jsx` that controls visibility:
+**Feature-based UI gating:** Backend features from `GET /health` are stored in `localStorage` (`lcyt.backend.features`) and exposed via `ConnectionContext.backendFeatures`. Sidebar navigation items have an optional `feature` property in `navConfig.jsx` that controls visibility:
 
 | Feature | Controls | Hidden when missing |
 |---------|----------|-------------------|
