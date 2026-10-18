@@ -56,7 +56,7 @@ export function useProductionData() {
   }), [token, apiKey]);
 
   const jfetch = useCallback(async (path, opts = {}) => {
-    const res = await fetch(`${backendUrl}${path}`, { ...opts, headers: headers(opts.headers) });
+    const res = await fetch(`${backendUrl}/api/v1${path}`, { ...opts, headers: headers(opts.headers) });
     return res;
   }, [backendUrl, headers]);
 

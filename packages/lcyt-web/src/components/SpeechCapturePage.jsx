@@ -119,7 +119,7 @@ export function SpeechCapturePage({ sessionId }) {
 
   function postChunk(text, timestamp) {
     if (!serverUrl || !text) return;
-    fetch(`${serverUrl}/stt/${sessionId}/chunk`, {
+    fetch(`${serverUrl}/api/v1/stt/${sessionId}/chunk`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, isFinal: true, timestamp }),
@@ -129,7 +129,7 @@ export function SpeechCapturePage({ sessionId }) {
 
   function postDone() {
     if (!serverUrl) return;
-    fetch(`${serverUrl}/stt/${sessionId}/done`, {
+    fetch(`${serverUrl}/api/v1/stt/${sessionId}/done`, {
       method: 'POST',
       keepalive: true,
     }).catch(() => {});

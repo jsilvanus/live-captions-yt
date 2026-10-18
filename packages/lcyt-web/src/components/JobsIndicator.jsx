@@ -30,7 +30,7 @@ export default function JobsIndicator() {
   const get = useCallback(async (path) => {
     const token = getToken?.();
     if (!backendUrl || !token) throw new Error('not connected');
-    const res = await fetch(`${backendUrl}${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${backendUrl}/api/v1${path}`, { headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json();
   }, [backendUrl, getToken]);
@@ -38,7 +38,7 @@ export default function JobsIndicator() {
   const cancelJob = useCallback(async (job) => {
     const token = getToken?.();
     if (!backendUrl || !token) throw new Error('not connected');
-    const res = await fetch(`${backendUrl}/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(`${backendUrl}/api/v1/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST', headers: { Authorization: `Bearer ${token}` } });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
   }, [backendUrl, getToken]);
 

@@ -104,7 +104,7 @@ export function PrivacyModal({ isOpen, onClose, requireAcceptance = false, onAcc
     if (_contactCache) { setContactData(_contactCache); return; }
     setContactLoading(true);
     try {
-      const res = await fetch(`${session.backendUrl}/contact`);
+      const res = await fetch(`${session.backendUrl}/api/v1/contact`);
       if (res.status === 404) { _contactCache = 'not-configured'; setContactData('not-configured'); return; }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();

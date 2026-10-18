@@ -142,7 +142,7 @@ export function StoredVideosManager() {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`${backendUrl}/videos`, {
+      const response = await fetch(`${backendUrl}/api/v1/videos`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const text = await response.text();
@@ -171,18 +171,18 @@ export function StoredVideosManager() {
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
     setHandoffMessage({ id: video.id, text: 'Preparing…' });
     try {
-      let res = await fetch(`${backendUrl}/handoff`, { method: 'POST', headers, body: JSON.stringify({ groupId: video.groupId }) });
+      let res = await fetch(`${backendUrl}/api/v1/handoff`, { method: 'POST', headers, body: JSON.stringify({ groupId: video.groupId }) });
       let data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not prepare the handoff');
       for (let i = 0; i < 120; i += 1) {
         await new Promise((r) => setTimeout(r, 2000));
-        res = await fetch(`${backendUrl}/handoff/${video.groupId}`, { headers });
+        res = await fetch(`${backendUrl}/api/v1/handoff/${video.groupId}`, { headers });
         data = await res.json();
         if (data.handoff?.status === 'ready' || data.handoff?.status === 'sent') break;
         if (data.handoff?.status === 'failed') throw new Error(data.handoff.error || 'Preparing failed');
       }
       if (data.handoff?.status !== 'ready' && data.handoff?.status !== 'sent') throw new Error('Preparing takes longer than expected');
-      res = await fetch(`${backendUrl}/handoff/${video.groupId}/send`, { method: 'POST', headers });
+      res = await fetch(`${backendUrl}/api/v1/handoff/${video.groupId}/send`, { method: 'POST', headers });
       data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not send');
       setHandoffMessage({ id: video.id, text: 'Sent to Saarnavideo' });
@@ -194,7 +194,7 @@ export function StoredVideosManager() {
   async function handleDelete(id, title) {
     if (!token || !backendUrl || !confirm(`Delete "${title}"?`)) return;
     try {
-      const response = await fetch(`${backendUrl}/videos/${id}`, {
+      const response = await fetch(`${backendUrl}/api/v1/videos/${id}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });

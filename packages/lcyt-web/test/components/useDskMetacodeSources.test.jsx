@@ -37,7 +37,7 @@ describe('useDskMetacodeSources', () => {
     expect(result.current.viewports).toEqual(['vertical-left', 'vertical-right']);
     expect(session.listImages).toHaveBeenCalledTimes(1);
     expect(global.fetch).toHaveBeenCalledWith(
-      'https://api.test/dsk/proj-1/viewports',
+      'https://api.test/api/v1/dsk/proj-1/viewports',
       { headers: { Authorization: 'Bearer sess-tok' } }
     );
   });

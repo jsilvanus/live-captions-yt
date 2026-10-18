@@ -9,7 +9,7 @@ export function ViewportsWidget({ size }) {
 
   useEffect(() => {
     if (!backendUrl || !apiKey || !connected) return;
-    fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/viewports/public`)
+    fetch(`${backendUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/viewports/public`)
       .then(r => r.ok ? r.json() : null)
       .then(data => {
         if (data?.viewports) {
@@ -22,7 +22,7 @@ export function ViewportsWidget({ size }) {
   useEffect(() => {
     if (!backendUrl || !apiKey) { esRef.current?.close(); return; }
     esRef.current?.close();
-    const es = new EventSource(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/events`);
+    const es = new EventSource(`${backendUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/events`);
     esRef.current = es;
     es.addEventListener('graphics', (e) => {
       try {

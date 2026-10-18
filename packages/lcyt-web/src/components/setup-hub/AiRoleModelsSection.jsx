@@ -16,7 +16,7 @@ function useApi({ backendUrl, getSessionToken } = {}) {
     const token = getSessionToken?.();
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
-    const res = await fetch(`${backendUrl}${path}`, {
+    const res = await fetch(`${backendUrl}/api/v1${path}`, {
       method,
       headers,
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),

@@ -33,8 +33,8 @@ export function DskBroadcastAssetPanel({ serverUrl, token, templates = [] }) {
     setActionError(null);
     try {
       const url = rowId != null
-        ? `${serverUrl}/broadcasts/${encodeURIComponent(broadcast.id)}/assets/${encodeURIComponent(rowId)}`
-        : `${serverUrl}/broadcasts/${encodeURIComponent(broadcast.id)}/assets`;
+        ? `${serverUrl}/api/v1/broadcasts/${encodeURIComponent(broadcast.id)}/assets/${encodeURIComponent(rowId)}`
+        : `${serverUrl}/api/v1/broadcasts/${encodeURIComponent(broadcast.id)}/assets`;
       const res = await fetch(url, {
         method: rowId != null ? 'DELETE' : 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },

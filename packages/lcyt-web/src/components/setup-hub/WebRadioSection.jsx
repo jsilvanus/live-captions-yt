@@ -27,7 +27,7 @@ export function WebRadioSection() {
 
   const authedFetch = useCallback((path, opts = {}) => {
     const token = getSessionToken?.();
-    return fetch(`${backendUrl}${path}`, {
+    return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });

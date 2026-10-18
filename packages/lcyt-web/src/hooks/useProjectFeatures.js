@@ -27,7 +27,7 @@ export function useProjectFeatures(backendUrl, token, apiKey) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(apiKey)}/features`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(apiKey)}/features`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await r.json();
@@ -45,7 +45,7 @@ export function useProjectFeatures(backendUrl, token, apiKey) {
   }, [load]);
 
   const updateFeature = useCallback(async (code, enabled, config = null) => {
-    const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(apiKey)}/features/${encodeURIComponent(code)}`, {
+    const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(apiKey)}/features/${encodeURIComponent(code)}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',

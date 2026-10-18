@@ -15,7 +15,7 @@ function AddBridgeForm({ onCreated, onCancel, backendUrl, headers }) {
     setSaving(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/production/bridge/instances`, {
+      const r = await fetch(`${backendUrl}/api/v1/production/bridge/instances`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ name: name.trim() }),
@@ -80,7 +80,7 @@ const BRIDGE_DOWNLOADS = [
 ];
 
 function bridgeDownloadUrl(backendUrl, platform) {
-  return `${backendUrl}/bridge-download?${platform}`;
+  return `${backendUrl}/api/v1/bridge-download?${platform}`;
 }
 
 /** Shown immediately after creation — displays exe + .env download buttons */
@@ -154,7 +154,7 @@ function SendCommandModal({ bridge, type, backendUrl, headers, onClose }) {
         : { type: 'http_request', method, url: url.trim(), body: httpBody || undefined };
 
       const r = await fetch(
-        `${backendUrl}/production/bridge/instances/${bridge.id}/command`,
+        `${backendUrl}/api/v1/production/bridge/instances/${bridge.id}/command`,
         { method: 'POST', headers, body: JSON.stringify(cmd) },
       );
       const data = await r.json();
@@ -306,7 +306,7 @@ function SecurityRuleList({ title, description, kind, patternPlaceholder, rules,
     }
     setSaving(true);
     try {
-      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridgeId}/security-rules`, {
+      const r = await fetch(`${backendUrl}/api/v1/production/bridge/instances/${bridgeId}/security-rules`, {
         method: 'POST',
         headers,
         body: JSON.stringify({ ruleKind: kind, ruleType, pattern: trimmed, description: desc.trim() || undefined }),
@@ -326,7 +326,7 @@ function SecurityRuleList({ title, description, kind, patternPlaceholder, rules,
   async function removeRule(ruleId) {
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridgeId}/security-rules/${ruleId}`, {
+      const r = await fetch(`${backendUrl}/api/v1/production/bridge/instances/${bridgeId}/security-rules/${ruleId}`, {
         method: 'DELETE',
         headers,
       });
@@ -413,7 +413,7 @@ function BridgeSecurityModal({ bridge, backendUrl, headers, onClose }) {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridge.id}/security-rules`, { headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/bridge/instances/${bridge.id}/security-rules`, { headers });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       setRules(data.rules ?? []);
@@ -530,7 +530,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/production/bridge/instances`, { headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/bridge/instances`, { headers });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       setBridges(await r.json());
     } catch (e) {
@@ -554,7 +554,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
     // Count assigned cameras/mixers
     try {
       const r = await fetch(
-        `${backendUrl}/production/bridge/instances/${bridge.id}`,
+        `${backendUrl}/api/v1/production/bridge/instances/${bridge.id}`,
         { method: 'DELETE', headers }
       );
       if (r.status === 409) {
@@ -572,7 +572,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
   async function forceDelete(bridge) {
     try {
       const r = await fetch(
-        `${backendUrl}/production/bridge/instances/${bridge.id}?force=1`,
+        `${backendUrl}/api/v1/production/bridge/instances/${bridge.id}?force=1`,
         { method: 'DELETE', headers }
       );
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -590,7 +590,7 @@ export const BridgesManager = forwardRef(function BridgesManager({ embedded = fa
   // downloadEnv() already does for the just-created bridge's envContent.
   async function handleRedownload(bridge) {
     try {
-      const r = await fetch(`${backendUrl}/production/bridge/instances/${bridge.id}/env`, { headers });
+      const r = await fetch(`${backendUrl}/api/v1/production/bridge/instances/${bridge.id}/env`, { headers });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const content = await r.text();
       const blob = new Blob([content], { type: 'text/plain' });

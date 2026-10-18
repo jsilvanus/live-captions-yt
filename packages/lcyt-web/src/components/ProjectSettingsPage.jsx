@@ -45,7 +45,7 @@ function PublicSlugSection({ project, backendUrl, token }) {
   const [loaded, setLoaded]                 = useState(false);
 
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
-  const slugUrl = `${backendUrl}/keys/${encodeURIComponent(project.key)}/slug`;
+  const slugUrl = `${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/slug`;
 
   useEffect(() => {
     let cancelled = false;
@@ -150,7 +150,7 @@ function TeamVisibilitySection({ project, backendUrl, token, onProjectRefresh })
 
   const restricted = !!project.restricted;
   const orgBaselineRole = project.orgBaselineRole === 'editor' ? 'editor' : 'viewer';
-  const visibilityUrl = `${backendUrl}/keys/${encodeURIComponent(project.key)}/visibility`;
+  const visibilityUrl = `${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/visibility`;
   const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
 
   async function patchVisibility(body) {
@@ -307,7 +307,7 @@ function FeaturesTab({ project, backendUrl, token }) {
         if (wasOn !== isOn) featureMap[code] = isOn;
       }
       if (Object.keys(featureMap).length > 0) {
-        const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/features`, {
+        const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/features`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ features: featureMap }),
@@ -353,7 +353,7 @@ function TeamTab({ project, backendUrl, token }) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/members`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/members`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       const data = await r.json();
@@ -373,7 +373,7 @@ function TeamTab({ project, backendUrl, token }) {
   async function handleRemove(userId) {
     if (!confirm('Remove this member from the project?')) return;
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/members/${userId}`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/members/${userId}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -387,7 +387,7 @@ function TeamTab({ project, backendUrl, token }) {
 
   async function handleChangeLevel(userId, accessLevel) {
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/members/${userId}`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/members/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ accessLevel }),
@@ -442,10 +442,10 @@ function DeviceRolesTab({ project, backendUrl, token }) {
     setLoading(true);
     try {
       const [rolesRes, codeRes] = await Promise.all([
-        fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/device-roles`, {
+        fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/device-roles`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/device-code`, {
+        fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/device-code`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
       ]);
@@ -466,7 +466,7 @@ function DeviceRolesTab({ project, backendUrl, token }) {
   async function handleGenerateCode() {
     setGeneratingCode(true);
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}/device-code`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}/device-code`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -542,7 +542,7 @@ function DangerZoneTab({ project, backendUrl, token, onDeleted }) {
     setDeleting(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(project.key)}`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(project.key)}`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -604,7 +604,7 @@ export function ProjectSettingsPage({ implicitKey = false } = {}) {
     setLoadingProjects(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`${backendUrl}/api/v1/keys`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       setProjects(data.keys || []);

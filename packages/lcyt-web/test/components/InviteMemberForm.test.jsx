@@ -34,7 +34,7 @@ describe('InviteMemberForm', () => {
 
     await waitFor(() => expect(global.fetch).toHaveBeenCalledTimes(1));
     const [url, opts] = global.fetch.mock.calls[0];
-    expect(url).toBe('https://api.test/keys/key-abc/members');
+    expect(url).toBe('https://api.test/api/v1/keys/key-abc/members');
     expect(JSON.parse(opts.body)).toEqual({ email: 'new@example.com', accessLevel: 'operator' });
   });
 

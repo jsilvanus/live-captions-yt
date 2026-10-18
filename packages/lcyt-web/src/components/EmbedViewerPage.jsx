@@ -97,7 +97,7 @@ export function EmbedViewerPage() {
 
     function open() {
       if (cancelled) return;
-      const url = `${backendUrl}/viewer/${encodeURIComponent(viewerKey)}`;
+      const url = `${backendUrl}/api/v1/viewer/${encodeURIComponent(viewerKey)}`;
       const es = new EventSource(url);
       esRef.current = es;
 

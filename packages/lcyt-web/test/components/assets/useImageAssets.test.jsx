@@ -40,7 +40,7 @@ describe('useImageAssets guided actions', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => {
       const put = global.fetch.mock.calls.find(([, i]) => i?.method === 'PUT');
-      expect(put[0]).toBe('https://api.test/images/7');
+      expect(put[0]).toBe('https://api.test/api/v1/images/7');
       expect(JSON.parse(put[1].body)).toEqual({ settingsJson: { opacity: 0.5 } });
     });
   });
@@ -66,7 +66,7 @@ describe('useImageAssets guided actions', () => {
     expect(global.fetch.mock.calls.some(([, i]) => i?.method === 'DELETE')).toBe(false);
     await user.click(await screen.findByRole('button', { name: 'Delete' }));
     await waitFor(() => {
-      expect(global.fetch.mock.calls.some(([u, i]) => i?.method === 'DELETE' && u === 'https://api.test/images/7')).toBe(true);
+      expect(global.fetch.mock.calls.some(([u, i]) => i?.method === 'DELETE' && u === 'https://api.test/api/v1/images/7')).toBe(true);
     });
     await waitFor(() => expect(screen.queryByText('logo')).toBeNull());
   });

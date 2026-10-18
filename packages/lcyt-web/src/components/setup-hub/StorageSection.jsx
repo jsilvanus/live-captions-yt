@@ -33,7 +33,7 @@ export function StorageSection() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/file/storage-config`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`${backendUrl}/api/v1/file/storage-config`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       setMode(data.storageMode || 'default');
@@ -59,7 +59,7 @@ export function StorageSection() {
     setError(null);
     setSaved(false);
     try {
-      const r = await fetch(`${backendUrl}/file/storage-config`, {
+      const r = await fetch(`${backendUrl}/api/v1/file/storage-config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(form),
@@ -81,7 +81,7 @@ export function StorageSection() {
     setSaving(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/file/storage-config`, {
+      const r = await fetch(`${backendUrl}/api/v1/file/storage-config`, {
         method: 'DELETE',
         headers: { Authorization: `Bearer ${token}` },
       });

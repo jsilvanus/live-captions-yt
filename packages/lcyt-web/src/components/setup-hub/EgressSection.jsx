@@ -71,7 +71,7 @@ export function EgressSection() {
     if (!connected || !backendUrl) { setFeedCameras([]); return; }
     try {
       const token = getSessionToken?.();
-      const r = await fetch(`${backendUrl}/production/cameras`, {
+      const r = await fetch(`${backendUrl}/api/v1/production/cameras`, {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
       if (!r.ok) return;

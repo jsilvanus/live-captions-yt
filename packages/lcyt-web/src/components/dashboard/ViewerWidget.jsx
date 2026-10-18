@@ -18,7 +18,7 @@ export function ViewerWidget({ size }) {
   useEffect(() => {
     if (!viewerKey || !backendUrl) { esRef.current?.close(); esRef.current = null; return; }
     esRef.current?.close();
-    const es = new EventSource(`${backendUrl}/viewer/${encodeURIComponent(viewerKey)}`);
+    const es = new EventSource(`${backendUrl}/api/v1/viewer/${encodeURIComponent(viewerKey)}`);
     esRef.current = es;
     es.onmessage = (e) => {
       try {

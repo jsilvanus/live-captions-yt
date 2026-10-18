@@ -23,7 +23,7 @@ export function DeviceRoleRow({ role, backendUrl, token, apiKey, onDeleted, onPi
     setError(null);
     try {
       const r = await fetch(
-        `${backendUrl}/keys/${encodeURIComponent(apiKey)}/device-roles/${role.id}/reset-pin`,
+        `${backendUrl}/api/v1/keys/${encodeURIComponent(apiKey)}/device-roles/${role.id}/reset-pin`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` } },
       );
       const data = await r.json();
@@ -43,7 +43,7 @@ export function DeviceRoleRow({ role, backendUrl, token, apiKey, onDeleted, onPi
     setError(null);
     try {
       const r = await fetch(
-        `${backendUrl}/keys/${encodeURIComponent(apiKey)}/device-roles/${role.id}`,
+        `${backendUrl}/api/v1/keys/${encodeURIComponent(apiKey)}/device-roles/${role.id}`,
         { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } },
       );
       const data = await r.json();

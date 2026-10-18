@@ -65,7 +65,7 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
 
   const authedFetch = useCallback((path, opts = {}) => {
     const token = session?.getSessionToken?.();
-    return fetch(`${backendUrl}${path}`, {
+    return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
@@ -77,10 +77,10 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
     setError(null);
     try {
       const [translationRes, sttRes, sourceRes, targetsRes] = await Promise.all([
-        authedFetch('/api/v1/translation/config'),
-        authedFetch('/api/v1/stt/config'),
-        authedFetch('/api/v1/stt/source-languages'),
-        authedFetch('/api/v1/targets'),
+        authedFetch('/translation/config'),
+        authedFetch('/stt/config'),
+        authedFetch('/stt/source-languages'),
+        authedFetch('/targets'),
       ]);
       const translationData = await translationRes.json();
       if (!translationRes.ok) throw new Error(translationData.error || `HTTP ${translationRes.status}`);

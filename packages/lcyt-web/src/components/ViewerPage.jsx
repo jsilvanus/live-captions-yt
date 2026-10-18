@@ -106,7 +106,7 @@ export function ViewerPage() {
 
     function open() {
       if (cancelled) return;
-      const url = `${backendUrl}/viewer/${encodeURIComponent(viewerKey)}`;
+      const url = `${backendUrl}/api/v1/viewer/${encodeURIComponent(viewerKey)}`;
       const es = new EventSource(url);
       esRef.current = es;
 
@@ -161,7 +161,7 @@ export function ViewerPage() {
     // Fetch images (with settingsJson for per-viewport settings)
     async function fetchDskImages() {
       try {
-        const res = await fetch(`${backendUrl}/dsk/${encodeURIComponent(dskApiKey)}/images`);
+        const res = await fetch(`${backendUrl}/api/v1/dsk/${encodeURIComponent(dskApiKey)}/images`);
         if (!res.ok || cancelled) return;
         const data = await res.json();
         setDskImages(data.images || []);
@@ -170,7 +170,7 @@ export function ViewerPage() {
 
     function openDskEvents() {
       if (cancelled) return;
-      const es = new EventSource(`${backendUrl}/dsk/${encodeURIComponent(dskApiKey)}/events`);
+      const es = new EventSource(`${backendUrl}/api/v1/dsk/${encodeURIComponent(dskApiKey)}/events`);
       dskEsRef.current = es;
 
       es.addEventListener('graphics', (e) => {
@@ -217,7 +217,7 @@ export function ViewerPage() {
         return (
           <img
             key={`dsk-${img.id}`}
-            src={`${backendUrl}/images/${img.id}`}
+            src={`${backendUrl}/api/v1/images/${img.id}`}
             alt=""
             aria-hidden="true"
             crossOrigin="anonymous"

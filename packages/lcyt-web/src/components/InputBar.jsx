@@ -134,7 +134,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     const payload = buildInlineCuePayload(file);
 
     const timer = setTimeout(() => {
-      fetch(`${session.backendUrl}/cues/inline`, {
+      fetch(`${session.backendUrl}/api/v1/cues/inline`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

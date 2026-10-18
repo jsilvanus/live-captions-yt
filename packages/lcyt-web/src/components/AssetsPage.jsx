@@ -193,7 +193,7 @@ function AssetsPageInner() {
     setLoading({ graphics: true, cues: true, actions: true, icons: true, files: true, library: true, broadcasts: true, thumbnails: true, videos: true });
 
     try {
-      const graphicsData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/templates`, authHeaders);
+      const graphicsData = await fetchJson(`${backendUrl}/api/v1/dsk/${encodeURIComponent(apiKey || '')}/templates`, authHeaders);
       setGraphics(Array.isArray(graphicsData?.templates) ? graphicsData.templates : []);
       setErrors(prev => ({ ...prev, graphics: false }));
     } catch {
@@ -204,7 +204,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const cueData = await fetchJson(`${backendUrl}/cues/rules`, authHeaders);
+      const cueData = await fetchJson(`${backendUrl}/api/v1/cues/rules`, authHeaders);
       setCueRules(Array.isArray(cueData?.rules) ? cueData.rules : []);
       setErrors(prev => ({ ...prev, cues: false }));
     } catch {
@@ -215,7 +215,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const actionData = await fetchJson(`${backendUrl}/actions`, authHeaders);
+      const actionData = await fetchJson(`${backendUrl}/api/v1/actions`, authHeaders);
       setActions(Array.isArray(actionData?.actions) ? actionData.actions : []);
       setErrors(prev => ({ ...prev, actions: false }));
     } catch {
@@ -226,7 +226,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const iconData = await fetchJson(`${backendUrl}/icons`, authHeaders);
+      const iconData = await fetchJson(`${backendUrl}/api/v1/icons`, authHeaders);
       setIcons(Array.isArray(iconData?.icons) ? iconData.icons : []);
       setErrors(prev => ({ ...prev, icons: false }));
     } catch {
@@ -237,7 +237,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const fileData = await fetchJson(`${backendUrl}/file`, authHeaders);
+      const fileData = await fetchJson(`${backendUrl}/api/v1/file`, authHeaders);
       setFiles(Array.isArray(fileData?.files) ? fileData.files : []);
       setErrors(prev => ({ ...prev, files: false }));
     } catch {
@@ -248,7 +248,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const libraryData = await fetchJson(`${backendUrl}/file/library?limit=200`, authHeaders);
+      const libraryData = await fetchJson(`${backendUrl}/api/v1/file/library?limit=200`, authHeaders);
       const totals = libraryData?.totals || { objectCount: 0, totalBytes: 0 };
       const areas = Array.isArray(libraryData?.areas) ? libraryData.areas : [];
       setLibrarySummary({
@@ -265,7 +265,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const broadcastData = await fetchJson(`${backendUrl}/broadcasts`, authHeaders);
+      const broadcastData = await fetchJson(`${backendUrl}/api/v1/broadcasts`, authHeaders);
       setBroadcasts(Array.isArray(broadcastData?.broadcasts) ? broadcastData.broadcasts : []);
       setErrors(prev => ({ ...prev, broadcasts: false }));
     } catch {
@@ -276,7 +276,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const thumbnailData = await fetchJson(`${backendUrl}/dsk/${encodeURIComponent(apiKey || '')}/thumbnails`, authHeaders);
+      const thumbnailData = await fetchJson(`${backendUrl}/api/v1/dsk/${encodeURIComponent(apiKey || '')}/thumbnails`, authHeaders);
       setThumbnails(Array.isArray(thumbnailData?.thumbnails) ? thumbnailData.thumbnails : []);
       setErrors(prev => ({ ...prev, thumbnails: false }));
     } catch {
@@ -287,7 +287,7 @@ function AssetsPageInner() {
     }
 
     try {
-      const videoData = await fetchJson(`${backendUrl}/videos`, authHeaders);
+      const videoData = await fetchJson(`${backendUrl}/api/v1/videos`, authHeaders);
       setVideos(Array.isArray(videoData?.videos) ? videoData.videos : []);
       setErrors(prev => ({ ...prev, videos: false }));
     } catch {

@@ -15,7 +15,7 @@ export function InviteMemberForm({ backendUrl, token, apiKey, onInvited }) {
     setSaving(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/keys/${encodeURIComponent(apiKey)}/members`, {
+      const r = await fetch(`${backendUrl}/api/v1/keys/${encodeURIComponent(apiKey)}/members`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -360,7 +360,7 @@ export function DskEditorPage() {
   // backend's DSK routes now accept JWT Bearer only (editor-auth.js), which
   // also lets requireSetup()'s per-user Setup-tier role check apply here.
   function apiFetch(path, opts = {}) {
-    return fetch(`${serverUrl}${path}`, {
+    return fetch(`${serverUrl}/api/v1${path}`, {
       ...opts,
       headers: {
         'Content-Type': 'application/json',
@@ -376,7 +376,7 @@ export function DskEditorPage() {
     const token = session?.getSessionToken?.();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    return fetch(`${serverUrl}${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
+    return fetch(`${serverUrl}/api/v1${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
   }
 
   // An empty template (no layers) means "generate a first draft"; anything
@@ -467,7 +467,7 @@ export function DskEditorPage() {
   const loadImages = useCallback(async () => {
     if (!serverUrl || !apiKey) return;
     try {
-      const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/images`);
+      const res = await fetch(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/images`);
       const data = await res.json();
       setImages(data.images || []);
     } catch {}
@@ -506,7 +506,7 @@ export function DskEditorPage() {
     async function loadVps() {
       if (!serverUrl || !apiKey) return;
       try {
-        const res = await fetch(`${serverUrl}/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
+        const res = await fetch(`${serverUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/viewports/public`);
         if (!res.ok) return;
         const data = await res.json();
         setViewportsList(data.viewports || []);
@@ -1000,7 +1000,7 @@ export function DskEditorPage() {
       const fd = new FormData();
       fd.append('file', file);
       fd.append('shorthand', shorthand);
-      const res = await fetch(`${serverUrl}/images`, {
+      const res = await fetch(`${serverUrl}/api/v1/images`, {
         method: 'POST',
         headers: { ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}) },
         body: fd,
@@ -1014,7 +1014,7 @@ export function DskEditorPage() {
 
   async function deleteImageById(id) {
     try {
-      await fetch(`${serverUrl}/images/${id}`, {
+      await fetch(`${serverUrl}/api/v1/images/${id}`, {
         method: 'DELETE',
         headers: { ...(projectToken ? { Authorization: `Bearer ${projectToken}` } : {}) },
       });
@@ -1032,7 +1032,7 @@ export function DskEditorPage() {
   }
 
   function useImageFromLibrary(img) {
-    const url = `${serverUrl}/images/${img.id}`;
+    const url = `${serverUrl}/api/v1/images/${img.id}`;
     if (primaryLayer?.type === 'image') {
       updateLayer({ ...primaryLayer, src: url });
     } else {
@@ -1406,7 +1406,7 @@ export function DskEditorPage() {
                       display: 'flex', alignItems: 'center', gap: 8, padding: '3px 0',
                       borderBottom: '1px solid var(--color-surface-elevated)',
                     }}>
-                      <img src={`${serverUrl}/images/${img.id}`} alt={img.shorthand}
+                      <img src={`${serverUrl}/api/v1/images/${img.id}`} alt={img.shorthand}
                            style={{ width: 40, height: 40, objectFit: 'contain', background: 'var(--color-surface-elevated)', borderRadius: 3, flexShrink: 0 }} />
                       <span style={{ flex: 1, fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                             title={img.shorthand}>{img.shorthand}</span>

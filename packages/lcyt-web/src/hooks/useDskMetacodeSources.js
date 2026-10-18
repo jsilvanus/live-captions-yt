@@ -26,7 +26,7 @@ export function useDskMetacodeSources({ session }) {
       const token = session?.getSessionToken?.();
       const [imagesResult, viewportsResult] = await Promise.allSettled([
         session.listImages?.() ?? Promise.resolve({ images: [] }),
-        fetch(`${backendUrl}/dsk/${encodeURIComponent(apiKey)}/viewports`, {
+        fetch(`${backendUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/viewports`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         }).then(r => (r.ok ? r.json() : { viewports: [] })),
       ]);

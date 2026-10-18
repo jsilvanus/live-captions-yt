@@ -80,7 +80,7 @@ function buildUrl({ backendUrl, token }) {
     flat: '1',
     topics: STREAM_TOPICS,
   });
-  return `${backendUrl}/events/stream?${qs}`;
+  return `${backendUrl}/api/v1/events/stream?${qs}`;
 }
 
 function ensureConnected() {

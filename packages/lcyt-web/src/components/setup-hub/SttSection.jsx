@@ -40,7 +40,7 @@ export function SttSection() {
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch(`${backendUrl}/stt/config`, { headers: { Authorization: `Bearer ${token}` } });
+      const r = await fetch(`${backendUrl}/api/v1/stt/config`, { headers: { Authorization: `Bearer ${token}` } });
       const data = await r.json();
       if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
       setConfig(data.config || {});
@@ -60,7 +60,7 @@ export function SttSection() {
     setError(null);
     setSaved(false);
     try {
-      const r = await fetch(`${backendUrl}/stt/config`, {
+      const r = await fetch(`${backendUrl}/api/v1/stt/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify(config),
