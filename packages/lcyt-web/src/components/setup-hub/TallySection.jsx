@@ -23,6 +23,7 @@ const STATE_COLOR = {
 const EMPTY_FORM = {
   name: '', kind: 'live-signal',
   mode: 'A', videoId: '',
+  camSource: 'atem', mixerId: '',
   atemHost: '', atemInput: '1', atemMe: '0',
   lampHost: '',
   runner: 'auto', bridgeInstanceId: '',
@@ -33,6 +34,7 @@ function formFromLight(l) {
   return {
     name: l.name, kind: l.kind, enabled: l.enabled !== false,
     mode: l.source?.mode || 'A', videoId: l.source?.videoId || '',
+    camSource: l.source?.type === 'lcyt' ? 'lcyt' : 'atem', mixerId: l.source?.mixerId || '',
     atemHost: l.source?.host || '', atemInput: String(l.source?.input ?? 1), atemMe: String(l.source?.meIndex ?? 0),
     lampHost: l.output?.host || '',
     runner: l.runner || 'auto', bridgeInstanceId: l.bridgeInstanceId || '',
@@ -45,7 +47,9 @@ function bodyFromForm(f) {
     output: { type: 'tally-ma', host: f.lampHost.trim() },
     source: f.kind === 'live-signal'
       ? { type: 'youtube', mode: f.mode, ...(f.mode === 'B' ? { videoId: f.videoId.trim() } : {}) }
-      : { type: 'atem', host: f.atemHost.trim(), input: Number(f.atemInput), meIndex: Number(f.atemMe) },
+      : f.camSource === 'lcyt'
+        ? { type: 'lcyt', mixerId: f.mixerId, input: Number(f.atemInput) }
+        : { type: 'atem', host: f.atemHost.trim(), input: Number(f.atemInput), meIndex: Number(f.atemMe) },
   };
   if (f.runner === 'bridge' || f.bridgeInstanceId) body.bridgeInstanceId = f.bridgeInstanceId || undefined;
   return body;
@@ -65,6 +69,7 @@ export function TallySection() {
 
   const [lights, setLights] = useState([]);
   const [bridges, setBridges] = useState([]);
+  const [mixers, setMixers] = useState([]);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null); // null | { id?: string, form }
   const [formError, setFormError] = useState('');
@@ -95,6 +100,13 @@ export function TallySection() {
     const timer = setInterval(load, POLL_MS);
     return () => clearInterval(timer);
   }, [load, connected]);
+
+  useEffect(() => {
+    if (!editing || editing.form.kind !== 'camera' || mixers.length) return;
+    api('/api/v1/production/mixers')
+      .then((d) => setMixers((Array.isArray(d) ? d : []).filter((m) => m.type === 'lcyt')))
+      .catch(() => {});
+  }, [editing, mixers.length, api]);
 
   useEffect(() => {
     if (!editing || bridges.length) return;
@@ -208,6 +220,29 @@ export function TallySection() {
               )}
             </>
           ) : (
+            <>
+              <div style={fieldStyle}>
+                <label style={labelStyle} htmlFor="tally-camsource">{t('tally.field.camSource')}</label>
+                <select id="tally-camsource" style={inputStyle} value={f.camSource} onChange={(e) => setField('camSource', e.target.value)}>
+                  <option value="atem">{t('tally.camSource.atem')}</option>
+                  <option value="lcyt">{t('tally.camSource.lcyt')}</option>
+                </select>
+              </div>
+              {f.camSource === 'lcyt' ? (
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ ...fieldStyle, flex: 2 }}>
+                    <label style={labelStyle} htmlFor="tally-mixer">{t('tally.field.mixer')}</label>
+                    <select id="tally-mixer" style={inputStyle} value={f.mixerId} onChange={(e) => setField('mixerId', e.target.value)}>
+                      <option value="">{t('tally.mixerNone')}</option>
+                      {mixers.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ ...fieldStyle, flex: 1 }}>
+                    <label style={labelStyle} htmlFor="tally-input">{t('tally.field.atemInput')}</label>
+                    <input id="tally-input" type="number" min="1" max="99" style={inputStyle} value={f.atemInput} onChange={(e) => setField('atemInput', e.target.value)} />
+                  </div>
+                </div>
+              ) : (
             <div style={{ display: 'flex', gap: 8 }}>
               <div style={{ ...fieldStyle, flex: 2 }}>
                 <label style={labelStyle} htmlFor="tally-atem">{t('tally.field.atemHost')}</label>
@@ -222,6 +257,8 @@ export function TallySection() {
                 <input id="tally-me" type="number" min="0" max="3" style={inputStyle} value={f.atemMe} onChange={(e) => setField('atemMe', e.target.value)} />
               </div>
             </div>
+              )}
+            </>
           )}
 
           <div style={fieldStyle}>

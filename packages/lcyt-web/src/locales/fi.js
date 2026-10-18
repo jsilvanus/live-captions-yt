@@ -715,11 +715,18 @@ export default {
         atemHost: 'ATEM-laitteen osoite',
         atemInput: 'Tulo',
         atemMe: 'M/E',
+        camSource: 'Kameran lähde',
+        mixer: 'LCYT-mikseri',
         lampHost: 'Lampun osoite (Tally-MA)',
         runner: 'Missä se toimii',
         bridge: 'Silta',
         enabled: 'Käytössä',
       },
+      camSource: {
+        atem: 'Kytkin (ATEM, sillan kautta)',
+        lcyt: 'LCYT:n ohjelmamikseri',
+      },
+      mixerNone: 'Valitse mikseri',
       mode: {
         A: 'Oma YouTube-kirjautumiseni (löytää lähetyksen itse)',
         B: 'Videon tunnus (palvelimella tarvitaan API-avain)',

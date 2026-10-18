@@ -991,6 +991,7 @@ const { manager: _tallyManager } = await initTally(db, {
   localMode,
   bridgeManager: productionBridgeManager,
   youtubeApiKey: process.env.TALLY_YOUTUBE_API_KEY || '',
+  getActiveSource: (mixerId) => productionRegistry.getActiveSource(mixerId),
   log: (line) => console.warn(line),
   getAccessToken: async (apiKey, credentialId, opts) => {
     let id = credentialId;
@@ -1004,6 +1005,8 @@ const { manager: _tallyManager } = await initTally(db, {
     return _platformTokenService.getAccessToken(id, opts);
   },
 });
+// Camera lights on LCYT's own software mixer follow its program input.
+productionRegistry.onProgramChanged((data) => _tallyManager.onProgramChanged(data));
 // The bridge fetches its camera lights with its own token (no user login), so this goes first.
 apiRouter.use('/tally', createTallyBridgeRouter(db, { bridgeManager: productionBridgeManager, localMode }));
 // Light addresses are configuration: writes need the setup tier, like connectors.

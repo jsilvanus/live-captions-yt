@@ -22,6 +22,11 @@ import { createWebhookOutput } from '../vendor/stream-light/outputs/webhook.js';
 import { rowToConfig, listAllLights, getLight } from './db.js';
 
 const STATUS_ONLY = new Set(['console', 'web']);
+
+/** A camera light that follows LCYT's own software mixer: the backend feeds it, like a live signal. */
+export const isMixerLight = (cfg) => cfg.kind === 'camera' && cfg.source?.type === 'lcyt';
+/** A camera light whose switcher state only a bridge on the LAN can read (ATEM, OBS). */
+const isSwitcherLight = (cfg) => cfg.kind === 'camera' && !isMixerLight(cfg);
 const TEST_TTL_MS = 10_000;
 
 /** @returns {{ runner: 'backend'|'bridge'|'none', reason?: string }} */
@@ -30,7 +35,7 @@ export function resolveRunner(cfg, { localMode }) {
   let runner = cfg.runner ?? 'auto';
   if (runner === 'auto') {
     // A camera light needs the switcher's state, which only a bridge reads for now, so a named bridge wins.
-    if (cfg.kind === 'camera' && cfg.bridgeInstanceId) runner = 'bridge';
+    if (isSwitcherLight(cfg) && cfg.bridgeInstanceId) runner = 'bridge';
     else runner = localMode ? 'backend' : (cfg.bridgeInstanceId ? 'bridge' : 'none');
   }
   if (runner === 'none') return { runner: 'none', reason: 'Choose a bridge: this server cannot reach a lamp itself' };
@@ -42,7 +47,7 @@ export function resolveRunner(cfg, { localMode }) {
 }
 
 export function createTallyManager({
-  db, bridgeManager = null, getAccessToken = null, youtubeApiKey = '',
+  db, bridgeManager = null, getAccessToken = null, youtubeApiKey = '', getActiveSource = null,
   localMode = false, fetch: fetchImpl = globalThis.fetch, clock, log = () => {},
 } = {}) {
   /** @type {Map<string, object>} id → entry */
@@ -89,6 +94,14 @@ export function createTallyManager({
     return outputs;
   }
 
+  /** Show the mixer's current program input right away; without one the light stays UNKNOWN until the first switch. */
+  function seedMixerLight(entry) {
+    const { mixerId, input } = entry.cfg.source;
+    let active = null;
+    try { active = getActiveSource?.(mixerId) ?? null; } catch { /* mixer not connected */ }
+    entry.push.push(mixerReading(active, input, entry.cfg, (clock ?? Date).now()));
+  }
+
   async function startEntry(row) {
     const cfg = rowToConfig(row);
     const apiKey = row.api_key;
@@ -103,7 +116,7 @@ export function createTallyManager({
     setStatus(entry, { runner });
     if (runner === 'none') { setStatus(entry, { note: reason }); return entry; }
     if (runner === 'bridge' && !bridgeManager) { setStatus(entry, { runner: 'none', note: 'Bridges are not available on this server' }); return entry; }
-    if (runner === 'bridge' && cfg.kind === 'camera') {
+    if (runner === 'bridge' && isSwitcherLight(cfg)) {
       setStatus(entry, { note: 'Runs on the bridge' });
       return entry;
     }
@@ -120,6 +133,7 @@ export function createTallyManager({
         onChange: () => setStatus(entry, { error: null }),
       });
       entry.light.start();
+      if (isMixerLight(cfg)) seedMixerLight(entry);
     } catch (err) {
       onError(err);
     }
@@ -145,7 +159,7 @@ export function createTallyManager({
     const is = next && next.status.runner === 'bridge' ? next.cfg : null;
     const sameLamp = was && is && was.bridgeInstanceId === is.bridgeInstanceId
       && JSON.stringify(was.output) === JSON.stringify(is.output);
-    if (was && was.kind === 'live-signal' && !sameLamp) {
+    if (was && !isSwitcherLight(was) && !sameLamp) {
       try {
         await bridgeManager.sendCommand(was.bridgeInstanceId, { type: 'light_set', lightId: was.id, kind: was.kind, output: was.output, release: true });
       } catch (err) { log(`[tally] could not release the lamp of "${was.name}": ${err.message}`); }
@@ -196,6 +210,18 @@ export function createTallyManager({
       return { ok: true };
     },
 
+    /**
+     * LCYT's software mixer switched its program input: every mixer light of that mixer follows.
+     * The mixer inputs are not project-scoped, so every project's light on this mixer reacts.
+     */
+    onProgramChanged({ mixerId, inputNumber }) {
+      const now = (clock ?? Date).now();
+      for (const entry of entries.values()) {
+        if (!entry.push || !isMixerLight(entry.cfg) || entry.cfg.source.mixerId !== mixerId) continue;
+        entry.push.push(mixerReading(inputNumber, entry.cfg.source.input, entry.cfg, now));
+      }
+    },
+
     /** Camera lights: the host feeds the switcher state in (backend runner only). */
     pushReading(id, reading) {
       const entry = entries.get(id);
@@ -204,4 +230,10 @@ export function createTallyManager({
       return true;
     },
   };
+}
+
+/** A mixer has only a program input: that one is PGM, the rest OFF, and nothing selected yet is UNKNOWN. */
+function mixerReading(activeInput, input, cfg, now) {
+  if (activeInput == null) return { state: 'UNKNOWN', detail: 'no program input selected yet' };
+  return { state: activeInput === input ? 'PGM' : 'OFF', checkedAt: now };
 }

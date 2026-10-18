@@ -26,6 +26,12 @@ export function atemTallyState(atemState, { meIndex = 0, input } = {}) {
   return 'OFF';
 }
 
+/** A software mixer that only has a program input: that input is PGM, any other is OFF, unknown is null. */
+export function programInputTallyState(activeInput, input) {
+  if (activeInput == null) return null;
+  return activeInput === input ? 'PGM' : 'OFF';
+}
+
 /** OBS: the program scene is PGM, the studio-mode preview scene is PRV. */
 export function obsTallyState({ program, preview } = {}, sceneName) {
   if (program == null && preview == null) return null;
