@@ -7,8 +7,9 @@
 export const LOCAL_MODE_FEATURE = 'local-mode';
 
 // Sidebar and route prefixes that only make sense with user accounts.
-// Assets stays visible: a local install needs its graphics library.
-const LOCAL_HIDDEN_PREFIXES = ['/admin', '/team', '/account', '/projects'];
+// Assets and Projects stay visible: a local install needs its graphics library,
+// and one local install can hold many projects.
+const LOCAL_HIDDEN_PREFIXES = ['/admin', '/team', '/account'];
 
 export function isLocalModeFeatures(features) {
   return Array.isArray(features) && features.includes(LOCAL_MODE_FEATURE);
