@@ -144,6 +144,7 @@ export function TallySection() {
       headerAction={connected ? { label: t('tally.add'), onClick: openAdd } : undefined}
       emptyText={lights.length === 0 ? (connected ? t('tally.empty') : t('tally.connect')) : undefined}
     >
+      {(error || lights.length > 0 || editing) ? (<>
       {error && <p className="setup-card__empty" style={{ color: 'var(--color-error)' }}>{error}</p>}
       {lights.map((l) => {
         const st = l.status || {};
@@ -264,6 +265,7 @@ export function TallySection() {
           )}
         </Dialog>
       )}
+      </>) : null}
     </SetupCard>
   );
 }

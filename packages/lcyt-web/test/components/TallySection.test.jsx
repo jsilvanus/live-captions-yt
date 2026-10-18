@@ -47,7 +47,7 @@ describe('TallySection', () => {
     renderSection();
     expect(await screen.findByText('Door')).toBeInTheDocument();
     expect(screen.getByText(/Live signal · Live$/)).toBeInTheDocument();
-    expect(screen.getByText(/Camera tally · not running · ⚠ tally-ma: boom/)).toBeInTheDocument();
+    expect(screen.getByText(/Camera tally · Runs on the bridge · ⚠ tally-ma: boom/)).toBeInTheDocument();
     expect(calls[0]).toMatchObject({ path: '/api/v1/tally/lights', method: 'GET', auth: 'Bearer tok' });
   });
 
