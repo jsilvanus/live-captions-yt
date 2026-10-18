@@ -68,10 +68,16 @@ describe('cluster coordination', () => {
     it('withLease runs the job once and releases afterwards, or reports that it did not run', async () => {
       const leases = createLeases(db, { instanceId: 'a', enforce: true });
       let runs = 0;
-      const [r1, r2] = await Promise.all([
-        leases.withLease('chore', 5000, async () => { runs++; await new Promise((r) => setTimeout(r, 50)); return 'done'; }, 'a'),
-        leases.withLease('chore', 5000, async () => { runs++; return 'done'; }, 'b'),
-      ]);
+      let release;
+      const gate = new Promise((r) => { release = r; });
+      let started;
+      const firstStarted = new Promise((r) => { started = r; });
+      // The first job holds the lease until the second call has answered, however slow the machine is.
+      const first = leases.withLease('chore', 5000, async () => { runs++; started(); await gate; return 'done'; }, 'a');
+      await firstStarted;
+      const second = await leases.withLease('chore', 5000, async () => { runs++; return 'done'; }, 'b');
+      release();
+      const [r1, r2] = [await first, second];
       assert.equal(runs, 1);
       assert.deepEqual([r1.ran, r2.ran].sort(), [false, true]);
       assert.equal(await leases.holder('chore'), null);

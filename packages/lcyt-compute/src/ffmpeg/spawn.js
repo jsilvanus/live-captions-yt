@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
 import { FleetFfmpegRunner } from './fleet-runner.js';
+import { trackFfmpegRun } from './run-registry.js';
 
 /**
  * `spawn('ffmpeg', args, { stdio })` that can run on an fffleet fleet instead of this machine.
@@ -21,8 +22,18 @@ import { FleetFfmpegRunner } from './fleet-runner.js';
  */
 export function spawnFfmpeg(args, { purpose = 'unknown', apiKey = '', stdio = ['pipe', 'pipe', 'pipe'], runner, cmd = 'ffmpeg', env } = {}) {
   runner = runner || process.env.FFMPEG_RUNNER || 'spawn';
-  if (runner !== 'fleet') return spawn(cmd, args, env ? { stdio, env } : { stdio });
-  return new FleetProcess(args, { purpose, apiKey, stdio });
+  let proc;
+  const untrack = trackFfmpegRun({ purpose, apiKey, runner, stop: () => proc?.kill() });
+  try {
+    proc = runner !== 'fleet' ? spawn(cmd, args, env ? { stdio, env } : { stdio }) : new FleetProcess(args, { purpose, apiKey, stdio });
+  } catch (err) {
+    untrack();
+    throw err;
+  }
+  // 'error' alone also ends a process that never started (ENOENT); untrack is idempotent.
+  proc.on('close', untrack);
+  proc.on('error', untrack);
+  return proc;
 }
 
 class FleetProcess extends EventEmitter {

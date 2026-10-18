@@ -445,3 +445,22 @@ Also noticed (not changed): `LocalFfmpegRunner` has no public `stdin`, so `RtmpR
 - No queue-timeout fallback to local when no worker satisfies `mediamtx.fleet_requires`; the job just waits.
 - Hook mode (default) still needs an ffmpeg-capable MediaMTX image; check what `bluenviron/mediamtx:latest` contains before relying on it.
 - `RtmpRelayManager` reads `FFMPEG_RUNNER` from `process.env` for the processing ffmpeg while the supervisor uses `compute.ffmpeg_runner`; align them.
+
+## Jobs panel (LCYT copy of the SaarnaVideo component)
+
+**Found / skipped:** the panel (`packages/lcyt-web/src/components/jobs-panel/`, backend `GET /jobs`, `lcyt-compute/jobs-panel`) is a copy of SaarnaVideo's shared component, so the two drift unless changes are ported by hand (README in the folder lists the known differences). Also left out:
+- No cancel from the panel: ffmpeg runs belong to relay/HLS/STT managers that restart them, and cancelling the auditor session would stop STT for the project; both need a design with the owning manager (`cancelJob` is simply not passed).
+- The ffmpeg list covers processes started through `createFfmpegRunner` / `spawnFfmpeg` only (processes spawned directly, see `ffmpeg/index.js`, are missing) and is per backend instance (with several instances, or L4 ownership, a run on another instance is not listed). Rows have no progress (the bar stays at 0 %).
+- The auditor session is found by `client_ref` (`lcyt:<first 8 chars of the key>`): two projects whose keys share the first 8 characters would see each other's session. Showing the session id from `SttManager` instead needs the adapter's `sessionId` exposed through `sttManager.status()`.
+- The panel is shown only while a session token exists (the strip and rows need a project); user-token-only pages have no panel.
+- `docs/` pages (API reference) do not list `GET /jobs` yet.
+- The auditor `/status` queue depth counts the running item (one is shown as running); the real GPU slot state is not exposed by the service.
+- Never run against a real orchestrator or auditor (fakes in `test/jobs-routes.test.js`); backend tests were run without better-sqlite3 built (`npm install --ignore-scripts`), so DB-backed backend tests were not run here.
+
+---
+
+## Jobs panel cancel has nothing to cancel yet
+
+**Where:** `packages/lcyt-compute/src/jobs-panel.js` (`CANCELLABLE_PURPOSES`), `POST /jobs/:id/cancel` in `packages/lcyt-backend/src/routes/jobs.js`, cancel confirmation in `packages/lcyt-web/src/components/jobs-panel/`.
+
+The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel this job? Yes / No") is built and tested, but the allow-list is empty on purpose: every ffmpeg purpose LCYT starts (relay, crop, stt, dsk, music, pcm, perception) belongs to a live broadcast or is restarted by its manager, and the auditor live session is never cancellable. The registry cannot yet tell a finite fleet batch job from a stream job (no batch jobs are submitted through lcyt-compute). When one exists, give it a purpose, register it with a `stop`, and add the purpose to the set. Also: `mode: 'push'` is supported by the row shape but no row has it today (the auditor adapter is pull only; other STT providers send audio through the audio path and are not listed).
