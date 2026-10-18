@@ -225,8 +225,12 @@ describe('write-audit middleware', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'target', password: 'hunter2' }),
       });
-      await new Promise(r => setTimeout(r, 50));
-      const { rows } = await queryAuditLog(db, {});
+      // The audit row is written after the response; poll instead of a fixed wait so a loaded CI runner does not race it.
+      let rows = [];
+      for (let i = 0; i < 40 && rows.length === 0; i++) {
+        await new Promise(r => setTimeout(r, 50));
+        ({ rows } = await queryAuditLog(db, {}));
+      }
       assert.strictEqual(rows.length, 1);
       assert.strictEqual(rows[0].action, 'PUT /targets/:id');
       assert.strictEqual(rows[0].actor, 'user:u@example.com');
