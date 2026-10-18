@@ -13,7 +13,8 @@
 import { Router } from 'express';
 import crypto from 'node:crypto';
 import { isState } from '../../vendor/stream-light/core/states.js';
-import { listLights, getLight, createLight, updateLight, deleteLight, rowToConfig } from '../db.js';
+import { listLights, listLightsForBridge, getLight, createLight, updateLight, deleteLight, rowToConfig } from '../db.js';
+import { resolveRunner } from '../manager.js';
 import { validateConfig, clashError } from '../validate.js';
 
 function apiKeyOf(req, res) {
@@ -83,7 +84,7 @@ export function createTallyRouter(db, auth, { manager, bridgeBelongsToProject = 
   router.delete('/lights/:id', auth, async (req, res) => {
     const apiKey = apiKeyOf(req, res); if (!apiKey) return;
     if (!(await deleteLight(db, apiKey, req.params.id))) return res.status(404).json({ error: 'Light not found' });
-    manager.remove(req.params.id);
+    await manager.remove(req.params.id);
     res.json({ ok: true });
   });
 
@@ -98,5 +99,24 @@ export function createTallyRouter(db, auth, { manager, bridgeBelongsToProject = 
     res.json({ ok: true, state });
   });
 
+  return router;
+}
+
+/**
+ * The camera lights a bridge runs itself. Authenticated by the bridge token (the bridge has no
+ * user login), so mount it before the project-scoped /tally router.
+ *
+ *   GET /bridge/lights?token=...  → { lights: [light config] }
+ */
+export function createTallyBridgeRouter(db, { bridgeManager, localMode = false } = {}) {
+  const router = Router();
+  router.get('/bridge/lights', async (req, res) => {
+    const token = String(req.query.token || req.headers['x-bridge-token'] || '');
+    const instance = await bridgeManager.authenticate(token);
+    if (!instance) return res.status(401).json({ error: 'Invalid bridge token' });
+    const rows = await listLightsForBridge(db, instance.id);
+    const lights = rows.map(rowToConfig).filter((cfg) => cfg.kind === 'camera' && resolveRunner(cfg, { localMode }).runner === 'bridge');
+    res.json({ lights });
+  });
   return router;
 }

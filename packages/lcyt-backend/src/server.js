@@ -102,7 +102,7 @@ import {
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
 import { initPlatforms, createOAuthRouter as createPlatformsRouter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
-import { initTally, createTallyRouter } from 'lcyt-tally';
+import { initTally, createTallyRouter, createTallyBridgeRouter } from 'lcyt-tally';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
 import { createSessionCaptionFileWriter } from './caption-file-writer.js';
@@ -1004,6 +1004,8 @@ const { manager: _tallyManager } = await initTally(db, {
     return _platformTokenService.getAccessToken(id, opts);
   },
 });
+// The bridge fetches its camera lights with its own token (no user login), so this goes first.
+apiRouter.use('/tally', createTallyBridgeRouter(db, { bridgeManager: productionBridgeManager, localMode }));
 // Light addresses are configuration: writes need the setup tier, like connectors.
 apiRouter.use('/tally', scopedAuth('tally'), requireProjectRole(db, 'setup'), createTallyRouter(db, scopedAuth('tally'), {
   manager: _tallyManager,
