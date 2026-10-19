@@ -1,4 +1,6 @@
 ﻿---
+
+> **Note (feeds-and-devices PR 6-7):** mixers and cameras read their feed through linked `prod_feeds` rows (`camera-feeds.js`); the `camera_key` and `source_camera_id` columns are gone.
 id: plan/mixer_feed_sources
 title: "Mixer Feed Sources â€” Looping File Sources & Low-Latency Preview Tiles"
 status: draft
