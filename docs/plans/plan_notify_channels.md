@@ -38,8 +38,8 @@ Phone calls (TTS, premade audio, AI calls, live audio) are **not** part of this 
 - Pick an email provider (Brevo or SMTP) and an SMS provider (Brevo, or none).
 - Brevo: API key, sender email, sender name, SMS sender ID.
 - SMTP: host, port, TLS mode, username, password, sender address.
-- **Secrets are stored encrypted** in the database, the same way `lcyt-platforms` stores OAuth tokens (AES-256-GCM, key from env, `PLATFORM_CREDENTIAL_KEY`). The key itself stays env-only. An env variable for each secret also works and wins over the stored value, as in the server settings registry.
-  - This changes the earlier plan, which had all secrets env-only. A hub card means the credentials are entered in the UI. **Needs Juha's OK.**
+- **Secrets are encrypted at rest in the database** (agreed by Juha, 2026-10-19). The method is the same as `lcyt-platforms` uses for OAuth tokens: AES-256-GCM, key from `PLATFORM_CREDENTIAL_KEY`. The key itself stays env-only. Saving credentials is refused when the key is not set.
+- An env variable for each secret also works and wins over the stored value, as in the server settings registry.
 - Secrets are write-only: the UI shows "set" or "not set", never the value.
 - **Test button:** sends a test email or SMS to the logged-in admin's own address or to a chosen contact with consent.
 - Only the Setup tier may change these settings.
@@ -84,7 +84,7 @@ Contacts hold other people's email addresses and phone numbers, and contact prov
 
 ## Configuration
 
-- `PLATFORM_CREDENTIAL_KEY`: already used by `lcyt-platforms`; reused to encrypt contact-provider credentials. Rotation is not built (same as today).
+- `PLATFORM_CREDENTIAL_KEY`: already used by `lcyt-platforms`; reused to encrypt contact-provider credentials. Rotation is not built (same as today). Changing the key makes stored credentials unreadable.
 - Optional env overrides: `NOTIFY_BREVO_API_KEY`, `NOTIFY_SMTP_PASSWORD`, and others, which win over the stored values.
 - Rate, cooldown and retention settings can later move to the server settings registry.
 
@@ -110,11 +110,12 @@ When the basic system works, check whether the platform and RTMP layers emit sta
 - The notify log is kept 90 days.
 - Contact Providers: Brevo first, then plain SMTP. Capabilities: Brevo email and SMS, SMTP email.
 - Contact Providers and Contacts are separate Setup Hub cards.
+- Provider credentials encrypted at rest.
 - Stream events deferred.
 
 ## Open before implementation
 
-- **Encrypted provider credentials** instead of env-only secrets (see Contact Providers). Needs Juha's OK.
+- **Your go** to start building.
 - **Brevo SMS request fields**, sender ID rules and webhook payloads. Check the official reference first.
 - **Brevo data location** (EU?) and the Finnish SMS sender ID rules.
 
