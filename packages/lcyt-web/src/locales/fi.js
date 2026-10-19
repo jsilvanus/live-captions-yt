@@ -934,4 +934,14 @@ export default {
     local: 'laitteella',
     cloud: 'pilvi',
   },
+  listenPane: {
+    start: 'Aloita kuuntelu',
+    stop: 'Lopeta kuuntelu',
+    language: 'Tunnistuskieli',
+    audioFrom: 'Äänilähde',
+    serverSource: 'Palvelimen äänilähde (asetetaan STT-kortilla)',
+    defaultInput: 'Selaimen oletustulo',
+    input: 'Tulo',
+    webkitNote: 'Selaimen puheentunnistus käyttää selaimen oletusmikrofonia; tulovalinta koskee tasomittaria ja pilvi-STT:tä.',
+  },
 };
