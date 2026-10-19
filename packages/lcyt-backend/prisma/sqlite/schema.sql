@@ -681,7 +681,6 @@ CREATE TABLE IF NOT EXISTS "prod_cameras" (
     "sort_order" INTEGER NOT NULL DEFAULT 0,
     "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
     "connection_source" TEXT NOT NULL DEFAULT 'backend',
-    "camera_key" TEXT,
     "thumbnail_captured_at" TEXT,
     "perception_enabled" INTEGER NOT NULL DEFAULT 0,
     "owner_api_key" TEXT,
@@ -837,7 +836,6 @@ CREATE TABLE IF NOT EXISTS "rtmp_relays" (
     "video_bitrate" TEXT,
     "audio_bitrate" TEXT,
     "source_view" TEXT NOT NULL DEFAULT 'program',
-    "source_camera_id" TEXT,
     "source_feed_id" TEXT
 );
 

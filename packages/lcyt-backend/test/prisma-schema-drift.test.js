@@ -67,6 +67,14 @@ test('PostgreSQL schema and migrations are derived from schema.prisma', () => {
       assert.ok(i >= 0, `${f}: ADD COLUMN on unknown table ${m[1]}`);
       creates[i] = creates[i].replace(/, CONSTRAINT "(\w+)_pkey"/, `, ${column}, CONSTRAINT "$1_pkey"`);
     }
+    // `ALTER TABLE "t" DROP COLUMN "c"` removes that column's definition (up to the next column or constraint).
+    for (const m of text.matchAll(/ALTER TABLE "(\w+)"\s+DROP COLUMN\s+"(\w+)"/g)) {
+      const i = creates.findIndex((st) => st.startsWith(`CREATE TABLE "${m[1]}" `));
+      assert.ok(i >= 0, `${f}: DROP COLUMN on unknown table ${m[1]}`);
+      const next = creates[i].replace(new RegExp(`, "${m[2]}" .*?(?=, "|, CONSTRAINT )`), '');
+      assert.notEqual(next, creates[i], `${f}: DROP COLUMN ${m[1]}.${m[2]} is not in the migrated table`);
+      creates[i] = next;
+    }
   }
   const migrated = creates.sort();
   assert.deepEqual(migrated, ddl(sql),
