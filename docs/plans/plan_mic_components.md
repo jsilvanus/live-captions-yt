@@ -11,6 +11,8 @@ Two components that share one listener:
 
 Follow-up from Juha (same day): the WebSpeech API should have two modes, **prefer local** (on-device) and **normal** (cloud). He also hit `Explicit project admin/owner access required` when trying to select WebSpeech in the STT settings (section 3).
 
+> **Revision 2026-10-19 (Juha):** the Listen pane is a start/stop **STT** action, not only a browser mic. Which STT it starts (browser or server) follows the STT card setting, and server STT must name a **feed** as its audio source. This changes sections 4.3 and 4.5; see section 10, which takes precedence where they differ.
+
 ## 2. Inventory: everything involved in frontend STT / WebSpeech today
 
 All paths under `packages/lcyt-web/src`.
@@ -155,3 +157,55 @@ Docs to update with each PR: `packages/lcyt-web/CLAUDE.md` (hooks, contexts, pan
 2. Quick language switcher: change recognition language only, or also the caption language by default? I proposed both, with a checkbox.
 3. Engine in the provider (recommended) or literally inside the top-bar component?
 4. Are you an explicit admin/owner on the project, or logged in through an API key? That decides whether the 403 also affects other Setup Hub cards for you.
+
+## 10. Revision: Listen = start/stop of the configured STT, with a feed as audio source
+
+### 10.1 One button, two backends
+
+The Listen pane (and the top-bar mic) calls a single `startStt()/stopStt()` on the shared listener. What runs is chosen by the **STT card setting** (Setup Hub "STT service" card, plus the per-browser engine in the CC tab):
+
+| Card setting | `startStt()` does | Audio comes from | Status source |
+|---|---|---|---|
+| Browser (`webkit`, WebSpeech, mode local/normal) | `useMicListener` starts `SpeechRecognition` and claims the mic lock | this browser's microphone | local recognizer |
+| Browser cloud (`cloud`, Google via `MediaRecorder`) | same hook, chunk upload | this browser's microphone | local |
+| Server (`provider` = `google`, `whisper_http`, `openai`, `auditor`) | `POST /api/v1/stt/start` (what `AudioPanel.toggleServerStt` does today via `session.startStt`) | the **selected feed** | `GET /stt/status` + `/stt/events` SSE (`stt_started`, `stt_stopped`, `transcript`) |
+
+The card setting needs one new field to decide this, because today the choice is split: `lcyt-stt-engine` is per browser (`webkit | cloud | server`) while the server provider is per project. Proposal: keep `lcyt-stt-engine` as the switch ("this browser" vs "server"), and show the effective choice on the pane ("Browser, fi-FI, on-device" / "Server: Whisper, feed Camera 1"). If the project config says `auditor` or another server provider and the browser engine is `server`, Listen starts the server STT.
+
+The pane's attach/detach (4.3) applies to the browser engines only. For server STT it becomes "show / hide this operator's view of the transcript stream"; the server session is project-wide and not tied to a browser, so detaching must not stop it. Stop always stops the project's server STT (with a confirm when someone else started it, using `stt_started` info).
+
+State derivation (`deriveMicStatus`) gets the server case: `idle | starting | listening | error | no-feed | feed-offline | needs-credential | locked`. The mic soft lock (`/mic`) is not used for server STT (`AudioPanel` skips it today).
+
+### 10.2 Feed as the STT audio source
+
+Today server STT has `audioSource` (`hls | rtmp | whep`, the transport) and a free-text `streamKey` (a MediaMTX path; `SttManager.start` falls back to the **api key**, i.e. the main stream). With feeds (`/api/v1/feeds`, plan feeds-and-devices) that free text is the wrong notion: the operator should pick a feed.
+
+Proposal:
+
+- STT config gains `feedId` (nullable). `streamKey` stays only as a legacy fallback. Resolution on start (backend, in `routes/stt.js` before `sttManager.start`): `feedId` → feed row → its `feedKey` and app; else legacy `streamKey`; else the project's **main (primary) feed**. A deleted feed makes start fail with a clear 409 "STT feed no longer exists" (no silent fallback to another feed, since transcribing the wrong camera is worse than not starting).
+- `PUT /stt/config` and `POST /stt/start` accept `feedId`; GET returns it with the feed's name so the UI can show it. Stored in the existing per-key STT config table (one nullable column / JSON field; migration in both the SQLite and Postgres Prisma schemas).
+- UI, Setup Hub STT card (`SttPanel.jsx`): replace the free-text stream key by a **feed picker** fed by `GET /feeds` (same data as `FeedsSection` / the egress `RelaySlotRow`: named feeds, the main feed marked "Main", DSK entry never offered, live dot per feed, linked device name). Transport (`hls/rtmp/whep`) stays as an advanced option.
+- Quick override on the Listen pane: a small feed dropdown ("Audio from: Main / Camera 1 / Mixer out ...") that applies to the next start (or restarts a running server STT), so an operator can switch the audio feed without opening the Setup Hub. This is an operate action (like `/config/source-language`, which the backend deliberately leaves ungated), so it does **not** need the Setup tier: `POST /stt/start` already accepts the audio source per call. Saving it as the project default stays Setup tier.
+- For the `auditor` provider (which pulls the stream itself) the feed supplies the stream key / source URL the auditor is given; `AuditorLiveAdapter` already takes `streamKey` and `sourceUrl`.
+- Feed liveness: before start the pane reads the feed's `live` flag; if the feed is not publishing it shows "feed offline" and starts anyway only on a second click (HLS can lag at stream start).
+- Browser engines ignore the feed (they listen to the microphone). Optionally later: let the browser STT take a **feed's audio** (WHEP in the browser into `MediaStream`; SpeechRecognition cannot take a stream, so this is not possible with WebSpeech; only the cloud engine could). Out of scope.
+
+### 10.3 Things to verify before coding (not checked yet)
+
+1. Which MediaMTX path and app a non-primary feed publishes to, versus what `SttManager` reads: it builds `HLS_RTMP_APP` (`live`) + key for rtmp and `hlsBase` + key for HLS, while feeds use the `feed` app and the primary feed uses the video app (`routes/feeds.js`). The feed -> STT path mapping (and whether MediaMTX exposes audio-only HLS for feed paths) must be confirmed against `FEED_RTMP_APP`, `mediamtx.yml` and `hls-segment-fetcher.js`.
+2. Whether `getSttConfig/setSttConfig` and the `stt_config` table can take `feedId` without a destructive migration on both databases.
+3. Multi-instance ownership: STT is per api key; the multi-instance work routes STT to an owner instance (L4). Starting with a feed must go through the same owner check.
+4. Cache: `GET /stt/config` is cached client-side for 300 s (`Cache-Control: private, max-age=300`); a changed `feedId` must evict `/stt/config` in the web `api.js` cache, as other config writers do.
+
+### 10.4 Effect on the phases
+
+- Phase 0: unchanged (browser hook fixes).
+- Phase 1: context gets `sttBackend` (`browser | server`), `feed`, `setFeed`, server status via the existing SSE; `TopBarMic` shows the backend and feed in its popover.
+- Phase 2: `ListenPane` = Start/Stop STT + backend line + feed dropdown + language switcher (language applies to the active backend: browser `recognition.lang`, or `POST /stt/start { language }` for server) + attach/detach (browser only).
+- New Phase 2b (backend, separate PR): `feedId` in STT config and start, feed resolution, tests in `routes/stt` and `stt-manager`, `docs/api` update.
+- Phase 3: Setup Hub STT card feed picker; hide the server `webspeech` provider (see section 3).
+
+### 10.5 Open questions added
+
+5. When both a browser STT and a server STT are configured, should Listen ever start both (e.g. browser for the speaker's mic, server for the room feed)? I assume exactly one, chosen by the card.
+6. Should the feed be chosen per language/feed pair (several STT sessions for several feeds)? Today there is one STT session per project; I assume that stays.
