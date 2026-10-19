@@ -232,7 +232,7 @@ function EncoderForm({ initial, bridges, onSave, onCancel, backendUrl, headers }
 
 // ── Encoder row ────────────────────────────────────────────────────────────
 
-function EncoderRow({ encoder, bridges, onEdit, onDelete }) {
+function EncoderRow({ encoder, bridges, onEdit, onDelete, feedLinks }) {
   const typeLabel  = ENCODER_TYPES.find(t => t.value === encoder.type)?.label ?? encoder.type;
   const cfg        = encoder.connectionConfig || {};
   const bridge     = bridges.find(b => b.id === encoder.bridgeInstanceId);
@@ -246,6 +246,7 @@ function EncoderRow({ encoder, bridges, onEdit, onDelete }) {
     <SetupItemRow
       name={encoder.name}
       meta={[typeLabel, cfg.host, connLabel].filter(Boolean).join(' · ')}
+      below={feedLinks}
       onSettings={() => onEdit(encoder)}
       onDelete={() => onDelete(encoder)}
     />
@@ -254,7 +255,7 @@ function EncoderRow({ encoder, bridges, onEdit, onDelete }) {
 
 // ── Page ───────────────────────────────────────────────────────────────────
 
-export const EncodersManager = forwardRef(function EncodersManager({ embedded = false }, ref) {
+export const EncodersManager = forwardRef(function EncodersManager({ embedded = false, renderDeviceFeeds }, ref) {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -355,6 +356,7 @@ export const EncodersManager = forwardRef(function EncodersManager({ embedded = 
         <div className={embedded ? undefined : 'setup-card'}>
           {encoders.map(enc => (
             <EncoderRow key={enc.id} encoder={enc} bridges={bridges}
+              feedLinks={renderDeviceFeeds ? renderDeviceFeeds(enc) : null}
               onEdit={e => setEditing(e)} onDelete={e => setConfirmDelete(e)} />
           ))}
         </div>

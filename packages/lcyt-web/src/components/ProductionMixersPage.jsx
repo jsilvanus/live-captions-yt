@@ -325,7 +325,7 @@ function MixerForm({ initial, bridges, onSave, onCancel, backendUrl, headers }) 
   );
 }
 
-function MixerRow({ mixer, bridges, onEdit, onDelete }) {
+function MixerRow({ mixer, bridges, onEdit, onDelete, feedLinks }) {
   const typeLabel  = MIXER_TYPES.find(t => t.value === mixer.type)?.label ?? mixer.type;
   const cfg        = mixer.connectionConfig || {};
   const isLcyt     = mixer.type === 'lcyt';
@@ -360,13 +360,14 @@ function MixerRow({ mixer, bridges, onEdit, onDelete }) {
           Open mixer
         </a>
       )}
+      below={feedLinks}
       onSettings={() => onEdit(mixer)}
       onDelete={() => onDelete(mixer)}
     />
   );
 }
 
-export const MixersManager = forwardRef(function MixersManager({ embedded = false }, ref) {
+export const MixersManager = forwardRef(function MixersManager({ embedded = false, renderDeviceFeeds }, ref) {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -486,6 +487,7 @@ export const MixersManager = forwardRef(function MixersManager({ embedded = fals
         <div className={embedded ? undefined : 'setup-card'}>
           {mixers.map(m => (
             <MixerRow key={m.id} mixer={m} bridges={bridges}
+              feedLinks={renderDeviceFeeds ? renderDeviceFeeds(m) : null}
               onEdit={mx => setEditing(mx)} onDelete={mx => setConfirmDelete(mx)} />
           ))}
         </div>

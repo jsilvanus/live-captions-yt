@@ -6,12 +6,13 @@ import { BridgesManager } from '../ProductionBridgesPage.jsx';
 import { DskViewportsPage } from '../DskViewportsPage.jsx';
 import { CaptionTargetsManager } from '../TargetCaptionsPage.jsx';
 
+// `hubCard`: the Setup Hub card that now holds the manager (cameras, mixers and encoders are the Devices card).
 const PAGES = {
-  cameras:  { Manager: CamerasManager,  label: 'Cameras',
+  cameras:  { Manager: CamerasManager,  label: 'Cameras', hubCard: 'devices',
     note: 'full feature parity, just as a standalone page.' },
-  mixers:   { Manager: MixersManager,   label: 'Mixers',
+  mixers:   { Manager: MixersManager,   label: 'Mixers', hubCard: 'devices',
     note: 'full feature parity, just as a standalone page.' },
-  encoders: { Manager: EncodersManager, label: 'Encoders',
+  encoders: { Manager: EncodersManager, label: 'Encoders', hubCard: 'devices',
     note: 'full feature parity, just as a standalone page.' },
   bridges:  { Manager: BridgesManager,  label: 'Bridges',
     note: 'full feature parity, just as a standalone page.' },
@@ -41,11 +42,11 @@ export function SetupStandalonePage() {
 
   if (!entry) return <Redirect to="/setup" />;
 
-  const { Manager, label, note } = entry;
+  const { Manager, label, note, hubCard = params.card } = entry;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
       <div className="setup-parity-banner">
-        Same {label} management as the <Link href={`/setup/${params.card}`}>Setup Hub card</Link> — {note}
+        Same {label} management as the <Link href={`/setup/${hubCard}`}>Setup Hub card</Link> — {note}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
         <Manager />

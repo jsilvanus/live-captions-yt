@@ -4,6 +4,8 @@ import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { FeedsIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
 import { useSetupT } from '../../lib/useSetupT.js';
+import { FEEDS_CHANGED_EVENT, notifyFeedsChanged, deviceNameKey } from '../../lib/deviceFeeds.js';
+import { useDeviceNames } from './useDeviceFeeds.js';
 
 const LIVE_DOT    = 'var(--color-success)';
 const OFFLINE_DOT = 'var(--color-text-muted)';
@@ -74,6 +76,9 @@ export function FeedsSection() {
     });
   }, [backendUrl, getSessionToken]);
 
+  // Device names for the linked-device chip (fetched once; a device added later shows its id until reload).
+  const deviceNames = useDeviceNames({ connected, backendUrl, getSessionToken });
+
   const loadFeeds = useCallback(async () => {
     if (!connected) return;
     setLoading(true);
@@ -83,6 +88,12 @@ export function FeedsSection() {
     } catch { setFeeds(null); }
     finally { setLoading(false); }
   }, [connected, authedFetch]);
+
+  // Reloads when a feed changes anywhere on the page (the Devices card links feeds too).
+  useEffect(() => {
+    window.addEventListener(FEEDS_CHANGED_EVENT, loadFeeds);
+    return () => window.removeEventListener(FEEDS_CHANGED_EVENT, loadFeeds);
+  }, [loadFeeds]);
 
   const loadConfig = useCallback(async () => {
     if (!connected) return;
@@ -170,7 +181,7 @@ export function FeedsSection() {
         return;
       }
       setFeedDialog(null);
-      loadFeeds();
+      notifyFeedsChanged();
     } catch {
       setFormError(t('feeds.err.save'));
     } finally {
@@ -184,7 +195,7 @@ export function FeedsSection() {
     try {
       const r = await authedFetch(`/feeds/${encodeURIComponent(feed.id)}`, { method: 'DELETE' });
       if (!r.ok) { setError(t('feeds.err.delete')); return; }
-      loadFeeds();
+      notifyFeedsChanged();
     } catch { setError(t('feeds.err.delete')); }
   }
 
@@ -222,7 +233,9 @@ export function FeedsSection() {
             {feed.label && <span className="setup-item-row__badge">{feed.label}</span>}
             {feed.deviceType && (
               <span className="setup-item-row__badge">
-                {t('feeds.linked', { type: t(`feeds.deviceType.${feed.deviceType}`), id: shortId(feed.deviceId) })}
+                {deviceNames.has(deviceNameKey(feed.deviceType, feed.deviceId))
+                  ? t('feeds.linkedName', { name: deviceNames.get(deviceNameKey(feed.deviceType, feed.deviceId)) })
+                  : t('feeds.linked', { type: t(`feeds.deviceType.${feed.deviceType}`), id: shortId(feed.deviceId) })}
               </span>
             )}
           </>

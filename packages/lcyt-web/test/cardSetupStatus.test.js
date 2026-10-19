@@ -25,22 +25,33 @@ describe('loadCardStatuses()', () => {
       if (url.includes('/viewports')) return { ok: true, json: async () => ({ viewports: [] }) };
       return { ok: false };
     };
-    const r = await loadCardStatuses({ ...base, fetchFn, cardIds: ['caption-targets', 'cameras', 'egress', 'viewports', 'mixers'] });
+    const r = await loadCardStatuses({ ...base, fetchFn, cardIds: ['caption-targets', 'devices', 'egress', 'viewports'] });
     assert.deepEqual(r.get('caption-targets'), { status: 'configured', count: 2 });
-    assert.deepEqual(r.get('cameras'), { status: 'empty', count: 0 });
+    // Devices = cameras + mixers + encoders: cameras answers [], mixers and encoders fail, so nothing is known.
+    assert.deepEqual(r.get('devices'), { status: 'unknown', count: null });
     assert.deepEqual(r.get('egress'), { status: 'configured', count: 1 });
     assert.deepEqual(r.get('viewports'), { status: 'empty', count: 0 });
-    assert.deepEqual(r.get('mixers'), { status: 'unknown', count: null });
     assert.ok(calls.every(([, auth]) => auth === 'Bearer t'));
+  });
+
+  it('counts the Devices card as cameras plus mixers plus encoders', async () => {
+    const fetchFn = async url => {
+      if (url.endsWith('/production/cameras')) return { ok: true, json: async () => [{ id: 'c1' }] };
+      if (url.endsWith('/production/mixers')) return { ok: true, json: async () => [{ id: 'm1' }, { id: 'm2' }] };
+      if (url.endsWith('/production/encoders')) return { ok: true, json: async () => [] };
+      return { ok: false };
+    };
+    const r = await loadCardStatuses({ ...base, fetchFn, cardIds: ['devices'] });
+    assert.deepEqual(r.get('devices'), { status: 'configured', count: 3 });
   });
 
   it('is unknown for unchecked cards, failed or thrown requests, and a missing token', async () => {
     const r1 = await loadCardStatuses({ ...base, fetchFn: json({}), cardIds: ['stt'] });
     assert.equal(r1.get('stt').status, 'unknown');
-    const r2 = await loadCardStatuses({ ...base, fetchFn: async () => { throw new Error('x'); }, cardIds: ['cameras'] });
-    assert.equal(r2.get('cameras').status, 'unknown');
-    const r3 = await loadCardStatuses({ ...base, token: '', fetchFn: json([]), cardIds: ['cameras'] });
-    assert.equal(r3.get('cameras').status, 'unknown');
+    const r2 = await loadCardStatuses({ ...base, fetchFn: async () => { throw new Error('x'); }, cardIds: ['devices'] });
+    assert.equal(r2.get('devices').status, 'unknown');
+    const r3 = await loadCardStatuses({ ...base, token: '', fetchFn: json([]), cardIds: ['devices'] });
+    assert.equal(r3.get('devices').status, 'unknown');
   });
 
   it('url-encodes the api key for viewports', () => {

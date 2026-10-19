@@ -54,7 +54,9 @@ describe('resolveIntent()', () => {
     const r = resolveIntent(['production'], { controlCameras: true, controlEncoders: true });
     assert.deepEqual(sorted(r.features), ['device-control']);
     assert.deepEqual(sorted(r.prerequisites.map(p => p.id)), ['bridge', 'cameras', 'encoders']);
-    for (const c of ['cameras', 'encoders', 'bridges', 'mixers']) assert.ok(r.hubCards.has(c));
+    for (const c of ['devices', 'bridges']) assert.ok(r.hubCards.has(c));
+    const cameraLink = r.prerequisites.find(p => p.id === 'cameras').link;
+    assert.equal(cameraLink, '/setup/devices');
   });
 
   it('operator devices → device-control plus a device-roles prerequisite (not conflated with equipment)', () => {

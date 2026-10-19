@@ -132,7 +132,7 @@ const STATUS_LABELS = {
 export function SetupItemRow({
   name, meta, badge, statusDot, faded = false,
   toggleOn, onToggle, onSettings, onDelete, extra,
-  href,
+  href, below,
 }) {
   const [, setLocation] = useLocation();
   const hasActions = Boolean(onToggle || onSettings || onDelete);
@@ -206,9 +206,18 @@ export function SetupItemRow({
     );
   }
 
-  return (
+  const row = (
     <div className={`setup-item-row${faded ? ' setup-item-row--faded' : ''}`}>
       {content}
     </div>
+  );
+  if (!below) return row;
+  // `below`: a line under the row (the Devices card's linked feeds). A fragment, so the row keeps its own
+  // border handling and the list keys stay on the caller's elements.
+  return (
+    <>
+      {row}
+      <div className="setup-item-row__below">{below}</div>
+    </>
   );
 }

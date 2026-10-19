@@ -168,6 +168,14 @@ describe('FeedsSection', () => {
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/ingestion/config/rotate')).toBe(true));
   });
 
+  it('names the linked device in the chip when the device list is available', async () => {
+    routes['GET /production/cameras'] = () => reply([{ id: 'cam-12345678-aaaa', name: 'Altar camera' }]);
+    renderSection();
+    expect(await screen.findByText('Linked: Altar camera')).toBeInTheDocument();
+    expect(screen.queryByText('Linked: camera cam-1234')).toBeNull();
+    expect(calls.map(c => c.path)).toEqual(expect.arrayContaining(['/production/cameras', '/production/mixers', '/production/encoders']));
+  });
+
   it('shows the placeholder when not connected and makes no requests', () => {
     const { hook } = memoryLocation({ path: '/setup' });
     render(
