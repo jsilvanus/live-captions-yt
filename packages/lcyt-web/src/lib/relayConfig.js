@@ -154,8 +154,9 @@ export function setSlotRecordOnButton(slot, enabled) {
 /**
  * Which feed this slot relays from (plan_ingest_feeds.md §1b/§3): the raw
  * program ingest (default), the {key}-crop vertical rendition, or a named
- * feed camera. sourceCameraId (a prod_cameras id) takes priority over
- * sourceView when set — see db/relay.js's resolveRelaySourceCameraKey().
+ * feed. sourceFeedId (a prod_feeds id, plan_feeds_devices.md PR 5) takes
+ * priority over sourceCameraId (legacy, a prod_cameras id), which takes
+ * priority over sourceView when set — see db/relay.js.
  * @param {number} slot
  * @returns {'program'|'crop'}
  */
@@ -181,6 +182,19 @@ export function setSlotSourceCameraId(slot, cameraId) {
   } catch {}
 }
 
+/** @param {number} slot @returns {string} a prod_feeds id, or '' for none */
+export function getSlotSourceFeedId(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'sourceFeedId')) || ''; } catch { return ''; }
+}
+
+/** @param {number} slot @param {string} feedId */
+export function setSlotSourceFeedId(slot, feedId) {
+  try {
+    if (feedId) localStorage.setItem(slotKey(slot, 'sourceFeedId'), feedId);
+    else localStorage.removeItem(slotKey(slot, 'sourceFeedId'));
+  } catch {}
+}
+
 /** Remove all localStorage keys for a slot. */
 export function clearSlot(slot) {
   try {
@@ -188,7 +202,7 @@ export function clearSlot(slot) {
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
     ['scale', 'fps', 'videoBitrate', 'audioBitrate', 'recordOnStart', 'recordOnButton']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
-    ['sourceView', 'sourceCameraId']
+    ['sourceView', 'sourceCameraId', 'sourceFeedId']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
   } catch {}
 }
@@ -230,7 +244,7 @@ export const MAX_RELAY_SLOTS = 16;
 /**
  * Get config for a specific slot.
  * @param {number} slot 1-16
- * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId }}
+ * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, recordOnStart, recordOnButton, sourceView, sourceCameraId, sourceFeedId }}
  */
 export function getSlotConfig(slot) {
   return {
@@ -248,6 +262,7 @@ export function getSlotConfig(slot) {
     recordOnButton:  getSlotRecordOnButton(slot),
     sourceView:      getSlotSourceView(slot),
     sourceCameraId:  getSlotSourceCameraId(slot),
+    sourceFeedId:    getSlotSourceFeedId(slot),
   };
 }
 

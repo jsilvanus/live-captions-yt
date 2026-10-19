@@ -1,6 +1,6 @@
 # Plan: Feeds and Devices
 
-**Status:** PRs 1 to 3 merged (table, `/feeds` API, backfill; reads move to feeds; Feeds card); PR 4 (Devices card with feed links) in review. Supersedes the "feeds are cameras" choice of `plan_ingest_feeds.md`. Eight-PR order in section 8; PRs are merged one at a time, in order.
+**Status:** PRs 1 to 4 merged (table, `/feeds` API, backfill; reads move to feeds; Feeds card; Devices card with feed links); PR 5 (relay source picker lists feeds) in review. Supersedes the "feeds are cameras" choice of `plan_ingest_feeds.md`. Eight-PR order in section 8; PRs are merged one at a time, in order.
 
 Status: plan only, nothing implemented. Repo: jsilvanus/live-captions-yt at main d4cc6d9 (after #378). Requested by Juha in the thread "Incoming streams chip".
 
