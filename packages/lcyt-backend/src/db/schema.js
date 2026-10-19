@@ -886,6 +886,16 @@ export function initSqliteSchema(dbPath) {
   // Columns added to plugin tables after their first release (CREATE TABLE IF NOT EXISTS above does not add them).
   const relayCols = new Set(db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name));
   if (!relayCols.has('source_feed_id')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN source_feed_id TEXT');
+  if (!relayCols.has('source_output_id')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN source_output_id TEXT');
+  // Egress outputs (plan_egress_outputs.md): audio/video kind of a feed, and the output a crop row belongs to.
+  const addColumn = (table, column, ddl) => {
+    const cols = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name));
+    if (!cols.has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  };
+  addColumn('prod_feeds', 'media', "media TEXT NOT NULL DEFAULT 'av'");
+  addColumn('crop_preset_sets', 'output_id', 'output_id TEXT');
+  addColumn('crop_presets', 'output_id', 'output_id TEXT');
+  addColumn('crop_source_map', 'output_id', 'output_id TEXT');
 
   return db;
 }

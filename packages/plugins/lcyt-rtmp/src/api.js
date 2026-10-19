@@ -69,6 +69,10 @@ export {
   backfillFeeds, backfillPrimaryFeeds, listFeeds, getFeed, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds,
   getPrimaryFeedKey, getPrimaryFeedId, ensurePrimaryFeed, setPrimaryFeed,
 } from './db/feeds.js';
+export {
+  backfillOutputs, ensureProjectOutputs, listOutputs, getOutput, createOutput, updateOutput, deleteOutput,
+  MAX_OUTPUT_CHAIN_DEPTH, OUTPUT_SOURCE_TYPES,
+} from './db/outputs.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side

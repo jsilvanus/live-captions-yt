@@ -459,6 +459,7 @@ model crop_preset_sets {
   name         String
   sort_order   Int            @default(0)
   created_at   String         @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  output_id    String?
   crop_presets crop_presets[]
 
   @@unique([api_key, name], map: "sqlite_autoindex_crop_preset_sets_2")
@@ -473,6 +474,7 @@ model crop_presets {
   y_norm           Float             @default(0.0)
   sort_order       Int               @default(0)
   created_at       String            @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  output_id        String?
   crop_preset_sets crop_preset_sets? @relation(fields: [set_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   crop_source_map  crop_source_map[]
 
@@ -488,6 +490,7 @@ model crop_source_map {
   camera_id     String?
   camera_preset String?
   preset_id     String
+  output_id     String?
   crop_presets  crop_presets @relation(fields: [preset_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([api_key], map: "idx_crop_source_map_key")
@@ -920,6 +923,7 @@ model rtmp_relays {
   audio_bitrate    String?
   source_view      String  @default("program")
   source_feed_id   String?
+  source_output_id String?
 
   @@unique([api_key, slot], map: "sqlite_autoindex_rtmp_relays_1")
 }
@@ -1183,6 +1187,7 @@ model prod_feeds {
   device_id     String?
   sort_order    Int     @default(0)
   created_at    String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  media         String  @default("av")
 
   @@index([owner_api_key], map: "idx_prod_feeds_owner")
   @@index([device_type, device_id], map: "idx_prod_feeds_device")
@@ -1243,4 +1248,40 @@ model notify_log {
   error        String?
 
   @@index([api_key, at], map: "idx_notify_log_key_at")
+}
+
+/// Egress outputs (plan_egress_outputs.md): a named pipeline source (feed or output) -> DSK viewports -> crop -> destinations.
+/// source_id is a prod_feeds.id or an outputs.id (no foreign key, checked in code); dsk_json is a JSON array of dsk_viewports names;
+/// audio_source is JSON ("source" or {"feed":"<id>"}, later a list).
+model outputs {
+  id            String  @id
+  owner_api_key String
+  name          String
+  source_type   String  @default("feed")
+  source_id     String?
+  dsk_json      String  @default("[]")
+  crop_enabled  Int     @default(0)
+  audio_source  String  @default("\"source\"")
+  enabled       Int     @default(1)
+  sort_order    Int     @default(0)
+  created_at    String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+
+  @@unique([owner_api_key, name], map: "uq_outputs_owner_name")
+  @@index([owner_api_key], map: "idx_outputs_owner")
+}
+
+/// Crop settings of one output (the legacy per-project crop_config row stays for the project's first crop output until it is re-keyed).
+model output_crop_config {
+  output_id      String  @id
+  enabled        Int     @default(0)
+  aspect_w       Int     @default(9)
+  aspect_h       Int     @default(16)
+  out_w          Int?
+  out_h          Int?
+  video_bitrate  String?
+  follow_program Int     @default(1)
+  transition_ms  Int     @default(0)
+  active_set_id  String?
+  updated_at     String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  auto_follow    Int     @default(0)
 }
