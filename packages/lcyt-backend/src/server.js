@@ -49,7 +49,7 @@ import {
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
 import { deprecatedRoute, NGINX_RTMP_MESSAGE } from './middleware/deprecation.js';
-import { initRtmpControl, createRtmpRouters, backfillFeeds, backfillPrimaryFeeds, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, backfillFeeds, backfillPrimaryFeeds, backfillOutputs, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -309,6 +309,8 @@ const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, setting
 // Feeds card: copy the feeds that exist as cameras and mixer outputs into prod_feeds (idempotent, never throws).
 await backfillFeeds(db).catch((err) => console.warn(`[feeds] backfill failed: ${err.message}`));
 await backfillPrimaryFeeds(db).catch((err) => console.warn(`[feeds] primary feed backfill failed: ${err.message}`));
+// Egress outputs (plan_egress_outputs.md): Program / Vertical from the main feed, composite viewport, crop and relay slots (idempotent, changes no behaviour yet).
+await backfillOutputs(db).catch((err) => console.warn(`[outputs] backfill failed: ${err.message}`));
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer
