@@ -339,7 +339,8 @@ export function parseCamera(row) {
     connectionSource: row.connection_source ?? 'backend',
     bridgeInstanceId: row.bridge_instance_id,
     sortOrder:        row.sort_order,
-    cameraKey:        row.camera_key ?? null,
+    // The camera's feed key is not a column: withCameraFeedKeys() (camera-feeds.js) fills it from the linked feed.
+    cameraKey:        null,
     thumbnailCapturedAt: row.thumbnail_captured_at ?? null,
     label:            row.label ?? null,
     zone:             row.zone ?? null,

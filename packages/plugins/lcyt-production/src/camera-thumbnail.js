@@ -54,7 +54,7 @@ function safePresetId(presetId) {
 
 /**
  * Fetch a JPEG from the backend's public preview endpoint for the given key
- * (a camera_key or a project apiKey — the endpoint doesn't distinguish).
+ * (a camera's feed key or a project apiKey — the endpoint doesn't distinguish).
  *
  * @param {string} previewBaseUrl
  * @param {string} key
@@ -143,7 +143,7 @@ export async function captureCameraThumbnail(db, camera, registry, opts = {}) {
       return {
         ok: false,
         status: 400,
-        error: 'Camera has no camera_key; pass apiKey to capture from the current program feed instead',
+        error: 'Camera has no feed; link a feed to it, or pass apiKey to capture from the current program feed instead',
       };
     }
     if (camera.mixerInput == null) {

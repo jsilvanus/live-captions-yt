@@ -33,6 +33,7 @@
 
 import { parseCamera, parseMixer } from './registry.js';
 import { buildSwitchCommand } from './crud.js';
+import { withCameraFeedKeys } from './camera-feeds.js';
 import { isSecurityBlockError } from './bridge-security.js';
 
 /**
@@ -198,7 +199,7 @@ export function createProductionCommands({ db, registry, bridgeManager = null, e
    * @param {string} ref
    */
   async function resolveCamera(apiKey, ref) {
-    const cameras = (await db.prod_cameras.findMany()).filter(visibleTo(apiKey)).map(parseCamera);
+    const cameras = await withCameraFeedKeys(db, (await db.prod_cameras.findMany()).filter(visibleTo(apiKey)).map(parseCamera));
     const r = pickDevice(cameras, ref, 'Camera', (c, slug) => slugifyLabel(c.label) === slug || slugifyLabel(c.name) === slug);
     return r.ok ? { ok: true, camera: r.device } : r;
   }

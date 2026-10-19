@@ -22,8 +22,11 @@ describe('perception auto-start', () => {
   const mediamtx = { isPathPublishing: async (p) => { if (live instanceof Error) throw live; return !!live[p]; } };
 
   async function addCamera(id, key, owner, enabled = 1) {
-    await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, camera_key, owner_api_key, perception_enabled)
-      VALUES (?, ?, 'webcam', '{}', 0, ?, ?, ?)`).run(id, id, key, owner, enabled);
+    await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, owner_api_key, perception_enabled)
+      VALUES (?, ?, 'webcam', '{}', 0, ?, ?)`).run(id, id, owner, enabled);
+    // A feed belongs to a project: an unowned camera has none, so it is never started.
+    if (key && owner) await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, ?, ?, ?, 'whip', 'camera', 'camera', ?, 0)`).run(`feed-${id}`, owner, id, key, id);
   }
 
   afterEach(async () => { await db?.close(); });

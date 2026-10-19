@@ -2,7 +2,7 @@
  * Perception auto-start (plan_perception_completion.md Phase 3): keeps perception jobs in step with the feeds.
  * A reconciler runs every `intervalMs`:
  *
- *   - a camera with `perception_enabled = 1` and a `camera_key` gets its job started while its MediaMTX path is
+ *   - a camera with `perception_enabled = 1` and a linked feed gets its job started while its MediaMTX path is
  *     publishing, and stopped after `graceCycles` quiet cycles in a row;
  *   - a project with the shared-feed switch on gets the program-feed job on the same rule (path = the project's key).
  *
@@ -13,7 +13,7 @@
  */
 
 /** Per-project shared-feed switch (table prod_perception_settings). */
-import { withFeedKeys } from './camera-feeds.js';
+import { linkedFeedKeys } from './camera-feeds.js';
 
 export async function setSharedAutostart(db, apiKey, enabled) {
   await db.prod_perception_settings.upsert({
@@ -76,16 +76,17 @@ export function createPerceptionAutostart({ db, manager, mediamtxClient, interva
     try {
       const enabled = await db.prod_cameras.findMany({
         where: { perception_enabled: 1 },
-        select: { id: true, camera_key: true, owner_api_key: true },
+        select: { id: true, owner_api_key: true },
       });
-      for (const cam of (await withFeedKeys(db, enabled)).filter((c) => c.camera_key)) {
+      const feedKeys = await linkedFeedKeys(db, enabled.map((c) => c.id));
+      for (const cam of enabled.filter((c) => feedKeys.has(c.id)).map((c) => ({ ...c, cameraKey: feedKeys.get(c.id) }))) {
         if (!cam.owner_api_key) {
           if (!warned.has(cam.id)) { warned.add(cam.id); log(`[perception] camera ${cam.id} has auto-start on but no owning project; skipped`); }
           continue;
         }
         const key = String(cam.id);
-        await reconcile(key, await liveness(cam.camera_key), !!manager.status(key),
-          () => manager.start(cam.owner_api_key, { id: cam.id, cameraKey: cam.camera_key }), () => manager.stop(key));
+        await reconcile(key, await liveness(cam.cameraKey), !!manager.status(key),
+          () => manager.start(cam.owner_api_key, { id: cam.id, cameraKey: cam.cameraKey }), () => manager.stop(key));
       }
       for (const row of await db.prod_perception_settings.findMany({ where: { shared_enabled: 1 }, select: { api_key: true } })) {
         const key = `shared:${row.api_key}`;

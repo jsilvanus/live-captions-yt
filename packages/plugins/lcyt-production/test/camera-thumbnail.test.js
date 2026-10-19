@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { parseCamera } from '../src/registry.js';
+import { withCameraFeedKeys } from '../src/camera-feeds.js';
 import {
   captureCameraThumbnail,
   deleteCameraThumbnailFile,
@@ -33,8 +34,8 @@ after(async () => { for (const d of openDbs) await d.close(); });
 async function insertCamera(db, overrides = {}) {
   const id = overrides.id ?? randomUUID();
   await db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order)
+    VALUES (?, ?, ?, ?, ?, ?)
   `).run(
     id,
     overrides.name ?? 'Cam 1',
@@ -42,9 +43,17 @@ async function insertCamera(db, overrides = {}) {
     overrides.control_type ?? 'webcam',
     JSON.stringify(overrides.control_config ?? {}),
     overrides.sort_order ?? 0,
-    overrides.camera_key ?? null,
   );
-  return parseCamera(await db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id));
+  // The camera's stream key is its linked feed (prod_feeds): WHIP for webcam/mobile, RTMP otherwise.
+  const key = overrides.camera_key ?? null;
+  const control = overrides.control_type ?? 'webcam';
+  if (key) {
+    const transport = ['webcam', 'mobile'].includes(control) ? 'whip' : 'rtmp';
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, 'proj', 'Feed', ?, ?, 'camera', 'camera', ?, 0)`).run(randomUUID(), key, transport, id);
+  }
+  const [camera] = await withCameraFeedKeys(db, [parseCamera(await db.prepare('SELECT * FROM prod_cameras WHERE id = ?').get(id))]);
+  return camera;
 }
 
 async function insertMixer(db, overrides = {}) {
