@@ -248,7 +248,8 @@ Sequencing: the lifecycle service ships first with an outputs step that calls to
 3. **Decouple the session.** `POST /live` resolution, ad-hoc compat, sequence taken from and incremented on the broadcast (atomic reservation moved from the `sessions` row to the `broadcasts` row, `api_keys.sequence` mirrored), TTL exemption for bound sessions, session end no longer completes anything, sessions closed at `completed`, the 1:1 rule dropped. The behaviour change; old clients stay identical through the ad-hoc path.
 4. **UI.** The `broadcast` pane, transition buttons and pre-flight panel in `BroadcastsManager`, schedule with time zone, Live and Selected chips in the top bar, graphics All | This broadcast toggle, caption connect passes the broadcast, i18n in fi, en, sv, and renaming the nav entry for `/broadcast` to "Live".
 5. **Outputs.** `broadcast_outputs`, outputs step and `deliverables()` use the egress manager (after egress PR 4).
-6. **Later, on request:** auto-start and auto-end (a lease-based scheduler, `starting_soon` notifications through the notify adapters), recurrence, platform-imported broadcasts, server-owned caption session, simultaneous broadcasts per project.
+6. **Remove the manual caption-session controls from the top bar.** Heartbeat, Sync and Set sequence leave `sidebar/QuickActionsPopover.jsx` (and the same buttons in `ControlsPanel.jsx`), because the broadcast now owns the sequence (reset at first staging, incremented on send) and syncs the clock itself (`BroadcastCaptionSync`). A manual "Sync now" stays only as an action on the broadcast pane (`POST /broadcasts/:id/sync`), and a sequence override as an admin action there, for repair. Comes after PR 4, so the pane exists before the top-bar buttons go. i18n keys and tests for the removed buttons are dropped; legacy `POST /sync`, `/heartbeat` and the sequence route stay for API clients.
+7. **Later, on request:** auto-start and auto-end (a lease-based scheduler, `starting_soon` notifications through the notify adapters), recurrence, platform-imported broadcasts, server-owned caption session, simultaneous broadcasts per project.
 
 Each PR updates `packages/lcyt-backend/CLAUDE.md`, `lcyt-platforms/CLAUDE.md`, `lcyt-web/CLAUDE.md`, `docs/PLANS.md` and the API docs, per the repo's sync rules.
 
@@ -270,7 +271,7 @@ Juha's answers of 2026-10-19:
 
 1. One broadcast in `staging|live|stopping|stopped` per project at a time: **yes**.
 2. Closing the caption tab ends neither the broadcast nor the session: **adopted** (2.5). Implemented as an idle-expiry exemption, since a closed tab sends nothing.
-3. Opt-in auto-start, pre-flight: **yes in principle**, but the lifecycle brief says no auto-start or auto-end yet, so the scheduler moved to PR 6. The pre-flight stays in PR 2.
+3. Opt-in auto-start, pre-flight: **yes in principle**, but the lifecycle brief says no auto-start or auto-end yet, so the scheduler moved to PR 7. The pre-flight stays in PR 2.
 4. Required deliverables: **captions (created or sent), video feed out (DSK is enough), or audio feed out**: adopted as the deliverables rule (2.3).
 5. `broadcast_outputs` in PR 5 of this plan: **yes**.
 6. No status select; a broadcast control pane with a suggested or typed title and a button per transition: **adopted** (2.8).
