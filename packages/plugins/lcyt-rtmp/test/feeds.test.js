@@ -1,5 +1,5 @@
 /**
- * prod_feeds: the /feeds router and the backfill from cameras and mixer outputs.
+ * prod_feeds: the /feeds router and the backfill from camera keys (feeds-and-devices PR 1 and PR 7) and mixer outputs.
  * Cameras and mixers belong to lcyt-production; their rows are seeded with plain SQL (same convention as
  * feed-rtmp.test.js).
  */
@@ -91,10 +91,9 @@ describe('POST /feeds', () => {
     }
   });
 
-  it('refuses a key already used by a feed, an API key, an ingest key or somebody else\'s camera', async () => {
-    await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key) VALUES ('c-other', 'C', 'cam-key', 'rtmp', ?)").run(OTHER);
+  it('refuses a key already used by a feed, an API key or an ingest key', async () => {
     await call('POST', '', { name: 'First', feedKey: 'taken' });
-    for (const feedKey of ['taken', KEY, OTHER, 'rotated-key', 'cam-key']) {
+    for (const feedKey of ['taken', KEY, OTHER, 'rotated-key']) {
       assert.equal((await call('POST', '', { name: 'Again', feedKey })).status, 409, feedKey);
     }
   });
@@ -149,56 +148,109 @@ describe('PATCH and DELETE /feeds/:id', () => {
   });
 });
 
-describe('backfillFeeds', () => {
-  async function seed() {
-    const cam = (id, type, key, owner = KEY, name = id) => db.prepare(
+describe('backfillFeeds (camera keys still in the database, feeds-and-devices PR 7)', () => {
+  // A database created before PR 7 still has the two legacy columns; the backfill reads them and drops them.
+  let ldb;
+  const hasColumn = async (table, column) => (await ldb.$queryRawUnsafe(
+    `SELECT name FROM pragma_table_info('${table}') WHERE name = ?`, column)).length > 0;
+  async function addLegacyColumns() {
+    if (!(await hasColumn('prod_cameras', 'camera_key'))) await ldb.$executeRawUnsafe('ALTER TABLE prod_cameras ADD COLUMN camera_key TEXT');
+    if (!(await hasColumn('rtmp_relays', 'source_camera_id'))) await ldb.$executeRawUnsafe('ALTER TABLE rtmp_relays ADD COLUMN source_camera_id TEXT');
+  }
+
+  before(async () => {
+    ldb = await initDb(':memory:');
+    await ldb.prepare("INSERT INTO api_keys (key, owner) VALUES (?, 'o')").run(KEY);
+    await ldb.prepare("INSERT INTO api_keys (key, owner) VALUES (?, 'o2')").run(OTHER);
+  });
+  after(() => ldb.close());
+
+  beforeEach(async () => {
+    await addLegacyColumns();
+    for (const t of ['prod_feeds', 'prod_cameras', 'prod_mixers', 'rtmp_relays']) await ldb.prepare(`DELETE FROM ${t}`).run();
+  });
+
+  async function seed({ orphan = true } = {}) {
+    const cam = (id, type, key, owner = KEY, name = id) => ldb.prepare(
       'INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key, sort_order) VALUES (?, ?, ?, ?, ?, 2)',
     ).run(id, name, key, type, owner);
     await cam('c-rtmp', 'rtmp', 'altar');
     await cam('c-whip', 'webcam', 'laptop');
     await cam('c-mobile', 'mobile', 'phone');
-    await cam('c-ptz', 'amx', 'ptzkey'); // PTZ cameras with a key are not feeds
+    await cam('c-ptz', 'amx', 'ptzkey');
     await cam('c-nokey', 'rtmp', null);
-    await cam('c-noowner', 'rtmp', 'orphan', null);
-    await db.prepare("INSERT INTO prod_mixers (id, name, type, output_key, owner_api_key) VALUES ('m1', 'Main mixer', 'lcyt', 'mixout', ?)").run(KEY);
-    await db.prepare("INSERT INTO prod_mixers (id, name, type, owner_api_key) VALUES ('m2', 'No output', 'atem', ?)").run(KEY);
+    if (orphan) await cam('c-noowner', 'rtmp', 'orphan', null);
+    await ldb.prepare("INSERT INTO prod_mixers (id, name, type, output_key, owner_api_key) VALUES ('m1', 'Main mixer', 'lcyt', 'mixout', ?)").run(KEY);
+    await ldb.prepare("INSERT INTO prod_mixers (id, name, type, owner_api_key) VALUES ('m2', 'No output', 'atem', ?)").run(KEY);
   }
 
-  it('turns pushed cameras and mixer outputs into feeds linked to their device', async () => {
+  it('turns every camera key and mixer output into a feed linked to its device, and rtmp cameras into none', async () => {
     await seed();
-    const res = await backfillFeeds(db);
-    assert.deepEqual(res, { created: 4, skipped: 1 }); // the camera without an owner is skipped
-    const feeds = await listFeeds(db, KEY);
+    const res = await backfillFeeds(ldb);
+    assert.equal(res.created, 5); // four camera keys (also the PTZ one) and the mixer output
+    assert.equal(res.skipped, 1); // the camera without an owner keeps its key, nothing is lost
+    const feeds = await listFeeds(ldb, KEY);
     const byKey = Object.fromEntries(feeds.map((f) => [f.feedKey, f]));
-    assert.deepEqual(Object.keys(byKey).sort(), ['altar', 'laptop', 'mixout', 'phone']);
+    assert.deepEqual(Object.keys(byKey).sort(), ['altar', 'laptop', 'mixout', 'phone', 'ptzkey']);
     assert.equal(byKey.altar.transport, 'rtmp');
-    assert.equal(byKey.laptop.transport, 'whip');
     assert.equal(byKey.altar.kind, 'camera');
     assert.equal(byKey.altar.deviceType, 'camera');
     assert.equal(byKey.altar.deviceId, 'c-rtmp');
+    assert.equal(byKey.altar.name, 'c-rtmp'); // the camera has no label or name copy beyond its id here
+    assert.equal(byKey.laptop.transport, 'whip');
+    assert.equal(byKey.phone.transport, 'whip');
     assert.equal(byKey.mixout.kind, 'generic');
     assert.equal(byKey.mixout.label, 'Main mixer');
     assert.equal(byKey.mixout.deviceType, 'mixer');
-    assert.equal((await getFeedByKey(db, 'altar')).ownerApiKey, KEY);
+    assert.equal((await getFeedByKey(ldb, 'altar')).ownerApiKey, KEY);
+    const cam = await ldb.$queryRawUnsafe("SELECT control_type FROM prod_cameras WHERE id = 'c-rtmp'");
+    assert.equal(cam[0].control_type, 'none');
   });
 
-  it('is idempotent and leaves cameras and mixers untouched', async () => {
+  it('is idempotent: a second run creates nothing and keeps the feeds', async () => {
     await seed();
-    await backfillFeeds(db);
-    const again = await backfillFeeds(db);
-    assert.deepEqual(again, { created: 0, skipped: 1 });
-    assert.equal((await listFeeds(db, KEY)).length, 4);
-    const cam = await db.prepare("SELECT control_type, camera_key FROM prod_cameras WHERE id = 'c-rtmp'").get();
-    assert.equal(cam.control_type, 'rtmp');
-    assert.equal(cam.camera_key, 'altar');
+    await backfillFeeds(ldb);
+    const again = await backfillFeeds(ldb);
+    assert.equal(again.created, 0);
+    assert.equal(again.skipped, 1);
+    assert.equal((await listFeeds(ldb, KEY)).length, 5);
+    const rows = await ldb.$queryRawUnsafe("SELECT camera_key FROM prod_cameras WHERE id = 'c-rtmp'");
+    assert.equal(rows[0].camera_key, 'altar');
   });
 
   it('skips, without failing, a key that another feed already holds', async () => {
     await seed();
-    await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key) VALUES ('f0', ?, 'Existing', 'altar')").run(OTHER);
-    const res = await backfillFeeds(db);
-    assert.equal(res.created, 3);
-    assert.equal((await getFeedByKey(db, 'altar')).ownerApiKey, OTHER);
+    await ldb.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key) VALUES ('f0', ?, 'Existing', 'altar')").run(OTHER);
+    const res = await backfillFeeds(ldb);
+    assert.equal(res.created, 4);
+    assert.equal((await getFeedByKey(ldb, 'altar')).ownerApiKey, OTHER);
+  });
+
+  it('keeps the relay source column while a relay points at a camera whose key has no feed', async () => {
+    await seed();
+    await ldb.prepare("INSERT INTO rtmp_relays (api_key, slot, target_url, source_camera_id) VALUES (?, 1, 'rtmp://x.example/live/a', 'c-noowner')").run(KEY);
+    const res = await backfillFeeds(ldb);
+    assert.ok(!res.dropped.includes('rtmp_relays.source_camera_id'));
+    assert.ok(await hasColumn('rtmp_relays', 'source_camera_id'));
+  });
+
+  it('copies a relay source camera to its feed and drops the legacy columns once every key has a feed', async () => {
+    await seed({ orphan: false });
+    await ldb.prepare("INSERT INTO rtmp_relays (api_key, slot, target_url, source_camera_id) VALUES (?, 1, 'rtmp://x.example/live/b', 'c-rtmp')").run(KEY);
+    await ldb.prepare("INSERT INTO rtmp_relays (api_key, slot, target_url, source_camera_id, source_feed_id) VALUES (?, 2, 'rtmp://x.example/live/c', 'c-rtmp', 'f-own')").run(KEY);
+    const res = await backfillFeeds(ldb);
+    assert.deepEqual(res.dropped.sort(), ['prod_cameras.camera_key', 'rtmp_relays.source_camera_id']);
+    const altar = (await listFeeds(ldb, KEY)).find((f) => f.feedKey === 'altar');
+    const [slot1] = await ldb.$queryRawUnsafe("SELECT source_feed_id FROM rtmp_relays WHERE slot = 1");
+    assert.equal(slot1.source_feed_id, altar.id);
+    // A slot that already had a feed keeps it (the camera-only copy never overrides it).
+    const [slot2] = await ldb.$queryRawUnsafe("SELECT source_feed_id FROM rtmp_relays WHERE slot = 2");
+    assert.equal(slot2.source_feed_id, 'f-own');
+    assert.equal(await hasColumn('prod_cameras', 'camera_key'), false);
+    assert.equal(await hasColumn('rtmp_relays', 'source_camera_id'), false);
+    // Running again on the migrated database is a no-op.
+    const again = await backfillFeeds(ldb);
+    assert.deepEqual(again, { created: 0, skipped: 0, dropped: [] });
   });
 });
 

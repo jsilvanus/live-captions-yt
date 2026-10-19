@@ -134,45 +134,28 @@ function formatRelayRow(row) {
     videoBitrate: row.video_bitrate || null,
     audioBitrate: row.audio_bitrate || null,
     // 'program' (raw ingest, default) or 'crop' ({key}-crop vertical rendition) —
-    // ignored when sourceCameraId is set (plan_ingest_feeds.md §1b)
+    // ignored when sourceFeedId is set
     sourceView:   row.source_view  || 'program',
-    // Optional named-feed source: a prod_cameras.id. Takes priority over
-    // sourceView when set. sourceCameraKey is the resolved MediaMTX path
-    // (prod_cameras.camera_key) — joined in at read time so rtmp-manager.js
-    // (which has no db handle of its own) can use it directly.
-    sourceCameraId:  row.source_camera_id || null,
-    // Optional prod_feeds.id source (Feeds card). Wins over sourceCameraId when both are set. The resolved path is
-    // joined into sourceCameraKey as well, which is the field rtmp-manager.js reads.
+    // Optional prod_feeds.id source (Feeds card). The resolved MediaMTX path is joined in as sourceFeedKey, which is
+    // what rtmp-manager.js reads.
     sourceFeedId:    row.source_feed_id || null,
-    sourceCameraKey: row.source_camera_key || null,
+    sourceFeedKey:   row.source_feed_key || null,
     createdAt:    row.created_at,
     updatedAt:    row.updated_at,
   };
 }
 
-// prod_cameras is owned by lcyt-production but shares the same database repo-wide (same cross-plugin
-// query pattern as resolveRelaySourceCameraKey()). The camera key is looked up separately and attached
-// to each row so rtmp-manager.js (which has no db handle of its own) can use it directly.
-async function withSourceCameraKeys(db, rows) {
-  const ids = [...new Set(rows.map(r => r.source_camera_id).filter(Boolean))];
-  const keys = new Map();
-  if (ids.length) {
-    const cams = await db.prod_cameras.findMany({ where: { id: { in: ids } }, select: { id: true, camera_key: true } });
-    for (const c of cams) keys.set(c.id, c.camera_key);
-  }
+// The source feed's MediaMTX path is looked up separately and attached to each row, so rtmp-manager.js (which has no
+// db handle of its own) can use it directly.
+async function withSourceFeedKeys(db, rows) {
   const feedIds = [...new Set(rows.map(r => r.source_feed_id).filter(Boolean))];
   const feedKeys = new Map();
   if (feedIds.length) {
     const feeds = await db.prod_feeds.findMany({ where: { id: { in: feedIds } }, select: { id: true, feed_key: true } });
     for (const f of feeds) feedKeys.set(f.id, f.feed_key);
   }
-  return rows.map(r => ({
-    ...r,
-    // A feed source wins over a camera source; a feed that no longer exists resolves to null, like a missing camera.
-    source_camera_key: r.source_feed_id
-      ? (feedKeys.get(r.source_feed_id) ?? null)
-      : (r.source_camera_id ? (keys.get(r.source_camera_id) ?? null) : null),
-  }));
+  // A feed that no longer exists resolves to null: the slot then sends the project's program/crop view.
+  return rows.map(r => ({ ...r, source_feed_key: r.source_feed_id ? (feedKeys.get(r.source_feed_id) ?? null) : null }));
 }
 
 /**
@@ -183,7 +166,7 @@ async function withSourceCameraKeys(db, rows) {
  */
 export async function getRelays(db, apiKey) {
   const rows = await db.rtmp_relays.findMany({ where: { api_key: apiKey }, orderBy: { slot: 'asc' } });
-  return (await withSourceCameraKeys(db, rows)).map(formatRelayRow);
+  return (await withSourceFeedKeys(db, rows)).map(formatRelayRow);
 }
 
 /**
@@ -196,7 +179,7 @@ export async function getRelays(db, apiKey) {
 export async function getRelaySlot(db, apiKey, slot) {
   const row = await db.rtmp_relays.findUnique({ where: { api_key_slot: { api_key: apiKey, slot } } });
   if (!row) return null;
-  const [withKey] = await withSourceCameraKeys(db, [row]);
+  const [withKey] = await withSourceFeedKeys(db, [row]);
   return formatRelayRow(withKey);
 }
 
@@ -229,10 +212,10 @@ export function buildRelayFfmpegUrl(relay) {
  * @param {string} apiKey
  * @param {number} slot  positive integer
  * @param {string} targetUrl
- * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceCameraId?: string|null, sourceFeedId?: string|null }} [opts]
+ * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceFeedId?: string|null }} [opts]
  * @returns {Promise<object>}
  */
-export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceCameraId = null, sourceFeedId = null } = {}) {
+export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceFeedId = null } = {}) {
   if (!Number.isInteger(slot) || slot < 1) {
     throw new RangeError(`slot must be a positive integer, got ${slot}`);
   }
@@ -250,7 +233,6 @@ export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = nu
     video_bitrate: videoBitrate || null,
     audio_bitrate: audioBitrate || null,
     source_view: sourceView,
-    source_camera_id: sourceCameraId || null,
     source_feed_id: sourceFeedId || null,
   };
   const now = db.$util.sqlNow();
@@ -260,34 +242,6 @@ export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = nu
     update: { ...values, updated_at: now },
   });
   return getRelaySlot(db, apiKey, slot);
-}
-
-/**
- * Resolve a relay's source camera to its MediaMTX path (camera_key), scoped
- * to the requesting project. Cross-plugin: prod_cameras is owned by
- * lcyt-production, but the two share one SQLite db instance repo-wide, so
- * this queries it directly rather than taking a hard dependency — the same
- * pattern lcyt-dsk's dsk-rtmp.js already uses for api_keys
- * (plan_ingest_feeds.md §2c).
- *
- * requestingApiKey is required and enforced: a camera with an owner_api_key
- * set is only resolvable by the project that owns it (code-review follow-up
- * — the original §2c implementation had no such check at all, letting any
- * project's relay egress-route any other project's live camera feed). A
- * camera with no owner (created before ownership existed, or via crud.js's
- * MCP path which deliberately stays unscoped — see lcyt-tools/CLAUDE.md)
- * remains resolvable by any project, matching the pre-existing open/legacy
- * behavior for those rows.
- * @param {object} db  Prisma client
- * @param {string} cameraId
- * @param {string} requestingApiKey
- * @returns {Promise<string|null>} camera_key, or null if not found / has no camera_key / owned by a different project
- */
-export async function resolveRelaySourceCameraKey(db, cameraId, requestingApiKey) {
-  const row = await db.prod_cameras.findUnique({ where: { id: cameraId }, select: { camera_key: true, owner_api_key: true } });
-  if (!row?.camera_key) return null;
-  if (row.owner_api_key != null && row.owner_api_key !== requestingApiKey) return null;
-  return row.camera_key;
 }
 
 /**
@@ -305,35 +259,13 @@ export async function resolveRelaySourceFeedKey(db, feedId, requestingApiKey) {
 }
 
 /**
- * Every distinct apiKey with a relay slot sourced from this feed (see getApiKeysReferencingCamera).
+ * Every distinct apiKey with a relay slot sourced from this feed.
  * @param {object} db  Prisma client
  * @param {string} feedId
  * @returns {Promise<string[]>}
  */
 export async function getApiKeysReferencingFeed(db, feedId) {
   const rows = await db.rtmp_relays.findMany({ where: { source_feed_id: feedId }, distinct: ['api_key'], select: { api_key: true } });
-  return rows.map(r => r.api_key);
-}
-
-/**
- * Find every distinct apiKey with at least one rtmp_relays slot sourced from
- * this camera (source_camera_id). Used by feed-rtmp.js's on_publish so a
- * camera-only relay configuration (no program-sourced slot at all) actually
- * gets its MediaMTX fan-out registered when the *camera* starts publishing —
- * code-review follow-up: previously nothing ever called start()/startAll()
- * in that scenario, since every existing trigger (routes/rtmp.js's on_publish,
- * PUT /stream/active) keys off the PRIMARY apiKey's own publish state, never
- * a referenced camera's.
- * @param {object} db  Prisma client
- * @param {string} cameraId
- * @returns {Promise<string[]>}
- */
-export async function getApiKeysReferencingCamera(db, cameraId) {
-  const rows = await db.rtmp_relays.findMany({
-    where: { source_camera_id: cameraId },
-    distinct: ['api_key'],
-    select: { api_key: true },
-  });
   return rows.map(r => r.api_key);
 }
 

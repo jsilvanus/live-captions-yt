@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceCameraKey, resolveRelaySourceFeedKey } from '../db.js';
+import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceFeedKey } from '../db.js';
 import logger from 'lcyt/logger';
 import { readThrough } from '../ownership.js';
 
@@ -12,7 +12,7 @@ import { readThrough } from '../ownership.js';
  * explicit non-goal of that plan, not built here).
  * The API key must have relay_allowed = true.
  *
- * POST   /stream              — create/replace a relay slot (body: { slot?, targetUrl, targetName?, captionMode?, sourceCameraId?, sourceFeedId? })
+ * POST   /stream              — create/replace a relay slot (body: { slot?, targetUrl, targetName?, captionMode?, sourceFeedId? })
  * GET    /stream              — get all configured slots + running status per slot
  * GET    /stream/history      — per-stream RTMP usage history for this key
  * PUT    /stream/:slot        — update a specific slot
@@ -61,7 +61,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   }
 
   async function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId, sourceFeedId } = req.body || {};
+    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId, sourceCameraId } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
@@ -71,7 +71,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
 
     // Which rendition this slot forwards (plan_vertical_crop.md): the raw
     // program feed (default) or the {key}-crop vertical rendition. Ignored
-    // when sourceCameraId is set (plan_ingest_feeds.md §1b/§2c).
+    // when sourceFeedId is set.
     let resolvedSourceView = 'program';
     if (sourceView !== undefined && sourceView !== null && sourceView !== '') {
       if (sourceView !== 'program' && sourceView !== 'crop') {
@@ -81,33 +81,17 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       resolvedSourceView = sourceView;
     }
 
-    // Optional named-feed source: a prod_cameras.id with a real camera_key
-    // (plan_ingest_feeds.md §1b). Takes priority over sourceView when set.
-    let resolvedSourceCameraId = null;
+    // Camera-sourced relays were moved to feeds (feeds-and-devices PR 7). Refuse the old field loudly rather than ignore it.
     if (sourceCameraId !== undefined && sourceCameraId !== null && sourceCameraId !== '') {
-      if (typeof sourceCameraId !== 'string') {
-        res.status(400).json({ error: 'sourceCameraId must be a string camera id' });
-        return null;
-      }
-      if (!(await resolveRelaySourceCameraKey(db, sourceCameraId, req.session.apiKey))) {
-        // Same 400 whether the camera doesn't exist, has no camera_key, or
-        // is owned by a different project — doesn't confirm a foreign
-        // camera's existence to a caller who doesn't own it.
-        res.status(400).json({ error: `Unknown or feed-less camera '${sourceCameraId}'` });
-        return null;
-      }
-      resolvedSourceCameraId = sourceCameraId;
+      res.status(400).json({ error: 'sourceCameraId is no longer accepted: use sourceFeedId (a feed linked to the camera)' });
+      return null;
     }
 
-    // Optional prod_feeds source (Feeds card). Wins over sourceCameraId, so a client may send only one of them.
+    // Optional prod_feeds source (Feeds card).
     let resolvedSourceFeedId = null;
     if (sourceFeedId !== undefined && sourceFeedId !== null && sourceFeedId !== '') {
       if (typeof sourceFeedId !== 'string') {
         res.status(400).json({ error: 'sourceFeedId must be a string feed id' });
-        return null;
-      }
-      if (resolvedSourceCameraId) {
-        res.status(400).json({ error: 'Give either sourceFeedId or sourceCameraId, not both' });
         return null;
       }
       if (!(await resolveRelaySourceFeedKey(db, sourceFeedId, req.session.apiKey))) {
@@ -152,7 +136,6 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       videoBitrate: resolvedVideoBitrate,
       audioBitrate: resolvedAudioBitrate,
       sourceView:   resolvedSourceView,
-      sourceCameraId: resolvedSourceCameraId,
       sourceFeedId: resolvedSourceFeedId,
     };
   }
@@ -194,7 +177,6 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         videoBitrate:  fields.videoBitrate,
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
-        sourceCameraId: fields.sourceCameraId,
         sourceFeedId:   fields.sourceFeedId,
       });
       return res.status(201).json({ ok: true, relay });
@@ -284,7 +266,6 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         videoBitrate:  fields.videoBitrate,
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
-        sourceCameraId: fields.sourceCameraId,
         sourceFeedId:   fields.sourceFeedId,
       });
       return res.status(200).json({ ok: true, relay });

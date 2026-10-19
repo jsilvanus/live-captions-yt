@@ -93,8 +93,7 @@ export function createFeedsRouter(db, auth, relayManager, settings = null, requi
       return { status: 400, error: `${v.deviceType} '${v.deviceId}' not found in this project` };
     }
     if (v.feedKey !== undefined) {
-      const linkedCameraId = v.deviceType === 'camera' ? v.deviceId : null;
-      if (!(await isFeedKeyFree(db, apiKey, v.feedKey, { exceptFeedId, linkedCameraId }))) {
+      if (!(await isFeedKeyFree(db, v.feedKey, { exceptFeedId }))) {
         return { status: 409, error: `feedKey '${v.feedKey}' is already in use` };
       }
     }

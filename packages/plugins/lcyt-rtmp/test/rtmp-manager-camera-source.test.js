@@ -1,11 +1,11 @@
 /**
  * RtmpRelayManager camera-sourced relay tests (plan_ingest_feeds.md §2c).
  *
- * Slots with sourceCameraKey set forward a named feed's own MediaMTX path
- * (a prod_cameras row's camera_key) instead of the raw per-key ingest, via
+ * Slots with sourceFeedKey set forward a named feed's own MediaMTX path
+ * (a prod_feeds row's feed_key) instead of the raw per-key ingest, via
  * a MediaMTX runOnPublish hook on that path — mirrors the crop-view fan-out
  * mechanism in crop-manager.test.js, just keyed by camera instead of
- * hardcoded to the {key}-crop path, and grouped per distinct camera_key
+ * hardcoded to the {key}-crop path, and grouped per distinct feed_key
  * since a project can relay from several named feeds at once.
  */
 import { test, describe } from 'node:test';
@@ -24,7 +24,7 @@ function makeFakeMtx() {
 }
 
 describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
-  test('a camera-sourced slot fans out from the camera_key path, not the raw per-key ingest', async () => {
+  test('a camera-sourced slot fans out from the feed_key path, not the raw per-key ingest', async () => {
     const mtx = makeFakeMtx();
     const mgr = new RtmpRelayManager({
       mediamtxClient: mtx,
@@ -33,13 +33,13 @@ describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
 
     await mgr.start('projectkey', [
       { slot: 1, targetUrl: 'rtmp://a.example/live', targetName: 'main', sourceView: 'program' },
-      { slot: 2, targetUrl: 'rtmp://b.example/live', targetName: 'teams', sourceCameraKey: 'altar-cam' },
+      { slot: 2, targetUrl: 'rtmp://b.example/live', targetName: 'teams', sourceFeedKey: 'altar-cam' },
     ]);
 
     const adds = mtx.calls.filter(c => c[0] === 'add');
     const cameraAdd = adds.find(c => c[1] === 'altar-cam');
     const rawAdd    = adds.find(c => c[1] === 'projectkey');
-    assert.ok(cameraAdd, 'camera-sourced fan-out registered on the camera_key path');
+    assert.ok(cameraAdd, 'camera-sourced fan-out registered on the feed_key path');
     assert.ok(rawAdd, 'program fan-out still registered on the raw path');
     assert.match(cameraAdd[2].runOnPublish, /altar-cam/);
     assert.match(cameraAdd[2].runOnPublish, /b\.example\/live\/teams/);
@@ -63,8 +63,8 @@ describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
     });
 
     await mgr.start('projectkey', [
-      { slot: 1, targetUrl: 'rtmp://teams.example/live', targetName: 't', sourceCameraKey: 'altar-cam' },
-      { slot: 2, targetUrl: 'rtmp://obs.example/live', targetName: 'o', sourceCameraKey: 'lobby-cam' },
+      { slot: 1, targetUrl: 'rtmp://teams.example/live', targetName: 't', sourceFeedKey: 'altar-cam' },
+      { slot: 2, targetUrl: 'rtmp://obs.example/live', targetName: 'o', sourceFeedKey: 'lobby-cam' },
     ]);
 
     const adds = mtx.calls.filter(c => c[0] === 'add').map(c => c[1]);
@@ -89,7 +89,7 @@ describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
     });
 
     await mgr.start('camonly', [
-      { slot: 1, targetUrl: 'rtmp://v.example/live', targetName: 'x', sourceCameraKey: 'altar-cam' },
+      { slot: 1, targetUrl: 'rtmp://v.example/live', targetName: 'x', sourceFeedKey: 'altar-cam' },
     ]);
     assert.ok(mgr.isRunning('camonly'));
     assert.deepEqual(mgr.runningSlots('camonly'), [1]);
@@ -99,7 +99,7 @@ describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
     assert.deepEqual(ended, [1], 'end stats fired for the camera-sourced slot');
   });
 
-  test('sourceCameraKey takes priority over sourceView when both are present', async () => {
+  test('sourceFeedKey takes priority over sourceView when both are present', async () => {
     const mtx = makeFakeMtx();
     const mgr = new RtmpRelayManager({
       mediamtxClient: mtx,
@@ -107,12 +107,12 @@ describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
     });
 
     await mgr.start('projectkey', [
-      { slot: 1, targetUrl: 'rtmp://x.example/live', targetName: 'x', sourceView: 'crop', sourceCameraKey: 'altar-cam' },
+      { slot: 1, targetUrl: 'rtmp://x.example/live', targetName: 'x', sourceView: 'crop', sourceFeedKey: 'altar-cam' },
     ]);
 
     const adds = mtx.calls.filter(c => c[0] === 'add').map(c => c[1]);
     assert.ok(adds.includes('altar-cam'));
-    assert.ok(!adds.includes('projectkey-crop'), 'crop fan-out not registered — sourceCameraKey wins');
+    assert.ok(!adds.includes('projectkey-crop'), 'crop fan-out not registered — sourceFeedKey wins');
 
     await mgr.stop('projectkey');
   });
@@ -122,7 +122,7 @@ describe('RtmpRelayManager — camera-sourced (named feed) slots', () => {
       ffmpegCaps: { available: true },
     });
     await assert.doesNotReject(mgr.start('projectkey', [
-      { slot: 1, targetUrl: 'rtmp://x.example/live', targetName: 'x', sourceCameraKey: 'altar-cam' },
+      { slot: 1, targetUrl: 'rtmp://x.example/live', targetName: 'x', sourceFeedKey: 'altar-cam' },
     ]));
   });
 });

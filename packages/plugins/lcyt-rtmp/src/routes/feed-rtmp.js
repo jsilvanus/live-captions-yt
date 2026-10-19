@@ -7,17 +7,10 @@
  * needed per camera, mirroring the `stream`/`dsk` apps' single-app-many-keys
  * shape (see routes/rtmp.js, lcyt-dsk's routes/dsk-rtmp.js).
  *
- * When a broadcaster (e.g. OBS) publishes to `rtmp://<server>/feed/<cameraKey>`,
- * the stream name is resolved against prod_cameras.camera_key for a row with
- * control_type='rtmp'. A camera's mere existence with that control type is
- * the entire accept/reject gate — there is no separate admin flag to check
- * (mirrors how DSK-ingest reasoning works, just for a different table).
- *
- * prod_cameras is owned by lcyt-production, but the two plugins share one
- * database repo-wide, so this queries it directly rather than taking a hard
- * dependency — the same cross-plugin-query pattern already used by
- * resolveApiKeyFromIngestStreamKey() (db/relay.js) and by db/relay.js's own
- * resolveRelaySourceCameraKey().
+ * When a broadcaster (e.g. OBS) publishes to `rtmp://<server>/feed/<feedKey>`,
+ * the stream name is resolved against prod_feeds.feed_key for a row with
+ * transport 'rtmp'. A feed's mere existence with that transport is the entire
+ * accept/reject gate: there is no separate admin flag to check.
  *
  * Nginx-rtmp configuration example:
  *
@@ -36,27 +29,20 @@
 
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
-import { getApiKeysReferencingCamera, getApiKeysReferencingFeed, isRelayActive, getRelays, getKey } from '../db.js';
+import { getApiKeysReferencingFeed, isRelayActive, getRelays, getKey } from '../db.js';
 
-// camera_key validation: same shape as the main relay keys / DSK app names.
-const CAMERA_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
+// feed_key validation: same shape as the main relay keys / DSK app names.
+const FEED_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
 
 /**
- * Resolve an incoming nginx-rtmp stream `name` to the feed it belongs to: a prod_feeds row with transport 'rtmp',
- * else a prod_cameras row with control_type='rtmp' (feeds that predate the Feeds card). A feed's mere existence is the
- * accept/reject gate. A name that is both resolves to the feed and also reports the camera, so egress sourced either way starts.
+ * Resolve an incoming nginx-rtmp stream `name` to a feed: a prod_feeds row with transport 'rtmp'.
  * @param {object} db  Prisma client
  * @param {string} key
- * @returns {Promise<{ key: string, feedId: string|null, cameraId: string|null }|null>}
+ * @returns {Promise<{ key: string, feedId: string }|null>}
  */
 async function resolveFeed(db, key) {
   const feed = await db.prod_feeds.findUnique({ where: { feed_key: key }, select: { id: true, feed_key: true, transport: true } });
-  const camera = await db.prod_cameras.findFirst({
-    where: { camera_key: key, control_type: 'rtmp' },
-    select: { id: true, camera_key: true },
-  });
-  if (feed && feed.transport === 'rtmp') return { key: feed.feed_key, feedId: feed.id, cameraId: camera?.id ?? null };
-  if (camera) return { key: camera.camera_key, feedId: null, cameraId: camera.id };
+  if (feed && feed.transport === 'rtmp') return { key: feed.feed_key, feedId: feed.id };
   return null;
 }
 
@@ -76,40 +62,33 @@ export function createFeedRtmpRouter(db, relayManager) {
   /**
    * Shared handler for nginx-rtmp publish/publish_done events.
    * @param {'publish'|'publish_done'} call
-   * @param {string} name  Stream name = a prod_cameras.camera_key
+   * @param {string} name  Stream name = a prod_feeds.feed_key
    * @param {import('express').Response} res
    */
   async function handleNginxCallback(call, name, res) {
-    if (!name || !CAMERA_KEY_RE.test(name)) {
+    if (!name || !FEED_KEY_RE.test(name)) {
       return res.status(400).send('invalid stream name');
     }
 
     const feed = await resolveFeed(db, name);
     if (!feed) {
-      logger.warn(`[feed-rtmp] Rejected publish: no 'rtmp' feed or camera with key '${name}'`);
+      logger.warn(`[feed-rtmp] Rejected publish: no 'rtmp' feed with key '${name}'`);
       return res.status(403).send('unknown feed');
     }
 
     if (call === 'publish') {
-      logger.info(`[feed-rtmp] on_publish: feed '${name}' (${feed.feedId ? `feed ${feed.feedId.slice(0, 8)}…` : `camera ${feed.cameraId.slice(0, 8)}…`})`);
+      logger.info(`[feed-rtmp] on_publish: feed '${name}' (feed ${feed.feedId.slice(0, 8)}…)`);
       // Separate namespace from markPublishing/isPublishing (apiKey-keyed) —
-      // camera_key is an operator-chosen string with no uniqueness
-      // constraint against api_keys.key, so a colliding value must not be
-      // able to spoof another project's own live status (code-review
-      // follow-up).
+      // feed_key is an operator-chosen string with no uniqueness constraint
+      // against api_keys.key, so a colliding value must not be able to spoof
+      // another project's own live status (code-review follow-up).
       relayManager.markFeedPublishing(feed.key);
 
-      // A camera-only relay configuration (no program-sourced slot at all)
-      // has no other trigger to ever start its MediaMTX fan-out — every
-      // other trigger (routes/rtmp.js's on_publish, PUT /stream/active) keys
-      // off the PRIMARY apiKey's own publish state, never a referenced
-      // camera's (code-review follow-up: this was previously missing
-      // entirely, so a pure named-feed egress silently never worked unless
-      // the project's own ingest also happened to publish at some point).
-      const apiKeys = [...new Set([
-        ...(feed.cameraId ? await getApiKeysReferencingCamera(db, feed.cameraId) : []),
-        ...(feed.feedId ? await getApiKeysReferencingFeed(db, feed.feedId) : []),
-      ])];
+      // A feed-only relay configuration (no program-sourced slot at all) has
+      // no other trigger to ever start its MediaMTX fan-out: every other
+      // trigger (routes/rtmp.js's on_publish, PUT /stream/active) keys off
+      // the PRIMARY apiKey's own publish state, never a referenced feed's.
+      const apiKeys = await getApiKeysReferencingFeed(db, feed.feedId);
       for (const apiKey of apiKeys) {
         if (!(await isRelayActive(db, apiKey))) continue;
         try {
@@ -125,7 +104,7 @@ export function createFeedRtmpRouter(db, relayManager) {
     }
 
     if (call === 'publish_done') {
-      logger.info(`[feed-rtmp] on_publish_done: feed '${name}' (${feed.feedId ? `feed ${feed.feedId.slice(0, 8)}…` : `camera ${feed.cameraId.slice(0, 8)}…`})`);
+      logger.info(`[feed-rtmp] on_publish_done: feed '${name}' (feed ${feed.feedId.slice(0, 8)}…)`);
       relayManager.markFeedNotPublishing(feed.key);
       return res.status(200).send('ok');
     }

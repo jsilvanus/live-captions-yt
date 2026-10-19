@@ -282,7 +282,7 @@ export class RtmpRelayManager {
 
     /**
      * Named-feed-sourced relay fan-outs (plan_ingest_feeds.md §2c): slots
-     * with sourceCameraId set forward a prod_cameras row's camera_key
+     * with sourceFeedId set forward a prod_feeds row's feed_key
      * MediaMTX path instead of the raw per-key ingest, via a MediaMTX
      * runOnPublish hook on that path — same mechanism as _cropRelays, just
      * keyed by camera rather than hardcoded to the {key}-crop path, and
@@ -320,8 +320,8 @@ export class RtmpRelayManager {
     this._publishing = new Set();
 
     /**
-     * Named feed (camera_key) publish tracking — a separate namespace from
-     * _publishing above so an operator-chosen camera_key can never collide
+     * Named feed (feed_key) publish tracking — a separate namespace from
+     * _publishing above so an operator-chosen feed_key can never collide
      * with a real apiKey's live status (plan_ingest_feeds.md §2a).
      * @type {Set<string>}
      */
@@ -392,20 +392,20 @@ export class RtmpRelayManager {
       // from that path and never participate in the CEA-708/transcode/DSK
       // process modes below (the crop renderer already re-encodes).
       //
-      // Camera-sourced slots (sourceCameraKey set — plan_ingest_feeds.md §2c)
+      // Camera-sourced slots (sourceFeedKey set — plan_ingest_feeds.md §2c)
       // forward a named feed's own MediaMTX path instead, grouped by that
       // path since a project can have several distinct named feeds relaying
-      // at once. sourceCameraKey takes priority over sourceView when both
+      // at once. sourceFeedKey takes priority over sourceView when both
       // happen to be present on a row.
       const allSlots = relays ?? [];
-      const cameraSlots = allSlots.filter(r => r.sourceCameraKey);
-      const cropSlots = allSlots.filter(r => !r.sourceCameraKey && r.sourceView === 'crop');
-      relays = allSlots.filter(r => !r.sourceCameraKey && r.sourceView !== 'crop');
+      const feedSlots = allSlots.filter(r => r.sourceFeedKey);
+      const cropSlots = allSlots.filter(r => !r.sourceFeedKey && r.sourceView === 'crop');
+      relays = allSlots.filter(r => !r.sourceFeedKey && r.sourceView !== 'crop');
 
-      const cameraGroups = new Map(); // cameraKey -> slots[]
-      for (const r of cameraSlots) {
-        if (!cameraGroups.has(r.sourceCameraKey)) cameraGroups.set(r.sourceCameraKey, []);
-        cameraGroups.get(r.sourceCameraKey).push(r);
+      const feedGroups = new Map(); // cameraKey -> slots[]
+      for (const r of feedSlots) {
+        if (!feedGroups.has(r.sourceFeedKey)) feedGroups.set(r.sourceFeedKey, []);
+        feedGroups.get(r.sourceFeedKey).push(r);
       }
 
       if (allSlots.length === 0) {
@@ -436,13 +436,13 @@ export class RtmpRelayManager {
       if (cropSlots.length > 0) {
         await this._startCropRelay(apiKey, cropSlots);
       }
-      // Isolated per group (code-review follow-up): camera_key is an
+      // Isolated per group (code-review follow-up): feed_key is an
       // operator-supplied string with no format validation at camera-create
       // time historically, so one unsafe/malformed value must not abort the
       // program-sourced slots (or other, valid camera groups) processed
       // below — previously a single throw here escaped uncaught out of
       // start() entirely.
-      for (const [cameraKey, slots] of cameraGroups) {
+      for (const [cameraKey, slots] of feedGroups) {
         try {
           await this._startCameraSourceRelay(apiKey, cameraKey, slots);
         } catch (err) {
@@ -953,7 +953,7 @@ export class RtmpRelayManager {
 
   /**
    * Rebuild (or remove) the single MediaMTX runOnPublish registration for a
-   * camera_key path from the union of every apiKey's slots currently
+   * feed_key path from the union of every apiKey's slots currently
    * referencing it. MediaMTX allows only one runOnPublish config per path,
    * so if more than one project relays from the same named feed — an
    * unowned/legacy camera with no project scope, or two projects sharing one
@@ -984,12 +984,12 @@ export class RtmpRelayManager {
 
   /**
    * Register the fan-out for slots sourced from a named feed (a
-   * prod_cameras row's camera_key path) rather than the raw per-key ingest
+   * prod_feeds row's feed_key path) rather than the raw per-key ingest
    * (plan_ingest_feeds.md §2c). Records this apiKey's own slots, then
    * reconciles the shared MediaMTX path from every apiKey referencing it —
    * see _reconcileCameraKeyFanout().
    * @param {string} apiKey
-   * @param {string} cameraKey  the source camera's camera_key (MediaMTX path)
+   * @param {string} feedKey  the source feed's feed_key (MediaMTX path)
    * @param {Array} slots
    * @returns {Promise<void>}
    */
@@ -1416,10 +1416,10 @@ export class RtmpRelayManager {
   isPublishing(apiKey) { return this._publishing.has(apiKey); }
 
   // Named-feed (plan_ingest_feeds.md §2a) publish tracking uses a separate Set,
-  // keyed by camera_key rather than apiKey. Deliberately NOT the same Set as
-  // markPublishing/isPublishing above: camera_key is an operator-chosen string
+  // keyed by feed key rather than apiKey. Deliberately NOT the same Set as
+  // markPublishing/isPublishing above: feed_key is an operator-chosen string
   // with no uniqueness constraint against api_keys.key, so sharing one Set
-  // would let a camera_key that happens to collide with a real apiKey spoof
+  // would let a feed key that happens to collide with a real apiKey spoof
   // that project's ingestion.js/stream.js/crop.js "is the project live" checks.
 
   /** Mark that a named feed camera has started publishing (feed-rtmp.js on_publish). */

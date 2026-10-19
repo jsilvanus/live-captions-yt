@@ -60,7 +60,7 @@ function toPresetKeyOrNull(v) {
  * number — used by CropManager.applyForSource() (plan_vertical_crop.md §4)
  * to turn a bare onProgramChanged({ inputNumber }) into a cameraId for
  * crop_source_map resolution. Cross-plugin query, same guarded pattern as
- * resolveRelaySourceCameraKey()/getApiKeysReferencingCamera() below.
+ * resolveRelaySourceFeedKey()/getApiKeysReferencingFeed() below.
  * prod_cameras.mixer_input is not itself scoped to a specific mixer id
  * (lcyt-production has no camera→mixer FK — see routes/mixers.js's
  * GET /:id/sources, which reads it the same unscoped way), so this only

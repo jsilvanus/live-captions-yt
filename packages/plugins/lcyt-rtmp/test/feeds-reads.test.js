@@ -1,6 +1,6 @@
 /**
- * Feeds PR 2: the readers that now understand prod_feeds next to prod_cameras — the nginx-rtmp publish gate,
- * the relay's sourceFeedId, and the ingestion stream lists (Discover included).
+ * Feeds PR 2 (and PR 7, camera keys gone): the readers of prod_feeds — the nginx-rtmp publish gate, the relay's
+ * sourceFeedId, and the ingestion stream lists (Discover included).
  */
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
@@ -27,7 +27,6 @@ before(async () => {
   await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport) VALUES ('f-rtmp', ?, 'Guest', 'guest-feed', 'rtmp')").run(KEY);
   await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport) VALUES ('f-whip', ?, 'Laptop', 'laptop-feed', 'whip')").run(KEY);
   await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport) VALUES ('f-theirs', ?, 'Theirs', 'theirs-feed', 'rtmp')").run(OTHER);
-  await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key) VALUES ('cam-old', 'Altar', 'altar-cam', 'rtmp', ?)").run(KEY);
 
   mediamtx = { items: [], async listPaths() { return { pageCount: 1, items: this.items }; } };
   relayManager = new RtmpRelayManager();
@@ -69,11 +68,6 @@ describe('publish gate', () => {
     assert.equal((await publish('nobody')).status, 403);
   });
 
-  it('still accepts a camera with control_type rtmp that has no feed row', async () => {
-    assert.equal((await publish('altar-cam')).status, 200);
-    assert.ok(relayManager.isFeedPublishing('altar-cam'));
-  });
-
   it('starts the relay of a project whose slot is sourced from the published feed', async () => {
     const res = await stream('POST', { slot: 1, targetUrl: 'rtmp://example.com/live/x', sourceFeedId: 'f-rtmp' });
     assert.equal(res.status, 201);
@@ -88,21 +82,16 @@ describe('relay sourceFeedId', () => {
   it('joins the feed key into the slot like a camera source', async () => {
     const [relay] = await getRelays(db, KEY);
     assert.equal(relay.sourceFeedId, 'f-rtmp');
-    assert.equal(relay.sourceCameraId, null);
-    assert.equal(relay.sourceCameraKey, 'guest-feed');
+    assert.equal(relay.sourceFeedKey, 'guest-feed');
   });
 
-  it('refuses another project\'s feed, an unknown feed and a feed together with a camera', async () => {
+  it('refuses another project\'s feed, an unknown feed and the removed sourceCameraId field', async () => {
     const base = { targetUrl: 'rtmp://example.com/live/y' };
     assert.equal((await stream('POST', { ...base, sourceFeedId: 'f-theirs' })).status, 400);
     assert.equal((await stream('POST', { ...base, sourceFeedId: 'nope' })).status, 400);
-    assert.equal((await stream('POST', { ...base, sourceFeedId: 'f-rtmp', sourceCameraId: 'cam-old' })).status, 400);
-  });
-
-  it('prefers the feed when a stored slot has both', async () => {
-    await db.prepare("UPDATE rtmp_relays SET source_camera_id = 'cam-old' WHERE api_key = ? AND slot = 1").run(KEY);
-    const [relay] = await getRelays(db, KEY);
-    assert.equal(relay.sourceCameraKey, 'guest-feed');
+    const removed = await stream('POST', { ...base, sourceCameraId: 'cam-old' });
+    assert.equal(removed.status, 400);
+    assert.match((await removed.json()).error, /sourceCameraId is no longer accepted/);
   });
 
   it('a deleted feed leaves the slot without a key, like a deleted camera', async () => {
@@ -110,15 +99,15 @@ describe('relay sourceFeedId', () => {
     await stream('POST', { slot: 2, targetUrl: 'rtmp://example.com/live/z', sourceFeedId: 'f-tmp' });
     await db.prepare("DELETE FROM prod_feeds WHERE id = 'f-tmp'").run();
     const relay = (await getRelays(db, KEY)).find((r) => r.slot === 2);
-    assert.equal(relay.sourceCameraKey, null);
+    assert.equal(relay.sourceFeedKey, null);
   });
 });
 
 describe('ingestion stream lists', () => {
   it('GET /ingestion/streams lists the project\'s rtmp feeds once, with their label', async () => {
-    mediamtx.items = [ready('guest-feed'), ready('altar-cam'), ready('laptop-feed'), ready('theirs-feed')];
+    mediamtx.items = [ready('guest-feed'), ready('laptop-feed'), ready('theirs-feed')];
     const body = await (await fetch(`${baseUrl}/ingestion/streams`)).json();
-    assert.deepEqual(body.streams.map((s) => [s.path, s.kind]).sort(), [['altar-cam', 'feed'], ['guest-feed', 'feed']]);
+    assert.deepEqual(body.streams.map((s) => [s.path, s.kind]).sort(), [['guest-feed', 'feed']]);
   });
 
   it('Discover knows every feed key, any project, and skips our own DSK viewport renders', async () => {
