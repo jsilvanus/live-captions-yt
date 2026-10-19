@@ -3,6 +3,7 @@
  * operator needs to see whether the detector is working: per camera the job, the auto-start switch, whether it is on
  * program and what the detector last saw; the shared-feed job; and the feed attribution.
  */
+import { withFeedKeys } from 'lcyt-production';
 
 /**
  * @param {{
@@ -19,11 +20,11 @@ export function createPerceptionOverview({ db, sceneState, attributor, perceptio
   return async function overview(apiKey) {
     const attribution = attributor.status(apiKey);
     const scene = sceneState.getState(apiKey)?.cameras || {};
-    const rows = await db.prod_cameras.findMany({
+    const rows = await withFeedKeys(db, await db.prod_cameras.findMany({
       where: { OR: [{ owner_api_key: apiKey }, { owner_api_key: null }] },
       select: { id: true, name: true, label: true, zone: true, camera_key: true, perception_enabled: true, mixer_input: true },
       orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
-    });
+    }));
     const cameras = rows.map((r) => {
       const s = scene[r.id] ?? null;
       const people = s ? (s.subjects || []).filter((x) => x.label === 'person') : [];

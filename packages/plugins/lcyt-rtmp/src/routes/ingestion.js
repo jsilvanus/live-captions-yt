@@ -135,6 +135,15 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
         select: { camera_key: true, name: true, label: true },
       });
       for (const c of cameras) keys.push({ key: c.camera_key, kind: 'feed', label: c.label || c.name });
+      const seen = new Set(keys.map(k => k.key));
+      const feeds = await db.prod_feeds.findMany({
+        where: { owner_api_key: apiKey, transport: 'rtmp' },
+        select: { feed_key: true, name: true, label: true },
+      });
+      for (const f of feeds) {
+        if (seen.has(f.feed_key)) continue; // a backfilled camera feed is already listed through its camera
+        keys.push({ key: f.feed_key, kind: 'feed', label: f.label || f.name });
+      }
       return res.json({ available: true, streams: await listIngestStreams(mediamtx, keys) });
     } catch (err) {
       logger.warn(`[ingestion] stream list failed: ${err.message}`);
@@ -161,6 +170,7 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
       for (const c of await db.prod_cameras.findMany({ where: { camera_key: { not: null } }, select: { camera_key: true } })) {
         known.add(c.camera_key);
       }
+      for (const f of await db.prod_feeds.findMany({ select: { feed_key: true } })) known.add(f.feed_key);
       return res.json({ available: true, streams: await listUnclaimedStreams(mediamtx, known) });
     } catch (err) {
       logger.warn(`[ingestion] unclaimed stream list failed: ${err.message}`);

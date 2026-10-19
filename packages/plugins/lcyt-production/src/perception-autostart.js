@@ -13,6 +13,8 @@
  */
 
 /** Per-project shared-feed switch (table prod_perception_settings). */
+import { withFeedKeys } from './camera-feeds.js';
+
 export async function setSharedAutostart(db, apiKey, enabled) {
   await db.prod_perception_settings.upsert({
     where: { api_key: apiKey },
@@ -72,10 +74,11 @@ export function createPerceptionAutostart({ db, manager, mediamtxClient, interva
     if (busy) return;
     busy = true;
     try {
-      for (const cam of await db.prod_cameras.findMany({
-        where: { perception_enabled: 1, camera_key: { not: null } },
+      const enabled = await db.prod_cameras.findMany({
+        where: { perception_enabled: 1 },
         select: { id: true, camera_key: true, owner_api_key: true },
-      })) {
+      });
+      for (const cam of (await withFeedKeys(db, enabled)).filter((c) => c.camera_key)) {
         if (!cam.owner_api_key) {
           if (!warned.has(cam.id)) { warned.add(cam.id); log(`[perception] camera ${cam.id} has auto-start on but no owning project; skipped`); }
           continue;

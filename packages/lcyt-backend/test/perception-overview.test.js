@@ -24,6 +24,14 @@ describe('perception overview', () => {
   });
   after(async () => { await db.close(); });
 
+  it('hasFeed is true for a camera whose only feed is a linked one', async () => {
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES ('f-b', 'k1', 'B feed', 'b-feed', 'rtmp', 'camera', 'camera', 'b', 0)`).run();
+    const o = await overview('k1');
+    assert.equal(o.cameras.find((c) => c.id === 'b').hasFeed, true);
+    await db.prepare("DELETE FROM prod_feeds WHERE id = 'f-b'").run();
+  });
+
   it("lists this project's cameras (and unowned ones) with job, switch, program and detector state", async () => {
     const o = await overview('k1');
     assert.deepEqual(o.cameras.map((c) => c.id), ['a', 'b']);

@@ -3,6 +3,7 @@ import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseMixer } from '../registry.js';
+import { withFeedKeys } from '../camera-feeds.js';
 import { createProductionCommands, commandStatus } from '../commands.js';
 import { requireTier } from '../route-access.js';
 
@@ -321,10 +322,10 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       return res.status(400).json({ error: 'Sources endpoint is only available for LCYT software mixers' });
     }
 
-    const cameras = await db.prod_cameras.findMany({
+    const cameras = await withFeedKeys(db, await db.prod_cameras.findMany({
       where: { mixer_input: { not: null } },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
-    });
+    }));
 
     const origin = `${req.protocol}://${req.get('host')}`;
     const sources = await Promise.all(cameras.map(async cam => {

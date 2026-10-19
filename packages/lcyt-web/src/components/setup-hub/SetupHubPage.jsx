@@ -2,12 +2,10 @@ import { useEffect, useState } from 'react';
 import { SetupCard } from './SetupCard.jsx';
 import { PlatformsSection } from './PlatformsSection.jsx';
 import { WorkflowsIcon } from './icons.jsx';
-import { CameraSection } from './CameraSection.jsx';
-import { MixerSection } from './MixerSection.jsx';
-import { EncoderSection } from './EncoderSection.jsx';
+import { DevicesSection } from './DevicesSection.jsx';
 import { BridgeSection } from './BridgeSection.jsx';
 import { EgressSection } from './EgressSection.jsx';
-import { IngestionSection } from './IngestionSection.jsx';
+import { FeedsSection } from './FeedsSection.jsx';
 import { ViewerStreamSection } from './ViewerStreamSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
@@ -34,6 +32,9 @@ import { GuidedActionProvider } from '../../hooks/useGuidedAction.jsx';
 import { RoleAssistantPanel } from '../agent/RoleAssistantPanel.jsx';
 
 const FILTERS = ['all', 'favorites', 'workflow'];
+
+/** Cards that became the Devices card (plan_feeds_devices.md PR 4); starred ones keep their star. */
+const LEGACY_DEVICE_CARD_IDS = ['cameras', 'mixers', 'encoders'];
 
 /**
  * SetupHubPage — `/setup`. Persistent device/service catalog superseding the
@@ -84,8 +85,13 @@ export function SetupHubPage() {
     return () => { cancelled = true; };
   }, [filter, workflowKey, session?.connected, session?.backendUrl, sessionToken, apiKey]);
 
+  function isFavorite(id) {
+    if (favorites.has(id)) return true;
+    return id === 'devices' && LEGACY_DEVICE_CARD_IDS.some(legacy => favorites.has(legacy));
+  }
+
   function isVisible(id) {
-    if (filter === 'favorites') return favorites.has(id);
+    if (filter === 'favorites') return isFavorite(id);
     if (filter === 'workflow') return workflowCardIds.has(id);
     return true;
   }
@@ -142,14 +148,12 @@ export function SetupHubPage() {
 
           <div className="setup-hub-page__grid">
             {/* ── Production devices ── */}
-            {isVisible('cameras') && <CameraSection />}
-            {isVisible('mixers') && <MixerSection />}
-            {isVisible('encoders') && <EncoderSection />}
+            {isVisible('devices') && <DevicesSection />}
             {isVisible('bridges') && <BridgeSection />}
 
             {/* ── Streaming & graphics ── */}
             {isVisible('egress') && <EgressSection />}
-            {isVisible('ingestion') && <IngestionSection />}
+            {isVisible('feeds') && <FeedsSection />}
             {isVisible('radio') && <WebRadioSection />}
             {isVisible('viewer-stream') && <ViewerStreamSection />}
             {isVisible('viewports') && <ViewportsSection />}

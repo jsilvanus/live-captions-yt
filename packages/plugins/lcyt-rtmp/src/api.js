@@ -24,6 +24,7 @@
  *     app.use('/rtmp',       routers.rtmpRouter);
  *     app.use('/feed-rtmp',  routers.feedRtmpRouter);
  *     app.use('/ingestion',  routers.ingestionRouter);
+ *     app.use('/feeds',      routers.feedsRouter);
  *     app.use('/stream',     routers.streamRouter);
  *     app.use('/stream-hls', routers.streamHlsRouter);
  *     app.use('/radio',      routers.radioRouter);
@@ -52,6 +53,7 @@ import { createRtmpRouter } from './routes/rtmp.js';
 import { createFeedRtmpRouter } from './routes/feed-rtmp.js';
 import { createCropRouter } from './routes/crop.js';
 import { createIngestionRouter } from './routes/ingestion.js';
+import { createFeedsRouter } from './routes/feeds.js';
 import { createStreamRouter } from './routes/stream.js';
 import { createStreamHlsRouter } from './routes/stream-hls.js';
 import { createRadioRouter } from './routes/radio.js';
@@ -63,6 +65,7 @@ export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { programPathName, dskPathName } from './rtmp-manager.js';
 export { withOwnership, readThrough, ownedElsewhere, RELAY_OWNERSHIP, CROP_OWNERSHIP, STT_OWNERSHIP } from './ownership.js';
 export { NginxManager } from './nginx-manager.js';
+export { backfillFeeds, listFeeds, getFeed, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds } from './db/feeds.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side
@@ -247,6 +250,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  *   rtmpRouter: import('express').Router,
  *   feedRtmpRouter: import('express').Router,
  *   ingestionRouter: import('express').Router,
+ *   feedsRouter: import('express').Router,
  *   streamRouter: import('express').Router,
  *   streamHlsRouter: import('express').Router,
  *   radioRouter: import('express').Router,
@@ -259,6 +263,7 @@ export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioMan
     feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
     mediamtxHookRouter: createMediaMtxHookRouter({ relayManager, settings }),
     ingestionRouter: createIngestionRouter(db, auth, relayManager, settings, requireSetup),
+    feedsRouter:     createFeedsRouter(db, auth, relayManager, settings, requireSetup),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains, requireSetup),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),
     radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics, requireSetup),

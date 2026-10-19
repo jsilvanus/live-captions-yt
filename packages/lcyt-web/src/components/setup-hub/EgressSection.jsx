@@ -8,9 +8,10 @@ import {
   MAX_RELAY_SLOTS,
   setSlotTargetType, setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
-  setSlotRecordOnStart, setSlotRecordOnButton, setSlotSourceView, setSlotSourceCameraId,
+  setSlotRecordOnStart, setSlotRecordOnButton, setSlotSourceView, setSlotSourceCameraId, setSlotSourceFeedId,
   clearSlot, buildInitialRelayList,
 } from '../../lib/relayConfig.js';
+import { sourceRequestFields } from '../../lib/relaySource.js';
 
 function slotLabel(entry) {
   return entry.targetType === 'youtube' ? 'YouTube' : (entry.genericName || 'Generic RTMP');
@@ -31,21 +32,17 @@ function slotMeta(entry) {
  * `RelaySlotRow` (the same per-slot editor) as Dialog content instead of
  * RelayPanel's own always-inline expanding rows. `MAX_RELAY_SLOTS` is a UI
  * convenience cap only — the backend itself has none (plan_ingest_feeds.md
- * §1b). Each slot can pick a source (Program / Vertical Crop / any named
- * feed camera) via the `feedCameras` list this component fetches and passes
- * to `RelaySlotRow` — `RelayPanel.jsx`/`StreamTab.jsx` don't fetch or pass
- * that list yet, so the source picker only appears here for now.
+ * §1b). Each slot can pick a source (Program / Vertical Crop / a named feed,
+ * grouped by kind) from the `feeds` list (`GET /feeds`) this component fetches
+ * and passes to `RelaySlotRow` — `RelayPanel.jsx`/`StreamTab.jsx` don't fetch
+ * or pass that list, so the source picker only appears here for now. The
+ * `cameras` list (`GET /production/cameras`) only names a legacy camera slot.
  *
  * No `/setup/egress/page` parity route: unlike the device managers, there's
  * no standalone page that's *just* this — `/broadcast` also covers Encoder
  * and YouTube auth config, so the footer link goes there directly instead of
  * through a parity banner.
  */
-// Camera control types that carry a camera_key (a real MediaMTX ingest path) —
-// webcam/mobile (WHIP) and 'rtmp' (pushed — plan_ingest_feeds.md §1a). Same
-// filter IngestionSection.jsx uses.
-const FEED_CAMERA_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
-
 export function EgressSection() {
   const session = useSessionContext();
   const connected = session?.connected;
@@ -58,7 +55,8 @@ export function EgressSection() {
   const [editingSlot, setEditingSlot] = useState(null);
   const [relayStatus, setRelayStatus] = useState(null);
   const [relayActive, setRelayActiveState] = useState(false);
-  const [feedCameras, setFeedCameras] = useState([]);
+  const [feeds, setFeeds] = useState([]);
+  const [cameras, setCameras] = useState([]);
 
   const refreshStatus = useCallback(() => {
     if (!connected || !getRelayStatus) { setRelayStatus(null); return; }
@@ -67,20 +65,25 @@ export function EgressSection() {
       .catch(() => setRelayStatus(null));
   }, [connected, getRelayStatus]);
 
-  const refreshFeedCameras = useCallback(async () => {
-    if (!connected || !backendUrl) { setFeedCameras([]); return; }
-    try {
-      const token = getSessionToken?.();
-      const r = await fetch(`${backendUrl}/api/v1/production/cameras`, {
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
-      if (!r.ok) return;
-      const cams = await r.json();
-      setFeedCameras((cams || []).filter(c => FEED_CAMERA_TYPES.has(c.controlType) && c.cameraKey));
-    } catch { /* ignore — source picker just stays hidden */ }
-  }, [connected, backendUrl, getSessionToken]);
+  const authedGet = useCallback(async (path) => {
+    const token = getSessionToken?.();
+    const r = await fetch(`${backendUrl}/api/v1${path}`, {
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+    return r.ok ? r.json() : null;
+  }, [backendUrl, getSessionToken]);
 
-  useEffect(() => { refreshStatus(); refreshFeedCameras(); }, [refreshStatus, refreshFeedCameras]);
+  // The source picker's feeds. Failure leaves the picker hidden (or only the legacy option showing).
+  const refreshFeeds = useCallback(async () => {
+    if (!connected || !backendUrl) { setFeeds([]); setCameras([]); return; }
+    try {
+      const [feedBody, cams] = await Promise.all([authedGet('/feeds'), authedGet('/production/cameras')]);
+      setFeeds(feedBody?.feeds || []);
+      setCameras(Array.isArray(cams) ? cams : []);
+    } catch { /* ignore — source picker just stays hidden */ }
+  }, [connected, backendUrl, authedGet]);
+
+  useEffect(() => { refreshStatus(); refreshFeeds(); }, [refreshStatus, refreshFeeds]);
 
   function persistSlot(slot, updated) {
     if (updated.targetType   !== undefined) setSlotTargetType(slot, updated.targetType);
@@ -96,6 +99,7 @@ export function EgressSection() {
     if (updated.recordOnButton !== undefined) setSlotRecordOnButton(slot, !!updated.recordOnButton);
     if (updated.sourceView     !== undefined) setSlotSourceView(slot, updated.sourceView);
     if (updated.sourceCameraId !== undefined) setSlotSourceCameraId(slot, updated.sourceCameraId);
+    if (updated.sourceFeedId   !== undefined) setSlotSourceFeedId(slot, updated.sourceFeedId);
   }
 
   async function persistRelayToBackend(entry) {
@@ -123,8 +127,8 @@ export function EgressSection() {
         fps: entry.fps ?? undefined,
         videoBitrate: entry.videoBitrate || undefined,
         audioBitrate: entry.audioBitrate || undefined,
-        sourceView: entry.sourceView || undefined,
-        sourceCameraId: entry.sourceCameraId || undefined,
+        // One source field per request (a feed wins over a camera): see sourceRequestFields.
+        ...sourceRequestFields({ sourceView: entry.sourceView, sourceFeedId: entry.sourceFeedId, sourceCameraId: entry.sourceCameraId }),
       });
     } catch { /* ignore */ }
   }
@@ -145,7 +149,7 @@ export function EgressSection() {
     const used = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!used.includes(s)) {
-        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false, sourceView: 'program', sourceCameraId: '' };
+        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false, sourceView: 'program', sourceCameraId: '', sourceFeedId: '' };
         setRelayList(list => [...list, entry]);
         setEditingSlot(s);
         return;
@@ -212,7 +216,8 @@ export function EgressSection() {
             onChange={updated => updateSlot(editingEntry.slot, updated)}
             onRemove={() => removeSlot(editingEntry.slot)}
             runningSlots={runningSlots}
-            feedCameras={feedCameras}
+            feeds={feeds}
+            cameras={cameras}
           />
         </Dialog>
       )}

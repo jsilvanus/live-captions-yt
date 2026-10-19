@@ -1,8 +1,10 @@
 import { StrictMode, lazy, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
+import { SETUP_REDIRECTS } from './lib/setupRedirects.js';
 import { migrateStorageKeys } from './lib/storageKeys.js';
 import { isLocalInstall, isLocalModeFeatures, isHiddenInLocalMode } from './lib/localMode.js';
+import { installLocalAuthFetch } from './lib/authRecovery.js';
 import 'shared-styles';
 import './styles/reset.css';
 import './styles/layout.css';
@@ -253,6 +255,7 @@ function SidebarApp() {
             <Route path="/setup" component={SetupHubPage} />
             <Route path="/setup/wizard" component={SetupWizardPage} />
             <Route path="/setup/:card/page" component={SetupStandalonePage} />
+            {SETUP_REDIRECTS.map(r => <Route key={r.from} path={r.from}><Redirect to={r.to} /></Route>)}
             <Route path="/setup/:card" component={SetupHubPage} />
             <Route path="/account" component={AccountPage} />
             <Route path="/settings" component={SettingsPage} />
@@ -274,6 +277,7 @@ function SidebarApp() {
 // --- Entry point --------------------------------------------------------------
 
 migrateStorageKeys();
+installLocalAuthFetch();
 
 const root = isStandalonePath(path)
   ? getStandalonePage()

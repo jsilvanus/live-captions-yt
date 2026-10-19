@@ -55,8 +55,20 @@ test('PostgreSQL schema and migrations are derived from schema.prisma', () => {
   const ddl = (text) => text.split(/;\s*\n/).map((st) => st.replace(/--[^\n]*\n/g, '').replace(/\s+/g, ' ').trim())
     .filter((st) => /^CREATE /.test(st)).sort();
   const dir = join(root, 'prisma/postgres/migrations');
-  const migrated = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
-    .flatMap((f) => ddl(readFileSync(join(dir, f), 'utf8'))).sort();
+  const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort();
+  const creates = files.flatMap((f) => ddl(readFileSync(join(dir, f), 'utf8')));
+  // `ALTER TABLE "t" ADD COLUMN "c" ...` in a later migration is folded into t's CREATE (new columns sit last in the model,
+  // which is where prisma puts them in the generated CREATE, just before the primary-key constraint).
+  for (const f of files) {
+    const text = readFileSync(join(dir, f), 'utf8').replace(/--[^\n]*\n/g, '');
+    for (const m of text.matchAll(/ALTER TABLE "(\w+)"\s+ADD COLUMN\s+([^;]+);/g)) {
+      const column = m[2].replace(/\s+/g, ' ').trim();
+      const i = creates.findIndex((st) => st.startsWith(`CREATE TABLE "${m[1]}" `));
+      assert.ok(i >= 0, `${f}: ADD COLUMN on unknown table ${m[1]}`);
+      creates[i] = creates[i].replace(/, CONSTRAINT "(\w+)_pkey"/, `, ${column}, CONSTRAINT "$1_pkey"`);
+    }
+  }
+  const migrated = creates.sort();
   assert.deepEqual(migrated, ddl(sql),
     'prisma/postgres/migrations/*.sql no longer add up to schema.postgresql.prisma: add a migration (prisma migrate diff --from-schema-datamodel <old> --to-schema-datamodel prisma/schema.postgresql.prisma --script)');
 });

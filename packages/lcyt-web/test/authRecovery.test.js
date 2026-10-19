@@ -56,3 +56,39 @@ test('concurrent callers share one attempt; a failure pauses retries', async () 
   assert.equal(await recoverLocalAuth({ storage, base: 'http://x', fetchFn }), false);
   assert.equal(calls, 1);
 });
+
+const { createLocalAuthFetch } = await import('../src/lib/authRecovery.js');
+
+test('fetch wrapper: retries a 401 with the renewed project token', async () => {
+  localInstall({ backendUrl: 'http://x', projectId: 'p1', projectAccessToken: 'OLD' });
+  storage.setItem('lcyt-user', JSON.stringify({ token: 'U1', backendUrl: 'http://x' }));
+  const calls = [];
+  const base = async (url, opts = {}) => {
+    const auth = new Headers(opts.headers || {}).get('Authorization');
+    calls.push([url, auth]);
+    if (url.endsWith('/auth/local')) return json(200, { token: 'U2' });
+    if (url.endsWith('/auth/project-token')) return json(200, { projectAccessToken: 'NEW' });
+    return auth === 'Bearer NEW' ? json(200, { ok: true }) : json(401, {});
+  };
+  globalThis.fetch = base;
+  const wrapped = createLocalAuthFetch(base, { isLocal: () => true, recover: (o) => recoverLocalAuth({ storage, base: 'http://x', fetchFn: base, ...o }) });
+  const res = await wrapped('http://x/api/v1/production/cameras', { headers: { Authorization: 'Bearer OLD' } });
+  assert.equal(res.status, 200);
+  assert.deepEqual(calls.at(-1), ['http://x/api/v1/production/cameras', 'Bearer NEW']);
+  // a second page still holding OLD is retried too, without another renewal
+  const before = calls.length;
+  const res2 = await wrapped('http://x/api/v1/production/mixers', { headers: { Authorization: 'Bearer OLD' } });
+  assert.equal(res2.status, 200);
+  assert.equal(calls.length, before + 2);
+});
+
+test('fetch wrapper: leaves non-local installs and other URLs alone', async () => {
+  let n = 0;
+  const base = async () => { n++; return json(401, {}); };
+  const notLocal = createLocalAuthFetch(base, { isLocal: () => false, recover: async () => true });
+  assert.equal((await notLocal('http://x/api/v1/a', { headers: { Authorization: 'Bearer T' } })).status, 401);
+  const local = createLocalAuthFetch(base, { isLocal: () => true, recover: async () => true });
+  assert.equal((await local('http://x/other', { headers: { Authorization: 'Bearer T' } })).status, 401);
+  assert.equal((await local('http://x/api/v1/a', { headers: { Authorization: 'Bearer T' } })).status, 401); // no replacement known
+  assert.equal(n, 3);
+});

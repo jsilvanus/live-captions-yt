@@ -1,27 +1,36 @@
 import { useState } from 'react';
 import { useLang } from '../../contexts/LangContext.jsx';
+import {
+  groupRelaySourceFeeds, feedOptionLabel, relaySourceValue, sourcePatch, relaySelectableFeeds,
+  isFeedSourceValue,
+} from '../../lib/relaySource.js';
 
 /**
  * RelaySlotRow — single RTMP relay slot editor.
- * Data shape: { slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId }
+ * Data shape: { slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId, sourceCameraId }
  *
  * Props:
  *   entry: object
  *   onChange: (updated) => void
  *   onRemove: () => void
  *   runningSlots?: number[]
- *   feedCameras?: Array<{ id, name, cameraKey }>  camera_key-bearing cameras
- *     (webcam/mobile/rtmp) this slot can source from instead of the raw
- *     program ingest — plan_ingest_feeds.md §3. Omit/empty to hide the
- *     source picker entirely (backward compatible for callers that don't
- *     fetch the camera list, e.g. embed widgets).
+ *   feeds?: Array<{ id, name, kind, label, managed, deviceType, deviceId }>  the project's feeds (GET /feeds).
+ *     The source picker lists them grouped by kind; managed feeds are left out (plan_feeds_devices.md PR 5).
+ *     Omit/empty (and no legacy camera on the slot) to hide the source picker entirely (backward compatible
+ *     for callers that don't fetch feeds, e.g. embed widgets).
+ *   cameras?: Array<{ id, name }>  only used to name a legacy camera slot (sourceCameraId with no linked feed).
  */
-export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], feedCameras = [] }) {
+export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], feeds = [], cameras = [] }) {
   const { t } = useLang();
   const [showAdvanced, setShowAdvanced] = useState(
     Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708' || entry.recordOnStart || entry.recordOnButton)
   );
   const isRunning = runningSlots.includes(entry.slot);
+  const showSource = relaySelectableFeeds(feeds).length > 0 || !!entry.sourceCameraId;
+  const sourceValue = relaySourceValue(entry, feeds);
+  const sourceGroups = groupRelaySourceFeeds(feeds);
+  const knownFeedValues = new Set(relaySelectableFeeds(feeds).map(f => `feed:${f.id}`));
+  const legacyCameraName = cameras.find(c => c.id === entry.sourceCameraId)?.name || entry.sourceCameraId;
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -127,26 +136,34 @@ export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], fee
               <option value="cea708">{t('settings.relay.slotCaptionModeCea708')}</option>
             </select>
           </div>
-          {/* Source (plan_ingest_feeds.md §3) — which incoming feed this slot relays from */}
-          {feedCameras.length > 0 && (
+          {/* Source (plan_ingest_feeds.md §3, feeds in plan_feeds_devices.md PR 5) — which feed this slot relays from */}
+          {showSource && (
             <div style={{ gridColumn: '1 / -1' }}>
-              <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>Source</label>
+              <label className="settings-field__label" style={{ fontSize: '0.8em', marginBottom: 2 }}>{t('settings.relay.sourceLabel')}</label>
               <select
                 className="settings-field__input"
-                value={entry.sourceCameraId ? `camera:${entry.sourceCameraId}` : (entry.sourceView === 'crop' ? 'crop' : 'program')}
+                value={sourceValue}
                 onChange={e => {
-                  const v = e.target.value;
-                  if (v === 'program') onChange({ ...entry, sourceView: 'program', sourceCameraId: '' });
-                  else if (v === 'crop') onChange({ ...entry, sourceView: 'crop', sourceCameraId: '' });
-                  else onChange({ ...entry, sourceView: 'program', sourceCameraId: v.slice('camera:'.length) });
+                  const patch = sourcePatch(e.target.value);
+                  if (patch) onChange({ ...entry, ...patch });
                 }}
                 style={{ width: '100%' }}
               >
                 <option value="program">Program (main feed)</option>
                 <option value="crop">Vertical Crop</option>
-                {feedCameras.map(cam => (
-                  <option key={cam.id} value={`camera:${cam.id}`}>{cam.name}</option>
+                {sourceGroups.map(group => (
+                  <optgroup key={group.kind} label={t(`settings.relay.sourceGroup.${group.kind}`)}>
+                    {group.feeds.map(feed => (
+                      <option key={feed.id} value={`feed:${feed.id}`}>{feedOptionLabel(feed)}</option>
+                    ))}
+                  </optgroup>
                 ))}
+                {isFeedSourceValue(sourceValue) && !knownFeedValues.has(sourceValue) && (
+                  <option value={sourceValue} disabled>{t('settings.relay.sourceMissingFeed')}</option>
+                )}
+                {sourceValue.startsWith('legacy-camera:') && (
+                  <option value={sourceValue} disabled>{t('settings.relay.sourceLegacyCamera').replace('{name}', legacyCameraName)}</option>
+                )}
               </select>
             </div>
           )}

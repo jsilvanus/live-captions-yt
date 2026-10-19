@@ -50,6 +50,15 @@ describe('perception auto-start', () => {
     assert.deepEqual(manager.calls[1], ['stop', 'c1']);
   });
 
+  it('a camera with no key of its own runs on the feed linked to it', async () => {
+    await addCamera('c2', null, 'k1');
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES ('f2', 'k1', 'F', 'c2-feed', 'rtmp', 'camera', 'camera', 'c2', 0)`).run();
+    live['c2-feed'] = true;
+    await autostart.tick();
+    assert.deepEqual(manager.calls, [['start', 'k1', 'c2']]);
+  });
+
   it('a short dropout inside the grace period does not stop the job', async () => {
     await addCamera('c1', 'c1-key', 'k1');
     live['c1-key'] = true; await autostart.tick();

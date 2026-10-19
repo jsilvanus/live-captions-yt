@@ -53,7 +53,7 @@ export function BridgesIcon() {
   );
 }
 
-export function IngestionIcon() {
+export function FeedsIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
       <path d="M8 2V11M8 11L5 8M8 11L11 8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
