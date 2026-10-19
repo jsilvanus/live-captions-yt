@@ -4,6 +4,7 @@ import { Router, Route, Switch, Redirect, useLocation } from 'wouter';
 import { SETUP_REDIRECTS } from './lib/setupRedirects.js';
 import { migrateStorageKeys } from './lib/storageKeys.js';
 import { isLocalInstall, isLocalModeFeatures, isHiddenInLocalMode } from './lib/localMode.js';
+import { installLocalAuthFetch } from './lib/authRecovery.js';
 import 'shared-styles';
 import './styles/reset.css';
 import './styles/layout.css';
@@ -276,6 +277,7 @@ function SidebarApp() {
 // --- Entry point --------------------------------------------------------------
 
 migrateStorageKeys();
+installLocalAuthFetch();
 
 const root = isStandalonePath(path)
   ? getStandalonePage()
