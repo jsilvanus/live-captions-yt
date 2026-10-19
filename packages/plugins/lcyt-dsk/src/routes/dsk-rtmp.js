@@ -74,7 +74,14 @@ function dskSourceUrl(apiKey, settings = null) {
  */
 async function resolveApiKeyFromIngestStreamKey(db, name) {
   const row = await db.api_keys.findFirst({ where: { ingest_stream_key: name }, select: { key: true } });
-  return row ? row.key : name;
+  if (row) return row.key;
+  // A renamed primary feed (feeds-and-devices PR 8): the feed row is the truth, ingest_stream_key only follows it.
+  const feed = await db.prod_feeds.findUnique({ where: { feed_key: name }, select: { id: true, owner_api_key: true } });
+  if (feed) {
+    const owner = await db.api_keys.findFirst({ where: { key: feed.owner_api_key, primary_feed_id: feed.id }, select: { key: true } });
+    if (owner) return owner.key;
+  }
+  return name;
 }
 
 /**

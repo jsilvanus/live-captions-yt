@@ -76,8 +76,8 @@ describe('broadcast-platforms status', () => {
 
 describe('feeds status', () => {
   const base = { backendUrl: 'http://x', token: 't', apiKey: 'k', cardIds: ['feeds'] };
-  // GET /feeds always lists the two managed feeds; the Video switch comes from GET /ingestion/config.
-  const managed = [{ id: 'managed:video', managed: true }, { id: 'managed:dsk', managed: true }];
+  // GET /feeds always lists the main feed and the DSK entry; the Video switch comes from GET /ingestion/config.
+  const managed = [{ id: 'f-main', primary: true }, { id: 'managed:dsk', managed: true }];
   const router = ({ feeds, config }) => async url => {
     if (url.endsWith('/feeds')) return feeds === undefined ? { ok: false } : { ok: true, json: async () => ({ feeds }) };
     if (url.endsWith('/ingestion/config')) return config === undefined ? { ok: false } : { ok: true, json: async () => config };

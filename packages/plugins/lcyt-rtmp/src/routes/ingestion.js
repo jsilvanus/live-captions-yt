@@ -45,6 +45,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import logger from 'lcyt/logger';
 import { getKey } from '../db.js';
+import { getPrimaryFeedKey, ensurePrimaryFeed } from '../db/feeds.js';
 import { listIngestStreams, listUnclaimedStreams } from '../ingest-streams.js';
 
 /**
@@ -94,7 +95,7 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
     const keyRow = await getKey(db, apiKey) || {};
     const videoApp = settings ? (settings.get('media.rtmp_application') || settings.get('media.rtmp_app')) : (process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream');
     const dskApp = settings ? settings.get('graphics.dsk_rtmp_app') : (process.env.DSK_RTMP_APP || 'dsk');
-    const videoStreamKey = keyRow.ingest_stream_key || apiKey;
+    const videoStreamKey = await getPrimaryFeedKey(db, apiKey);
 
     return {
       video: {
@@ -127,11 +128,11 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
     if (!mediamtx) return res.json({ available: false, streams: [] });
     const apiKey = req.session.apiKey;
     try {
-      const keyRow = await getKey(db, apiKey) || {};
-      const keys = [{ key: keyRow.ingest_stream_key || apiKey, kind: 'video' }];
-      if (keyRow.ingest_stream_key) keys.push({ key: apiKey, kind: 'video' });
+      const primaryKey = await getPrimaryFeedKey(db, apiKey);
+      const keys = [{ key: primaryKey, kind: 'video' }];
+      if (primaryKey !== apiKey) keys.push({ key: apiKey, kind: 'video' });
       const feeds = await db.prod_feeds.findMany({
-        where: { owner_api_key: apiKey, transport: 'rtmp' },
+        where: { owner_api_key: apiKey, transport: 'rtmp', NOT: { feed_key: primaryKey } },
         select: { feed_key: true, name: true, label: true },
       });
       for (const f of feeds) keys.push({ key: f.feed_key, kind: 'feed', label: f.label || f.name });
@@ -193,6 +194,9 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
   router.post('/config/rotate', async (req, res) => {
     const apiKey = req.session.apiKey;
     const streamKey = randomUUID();
+    // The primary feed row carries the key; ingest_stream_key follows it for code that predates feeds.
+    const primaryId = await ensurePrimaryFeed(db, apiKey);
+    if (primaryId) await db.prod_feeds.updateMany({ where: { id: primaryId, owner_api_key: apiKey }, data: { feed_key: streamKey } });
     await db.api_keys.updateMany({ where: { key: apiKey }, data: { ingest_stream_key: streamKey } });
     const videoApp = settings ? (settings.get('media.rtmp_application') || settings.get('media.rtmp_app')) : (process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream');
     res.json({ streamKey, ingestUrl: buildIngestUrl(videoApp, streamKey, settings) });

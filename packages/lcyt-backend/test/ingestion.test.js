@@ -262,6 +262,17 @@ describe('POST /ingestion/config/rotate', () => {
     assert.equal(getBody.video.streamKey, body.streamKey);
   });
 
+  it('moves the main feed row to the new key and keeps ingest_stream_key in step', async () => {
+    const k = await createKey(db, { owner: 'FeedRotator' });
+    const body = await (await rotate(k.key)).json();
+    const row = await db.prepare('SELECT primary_feed_id AS p, ingest_stream_key AS i FROM api_keys WHERE key = ?').get(k.key);
+    assert.equal(row.i, body.streamKey);
+    const feed = await db.prepare('SELECT feed_key AS f, owner_api_key AS o, label FROM prod_feeds WHERE id = ?').get(row.p);
+    assert.equal(feed.f, body.streamKey);
+    assert.equal(feed.o, k.key);
+    assert.equal(feed.label, 'main');
+  });
+
   it('rotating twice replaces the previous stream key', async () => {
     const k = await createKey(db, { owner: 'DoubleRotate' });
     const first = await (await rotate(k.key)).json();

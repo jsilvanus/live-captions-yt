@@ -45,7 +45,7 @@ export function feedBody(form) {
 /**
  * FeedsSection: the Setup Hub "Feeds" card (`/setup/feeds`, replaces Ingestion; plan_feeds_devices.md PR 3).
  *
- * Rows come from `GET /feeds`: the two managed feeds first (the project's Video slot and DSK path, shown with
+ * Rows come from `GET /feeds`: the DSK path first (a synthesized `managed` entry, shown with
  * their enable switch and rotate from `GET /ingestion/config`), then the named feeds, which can be added,
  * edited and deleted here. Each named row shows its kind, label, transport, ingest URL, live dot and linked
  * device. "Monitor" marks a feed no egress relay uses (computed from `GET /stream`, not stored).
@@ -142,9 +142,20 @@ export function FeedsSection() {
     try {
       const r = await authedFetch('/ingestion/config/rotate', { method: 'POST' });
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      setFeedDialog(null);
       loadFeeds();
       loadConfig();
     } catch { setError(t('feeds.err.rotate')); }
+  }
+
+  async function makeMain(feed) {
+    setFormError('');
+    try {
+      const r = await authedFetch(`/feeds/${encodeURIComponent(feed.id)}/primary`, { method: 'POST' });
+      if (!r.ok) { setFormError(t('feeds.err.makeMain')); return; }
+      setFeedDialog(null);
+      notifyFeedsChanged();
+    } catch { setFormError(t('feeds.err.makeMain')); }
   }
 
   function openAdd() {
@@ -216,7 +227,8 @@ export function FeedsSection() {
   }
 
   function feedRow(feed) {
-    const monitor = !isInUse(feed);
+    const monitor = !feed.primary && !isInUse(feed);
+    const sw = feed.primary ? config?.video : null;
     const url = feed.transport === 'whip' ? feed.whipUrl : feed.ingestUrl;
     const meta = [t(`feeds.transport.${feed.transport}`), url].filter(Boolean).join(' · ');
     return (
@@ -224,9 +236,11 @@ export function FeedsSection() {
         key={feed.id}
         name={feed.name}
         meta={meta}
-        badge={monitor ? t('feeds.monitor') : t(`feeds.kind.${feed.kind}`)}
+        badge={feed.primary ? t('feeds.main') : (monitor ? t('feeds.monitor') : t(`feeds.kind.${feed.kind}`))}
         faded={monitor}
         statusDot={statusDotFor(feed.live)}
+        toggleOn={sw ? !!sw.enabled : undefined}
+        onToggle={sw ? () => toggleSlot('video', !sw.enabled) : undefined}
         extra={(feed.label || feed.deviceType) ? (
           <>
             {feed.label && <span className="setup-item-row__badge">{feed.label}</span>}
@@ -240,7 +254,7 @@ export function FeedsSection() {
           </>
         ) : null}
         onSettings={() => openEdit(feed)}
-        onDelete={() => deleteFeed(feed)}
+        onDelete={feed.primary ? undefined : () => deleteFeed(feed)}
       />
     );
   }
@@ -268,7 +282,7 @@ export function FeedsSection() {
             <>
               {managed.map(managedRow)}
               {named.map(feedRow)}
-              {named.length === 0 && <p className="setup-card__empty">{t('feeds.empty')}</p>}
+              {named.every(f => f.primary) && <p className="setup-card__empty">{t('feeds.empty')}</p>}
             </>
           )}
         </>
@@ -314,6 +328,12 @@ export function FeedsSection() {
               <input id="feeds-key" className="settings-field__input" value={form.feedKey}
                 onChange={e => setField('feedKey', e.target.value)} style={{ fontFamily: 'monospace', fontSize: 12 }} />
               <p style={HINT_STYLE}>{t('feeds.field.keyHint')}</p>
+              {feedDialog.mode === 'edit' && feedDialog.feed?.primary && config?.video?.rotatable && (
+                <div><button type="button" className="btn btn--secondary btn--sm" onClick={rotateVideoKey}>{t('feeds.rotate')}</button></div>
+              )}
+              {feedDialog.mode === 'edit' && !feedDialog.feed?.primary && feedDialog.feed?.transport === 'rtmp' && (
+                <div><button type="button" className="btn btn--secondary btn--sm" onClick={() => makeMain(feedDialog.feed)}>{t('feeds.makeMain')}</button></div>
+              )}
             </div>
             <div className="settings-field">
               <label className="settings-field__label" htmlFor="feeds-transport">{t('feeds.field.transport')}</label>

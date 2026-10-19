@@ -18,7 +18,7 @@ export function notifyFeedsChanged() {
   window.dispatchEvent(new Event(FEEDS_CHANGED_EVENT));
 }
 
-/** A named feed (not one of the two managed slots), so it may be linked. */
+/** A real feed row (not the synthesized DSK entry), so it may be linked to a device. The main feed counts. */
 export function isLinkableFeed(feed) {
   return !!feed && !feed.managed && !String(feed.id || '').startsWith('managed:');
 }

@@ -1,3 +1,5 @@
+import { ownerOfPrimaryFeedKey } from './feeds.js';
+
 /**
  * Get a full api_keys row by key value.
  * Used by RTMP routes to read per-key config (e.g. cea708_delay_ms).
@@ -23,7 +25,10 @@ export async function getKey(db, key) {
  */
 export async function resolveApiKeyFromIngestStreamKey(db, name) {
   const row = await db.api_keys.findFirst({ where: { ingest_stream_key: name }, select: { key: true } });
-  return row ? row.key : name;
+  if (row) return row.key;
+  // The primary feed's key is the truth since feeds-and-devices PR 8 (renaming it need not touch ingest_stream_key).
+  const owner = await ownerOfPrimaryFeedKey(db, name);
+  return owner ?? name;
 }
 
 // ─── RTMP relay config per API key (fan-out: arbitrary number of slots —

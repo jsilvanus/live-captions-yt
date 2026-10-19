@@ -6,7 +6,7 @@ import {
 } from '../src/lib/relaySource.js';
 
 const FEEDS = [
-  { id: 'managed:video', managed: true, name: 'Main', kind: 'generic', label: 'main', deviceType: null, deviceId: null },
+  { id: 'f-main', managed: false, primary: true, name: 'Main', kind: 'generic', label: 'main', deviceType: null, deviceId: null },
   { id: 'managed:dsk', managed: true, name: 'DSK', kind: 'dsk', label: null, deviceType: null, deviceId: null },
   { id: 'f-altar', managed: false, name: 'Altar', kind: 'camera', label: null, deviceType: 'camera', deviceId: 'cam-1' },
   { id: 'f-prog', managed: false, name: 'Mixer 2', kind: 'generic', label: 'program', deviceType: 'mixer', deviceId: 'mix-1' },
@@ -15,7 +15,7 @@ const FEEDS = [
 ];
 
 describe('relay source feeds', () => {
-  it('leaves managed feeds (flag or managed: id) out of the picker', () => {
+  it('leaves the DSK entry (flag or managed: id) and the main feed out of the picker', () => {
     assert.deepEqual(relaySelectableFeeds(FEEDS).map(f => f.id), ['f-altar', 'f-prog', 'f-loose', 'f-dsk']);
   });
 

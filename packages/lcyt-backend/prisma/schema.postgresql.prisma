@@ -163,6 +163,7 @@ model api_keys {
   device_code               String?
   ingest_stream_key         String?                    @unique(map: "idx_api_keys_ingest_stream_key")
   public_slug               String?                    @unique(map: "idx_api_keys_public_slug")
+  primary_feed_id           String?
   organizations             organizations?             @relation(fields: [org_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   users                     users?                     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   broadcasts                broadcasts[]

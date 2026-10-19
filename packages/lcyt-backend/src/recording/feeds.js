@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import logger from 'lcyt/logger';
-import { programPathName, dskPathName } from 'lcyt-rtmp';
+import { programPathName, dskPathName, getPrimaryFeedKey } from 'lcyt-rtmp';
 import { getCompositeChromaKey } from 'lcyt-dsk';
 import { startVideoRecording, finishVideoRecording } from '../db/videos.js';
 import { registerVideoFeed, listGroupFeeds, updateVideoFeedMeta, FEED_ROLES } from '../db/video-feeds.js';
@@ -20,8 +20,7 @@ export function configuredFeedRoles(env = process.env) {
 async function pathNameFor(db, apiKey, role, settings) {
   if (role === 'program') return programPathName(apiKey);
   if (role === 'dsk') return dskPathName(apiKey, settings);
-  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { ingest_stream_key: true } });
-  return row?.ingest_stream_key || apiKey;
+  return getPrimaryFeedKey(db, apiKey);
 }
 
 // In-memory DSK change logs of running recordings (groupId -> { events, unsubscribe, startMs }).

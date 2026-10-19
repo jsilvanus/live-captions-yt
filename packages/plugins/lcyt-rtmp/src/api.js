@@ -65,7 +65,10 @@ export { MediaMtxClient, MediaMtxApiError } from './mediamtx-client.js';
 export { programPathName, dskPathName } from './rtmp-manager.js';
 export { withOwnership, readThrough, ownedElsewhere, RELAY_OWNERSHIP, CROP_OWNERSHIP, STT_OWNERSHIP } from './ownership.js';
 export { NginxManager } from './nginx-manager.js';
-export { backfillFeeds, listFeeds, getFeed, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds } from './db/feeds.js';
+export {
+  backfillFeeds, backfillPrimaryFeeds, listFeeds, getFeed, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds,
+  getPrimaryFeedKey, getPrimaryFeedId, ensurePrimaryFeed, setPrimaryFeed,
+} from './db/feeds.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side

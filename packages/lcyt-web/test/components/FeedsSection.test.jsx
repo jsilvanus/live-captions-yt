@@ -9,8 +9,8 @@ import { FeedsSection, feedBody } from '../../src/components/setup-hub/FeedsSect
 const session = { connected: true, apiKey: 'k', backendUrl: 'http://backend.test', getSessionToken: () => 'tok', getPersistedConfig: () => ({}) };
 
 const FEEDS = [
-  { id: 'managed:video', name: 'Main video', managed: true, kind: 'generic', label: 'main', transport: 'rtmp', feedKey: 'vid', ingestUrl: 'rtmp://h/stream/vid', live: true, deviceType: null, deviceId: null },
   { id: 'managed:dsk', name: 'DSK', managed: true, kind: 'dsk', label: 'dsk', transport: 'rtmp', feedKey: 'k', ingestUrl: 'rtmp://h/dsk/k', live: null, deviceType: null, deviceId: null },
+  { id: 'feed-main', name: 'Main video', managed: false, primary: true, kind: 'generic', label: 'main', transport: 'rtmp', feedKey: 'vid', ingestUrl: 'rtmp://h/stream/vid', live: true, deviceType: null, deviceId: null },
   { id: 'feed-altar', name: 'Altar cam', managed: false, kind: 'camera', label: null, transport: 'rtmp', feedKey: 'altar', ingestUrl: 'rtmp://h/feed/altar', live: true, deviceType: 'camera', deviceId: 'cam-12345678-aaaa' },
   { id: 'feed-prog', name: 'Program', managed: false, kind: 'generic', label: 'program', transport: 'whip', feedKey: 'prog', whipUrl: 'http://w/prog/whip', live: false, deviceType: null, deviceId: null },
 ];
@@ -58,7 +58,8 @@ describe('FeedsSection', () => {
     renderSection();
     expect(await screen.findByText('Altar cam')).toBeInTheDocument();
     expect(screen.getByText('Program')).toBeInTheDocument();
-    expect(screen.getByText('Video (main)')).toBeInTheDocument();
+    expect(screen.getByText('Main video')).toBeInTheDocument();
+    expect(screen.getByText('Main')).toBeInTheDocument(); // the primary feed's badge
     expect(screen.getAllByText('DSK').length).toBeGreaterThan(0);
     expect(screen.getByText('Disabled')).toBeInTheDocument(); // DSK slot from GET /ingestion/config
     expect(screen.getByText('WHIP · http://w/prog/whip')).toBeInTheDocument();
@@ -71,6 +72,16 @@ describe('FeedsSection', () => {
     await screen.findByText('Altar cam');
     expect(screen.getByText('Monitor')).toBeInTheDocument();
     expect(calls.map(c => c.path)).toEqual(expect.arrayContaining(['/feeds', '/ingestion/config', '/stream']));
+  });
+
+  it('makes another rtmp feed the main one with POST /feeds/:id/primary, and offers no delete on the main feed', async () => {
+    routes['POST /feeds/feed-altar/primary'] = () => reply({ id: 'feed-altar', primary: true });
+    renderSection();
+    await screen.findByText('Altar cam');
+    expect(screen.getAllByTitle('Delete')).toHaveLength(2); // Altar cam and Program only
+    fireEvent.click(screen.getAllByTitle('Settings')[2]);
+    fireEvent.click(screen.getByRole('button', { name: 'Make main feed' }));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/feeds/feed-altar/primary')).toBe(true));
   });
 
   it('adds a generic feed with its label through POST /feeds', async () => {
@@ -129,7 +140,7 @@ describe('FeedsSection', () => {
     routes['PATCH /feeds/feed-prog'] = () => reply({ id: 'feed-prog' });
     renderSection();
     await screen.findByText('Program');
-    fireEvent.click(screen.getAllByTitle('Settings')[3]); // rows: Video, DSK, Altar cam, Program
+    fireEvent.click(screen.getAllByTitle('Settings')[3]); // rows: DSK, Main video, Altar cam, Program
     expect(screen.getByLabelText('Name')).toHaveValue('Program');
     expect(screen.getByLabelText('Label')).toHaveValue('program');
     fireEvent.click(screen.getByRole('button', { name: 'Save' }));
@@ -158,12 +169,12 @@ describe('FeedsSection', () => {
     expect(calls.some(c => c.method === 'DELETE')).toBe(false);
   });
 
-  it('rotates the Video key from the Video settings', async () => {
+  it('rotates the main feed key from its settings', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
     routes['POST /ingestion/config/rotate'] = () => reply({ streamKey: 'new', ingestUrl: 'rtmp://h/stream/new' });
     renderSection();
     await screen.findByText('Altar cam');
-    fireEvent.click(screen.getAllByTitle('Settings')[0]);
+    fireEvent.click(screen.getAllByTitle('Settings')[1]); // the main feed
     fireEvent.click(screen.getByRole('button', { name: 'Rotate stream key' }));
     await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/ingestion/config/rotate')).toBe(true));
   });

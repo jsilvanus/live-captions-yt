@@ -14,12 +14,12 @@ const list = (json, key) => {
 };
 
 /**
- * Named feeds, plus the Video slot when it is enabled. The managed Video feed is always listed by
+ * Named feeds, plus the Video slot when it is enabled. The main feed is always listed by
  * GET /feeds, so the enable switch (GET /ingestion/config) is what says whether it is in use.
  */
 const feedsCheck = {
   path: () => '/feeds',
-  count: j => (Array.isArray(j?.feeds) ? j.feeds.filter(f => !f.managed).length : null),
+  count: j => (Array.isArray(j?.feeds) ? j.feeds.filter(f => !f.managed && !f.primary).length : null),
   also: [{ path: () => '/ingestion/config', count: j => (j?.video ? (j.video.enabled ? 1 : 0) : null) }],
 };
 
