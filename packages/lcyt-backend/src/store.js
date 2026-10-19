@@ -53,6 +53,8 @@ export class SessionStore {
     this.eventBus = eventBus ?? new EventBus();
     /** @type {((session: object, reason: string) => void)|null} */
     this.onSessionEnd = null;
+    /** Optional async `(session) => boolean`: true keeps an idle session past the TTL. */
+    this.keepSessionAlive = null;
     /** Called when a session leaves this instance without ending (it ended or moved elsewhere). */
     this.onSessionDropped = null;
     /** Multi-instance: leases + shared flag from src/cluster (null = single process). */
@@ -497,6 +499,23 @@ export class SessionStore {
   }
 
   /**
+   * End every session bound to a broadcast (it was completed). Runs `onSessionEnd`
+   * for each (session stats) and ends its senders.
+   * @returns {Promise<number>} sessions closed on this instance
+   */
+  async closeBoundSessions(broadcastId, reason = 'broadcast') {
+    let n = 0;
+    for (const session of [...this._sessions.values()]) {
+      if (session.broadcastId !== broadcastId) continue;
+      try { await this.onSessionEnd?.(session, reason); } catch { /* stats are best effort */ }
+      this.remove(session.sessionId);
+      if (session.sender) { try { await session.sender.end(); } catch { /* best effort */ } }
+      n++;
+    }
+    return n;
+  }
+
+  /**
    * Return an iterable of all sessions.
    * @returns {IterableIterator<object>}
    */
@@ -587,6 +606,12 @@ export class SessionStore {
     const cutoff = Date.now() - this._sessionTtl;
     for (const [sessionId, session] of this._sessions) {
       if (session.lastActivityAt.getTime() < cutoff) {
+        // A session of a staged or live broadcast stays until the broadcast is completed.
+        if (this.keepSessionAlive) {
+          let keep = false;
+          try { keep = await this.keepSessionAlive(session); } catch { keep = false; }
+          if (keep) continue;
+        }
         if (this.shared && this.db) {
           // Another instance may have been serving this session: the database row is the truth.
           // Only the instance that wins the conditional delete ends it.

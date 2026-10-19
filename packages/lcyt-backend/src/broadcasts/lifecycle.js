@@ -95,7 +95,7 @@ export function createBroadcastLifecycle({
    * block it too unless `force` is set.
    * @returns {Promise<{ ok: boolean, findings: Array<{ code: string, severity: 'error'|'warn', message: string }> }>}
    */
-  async function preflight(apiKey, id, { force = false } = {}) {
+  async function preflight(apiKey, id, { force = false, skipDeliverables = false } = {}) {
     const broadcast = await loadOwned(apiKey, id);
     const findings = [];
     const other = await otherRunning(apiKey, id);
@@ -107,7 +107,7 @@ export function createBroadcastLifecycle({
       });
     }
     const d = await computeDeliverables(apiKey, broadcast);
-    if (!d.captions && !d.video && !d.audio) {
+    if (!skipDeliverables && !d.captions && !d.video && !d.audio) {
       findings.push({
         code: 'no_deliverables', severity: 'error',
         message: 'Nothing to broadcast: enable a caption target, a video feed out (DSK is enough) or an audio feed out',
@@ -165,7 +165,7 @@ export function createBroadcastLifecycle({
     });
   }
 
-  async function transitionLocked(apiKey, id, action, { force = false, reason = null, by = null } = {}) {
+  async function transitionLocked(apiKey, id, action, { force = false, reason = null, by = null, skipDeliverables = false, keepSequence = false } = {}) {
     const def = TRANSITIONS[action];
     if (!def) throw new LifecycleError(`Unknown action: ${action}`, 400);
     const broadcast = await loadOwned(apiKey, id);
@@ -188,13 +188,13 @@ export function createBroadcastLifecycle({
     }
 
     if (action === 'stage') {
-      const pf = await preflight(apiKey, id, { force });
+      const pf = await preflight(apiKey, id, { force, skipDeliverables });
       if (!pf.ok) throw new LifecycleError('Pre-flight failed', 409, { code: 'preflight_failed', findings: pf.findings });
       if (from !== 'staging') {
         // First staging of this broadcast starts the caption sequence at 0 (2.5b);
         // going up again after a stop keeps counting.
         const data = { stage_report_json: JSON.stringify(report) };
-        if (from !== 'stopped') { data.caption_sequence = 0; data.sync_failures = 0; data.sync_offset_ms = null; data.last_synced_at = null; }
+        if (from !== 'stopped') { if (!keepSequence) data.caption_sequence = 0; data.sync_failures = 0; data.sync_offset_ms = null; data.last_synced_at = null; }
         if (!(await setStatus(apiKey, id, def.from, 'staging', data))) throw new LifecycleError('Broadcast changed state, try again', 409);
         publish(apiKey, 'broadcast.state_changed', { broadcastId: id, from, to: 'staging', reason });
       }
@@ -255,7 +255,8 @@ export function createBroadcastLifecycle({
    * @param {string} apiKey
    * @param {string} id
    * @param {'stage'|'go-live'|'stop'|'complete'|'cancel'|'restore'} action
-   * @param {{ force?: boolean, reason?: string, by?: string }} [opts]
+   * @param {{ force?: boolean, reason?: string, by?: string, skipDeliverables?: boolean, keepSequence?: boolean }} [opts]
+   *   `skipDeliverables` and `keepSequence` are for the compat broadcast a session creates for itself (its captions are the deliverable, its sequence is seeded).
    * @returns {Promise<{ broadcast: object, report: object|null }>}
    */
   async function transition(apiKey, id, action, opts = {}) {

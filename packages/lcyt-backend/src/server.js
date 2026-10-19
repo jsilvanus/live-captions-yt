@@ -6,7 +6,7 @@ import { createHandoffService } from './handoff/service.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast, disarmOnEnd, isArmed, getBroadcast, updateBroadcast, onKeyDeleted, getKey,
+  isArmed, getBroadcast, updateBroadcast, onKeyDeleted, getKey,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -30,6 +30,7 @@ import { createMcpEndpointRouter } from './routes/mcp-endpoint.js';
 import { createEventsPublishRouter } from './routes/events-publish.js';
 import { createOperatorRouter } from './routes/operator.js';
 import { OperatorManager } from './operator-manager.js';
+import { endAdhocBroadcast } from './broadcasts/session-binding.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { startCluster } from './cluster/index.js';
 import { createOwnership } from './cluster/ownership.js';
@@ -636,7 +637,7 @@ store.onSessionDropped = (session) => {
   if (session._fileHandles?.size > 0) closeFileHandles(session._fileHandles).catch(() => {});
 };
 
-store.onSessionEnd = async (session) => {
+store.onSessionEnd = async (session, reason) => {
   // Close open caption file handles before cleanup.
   // For local FS this is a graceful flush; for S3 this completes the multipart upload.
   if (session._fileHandles?.size > 0) {
@@ -658,21 +659,11 @@ store.onSessionEnd = async (session) => {
       captionsSent: session.captionsSent,
       captionsFailed: session.captionsFailed,
       finalSequence: session.sequence,
-      endedBy: 'ttl',
+      endedBy: reason || 'ttl',
       broadcastId: session.broadcastId ?? null,
     });
-    // Transition the bound broadcast to completed (plan/broadcasts).
-    if (session.broadcastId) {
-      try {
-        await disarmOnEnd(db, eventBus, session.apiKey, session.broadcastId);
-        await completeBroadcast(db, session.broadcastId, {
-          youtubeVideoIds: session.youtubeVideoIds,
-          endedAt,
-        });
-      } catch (err) {
-        console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${session.broadcastId})`, err);
-      }
-    }
+    // The broadcast outlives its sessions; only a session-made one ends with its last session.
+    if (reason !== 'broadcast') await endAdhocBroadcast(db, store, broadcastLifecycle, session);
   } else {
     console.warn(`[store] session ended without apiKey (sessionId=${session.sessionId}) — skipping session_stats write`);
   }
@@ -912,7 +903,7 @@ const broadcastRelay = {
 const broadcastLifecycle = createBroadcastLifecycle({
   db, eventBus, leases: cluster.leases,
   steps: createLifecycleSteps({
-    db, eventBus, captionSync: broadcastCaptionSync,
+    db, store, eventBus, captionSync: broadcastCaptionSync,
     platform: createPlatformTransitions(db, { getAdapter: getPlatformAdapter, getAccessToken: platformDeps.getAccessToken, eventBus }),
     relay: broadcastRelay,
     mediamtxClient: productionMediamtxClient, recordingsStore: mediaStores.recordingsStore, settings,
@@ -926,7 +917,15 @@ const broadcastLifecycle = createBroadcastLifecycle({
   },
 });
 
+// An idle session of a staged or live broadcast the operator made stays until it is completed.
+store.keepSessionAlive = async (session) => {
+  if (!session.broadcastId) return false;
+  const b = await db.broadcasts.findUnique({ where: { id: session.broadcastId }, select: { status: true, adhoc: true } });
+  return Boolean(b && !b.adhoc && (b.status === 'staging' || b.status === 'live'));
+};
+
 apiRouter.use(createSessionRouters(db, store, jwtSecret, auth, {
+  broadcastLifecycle,
   onRecordingFinalized: handoffService.onRecordingFinalized,
   relayManager,
   dskCaptionProcessor: _dskCaptionProcessor,

@@ -471,6 +471,13 @@ The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel t
 
 Every instance starts every stored light, so with several instances each one polls YouTube (quota) and drives the lamp or sends `light_set`. Single instance is the supported setup for now. Fix: take a lease per light (`cluster.leases`, `tally:<id>`) and renew it while running, like the relay owner (L4 of the multi-instance plan). Mixer camera lights (LCYT software mixer) are fed by the backend and need the same owner lease: only the lease holder polls/pushes, other instances show the owner's last reading, and the lamp's own deadman covers a dead owner. Also not done: a `tally` project feature flag and the lamp-clash check across projects.
 
+## Broadcast lifecycle PR 3: what was left out of the session decoupling
+
+- Caption counter is write-through, not atomically reserved: two sessions on one broadcast can send the same number (`routes/captions.js`, `db/broadcasts.js` `setBroadcastSequence`). One session per broadcast is the normal case; a `runExclusive` bound branch with `incBroadcastSequence` would fix it.
+- A session on a broadcast without `recordEnabled` still starts its own recording for relay `recordOnStart` at session start, not at go-live (`routes/live.js`).
+- Idempotent reconnect keeps the session's own sequence; it is not re-read from the broadcast.
+- `closeSessions` closes sessions on this instance only (`store.closeBoundSessions`); other instances' sessions of a completed broadcast end by TTL.
+
 ## Broadcast lifecycle PR 2: what was left out of staging and platform handling
 
 **Where:** `packages/lcyt-backend/src/broadcasts/steps.js`, `packages/plugins/lcyt-platforms/src/transitions.js` and `routes/broadcast-platforms.js`, plan `docs/plans/plan_broadcast_lifecycle.md`.

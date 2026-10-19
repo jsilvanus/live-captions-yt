@@ -25,7 +25,7 @@ import { startRecordingGroup, stopRecordingGroup } from '../recording/feeds.js';
  */
 export function createLifecycleSteps(deps) {
   const {
-    db, eventBus = null, captionSync = null, platform = null, relay = null, checks = null,
+    db, store = null, eventBus = null, captionSync = null, platform = null, relay = null, checks = null,
     mediamtxClient = null, recordingsStore = null, settings = null, onRecordingFinalized = null,
   } = deps;
 
@@ -116,6 +116,13 @@ export function createLifecycleSteps(deps) {
       await platform?.markStopped(broadcast.id);
     },
 
+    // Sessions bound to a completed broadcast end with it.
+    async closeSessions({ broadcast }) {
+      if (!store?.closeBoundSessions) return;
+      const n = await store.closeBoundSessions(broadcast.id, 'broadcast');
+      return { note: `${n} session(s) closed` };
+    },
+
     async platformComplete({ apiKey, broadcast }) {
       if (!platform) return;
       const r = await platform.transition(apiKey, broadcast.id, 'complete');
@@ -128,6 +135,4 @@ export function createLifecycleSteps(deps) {
   return steps;
 }
 
-// closeSessions (PR 3) and the completion handoff are not steps yet: sessions are
-// still bound the old way until the session is decoupled, and HANDOFF_AUTO_SEND
-// already fires when a recording group is finalized.
+// The completion handoff is not a step: HANDOFF_AUTO_SEND already fires when a recording group is finalized.

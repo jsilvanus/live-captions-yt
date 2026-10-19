@@ -595,7 +595,7 @@ export async function completeBroadcast(db, id, { youtubeVideoIds, endedAt } = {
  * Video ids the platform links recorded for a broadcast (YouTube's broadcast
  * id is also its watch-page video id). Used when the session did not carry any.
  */
-async function platformVideoIds(db, id) {
+export async function platformVideoIds(db, id) {
   try {
     const links = await db.broadcast_platform_links.findMany({
       where: { broadcast_id: id, platform: 'youtube' },
@@ -612,4 +612,38 @@ async function platformVideoIds(db, id) {
   } catch {
     return [];
   }
+}
+
+// ── Caption sequence owned by the broadcast ──────────────────────────────
+
+/** Next free caption sequence number of a broadcast (null when it is gone). */
+export async function getBroadcastSequence(db, id) {
+  const row = await db.broadcasts.findUnique({ where: { id }, select: { caption_sequence: true } });
+  return row ? (row.caption_sequence ?? 0) : null;
+}
+
+/**
+ * Set the counter. `raiseOnly` never lowers it, so a late write of an older value
+ * (a send finishing after a reset) cannot undo a newer one; an explicit set may lower it.
+ */
+export async function setBroadcastSequence(db, id, seq, { raiseOnly = false } = {}) {
+  const n = Math.max(0, Math.floor(Number(seq) || 0));
+  await db.broadcasts.updateMany({
+    where: raiseOnly ? { id, caption_sequence: { lt: n } } : { id },
+    data: { caption_sequence: n, updated_at: sqlNow() },
+  });
+}
+
+/**
+ * The broadcast a session with no broadcast of its own gets (old clients).
+ * Created as a draft marked `adhoc`; the caller stages and starts it. The
+ * counter is seeded so such a session keeps counting from where it was.
+ */
+export async function createAdhocBroadcast(db, apiKey, { sequence = 0, recordEnabled = false } = {}) {
+  const id = randomUUID();
+  const title = `Broadcast ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+  await db.broadcasts.create({
+    data: { id, api_key: apiKey, title, status: 'draft', adhoc: 1, caption_sequence: Math.max(0, Math.floor(Number(sequence) || 0)), record_enabled: recordEnabled ? 1 : 0 },
+  });
+  return getBroadcast(db, apiKey, id);
 }
