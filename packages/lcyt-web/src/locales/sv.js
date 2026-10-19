@@ -938,4 +938,14 @@ export default {
     local: 'på enheten',
     cloud: 'moln',
   },
+  listenPane: {
+    start: 'Börja lyssna',
+    stop: 'Sluta lyssna',
+    language: 'Igenkänningsspråk',
+    audioFrom: 'Ljud från',
+    serverSource: 'Serverns ljudkälla (ställs in på STT-kortet)',
+    defaultInput: 'Webbläsarens standardingång',
+    input: 'Ingång',
+    webkitNote: 'Webbläsarens taligenkänning använder webbläsarens standardmikrofon; valet gäller nivåmätaren och moln-STT.',
+  },
 };

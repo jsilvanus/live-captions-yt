@@ -981,4 +981,14 @@ export default {
     local: 'on-device',
     cloud: 'cloud',
   },
+  listenPane: {
+    start: 'Start listening',
+    stop: 'Stop listening',
+    language: 'Recognition language',
+    audioFrom: 'Audio from',
+    serverSource: 'Server audio source (set on the STT card)',
+    defaultInput: 'Browser default input',
+    input: 'Input',
+    webkitNote: 'Browser speech recognition uses the browser\'s default microphone; the input choice applies to the level meter and cloud STT.',
+  },
 };

@@ -6,6 +6,7 @@ import { useCaptionContext } from '../../../../contexts/CaptionContext';
 import { useConnectionContext } from '../../../../contexts/ConnectionContext';
 import { useEventStream } from '../../../../hooks/useEventStream.js';
 import { foldActionEvent } from '../../../../lib/action-atoms.js';
+import { ListenPane } from './ListenPane.jsx';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -785,6 +786,7 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
     case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     case 'captionInput': return <CaptionInputPane />;
     case 'actionLog':   return <ActionLogPane D={D} />;
+    case 'listen':      return <ListenPane />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }
