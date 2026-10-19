@@ -11,6 +11,8 @@ Two components that share one listener:
 
 Follow-up from Juha (same day): the WebSpeech API should have two modes, **prefer local** (on-device) and **normal** (cloud). He also hit `Explicit project admin/owner access required` when trying to select WebSpeech in the STT settings (section 3).
 
+> **Revision 2 (Juha, 2026-10-19, later):** attach/detach and "Audio from" are redefined in section 11, which takes precedence over 4.3 and the attach/detach parts of 4.5 and 10.1.
+
 > **Revision 2026-10-19 (Juha):** the Listen pane is a start/stop **STT** action, not only a browser mic. Which STT it starts (browser or server) follows the STT card setting, and server STT must name a **feed** as its audio source. This changes sections 4.3 and 4.5; see section 10, which takes precedence where they differ.
 
 ## 2. Inventory: everything involved in frontend STT / WebSpeech today
@@ -209,3 +211,43 @@ Proposal:
 
 - Exactly one STT runs at a time, chosen by the card. Listen never starts browser and server STT together.
 - One STT session per project, for now. No per-feed or per-language parallel sessions.
+
+## 11. Revision 2: attach/detach = floating always-on-top listener window; "Audio from"
+
+### 11.1 Attach / detach (replaces 4.3)
+
+Juha's intent: the operator can play it safe by keeping a small window on top of everything that guarantees the front-end listener stays mounted and alive. So:
+
+- **Attach** opens a small always-on-top **Listener window** (mic/Listen button, level meter, status, language, "Audio from", interim text). **Detach** closes it. Nothing about the caption pipeline or the mic lock changes: attach/detach no longer means "send or don't send".
+- The window is rendered by the same React app through a portal, so it shares the one `useMicListener` instance (no second recognizer, no state sync over `BroadcastChannel`). It only hosts the controls; the engine stays in `AudioProvider`.
+- Mechanism, in order of preference: (1) **Document Picture-in-Picture** (`documentPictureInPicture.requestWindow({ width, height })`, Chromium 116+): a real always-on-top window that survives switching tabs/apps and keeps the opener page foreground-like; (2) fallback `window.open` popup (`PopOutButton.jsx` pattern; not always-on-top, user can pin it with the OS) with the same portal; (3) no window support: in-page floating mini bar fixed above everything (`position: fixed; z-index` top layer via the Popover API) that stays on every route. The Listen pane shows which mode attach used.
+- Why it helps: browsers throttle or stop speech recognition and timers in hidden/background tabs, and a stray tab close or navigation to a standalone page unmounts the provider. A visible PiP window counts as visible content for the page, and its presence is a visible warning that the listener is live. **To verify in a real Chrome**: whether an open Document PiP window really prevents background-tab throttling and recognition stop when the main tab is hidden; this is the main assumption of the feature and has not been tested.
+- Guards: `beforeunload` confirm while listening and attached; if the main page navigates to a route outside `SidebarApp` (embed/kiosk pages) the window closes; closing the window is detach (listening continues in the main tab unless the user also stops it); reopen state is remembered per browser (`lcyt.mic.attached`), and since opening a PiP window requires a user gesture the app shows a one-click "Re-attach" chip after a reload instead of opening it automatically.
+- The top-bar mic gets the same attach/detach button (the pane and bar share `useMicWindow()`), so the window can be opened from anywhere.
+- Server STT: the window then shows the server session (status, transcript, feed), but the server session runs without any window; detaching never stops it.
+
+### 11.2 "Audio from" (replaces the language-only popover as the first control)
+
+One dropdown in the Listen pane, the floating window and the bar popover. Its contents depend on the STT backend chosen by the card (10.1):
+
+| Backend | "Audio from" lists | Stored as |
+|---|---|---|
+| Browser (WebSpeech / cloud) | **Audio inputs** of this machine from `navigator.mediaDevices.enumerateDevices()` (`audioinput`), plus "System default"; refreshed on `devicechange`; labels need a granted permission, so before the first grant the list shows generic names and a "Allow microphone to see names" item | existing `lcyt.audio.deviceId` (`KEYS.audio.deviceId`) |
+| Server | **Feeds** from `GET /feeds`: video feeds and audio-only feeds (a video feed's audio is used), each with live dot, kind and linked device name; main feed marked | `feedId` (10.2) as the project default; the quick pick is per start |
+
+Notes:
+- WebSpeech limitation, to state in the UI: `SpeechRecognition` cannot be told to use a given device; it uses the browser's default input. Today `AudioPanel` only opens the chosen device for the **level meter** and hopes the recognizer shares it, which is not guaranteed. Plan: for the browser engine, the selection sets the meter/`MediaRecorder` (cloud engine) input exactly, and for WebSpeech shows a hint "browser default input is used for recognition; change it in Chrome settings" with the device name that `enumerateDevices` reports as default, unless a later check shows Chrome honours the constraint. To verify against current Chrome before claiming otherwise.
+- A feed that is not publishing is shown greyed with "offline" and can still be selected.
+- Changing "Audio from" while listening restarts the active backend (browser: re-open stream and recognizer; server: stop and start with the new feed, with a confirm because it interrupts the project-wide session).
+- Feeds that carry no audio are not distinguishable from `GET /feeds` today; needs a backend flag or a probe. Open: does the feed row know whether it has audio?
+
+### 11.3 Effect on phases
+
+- Phase 1: `useMicWindow()` (Document PiP / popup / in-page fallback) and a `MicControls` component reused by the bar popover, the Listen pane and the floating window.
+- Phase 2: `AudioFromSelect` (device list for browser, feed list for server), attach/detach button, the PiP verification test run on a real Chrome.
+- Component tests with a fake `documentPictureInPicture`; the throttling question is a manual check on Juha's Windows machine, not a unit test.
+
+### 11.4 Open questions
+
+7. Is the always-on-top window what you meant by "hover small screen"? (Alternative: only an in-page floating bar.)
+8. Should closing the floating window also stop browser listening, or leave it running? I assumed it keeps running.
