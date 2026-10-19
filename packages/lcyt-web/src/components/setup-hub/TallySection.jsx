@@ -5,6 +5,7 @@ import { TallyIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
 import { useSetupT } from '../../lib/useSetupT.js';
 import { usePolling } from '../../hooks/usePolling.js';
+import { setupToken } from '../../lib/setupToken.js';
 
 const API = '/api/v1/tally';
 const POLL_MS = 5000;
@@ -77,14 +78,14 @@ export function TallySection() {
   const [testMsg, setTestMsg] = useState('');
 
   const api = useCallback(async (path, { method = 'GET', body } = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const res = await fetch(`${backendUrl}${path}`, { method, headers, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, session?.projectAccessToken]);
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) return;

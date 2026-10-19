@@ -3,6 +3,7 @@ import { useSessionContext } from '../../contexts/SessionContext';
 import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { WebRadioIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
+import { setupToken } from '../../lib/setupToken.js';
 
 /**
  * WebRadioSection — audio-only HLS "radio" stream, per the mockup's
@@ -26,12 +27,12 @@ export function WebRadioSection() {
   const [saving, setSaving] = useState(false);
 
   const authedFetch = useCallback((path, opts = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, session?.projectAccessToken]);
 
   const load = useCallback(async () => {
     if (!connected) return;
