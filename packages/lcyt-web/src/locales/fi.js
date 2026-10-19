@@ -350,7 +350,6 @@ export default {
         generic: 'Muut syötteet',
         dsk: 'DSK-syötteet',
       },
-      sourceLegacyCamera: 'Kamera: {name} (vanha)',
       sourceMissingFeed: 'Syötettä ei ole enää',
       useOriginal: 'Käytä alkuperäistä',
       dskRtmpIngestUrl: 'DSK RTMP-vastaanotto-osoite',
@@ -714,8 +713,6 @@ export default {
       notLive: 'Ei lähetyksessä',
       cameraFeedHint: 'Kooderista tai kytkimestä ulos työnnetty virta on nyt syöte.',
       feedsCardLink: 'Avaa Syötteet-kortti',
-      rtmpLegacyNote: 'Tämä kamera on ulos työnnetty RTMP-syöte. Siirrä se syötteeksi.',
-      rtmpRowNote: 'siirrä syötteeksi',
       err: {
         link: 'Syötettä ei voitu liittää.',
         unlink: 'Syötteen liittämistä ei voitu purkaa.',

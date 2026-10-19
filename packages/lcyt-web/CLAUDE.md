@@ -33,7 +33,7 @@ Browser-based React app using Vite and **wouter** for routing. Uses sidebar navi
 | `/graphics/control` | `DskControlPage` | DSK broadcast control panel |
 | `/graphics/viewports` | `DskViewportsPage` | DSK viewport management |
 | `/production` | `ProductionOperatorPage` | Tileable operator console (`components/production/workspace/`) — Pre-flight/Live Relay/Live Mixer/Captions + custom views |
-| `/production/cameras` | `ProductionCamerasPage` | Camera management. Control types: `none`/`amx`/`visca-ip`/`webcam`/`mobile`/`rtmp` — the last three (`HAS_CAMERA_KEY_TYPES`) get a `camera_key` field. Since plan_feeds_devices.md PR 4 the camera form (`CameraForm`, exported with `controlTypeOptions()`) no longer offers `rtmp` for a new camera: a pushed stream is a feed (Feeds card). An existing `rtmp` camera keeps its type and gets a move-to-a-feed note (no data is changed) |
+| `/production/cameras` | `ProductionCamerasPage` | Camera management. Control types: `none`/`amx`/`visca-ip`/`webcam`/`mobile` (no `rtmp` option and no camera key field since feeds-and-devices PR 7; a camera's feed is linked on the Feeds card). Since plan_feeds_devices.md PR 4 the camera form (`CameraForm`, exported with `controlTypeOptions()`) no longer offers `rtmp` for a new camera: a pushed stream is a feed (Feeds card). An existing `rtmp` camera keeps its type and gets a move-to-a-feed note (no data is changed) |
 | `/production/mixers` | `ProductionMixersPage` | Mixer management |
 | `/production/bridges` | `ProductionBridgesPage` | Bridge instance management |
 | `/production/devices` | `ProductionDevicesPage` | Device role management |

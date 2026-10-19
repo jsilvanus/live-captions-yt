@@ -374,7 +374,6 @@ export default {
         generic: 'Other feeds',
         dsk: 'DSK feeds',
       },
-      sourceLegacyCamera: 'Camera: {name} (legacy)',
       sourceMissingFeed: 'Feed no longer exists',
       useOriginal: 'Use original',
       dskRtmpIngestUrl: 'DSK RTMP ingest URL',
@@ -761,8 +760,6 @@ export default {
       notLive: 'Not live',
       cameraFeedHint: 'Streams pushed in from an encoder or switcher are feeds now.',
       feedsCardLink: 'Open the Feeds card',
-      rtmpLegacyNote: 'This camera is a pushed RTMP feed. Move it to a feed.',
-      rtmpRowNote: 'move this to a feed',
       err: {
         link: 'The feed could not be linked.',
         unlink: 'The feed could not be unlinked.',

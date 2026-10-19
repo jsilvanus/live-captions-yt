@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  relaySelectableFeeds, groupRelaySourceFeeds, feedOptionLabel, linkedFeedForCamera,
+  relaySelectableFeeds, groupRelaySourceFeeds, feedOptionLabel,
   relaySourceValue, sourcePatch, sourceRequestFields, isFeedSourceValue,
 } from '../src/lib/relaySource.js';
 
@@ -37,58 +37,39 @@ describe('relay source feeds', () => {
     assert.equal(feedOptionLabel(FEEDS[5]), 'Key feed');
   });
 
-  it('finds the selectable feed linked to a camera', () => {
-    assert.equal(linkedFeedForCamera(FEEDS, 'cam-1').id, 'f-altar');
-    assert.equal(linkedFeedForCamera(FEEDS, 'cam-9'), null);
-    assert.equal(linkedFeedForCamera(FEEDS, ''), null);
-  });
 });
 
 describe('relay source value and patch', () => {
-  it('shows program or crop when no feed or camera is set', () => {
-    assert.equal(relaySourceValue({ sourceView: 'program' }, FEEDS), 'program');
-    assert.equal(relaySourceValue({ sourceView: 'crop' }, FEEDS), 'crop');
-    assert.equal(relaySourceValue({}, FEEDS), 'program');
+  it('shows program or crop when no feed is set', () => {
+    assert.equal(relaySourceValue({ sourceView: 'program' }), 'program');
+    assert.equal(relaySourceValue({ sourceView: 'crop' }), 'crop');
+    assert.equal(relaySourceValue({}), 'program');
   });
 
   it('shows the selected feed', () => {
-    assert.equal(relaySourceValue({ sourceFeedId: 'f-prog', sourceCameraId: '' }, FEEDS), 'feed:f-prog');
+    assert.equal(relaySourceValue({ sourceFeedId: 'f-prog' }), 'feed:f-prog');
   });
 
-  it('preselects the feed linked to a legacy camera slot', () => {
-    assert.equal(relaySourceValue({ sourceCameraId: 'cam-1' }, FEEDS), 'feed:f-altar');
+  it('a feed pick sends sourceFeedId with the view at program', () => {
+    assert.deepEqual(sourcePatch('feed:f-prog'), { sourceView: 'program', sourceFeedId: 'f-prog' });
   });
 
-  it('shows a legacy camera with no linked feed as a read-only legacy option', () => {
-    const value = relaySourceValue({ sourceCameraId: 'cam-9' }, FEEDS);
-    assert.equal(value, 'legacy-camera:cam-9');
-    assert.equal(isFeedSourceValue(value), false);
+  it('program and crop clear the feed', () => {
+    assert.deepEqual(sourcePatch('crop'), { sourceView: 'crop', sourceFeedId: '' });
+    assert.deepEqual(sourcePatch('program'), { sourceView: 'program', sourceFeedId: '' });
   });
 
-  it('a feed pick sends sourceFeedId and clears the camera', () => {
-    assert.deepEqual(sourcePatch('feed:f-prog'), { sourceView: 'program', sourceFeedId: 'f-prog', sourceCameraId: '' });
-  });
-
-  it('program and crop clear both the feed and the camera', () => {
-    assert.deepEqual(sourcePatch('crop'), { sourceView: 'crop', sourceFeedId: '', sourceCameraId: '' });
-    assert.deepEqual(sourcePatch('program'), { sourceView: 'program', sourceFeedId: '', sourceCameraId: '' });
-  });
-
-  it('the legacy option is not selectable, so picking it changes nothing', () => {
+  it('an unknown value changes nothing', () => {
     assert.equal(sourcePatch('legacy-camera:cam-9'), null);
   });
 });
 
 describe('relay request source fields', () => {
-  it('sends a feed alone, never with a camera or view', () => {
-    assert.deepEqual(sourceRequestFields({ sourceFeedId: 'f-prog', sourceCameraId: 'cam-1', sourceView: 'program' }), { sourceFeedId: 'f-prog' });
+  it('sends a feed alone, never with the view', () => {
+    assert.deepEqual(sourceRequestFields({ sourceFeedId: 'f-prog', sourceView: 'program' }), { sourceFeedId: 'f-prog' });
   });
 
-  it('sends a legacy camera alone when there is no feed', () => {
-    assert.deepEqual(sourceRequestFields({ sourceCameraId: 'cam-1', sourceView: 'program' }), { sourceCameraId: 'cam-1' });
-  });
-
-  it('sends the view when neither a feed nor a camera is set', () => {
+  it('sends the view when no feed is set', () => {
     assert.deepEqual(sourceRequestFields({ sourceView: 'crop' }), { sourceView: 'crop' });
     assert.deepEqual(sourceRequestFields({}), {});
   });

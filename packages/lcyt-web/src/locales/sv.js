@@ -354,7 +354,6 @@ export default {
         generic: 'Andra flöden',
         dsk: 'DSK-flöden',
       },
-      sourceLegacyCamera: 'Kamera: {name} (äldre)',
       sourceMissingFeed: 'Flödet finns inte längre',
       useOriginal: 'Använd original',
       dskRtmpIngestUrl: 'DSK RTMP-ingest-URL',
@@ -718,8 +717,6 @@ export default {
       notLive: 'Inte live',
       cameraFeedHint: 'En ström som skickas in från en kodare eller växel är nu ett flöde.',
       feedsCardLink: 'Öppna kortet Flöden',
-      rtmpLegacyNote: 'Den här kameran är ett inskickat RTMP-flöde. Flytta det till ett flöde.',
-      rtmpRowNote: 'flytta till ett flöde',
       err: {
         link: 'Flödet kunde inte länkas.',
         unlink: 'Flödet kunde inte kopplas bort.',

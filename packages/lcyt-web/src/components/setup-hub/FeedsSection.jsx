@@ -121,10 +121,9 @@ export function FeedsSection() {
   const managed = (feeds || []).filter(f => f.managed);
   const named = (feeds || []).filter(f => !f.managed);
 
-  // A named feed is in use when an egress relay sources from it, or from the camera it is linked to.
+  // A named feed is in use when an egress relay sources from it.
   function isInUse(feed) {
-    return relays.some(r => (r.sourceFeedId && r.sourceFeedId === feed.id)
-      || (feed.deviceType === 'camera' && r.sourceCameraId && r.sourceCameraId === feed.deviceId));
+    return relays.some(r => r.sourceFeedId && r.sourceFeedId === feed.id);
   }
 
   async function toggleSlot(slot, enabled) {
