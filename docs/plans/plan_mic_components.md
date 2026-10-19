@@ -1,0 +1,157 @@
+# Microphone components for lcyt-web (top-bar mic + Production "Listen" pane)
+
+Status: draft (plan only, no code). Written 2026-10-19. Scope: `packages/lcyt-web`. All calls go through `/api/v1`.
+
+## 1. What Juha asked for
+
+Two components that share one listener:
+
+1. **Top-bar mic** — always visible in the top status bar. Because it is always mounted, it is the thing that provides the actual in-browser listening and speech-to-text.
+2. **Production "Listen" pane** — for the `/production` operator console: a blue/red Listen pane, a quick language switcher, and an attach/detach button.
+
+Follow-up from Juha (same day): the WebSpeech API should have two modes, **prefer local** (on-device) and **normal** (cloud). He also hit `Explicit project admin/owner access required` when trying to select WebSpeech in the STT settings (section 3).
+
+## 2. Inventory: everything involved in frontend STT / WebSpeech today
+
+All paths under `packages/lcyt-web/src`.
+
+| Piece | File | What it does |
+|---|---|---|
+| Recognizer hook | `hooks/useWebSpeech.js` (105 lines) | Wraps `SpeechRecognition`. `start/stop`, auto-restart in `onend` (100 ms), ignores `no-speech`, status `idle/listening/error`. |
+| The engine | `components/AudioPanel.jsx` (1076 lines) | Everything else: three engines (`webkit`, Google Cloud `MediaRecorder` chunks, `server`), mic soft lock (`claimMic/releaseMic`, hold-to-steal, hold-to-speak), utterance start/end button and timer, optional client VAD, level meter, translation (`translateAll`), local caption files, batching, send via `session.send/construct`, server-STT SSE transcript log. Exposes `toggle/holdStart/holdEnd/holdSpeakStart/holdSpeakEnd/utteranceEndClick` through `useImperativeHandle`. |
+| Always-mounted host | `contexts/AudioContext.jsx` | `AudioProvider` mounts a hidden `<AudioPanel visible={false}>` for the whole sidebar app (`main.jsx` `SidebarApp`, outside the router, so listening survives navigation). Publishes `listening, interimText, utterance*, toggle, utteranceEndClick, analyserRef, music`. `useAudioContext()` has a no-op fallback outside the provider. |
+| Settings storage | `lib/sttConfig.js` | `lcyt-stt-engine`, `lcyt-stt-lang`, `lcyt-stt-config`, `lcyt-stt-local`; `COMMON_LANGUAGES`, `STT_MODELS`. Only `engine` change dispatches `lcyt:stt-config-changed`; lang does not. |
+| Settings UI | `components/CCModal.jsx`, `components/CaptionsModal.jsx` | Engine, language, cloud config, "local processing" toggle with `SpeechRecognition.available/install`. Two near-identical copies. `CCModal` is the live one (`/settings?tab=cc`, `EmbedSettingsPage`, legacy `App`); `CaptionsModal` is not imported anywhere except by itself. |
+| Server STT config UI | `components/panels/SttPanel.jsx`, `components/setup-hub/SttSection.jsx`, setup wizard | Per-project server provider (`webspeech`, `google`, `whisper_http`, `openai`, `auditor`), `GET/PUT /api/v1/stt/config`. |
+| Source languages | `hooks/useSourceLanguages.js` | `GET /api/v1/stt/source-languages` (project list). Used only by the language `<select>` inside `AudioPanel`. |
+| Other mic faces | `components/AudioPage.jsx` (`/audio`), `components/dashboard/AudioWidget.jsx`, `components/MobileAudioBar.jsx` (legacy `App`), `components/EmbedAudioPage.jsx` (`/embed/audio`, mounts a visible `AudioPanel`) | Each draws its own button and calls `useAudioContext()` or the `AudioPanel` ref. |
+| Level meter | `components/audio/AudioLevelMeter.jsx` | rAF canvas over `analyserRef`. |
+| Music detection | `hooks/useMusic.js`, `useMusicDetector.js`, `components/MusicChip.jsx` | Reads the same analyser. `MusicChip` is only in the legacy `StatusBar`, not in the new `TopBar`. |
+| Stand-alone copy | `components/SpeechCapturePage.jsx` (`/mcp/:sessionId`) | Self-contained re-implementation of the webkit loop for MCP speech sessions. Intentionally context-free. |
+| Triggers | `lib/metacode-runtime.js`, `components/InputBar.jsx` | `<!-- audio: start/stop -->` dispatches `lcyt:audio-capture`, handled in `AudioPanel`. |
+| Top bar | `components/sidebar/Sidebar.jsx` `TopBar` | Brand, context, badges, ingest chip, jobs, quick actions. No mic or STT indicator. (The older `components/StatusBar.jsx`, used only by `/legacy`, has the server-STT chip and `MusicChip`.) |
+| Production console | `components/production/workspace/` (`layout.js`, `paneTypes.js`, `panes/index.jsx`) | Pane registry; `captionInput` is the model for a small pane. |
+| Backend, for reference | `lcyt-backend/src/routes/mic.js` (`POST /mic` claim/release, `session.mic_state` SSE), `routes/stt.js` | Soft mic lock; server STT config and `/start,/stop,/status,/events`. |
+
+Not related: `CameraStreamPage.jsx` (`getUserMedia` for camera streaming).
+
+### Problems found while reading (from code, not reproduced)
+
+1. **"Prefer local" is stored but never applied.** `lcyt-stt-local` is written by `CCModal` and read nowhere else; neither `useWebSpeech` nor `AudioPanel` sets `recognition.processLocally`.
+2. **Language change does not take effect.** `AudioPanel` calls `webkitSpeech.setLanguage?.()`, which the hook does not define. The hook's effect sets `recognition.lang`, but Chrome applies it only on the next `start()`. `getSttLang()` is also read on render and is not reactive.
+3. **Stale closures.** Recognition handlers are bound at `start()`, so `pushFinalTranscript`/`sendTranscript` keep the `session` (and its `connected`) from the render that started listening.
+4. **Meter is empty by default in webkit mode.** `attachMeter` runs only when a specific device id is stored, because `SpeechRecognition` exposes no audio.
+5. **Two different "languages".** `/audio` and `AudioWidget` change the *caption/input* language (`inputLang`); `AudioPanel`'s select changes the *recognition* language (`sttConfig`). A quick switcher must say which one it changes.
+6. **Context churn.** `AudioContext`'s value is a new object each render and includes `interimText`, so every consumer re-renders on every interim result.
+7. All `AudioPanel` strings are hard-coded English.
+
+## 3. The "Explicit project admin/owner access required" error
+
+`PUT /api/v1/stt/config` is guarded by `requireProjectRole(db, 'setup')` (`lcyt-backend/src/routes/stt.js:184`; the message comes from `middleware/project-access.js:323`). That route stores the **server-side** STT config of the project, and the Setup Hub "STT service" card offers `webspeech` as a provider there. So:
+
+- Picking WebSpeech in that card needs an **explicit** project admin or owner. A viewer/operator, an org member without a project role, or an API-key session (no `userId`) gets the 403. I cannot tell from here which of these Juha's account is; to be checked on the running instance (`GET /api/v1/keys` role for the user).
+- More importantly, WebSpeech is a **browser** engine. It should not need a project-level setup permission at all. The browser-side choice (`lcyt-stt-engine`, `lcyt-stt-lang`, `lcyt-stt-local`) lives in `localStorage` and is changed in the CC settings tab or `AudioPanel`; it needs no backend write.
+
+Decision proposed: WebSpeech engine and its two modes become a **per-browser** setting with no role gate (section 6). The server `webspeech` provider value stays valid for old rows but is hidden from the Setup Hub list (it never ran anything server-side; the browser does the recognition). The Setup Hub card shows a one-line pointer to the browser setting instead.
+
+## 4. Design
+
+### 4.1 One listener, several faces
+
+Extract the recognizer/transport logic out of `AudioPanel` into a hook `hooks/useMicListener.js` (no JSX). `AudioProvider` calls it once, so the engine exists app-wide regardless of which page or top-bar variant is shown. `AudioPanel` shrinks to a presentational component (still used by `/embed/audio`, where there is no provider) built on the same hook.
+
+Deviation from the literal wording, flagged: Juha described the top-bar component as the one providing the listening. I keep the engine in the provider and make the top-bar component its permanent face, because the top bar is not rendered on stand-alone pages (`/embed/*`, `/mcp/*`, kiosk pages) and the Listen pane must also work if the bar is hidden. Effect for the user is identical: the top-bar mic is always there and is the primary control. If Juha prefers the engine literally inside `TopBarMic`, the hook moves one level down with no API change.
+
+### 4.2 Shared state shape (new `AudioContext` value)
+
+Split into two contexts so interim text does not re-render everything:
+
+- `AudioStateContext` (low frequency): `status` (`idle | starting | listening | error | unsupported | locked | needs-credential`), `engine` (`webkit | cloud | server`), `lang`, `setLang(code)`, `speechMode` (`local | normal`), `setSpeechMode`, `effectiveSpeechMode` (what the browser actually used), `attached`, `attach()`, `detach()`, `start()`, `stop()`, `toggle()`, `error`, `micHolder`, `analyserRef`, `music`, utterance fields as today.
+- `AudioTranscriptContext` (high frequency): `interimText`, `lastFinal`. Subscribed to only by panes that show text.
+
+`useAudioContext()` keeps returning the old shape (merged) so `AudioPage`, `AudioWidget`, `MusicChip` keep working unchanged; new code uses the two narrow hooks. Pure state derivation (`deriveMicStatus`) goes in `lib/micState.js` and is tested with `node:test`.
+
+### 4.3 Attach / detach — proposed meaning
+
+Juha's message does not define it, so this is my reading and the first open question. The mic already has a soft lock across clients (`claimMic/releaseMic`, `micHolder`). Proposed:
+
+- **Attached** (default): this browser is the caption source. Starting claims the mic lock; final transcripts go through the normal pipeline (translation, batching, send).
+- **Detached**: this browser does not feed captions. It releases the lock and discards transcripts. The recognizer may still run so the operator can *monitor* level and interim text (useful for checking the mic before going on air); the pane shows it clearly as "not sending".
+
+Another client that holds the mic shows the pane as `locked` with the existing hold-to-steal gesture.
+
+### 4.4 Component A — `TopBarMic` (top bar)
+
+`components/mic/TopBarMic.jsx`, mounted in `TopBar` (`sidebar/Sidebar.jsx`) between the badges and the spacer (always rendered, also while disconnected; disabled with a tooltip until a project is connected, since sending needs a session).
+
+- Round mic button (click = `toggle`, long press = hold-to-speak when that setting is on) with a status dot, plus a 40 px level meter (hidden under 480 px).
+- Tooltip/popover on click-and-hold or chevron: engine, language, mode (local/normal), device, mic holder, error text. Language and mode are the same controls as in the pane (`MicLangSwitch`, `SpeechModeSwitch`).
+- Colours from the existing `--color-*` tokens: idle neutral, listening red pulse, detached outlined, locked amber, error red outline.
+- Keyboard: focusable, `aria-pressed`, an `aria-live="polite"` region announces start/stop and errors. Optional shortcut registered in the existing shortcuts dialog.
+- Optional later: show `MusicChip` beside it (it is missing from the new top bar today).
+
+### 4.5 Component B — `ListenPane` (Production console)
+
+`components/mic/ListenPane.jsx`, registered as pane type `listen` ("Listen") in `paneTypes.js` (`TYPE_OPTIONS`, `PANE_META`) and `panes/index.jsx` (one `case`).
+
+- A big blue/red button filling the pane: **blue** = ready/idle, **red** = listening and sending. Detached and monitor-only: blue outline with a "not sending" label; locked: amber.
+- Level meter, interim text (small, one line), last sent final.
+- Quick language switcher (`MicLangSwitch`): up to 4 pinned languages as chips plus a "more" dropdown. Source list = `useSourceLanguages()` (project list) with `COMMON_LANGUAGES` fallback; pinned set stored per browser. Changing language restarts the recognizer immediately (section 4.6). The switcher changes the **recognition** language and, with a checkbox "also caption language" (default on), `inputLang` too, so the two stop drifting.
+- Attach/detach toggle (4.3).
+- Speech mode toggle: local / normal (section 6).
+- Added to the pane picker only. Built-in views are not changed (see 5.2).
+
+### 4.6 Hook fixes the work depends on (Phase 0)
+
+- Handlers via a "latest ref" so callbacks never see stale `session`.
+- `restart({ lang, mode })`: set the new values, then `recognition.stop()` and let `onend` restart (the hook's own restart path), with a guard against rapid cycles; `stop()` stays a full stop.
+- `lang` read from a small store (`sttConfig.js` gains `subscribeSttConfig`, and `setSttLang`/`setSttLocalProcessing` dispatch `lcyt:stt-config-changed`) instead of on every render.
+- Always open a `getUserMedia` stream for the meter while listening (not only when a device id is set), reuse it for client VAD, stop it on stop.
+- Map errors to user text: `not-allowed`, `service-not-allowed`, `language-not-supported`, `network`, `audio-capture`.
+
+## 5. Where it plugs in
+
+1. `Sidebar.jsx` `TopBar`: one element, `<TopBarMic />`.
+2. `AudioContext.jsx`: provider calls `useMicListener`; two contexts; compat wrapper.
+3. `production/workspace/paneTypes.js`, `panes/index.jsx`: `listen` pane. **Layout caveat:** `layout.js` persists the built-in views in `localStorage` (`STORAGE_VERSION` 4) and `initialLayoutState` returns the stored built-ins as-is, so adding `listen` to a built-in view by editing `defaultViews()` would not reach existing users, and bumping the version would wipe their custom views. Proposal: keep built-ins out of the first PR; then (optional, Phase 3) refresh `kind: 'builtin'` views from `defaultViews()` on load while keeping stored custom views, with a test in `test/production-layout.test.js`. Needs checking that nothing relies on built-ins being editable.
+4. `AudioPage`, `AudioWidget`, `MobileAudioBar` later reuse `MicToggle`/`MicLangSwitch` (Phase 3) to remove duplicated button logic.
+5. `CCModal`: speech mode radio replaces the single "local processing" checkbox; `CaptionsModal` (unused) deleted in the same PR as a separate commit.
+6. i18n: new `mic.*` keys in `locales/{en,fi,sv}.js`; `test/i18n.test.js` guards parity.
+
+## 6. WebSpeech modes: prefer local / normal
+
+Setting `lcyt-stt-speech-mode`: `normal` (default; browser decides, usually Google cloud in Chrome) or `local` (prefer on-device). Migration: `lcyt-stt-local === '1'` maps to `local`.
+
+- `local` behaviour is **prefer**, not require: before start, `SpeechRecognition.available({ langs: [lang], processLocally: true })`:
+  - `available` → set `recognition.processLocally = true`.
+  - `downloadable`/`downloading` → offer "Install language pack" (`SpeechRecognition.install`) in the popover/CCModal, and run in `normal` meanwhile; switch to local on the next restart once installed.
+  - `unavailable`, or the API missing (Firefox/Safari, older Chrome) → run `normal`, show "on-device not available for fi-FI, using cloud".
+  - A `language-not-supported` error while `processLocally` is true → fall back to `normal` once and remember per language for the session.
+- `effectiveSpeechMode` is shown on the button tooltip so the operator can see whether audio left the machine (relevant for the data-protection position of the congregation; this should be stated in the CC tab help text).
+- Mode change restarts the recognizer like a language change.
+- Per-browser, no backend write, no role gate. The server `PUT /stt/config` and its `setup` tier are untouched by this.
+
+Open: whether `processLocally` can be set after construction on all supporting Chrome versions — verify against the current spec and a Chrome 139+ build before coding; the plan assumes it can.
+
+## 7. Phases (each its own small PR, docs/tests included)
+
+- **Phase 0 — hook and settings fixes** (no visual change): `useMicListener` extraction, latest-ref handlers, `restart`, reactive STT config store, always-on meter, error mapping, `processLocally` applied. Tests with a fake `SpeechRecognition` (`test/helpers/fakeSpeechRecognition.js`): start/stop, auto-restart, lang change restarts, mode fallback order, no stale `connected`.
+- **Phase 1 — context split + `TopBarMic`.** Component tests for each status.
+- **Phase 2 — `ListenPane`, `MicLangSwitch`, attach/detach.** Pane registered in the picker only.
+- **Phase 3 — polish:** CCModal mode radio and Setup Hub pointer (plus hide the server `webspeech` provider), optional builtin-view refresh, reuse in `AudioPage`/`AudioWidget`/`MobileAudioBar`, delete `CaptionsModal.jsx`, `MusicChip` in the top bar, optional auto-resume after reload when permission is already granted.
+
+Docs to update with each PR: `packages/lcyt-web/CLAUDE.md` (hooks, contexts, pane list, test list), `docs/PLANS.md`.
+
+## 8. Risks
+
+- Web Speech API availability: Chrome/Edge/Safari only, Firefox none; `processLocally` and `available/install` are Chrome-recent. Everything degrades to `normal` or "unsupported".
+- Continuous recognition can stop silently after long silence or network loss; the existing auto-restart handles most cases but needs a backoff and a visible "reconnecting" state.
+- Two simultaneous `getUserMedia` streams (meter + recognizer) work in Chrome but can change echo-cancellation behaviour; test with a USB mic and the laptop mic.
+- Not verified against a real service or real hardware; the code was read, not run.
+
+## 9. Open questions for Juha
+
+1. Attach/detach: is "attached = this browser is the caption source; detached = monitor only, not sent" what you meant? (Alternative: attach = bind the pane to a mic on another machine.)
+2. Quick language switcher: change recognition language only, or also the caption language by default? I proposed both, with a checkbox.
+3. Engine in the provider (recommended) or literally inside the top-bar component?
+4. Are you an explicit admin/owner on the project, or logged in through an API key? That decides whether the 403 also affects other Setup Hub cards for you.
