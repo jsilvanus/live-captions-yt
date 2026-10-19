@@ -42,7 +42,7 @@ describe('resolveIntent()', () => {
   it('video relay + vertical crop + hls', () => {
     const r = resolveIntent(['video'], { videoInput: 'rtmp', relay: true, hlsOutput: true, verticalCrop: true });
     assert.deepEqual(sorted(r.features), ['crop', 'hls-stream', 'ingest', 'restream']);
-    assert.ok(r.hubCards.has('egress') && r.hubCards.has('ingestion'));
+    assert.ok(r.hubCards.has('egress') && r.hubCards.has('feeds'));
   });
 
   it('"I don\'t know" video input does not enable ingest by itself', () => {
@@ -54,7 +54,9 @@ describe('resolveIntent()', () => {
     const r = resolveIntent(['production'], { controlCameras: true, controlEncoders: true });
     assert.deepEqual(sorted(r.features), ['device-control']);
     assert.deepEqual(sorted(r.prerequisites.map(p => p.id)), ['bridge', 'cameras', 'encoders']);
-    for (const c of ['cameras', 'encoders', 'bridges', 'mixers']) assert.ok(r.hubCards.has(c));
+    for (const c of ['devices', 'bridges']) assert.ok(r.hubCards.has(c));
+    const cameraLink = r.prerequisites.find(p => p.id === 'cameras').link;
+    assert.equal(cameraLink, '/setup/devices');
   });
 
   it('operator devices → device-control plus a device-roles prerequisite (not conflated with equipment)', () => {

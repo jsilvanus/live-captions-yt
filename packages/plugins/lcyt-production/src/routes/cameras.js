@@ -136,6 +136,27 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     return { ...camera, live };
   }
 
+  /**
+   * Feeds-and-devices shim (PR 2): a camera without its own camera_key but linked to a prod_feeds row of its own
+   * reports that feed's key as cameraKey, so thumbnails, live status and the relay picker keep seeing "this camera
+   * has a feed" once feeds live in prod_feeds. The camera's own camera_key always wins. Reads only; prod_feeds is
+   * owned by lcyt-rtmp, same cross-plugin query convention as the rest of this file.
+   * @param {object[]} cameras  parseCamera() outputs
+   * @returns {Promise<object[]>}
+   */
+  async function withLinkedFeedKeys(cameras) {
+    const missing = cameras.filter(c => !c.cameraKey).map(c => c.id);
+    if (!missing.length) return cameras;
+    const feeds = await db.prod_feeds.findMany({
+      where: { device_type: 'camera', device_id: { in: missing } },
+      orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
+      select: { device_id: true, feed_key: true },
+    });
+    const first = new Map();
+    for (const f of feeds) if (!first.has(f.device_id)) first.set(f.device_id, f.feed_key);
+    return cameras.map(c => (c.cameraKey || !first.has(c.id)) ? c : { ...c, cameraKey: first.get(c.id) });
+  }
+
   // -------------------------------------------------------------------------
   // Text body parser for WHIP SDP routes (must come before route definitions)
   // -------------------------------------------------------------------------
@@ -163,7 +184,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const rows = await Promise.all(all
       .filter(row => canAccessCamera(row, req))
       .map(row => withThumbnailUrl(parseCamera(row), req)));
-    res.json(await Promise.all(rows.map(withLive)));
+    res.json(await Promise.all((await withLinkedFeedKeys(rows)).map(withLive)));
   });
 
   // GET /production/cameras/:id — single camera
@@ -172,7 +193,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     // 404 (not 403) for a foreign camera — don't confirm its existence to a
     // caller who doesn't own it.
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
-    res.json(await withLive(await withThumbnailUrl(parseCamera(row), req)));
+    const [camera] = await withLinkedFeedKeys([await withThumbnailUrl(parseCamera(row), req)]);
+    res.json(await withLive(camera));
   });
 
   // POST /production/cameras — create camera

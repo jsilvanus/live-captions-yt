@@ -3,13 +3,12 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { Router } from 'wouter';
 import { memoryLocation } from 'wouter/memory-location';
 import { SessionContext } from '../../src/contexts/SessionContext.jsx';
+import { KEYS } from '../../src/lib/storageKeys.js';
 
-vi.mock('../../src/components/setup-hub/CameraSection.jsx', () => ({ CameraSection: () => <div data-testid="camera-section" /> }));
-vi.mock('../../src/components/setup-hub/MixerSection.jsx', () => ({ MixerSection: () => <div data-testid="mixer-section" /> }));
-vi.mock('../../src/components/setup-hub/EncoderSection.jsx', () => ({ EncoderSection: () => <div data-testid="encoder-section" /> }));
+vi.mock('../../src/components/setup-hub/DevicesSection.jsx', () => ({ DevicesSection: () => <div data-testid="devices-section" /> }));
 vi.mock('../../src/components/setup-hub/BridgeSection.jsx', () => ({ BridgeSection: () => <div data-testid="bridge-section" /> }));
 vi.mock('../../src/components/setup-hub/EgressSection.jsx', () => ({ EgressSection: () => <div data-testid="egress-section" /> }));
-vi.mock('../../src/components/setup-hub/IngestionSection.jsx', () => ({ IngestionSection: () => <div data-testid="ingestion-section" /> }));
+vi.mock('../../src/components/setup-hub/FeedsSection.jsx', () => ({ FeedsSection: () => <div data-testid="feeds-section" /> }));
 vi.mock('../../src/components/setup-hub/WebRadioSection.jsx', () => ({ WebRadioSection: () => <div data-testid="webradio-section" /> }));
 vi.mock('../../src/components/setup-hub/ViewportsSection.jsx', () => ({ ViewportsSection: () => <div data-testid="viewports-section" /> }));
 vi.mock('../../src/components/setup-hub/CaptionTargetsSection.jsx', () => ({ CaptionTargetsSection: () => <div data-testid="caption-targets-section" /> }));
@@ -44,12 +43,10 @@ function renderAt(path = '/setup') {
 describe('SetupHubPage', () => {
   it('renders every device/service section', () => {
     renderAt();
-    expect(screen.getByTestId('camera-section')).toBeInTheDocument();
-    expect(screen.getByTestId('mixer-section')).toBeInTheDocument();
-    expect(screen.getByTestId('encoder-section')).toBeInTheDocument();
+    expect(screen.getByTestId('devices-section')).toBeInTheDocument();
     expect(screen.getByTestId('bridge-section')).toBeInTheDocument();
     expect(screen.getByTestId('egress-section')).toBeInTheDocument();
-    expect(screen.getByTestId('ingestion-section')).toBeInTheDocument();
+    expect(screen.getByTestId('feeds-section')).toBeInTheDocument();
     expect(screen.getByTestId('webradio-section')).toBeInTheDocument();
     expect(screen.getByTestId('viewports-section')).toBeInTheDocument();
     expect(screen.getByTestId('caption-targets-section')).toBeInTheDocument();
@@ -85,8 +82,17 @@ describe('SetupHubPage', () => {
   it('"Favorites" filter hides sections that are not starred, but always keeps Workflows', () => {
     renderAt();
     fireEvent.click(screen.getByRole('button', { name: 'Favorites' }));
-    expect(screen.queryByTestId('camera-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('devices-section')).not.toBeInTheDocument();
     expect(screen.getByText('Workflows')).toBeInTheDocument();
+  });
+
+  it('keeps a Devices star made on one of the old camera/mixer/encoder cards', () => {
+    localStorage.setItem(KEYS.setup.favorites, JSON.stringify(['mixers']));
+    renderAt();
+    fireEvent.click(screen.getByRole('button', { name: 'Favorites' }));
+    expect(screen.getByTestId('devices-section')).toBeInTheDocument();
+    expect(screen.queryByTestId('bridge-section')).not.toBeInTheDocument();
+    localStorage.removeItem(KEYS.setup.favorites);
   });
 
   it('scrolls the deep-linked card into view', () => {

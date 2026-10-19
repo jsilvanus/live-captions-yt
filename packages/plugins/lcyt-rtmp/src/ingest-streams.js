@@ -87,6 +87,8 @@ export async function listUnclaimedStreams(mediamtx, knownKeys) {
       const key = segments[segments.length - 1];
       const dsk = segments.length > 1 && segments[segments.length - 2] === 'dsk';
       if (knownKeys.has(key)) continue;
+      // `<key>__<viewport>` is a DSK viewport rendered by this server, not something an encoder pushes.
+      if (key.includes('__')) continue;
       const derived = DERIVED_SUFFIX.exec(key);
       if (derived && knownKeys.has(derived[1])) continue;
       out.push({

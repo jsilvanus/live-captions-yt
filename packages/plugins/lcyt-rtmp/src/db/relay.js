@@ -141,6 +141,9 @@ function formatRelayRow(row) {
     // (prod_cameras.camera_key) — joined in at read time so rtmp-manager.js
     // (which has no db handle of its own) can use it directly.
     sourceCameraId:  row.source_camera_id || null,
+    // Optional prod_feeds.id source (Feeds card). Wins over sourceCameraId when both are set. The resolved path is
+    // joined into sourceCameraKey as well, which is the field rtmp-manager.js reads.
+    sourceFeedId:    row.source_feed_id || null,
     sourceCameraKey: row.source_camera_key || null,
     createdAt:    row.created_at,
     updatedAt:    row.updated_at,
@@ -157,7 +160,19 @@ async function withSourceCameraKeys(db, rows) {
     const cams = await db.prod_cameras.findMany({ where: { id: { in: ids } }, select: { id: true, camera_key: true } });
     for (const c of cams) keys.set(c.id, c.camera_key);
   }
-  return rows.map(r => ({ ...r, source_camera_key: r.source_camera_id ? (keys.get(r.source_camera_id) ?? null) : null }));
+  const feedIds = [...new Set(rows.map(r => r.source_feed_id).filter(Boolean))];
+  const feedKeys = new Map();
+  if (feedIds.length) {
+    const feeds = await db.prod_feeds.findMany({ where: { id: { in: feedIds } }, select: { id: true, feed_key: true } });
+    for (const f of feeds) feedKeys.set(f.id, f.feed_key);
+  }
+  return rows.map(r => ({
+    ...r,
+    // A feed source wins over a camera source; a feed that no longer exists resolves to null, like a missing camera.
+    source_camera_key: r.source_feed_id
+      ? (feedKeys.get(r.source_feed_id) ?? null)
+      : (r.source_camera_id ? (keys.get(r.source_camera_id) ?? null) : null),
+  }));
 }
 
 /**
@@ -214,10 +229,10 @@ export function buildRelayFfmpegUrl(relay) {
  * @param {string} apiKey
  * @param {number} slot  positive integer
  * @param {string} targetUrl
- * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceCameraId?: string|null }} [opts]
+ * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceCameraId?: string|null, sourceFeedId?: string|null }} [opts]
  * @returns {Promise<object>}
  */
-export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceCameraId = null } = {}) {
+export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceCameraId = null, sourceFeedId = null } = {}) {
   if (!Number.isInteger(slot) || slot < 1) {
     throw new RangeError(`slot must be a positive integer, got ${slot}`);
   }
@@ -236,6 +251,7 @@ export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = nu
     audio_bitrate: audioBitrate || null,
     source_view: sourceView,
     source_camera_id: sourceCameraId || null,
+    source_feed_id: sourceFeedId || null,
   };
   const now = db.$util.sqlNow();
   await db.rtmp_relays.upsert({
@@ -272,6 +288,31 @@ export async function resolveRelaySourceCameraKey(db, cameraId, requestingApiKey
   if (!row?.camera_key) return null;
   if (row.owner_api_key != null && row.owner_api_key !== requestingApiKey) return null;
   return row.camera_key;
+}
+
+/**
+ * Resolve a relay's source feed to its MediaMTX path (feed_key), scoped to the requesting project. A feed is only
+ * resolvable by the project that owns it; an unknown feed and another project's feed both give null.
+ * @param {object} db  Prisma client
+ * @param {string} feedId
+ * @param {string} requestingApiKey
+ * @returns {Promise<string|null>}
+ */
+export async function resolveRelaySourceFeedKey(db, feedId, requestingApiKey) {
+  const row = await db.prod_feeds.findUnique({ where: { id: feedId }, select: { feed_key: true, owner_api_key: true } });
+  if (!row || row.owner_api_key !== requestingApiKey) return null;
+  return row.feed_key;
+}
+
+/**
+ * Every distinct apiKey with a relay slot sourced from this feed (see getApiKeysReferencingCamera).
+ * @param {object} db  Prisma client
+ * @param {string} feedId
+ * @returns {Promise<string[]>}
+ */
+export async function getApiKeysReferencingFeed(db, feedId) {
+  const rows = await db.rtmp_relays.findMany({ where: { source_feed_id: feedId }, distinct: ['api_key'], select: { api_key: true } });
+  return rows.map(r => r.api_key);
 }
 
 /**

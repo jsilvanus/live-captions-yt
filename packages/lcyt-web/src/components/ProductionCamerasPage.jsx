@@ -5,6 +5,7 @@ import { useProjectRequired } from '../hooks/useProjectRequired';
 import { ConnectionSourceSelect } from './ProductionEncodersPage.jsx';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
+import { useSetupT } from '../lib/useSetupT.js';
 
 const CONTROL_TYPES = [
   { value: 'none',     label: 'None (mixer only)' },
@@ -22,6 +23,15 @@ const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
 // PTZ/hardware control channel — 'rtmp' (plan_ingest_feeds.md §1a/§3) is pushed
 // in externally via RTMP instead of captured from this browser.
 const HAS_CAMERA_KEY_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
+
+/**
+ * Control types the camera form offers. A pushed RTMP stream is a feed now (Feeds card, plan_feeds_devices.md
+ * PR 4), so `rtmp` is offered only to a camera that already has it: existing data stays editable, and the form
+ * points at the Feeds card to move it.
+ */
+export function controlTypeOptions(current) {
+  return CONTROL_TYPES.filter(ct => ct.value !== 'rtmp' || current === 'rtmp');
+}
 
 const EMPTY_PRESET       = () => ({ id: crypto.randomUUID(), name: '', command: '' });
 const EMPTY_VISCA_PRESET = () => ({ id: crypto.randomUUID(), name: '', presetNumber: 0 });
@@ -77,7 +87,8 @@ function ViscaPresetRow({ preset, onChange, onRemove }) {
   );
 }
 
-function CameraForm({ initial, bridges, onSave, onCancel }) {
+export function CameraForm({ initial, bridges, onSave, onCancel }) {
+  const t = useSetupT();
   const initType = initial?.controlType ?? 'none';
 
   const [name,             setName]             = useState(initial?.name ?? '');
@@ -170,8 +181,12 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
       <div className="settings-field">
         <label className="settings-field__label">Control type</label>
         <select className="settings-field__input" value={controlType} onChange={e => handleControlTypeChange(e.target.value)}>
-          {CONTROL_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+          {controlTypeOptions(initType).map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
         </select>
+        <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
+          {controlType === 'rtmp' ? t('devices.rtmpLegacyNote') : t('devices.cameraFeedHint')}{' '}
+          <a href="/setup/feeds">{t('devices.feedsCardLink')}</a>
+        </p>
       </div>
 
       {controlType === 'amx' && (
@@ -277,7 +292,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
           />
           <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
             MediaMTX path name for this camera stream. Convention: <code>yourkey-cam1</code>.
-            {controlType === 'rtmp' && ' Pasted into the encoder as rtmp://<host>/feed/<this key> — see the Ingestion card.'}
+            {controlType === 'rtmp' && ' Pasted into the encoder as rtmp://<host>/feed/<this key> — see the Feeds card.'}
           </p>
         </div>
       )}
@@ -303,7 +318,8 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
   );
 }
 
-function CameraRow({ camera, bridges, onEdit, onDelete }) {
+function CameraRow({ camera, bridges, onEdit, onDelete, feedLinks }) {
+  const t = useSetupT();
   const presetCount  = camera.controlConfig?.presets?.length ?? 0;
   const typeBadge    = CONTROL_TYPES.find(ct => ct.value === camera.controlType)?.label ?? camera.controlType;
   const isBrowser    = BROWSER_CAMERA_TYPES.has(camera.controlType);
@@ -321,7 +337,7 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
     <SetupItemRow
       name={camera.name}
       meta={metaParts.join(' · ')}
-      extra={isBrowser && (
+      extra={isBrowser ? (
         <a
           href={`/production/camera/${camera.id}`}
           target="_blank"
@@ -331,14 +347,17 @@ function CameraRow({ camera, bridges, onEdit, onDelete }) {
         >
           Open camera
         </a>
-      )}
+      ) : camera.controlType === 'rtmp' ? (
+        <a href="/setup/feeds" style={{ fontSize: 12 }}>{t('devices.rtmpRowNote')}</a>
+      ) : null}
+      below={feedLinks}
       onSettings={() => onEdit(camera)}
       onDelete={() => onDelete(camera)}
     />
   );
 }
 
-export const CamerasManager = forwardRef(function CamerasManager({ embedded = false }, ref) {
+export const CamerasManager = forwardRef(function CamerasManager({ embedded = false, renderDeviceFeeds }, ref) {
   const session    = useContext(SessionContext);
   const params     = new URLSearchParams(window.location.search);
   const backendUrl = params.get('server') || session?.backendUrl || localStorage.getItem(KEYS.session.backendUrl) || '';
@@ -468,6 +487,7 @@ export const CamerasManager = forwardRef(function CamerasManager({ embedded = fa
         <div className={embedded ? undefined : 'setup-card'}>
           {cameras.map(cam => (
             <CameraRow key={cam.id} camera={cam} bridges={bridges}
+              feedLinks={renderDeviceFeeds ? renderDeviceFeeds(cam) : null}
               onEdit={c => setEditing(c)} onDelete={c => setConfirmDelete(c)} />
           ))}
         </div>

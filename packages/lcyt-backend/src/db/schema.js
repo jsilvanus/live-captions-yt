@@ -881,5 +881,9 @@ export function initSqliteSchema(dbPath) {
   // Plugin-owned tables (generated from schema.prisma, idempotent).
   db.exec(readFileSync(new URL('../../prisma/sqlite/schema.sql', import.meta.url), 'utf8'));
 
+  // Columns added to plugin tables after their first release (CREATE TABLE IF NOT EXISTS above does not add them).
+  const relayCols = new Set(db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name));
+  if (!relayCols.has('source_feed_id')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN source_feed_id TEXT');
+
   return db;
 }

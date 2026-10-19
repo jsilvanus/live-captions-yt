@@ -2368,6 +2368,7 @@
 }
 .setup-item-row:first-child { border-top: none; }
 .setup-item-row--faded { opacity: 0.55; }
+.setup-item-row__below { padding: 0 18px 10px 25px; margin-top: -4px; font-size: 12px; }
 
 .setup-item-row__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 

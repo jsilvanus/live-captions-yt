@@ -6,7 +6,7 @@ import { BridgesManager } from '../ProductionBridgesPage.jsx';
 /**
  * BridgeSection — embeds the same CRUD logic used at the standalone
  * /production/bridges route (extracted as BridgesManager). See
- * CameraSection for why the "+ Add" button is triggered via ref instead of
+ * DevicesSection for why the "+ Add" button is triggered via ref instead of
  * rendered inline by the manager.
  */
 export function BridgeSection() {
