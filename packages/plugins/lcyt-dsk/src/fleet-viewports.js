@@ -1,4 +1,5 @@
 import { viewportPageUrl, resolveCaptureDimensions, resolveCaptureBackground, buildViewportOutputs } from './renderer-helpers.js';
+import { redactList, secretsOfUrl } from 'lcyt-compute/ffmpeg/redact';
 
 /**
  * Per-viewport DSK streams as fffleet `dsk` jobs (`DSK_RENDER_EXECUTOR=fleet` with `FFFLEET_URL`). Same inputs as
@@ -35,6 +36,7 @@ export function createFleetViewportRunner({ env = process.env, getFleet } = {}) 
     const spec = {
       id, kind: 'stream', type: 'dsk', owner: apiKey, labels: { purpose: 'dsk' },
       dsk: { pageUrl: viewportPageUrl({ slug, apiKey, viewport, ...(pageBase ? { baseUrl: pageBase } : {}) }), width, height, background, fps: 25, outputs: targets.map(url => ({ url })) },
+      redact: redactList(apiKey, ...targets.flatMap(secretsOfUrl)),
     };
     const job = await (await fleetOf()).submit(spec);
     const entry = { job, jobId: id };

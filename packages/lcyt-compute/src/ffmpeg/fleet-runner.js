@@ -57,7 +57,7 @@ export async function closeFleet() {
 }
 
 export class FleetFfmpegRunner extends EventEmitter {
-  constructor({ fleet = null, args = [], name = 'ffmpeg', stdin = 'ignore', stdout = 'ignore', apiKey = '', purpose = 'unknown', timeoutMs = null, requires = [], jobId = null, class: jobClass = null, priority = null, ...rest } = {}) {
+  constructor({ fleet = null, args = [], name = 'ffmpeg', stdin = 'ignore', stdout = 'ignore', apiKey = '', purpose = 'unknown', timeoutMs = null, requires = [], jobId = null, class: jobClass = null, priority = null, redact = [], ...rest } = {}) {
     super();
     this._fleet = fleet;
     this.args = args;
@@ -71,6 +71,7 @@ export class FleetFfmpegRunner extends EventEmitter {
     this._jobIdHint = jobId;
     this._jobClass = jobClass;
     this._priority = priority;
+    this.redact = redact;
     this.extra = rest;
     this.jobId = null;
     this.job = null;
@@ -102,6 +103,7 @@ export class FleetFfmpegRunner extends EventEmitter {
       stdin: wantsStdin,
       ...(this._stdoutMode === 'pipe' ? { stdout: true } : {}),
       ffmpeg: { args: this.args },
+      ...(this.redact.length ? { redact: this.redact } : {}),
     };
     let job;
     try {

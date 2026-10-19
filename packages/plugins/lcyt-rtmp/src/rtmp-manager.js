@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
-import { createFfmpegRunner } from 'lcyt-compute/ffmpeg';
+import { createFfmpegRunner, redactList, secretsOfUrl } from 'lcyt-compute/ffmpeg';
 import { makeFifo, createFifoWriter } from 'lcyt-compute/ffmpeg/pipe-utils';
 import { FanoutSupervisor } from './fanout-supervisor.js';
 import * as fs from 'node:fs';
@@ -179,6 +179,20 @@ const SAFE_NAME_RE = /^[A-Za-z0-9_\-]+$/;
  * @param {Array<{ targetUrl: string, targetName?: string|null }>} relays
  * @returns {string}  e.g. "[f=flv]rtmp://a/b/c|[f=flv]rtmp://x/y/z"
  */
+/**
+ * Secret values of a relay set for a fleet job's `redact` list: the ingest key and every target's
+ * stream key (the last segment or query of its URL), so they stay out of stderr tails and job events.
+ * @param {string|null} apiKey
+ * @param {Array<{ targetUrl: string, targetName?: string|null }>} relays
+ */
+function _redactRelays(apiKey, relays) {
+  return redactList(apiKey, ...relays.flatMap(r => [r.targetName, ...secretsOfUrl(_targetUrlOf(r))]));
+}
+
+function _targetUrlOf(r) {
+  return r.targetName ? `${r.targetUrl.replace(/\/$/, '')}/${r.targetName}` : r.targetUrl;
+}
+
 function _buildTeeTargets(relays) {
   return relays.map(r => {
     const nameOk = r.targetName == null || SAFE_NAME_RE.test(r.targetName);
@@ -499,7 +513,7 @@ export class RtmpRelayManager {
           args.push('-f', 'flv', outRtmpUrl(apiKey, 'out', this._settings));
           const teeTargets = _buildTeeTargets(relays);
           try {
-            await this._fanout.set(outPathName(apiKey), { sourcePath: outPathName(apiKey), tee: teeTargets, apiKey, label: `out:${apiKey.slice(0, 8)}` });
+            await this._fanout.set(outPathName(apiKey), { sourcePath: outPathName(apiKey), tee: teeTargets, apiKey, redact: _redactRelays(apiKey, relays), label: `out:${apiKey.slice(0, 8)}` });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
           } catch (err) {
             logger.warn(`[rtmp] MediaMTX addPath (cea708 out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -573,7 +587,7 @@ export class RtmpRelayManager {
               throw new Error(`Target URL or name unsafe for transcode slot ${i}: ${String(targetUrl).slice(0, 80)}`);
             }
             try {
-              await this._fanout.set(outPathName(apiKey, suffix), { sourcePath: outPathName(apiKey, suffix), flvUrl: targetUrl, apiKey, label: `${suffix}:${apiKey.slice(0, 8)}` });
+              await this._fanout.set(outPathName(apiKey, suffix), { sourcePath: outPathName(apiKey, suffix), flvUrl: targetUrl, apiKey, redact: redactList(apiKey, r.targetName, ...secretsOfUrl(targetUrl)), label: `${suffix}:${apiKey.slice(0, 8)}` });
               slotPaths.push(outPathName(apiKey, suffix));
             } catch (err) {
               logger.warn(`[rtmp] MediaMTX addPath (transcode slot ${i}) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -631,7 +645,7 @@ export class RtmpRelayManager {
           args.push('-f', 'flv', outRtmpUrl(apiKey, 'out', this._settings));
           const teeTargets = _buildTeeTargets(relays);
           try {
-            await this._fanout.set(outPathName(apiKey), { sourcePath: outPathName(apiKey), tee: teeTargets, apiKey, label: `out:${apiKey.slice(0, 8)}` });
+            await this._fanout.set(outPathName(apiKey), { sourcePath: outPathName(apiKey), tee: teeTargets, apiKey, redact: _redactRelays(apiKey, relays), label: `out:${apiKey.slice(0, 8)}` });
             this._outputPaths.set(apiKey, [outPathName(apiKey)]);
           } catch (err) {
             logger.warn(`[rtmp] MediaMTX addPath (dsk out) failed for ${apiKey.slice(0,8)}: ${err.message}`);
@@ -667,7 +681,7 @@ export class RtmpRelayManager {
         const safeTee = teeTargets.replace(/"/g, '');
         try {
           // Hook mode also kicks the current publisher so MediaMTX fires runOnPublish immediately.
-          await this._fanout.set(apiKey, { sourcePath: encodeURIComponent(apiKey), tee: safeTee, apiKey, kick: true, label: `plain:${apiKey.slice(0, 8)}` });
+          await this._fanout.set(apiKey, { sourcePath: encodeURIComponent(apiKey), tee: safeTee, apiKey, kick: true, redact: _redactRelays(apiKey, relays), label: `plain:${apiKey.slice(0, 8)}` });
           logger.info(`[rtmp] Plain relay for ${apiKey.slice(0,8)} configured via MediaMTX (${relays.length} slot(s))`);
         } catch (err) {
           logger.warn(`[rtmp] MediaMTX addPath failed for ${apiKey.slice(0,8)}: ${err.message} — stream may not forward`);
@@ -720,6 +734,7 @@ export class RtmpRelayManager {
         stdin: stdinMode,
         purpose: 'relay',
         apiKey,
+        redact: _redactRelays(apiKey, relays),
       };
 
       const runner = createFfmpegRunner(runnerOpts);
@@ -873,7 +888,7 @@ export class RtmpRelayManager {
     }
     const teeTargets = _buildTeeTargets(slots);
     try {
-      await this._fanout.set(pathName, { sourcePath: pathName, tee: teeTargets, kick: true, label: pathName });
+      await this._fanout.set(pathName, { sourcePath: pathName, tee: teeTargets, kick: true, redact: _redactRelays(null, slots), label: pathName });
       logger.info(`[rtmp] ${logLabel} configured via MediaMTX on '${pathName}' (${slots.length} slot(s))`);
     } catch (err) {
       logger.warn(`[rtmp] MediaMTX addPath (${logLabel}) failed on '${pathName}': ${err.message} — slots may not forward`);

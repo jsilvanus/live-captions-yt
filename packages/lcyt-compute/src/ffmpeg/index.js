@@ -1,6 +1,7 @@
 import { LocalFfmpegRunner } from './local-runner.js';
 import { FleetFfmpegRunner } from './fleet-runner.js';
 import { trackFfmpegRun } from './run-registry.js';
+import { redactList, secretsOfUrl } from './redact.js';
 
 /**
  * Runner interface (async):
@@ -110,5 +111,6 @@ export function createFfmpegRunner({ runner = ENV_RUNNER, purpose = 'unknown', a
 
 export { LocalFfmpegRunner, FleetFfmpegRunner };
 export { getFleet, closeFleet } from './fleet-runner.js';
+export { redactList, secretsOfUrl, REDACT_MAX_VALUES } from './redact.js';
 export { spawnFfmpeg } from './spawn.js';
 export { trackFfmpegRun, listRunningFfmpegRuns } from './run-registry.js';
