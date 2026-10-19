@@ -82,12 +82,32 @@ jobs:
 
       - name: Run tests (${{ matrix.database }})
         working-directory: packages/lcyt-backend
-        run: npm test
+        # Same command as the package's `npm test`, plus a spec reporter on stdout (failing
+        # test names and errors) and a TAP file kept as an artifact. Keep in step with the
+        # `test` script in packages/lcyt-backend/package.json.
+        run: |
+          set -o pipefail
+          node --experimental-test-module-mocks --test --test-timeout=120000 --test-force-exit \
+            --test-reporter=spec --test-reporter-destination=stdout \
+            --test-reporter=tap --test-reporter-destination="$RUNNER_TEMP/backend-${{ matrix.database }}.tap" \
+            test/*.test.js
         timeout-minutes: 10
         env:
           NODE_ENV: test
+          LCYT_DB_SQL_COMPAT: '1'
+          ALLOWED_DOMAINS: '*'
+          FILES_DIR: /tmp/lcyt-files-test
+          ICONS_DIR: /tmp/lcyt-icons-test
           DATABASE_URL: ${{ env.DATABASE_URL }}
           TEST_DATABASE: ${{ env.TEST_DATABASE }}
+
+      - name: Upload backend test output (${{ matrix.database }})
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-tests-${{ matrix.database }}
+          path: ${{ runner.temp }}/backend-${{ matrix.database }}.tap
+          if-no-files-found: ignore
 
       - name: Collect test results (${{ matrix.database }})
         if: always()

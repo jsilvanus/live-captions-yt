@@ -2,3 +2,4 @@
 export { createNotifyService } from './notify-service.js';
 export { createRateLimiter, createCooldown } from './rate-limit.js';
 export { createBrevoEmailAdapter } from './brevo-email.js';
+export { createSmtpEmailAdapter } from './smtp-email.js';
