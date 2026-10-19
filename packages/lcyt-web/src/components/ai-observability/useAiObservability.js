@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useEventStream } from '../../hooks/useEventStream.js';
-import { usePolling, STOP_POLLING } from '../../hooks/usePolling.js';
+import { usePolling } from '../../hooks/usePolling.js';
 
 // ---------------------------------------------------------------------------
 // useAiObservability — data + actions for the AI Observability page
@@ -83,8 +83,7 @@ export function useAiObservability() {
   // Status refresh: paused while the tab is hidden, stops on an expired token.
   usePolling(async () => {
     const codes = await Promise.all(ROLE_CODES.map(loadStatus));
-    if (codes.includes(401)) return STOP_POLLING;
-    return undefined;
+    if (codes.includes(401)) throw Object.assign(new Error('Unauthorized'), { status: 401 });
   }, 10_000, { enabled: connected, runImmediately: false });
 
   // Live overlay: subscribe directly to role.tracker.*/role.describer.* on
@@ -124,9 +123,11 @@ export function useAiObservability() {
     try {
       const res = await api('/production/perception/overview');
       if (res.ok) setPerception(await res.json());
-      else if (res.status === 401) return STOP_POLLING;
-    } catch { /* panel just keeps its last state */ }
-    return undefined;
+      else if (res.status === 401) throw Object.assign(new Error('Unauthorized'), { status: 401 });
+    } catch (err) {
+      if (err?.status === 401) throw err;
+      /* panel just keeps its last state */
+    }
   }, [api, backendUrl, apiKey]);
 
   usePolling(loadPerception, 5000, { enabled: connected });

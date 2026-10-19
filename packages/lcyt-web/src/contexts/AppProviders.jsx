@@ -1,6 +1,7 @@
 import { useEffect, useRef, useMemo } from 'react';
 import { useSentLog } from '../hooks/useSentLog';
 import { hasProjectSessionConfig } from '../lib/projectSession.js';
+import { recoverLocalAuth } from '../lib/authRecovery.js';
 import { SessionContext } from './SessionContext';
 import { ConnectionContext } from './ConnectionContext';
 import { CaptionContext } from './CaptionContext';
@@ -142,7 +143,10 @@ export function AppProviders({ children, initConfig, autoConnect, embed }) {
     if (autoConnect && initConfig?.backendUrl && (initConfig?.projectAccessToken || initConfig?.apiKey || initConfig?.projectId)) {
       session.connect(initConfig).catch(() => {});
     } else if (shouldConnectFromPersisted) {
-      session.connect(persisted).catch(() => {});
+      session.connect(persisted).catch((err) => {
+        // Local install with a stale token: renew it (the session reconnects itself on success).
+        if (err?.statusCode === 401) recoverLocalAuth();
+      });
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

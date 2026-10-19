@@ -5,13 +5,12 @@ import { usePolling } from '../../hooks/usePolling.js';
 export function BroadcastWidget({ size }) {
   const { connected, getRelayStatus } = useSessionContext();
   const [relayStatus, setRelayStatus] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true); // first load only: later polls keep the previous value on screen
 
   useEffect(() => {
     if (!connected) setRelayStatus(null);
   }, [connected]);
   usePolling(async () => {
-    setLoading(true);
     try {
       setRelayStatus(await getRelayStatus());
     } catch (err) {

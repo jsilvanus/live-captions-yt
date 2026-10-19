@@ -24,8 +24,8 @@ export function StatusBar({ onControlsOpen, onSettingsOpen, onCCOpen }) {
     try {
       setSttStatus(await session.getSttStatus());
     } catch (err) {
-      setSttStatus(null);
       if (err?.status === 401) throw err;
+      if (err?.status) setSttStatus(null); // a refusal hides the chip; a network blip keeps the last value
     }
   }, STT_POLL_INTERVAL_MS, { enabled: !!session.connected });
 

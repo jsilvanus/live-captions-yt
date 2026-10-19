@@ -6,6 +6,7 @@ import { KEYS } from '../lib/storageKeys.js';
 import { readPersistedSessionConfig, savePersistedSessionConfig } from '../lib/projectSession.js';
 import { useEventStream } from './useEventStream.js';
 import { usePolling } from './usePolling.js';
+import { recoverLocalAuth, AUTH_RECOVERED_EVENT } from '../lib/authRecovery.js';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
@@ -182,9 +183,15 @@ export function useSession({
           // reconnectConfigRef is kept for future reconnects (set again on connect success)
           setReconnecting(false);
         })
-        .catch(function () {
+        .catch(function (err) {
           reconnectAttemptsRef.current++;
-          scheduleReconnectRef.current(reconnectConfigRef.current);
+          const retry = function () { scheduleReconnectRef.current(reconnectConfigRef.current); };
+          if (err?.statusCode === 401) {
+            // Local install: renew the stale token; the AUTH_RECOVERED_EVENT listener reconnects.
+            recoverLocalAuth().then(function (ok) { if (!ok) retry(); }, retry);
+          } else {
+            retry();
+          }
         });
     }, delay);
   }, []); // stable: all state accessed via refs
@@ -244,7 +251,7 @@ export function useSession({
   const checkHealth = useCallback(async function checkHealth(url) {
     const target = url ?? backendUrlRef.current;
     if (!target) { setHealthStatus('unknown'); setLatencyMs(null); return false; }
-    setHealthStatus('checking');
+    setHealthStatus((s) => (s === 'ok' ? s : 'checking')); // no flicker on routine polls
     try {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 5000);
@@ -365,6 +372,20 @@ export function useSession({
 
   // Keep connectRef current for the reconnect timer callback
   connectRef.current = connect;
+
+  // Local install: credentials were renewed after a 401 -> reconnect with the fresh project token.
+  useEffect(() => {
+    function onRecovered() {
+      const cfg = readPersistedSessionConfig();
+      if (!cfg?.backendUrl || !cfg.projectAccessToken) return;
+      if (reconnectTimerRef.current) { clearTimeout(reconnectTimerRef.current); reconnectTimerRef.current = null; }
+      connectRef.current(cfg)
+        .then(function () { reconnectAttemptsRef.current = 0; setReconnecting(false); })
+        .catch(function () { scheduleReconnectRef.current(cfg); });
+    }
+    window.addEventListener(AUTH_RECOVERED_EVENT, onRecovered);
+    return () => window.removeEventListener(AUTH_RECOVERED_EVENT, onRecovered);
+  }, []);
 
   // Public disconnect â€” cancels any pending auto-reconnect
   const disconnect = useCallback(async function disconnect() {
