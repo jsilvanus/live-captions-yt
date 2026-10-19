@@ -195,7 +195,7 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
     const apiKey = req.session.apiKey;
     const streamKey = randomUUID();
     // The primary feed row carries the key; ingest_stream_key follows it for code that predates feeds.
-    const primaryId = await ensurePrimaryFeed(db, apiKey);
+    const primaryId = await ensurePrimaryFeed(db, apiKey, { force: true });
     if (primaryId) await db.prod_feeds.updateMany({ where: { id: primaryId, owner_api_key: apiKey }, data: { feed_key: streamKey } });
     await db.api_keys.updateMany({ where: { key: apiKey }, data: { ingest_stream_key: streamKey } });
     const videoApp = settings ? (settings.get('media.rtmp_application') || settings.get('media.rtmp_app')) : (process.env.RTMP_APPLICATION || process.env.RTMP_APP || 'stream');

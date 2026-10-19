@@ -11,7 +11,7 @@ import { initDb } from 'lcyt-backend/db';
 import { createFeedsRouter } from '../src/routes/feeds.js';
 import {
   backfillFeeds, listFeeds, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds,
-  getPrimaryFeedKey, backfillPrimaryFeeds, ownerOfPrimaryFeedKey,
+  getPrimaryFeedKey, getPrimaryFeedId, ensurePrimaryFeed, backfillPrimaryFeeds, ownerOfPrimaryFeedKey,
 } from '../src/db/feeds.js';
 import { resolveApiKeyFromIngestStreamKey } from '../src/db/relay.js';
 
@@ -289,13 +289,31 @@ describe('the main (primary) feed', () => {
     assert.equal(await getPrimaryFeedKey(db, KEY), 'rotated-key');
   });
 
-  it('backfillPrimaryFeeds creates one for every project without, and is idempotent', async () => {
+  it('backfillPrimaryFeeds makes a main feed only for projects that use a main stream, and is idempotent', async () => {
     await db.prepare('UPDATE api_keys SET primary_feed_id = NULL').run();
-    const first = await backfillPrimaryFeeds(db);
-    assert.ok(first >= 2);
+    assert.equal(await backfillPrimaryFeeds(db), 1); // KEY has its own ingest key; OTHER has none
     assert.equal(await backfillPrimaryFeeds(db), 0);
-    assert.equal(await getPrimaryFeedKey(db, OTHER), OTHER); // no ingest key: the api key itself
+    assert.equal(await getFeedByKey(db, OTHER), null);
+    assert.equal(await getPrimaryFeedId(db, OTHER), null);
+    assert.equal(await getPrimaryFeedKey(db, OTHER), OTHER);
+  });
+
+  it('a project without any incoming stream has no main feed, until it uses one', async () => {
+    assert.equal(await ensurePrimaryFeed(db, OTHER), null);
+    assert.equal(await getPrimaryFeedId(db, OTHER), null);
+    // the relay entitlement, a publisher right now, or an explicit ask each make it
+    await db.prepare('UPDATE api_keys SET relay_allowed = 1 WHERE key = ?').run(OTHER);
+    const id = await ensurePrimaryFeed(db, OTHER);
+    assert.ok(id);
     assert.equal((await getFeedByKey(db, OTHER)).label, 'main');
+    await db.prepare('DELETE FROM prod_feeds WHERE owner_api_key = ?').run(OTHER);
+    await db.prepare('UPDATE api_keys SET relay_allowed = 0, primary_feed_id = NULL WHERE key = ?').run(OTHER);
+    assert.ok(await ensurePrimaryFeed(db, OTHER, { publishing: true }));
+    await db.prepare('DELETE FROM prod_feeds WHERE owner_api_key = ?').run(OTHER);
+    await db.prepare('UPDATE api_keys SET primary_feed_id = NULL WHERE key = ?').run(OTHER);
+    assert.ok(await ensurePrimaryFeed(db, OTHER, { force: true }));
+    await db.prepare('DELETE FROM prod_feeds WHERE owner_api_key = ?').run(OTHER);
+    await db.prepare('UPDATE api_keys SET primary_feed_id = NULL WHERE key = ?').run(OTHER);
   });
 
   it('renaming its key keeps ingest_stream_key in step and resolves the new name to the project', async () => {
@@ -316,6 +334,15 @@ describe('the main (primary) feed', () => {
     const linked = await (await call('PATCH', `/${main.id}`, { deviceType: 'camera', deviceId: 'cam1' })).json();
     assert.equal(linked.deviceId, 'cam1');
     assert.equal((await call('DELETE', `/${main.id}`)).status, 409);
+  });
+
+  it('POST /main adds the main feed on request and is idempotent', async () => {
+    const before = await mainOf();
+    const res = await call('POST', '/main');
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.id, before.id);
+    assert.equal(body.primary, true);
   });
 
   it('POST /:id/primary moves the main stream to another rtmp feed; a whip feed cannot be main', async () => {
