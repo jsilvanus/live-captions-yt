@@ -252,6 +252,7 @@ export class FanoutSupervisor {
         class: 'stream',
         priority: 500,
         requires: this._requires(),
+        redact: spec.redact ?? [],
       });
       st.runner = runner;
       st.startedAt = Date.now();

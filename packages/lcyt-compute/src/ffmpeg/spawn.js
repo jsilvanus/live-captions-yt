@@ -18,14 +18,14 @@ import { trackFfmpegRun } from './run-registry.js';
  * returned is written to it just before it ends, and the reason is on `failure` (see `failureOf`).
  *
  * @param {string[]} args
- * @param {{ purpose?: string, apiKey?: string, stdio?: any[], runner?: string, cmd?: string, env?: object }} [opts]
+ * @param {{ purpose?: string, apiKey?: string, stdio?: any[], runner?: string, cmd?: string, env?: object, redact?: string[] }} [opts]  `redact`: secret values for the fleet job (see `redactList`)
  */
-export function spawnFfmpeg(args, { purpose = 'unknown', apiKey = '', stdio = ['pipe', 'pipe', 'pipe'], runner, cmd = 'ffmpeg', env } = {}) {
+export function spawnFfmpeg(args, { purpose = 'unknown', apiKey = '', stdio = ['pipe', 'pipe', 'pipe'], runner, cmd = 'ffmpeg', env, redact = [] } = {}) {
   runner = runner || process.env.FFMPEG_RUNNER || 'spawn';
   let proc;
   const untrack = trackFfmpegRun({ purpose, apiKey, runner, stop: () => proc?.kill() });
   try {
-    proc = runner !== 'fleet' ? spawn(cmd, args, env ? { stdio, env } : { stdio }) : new FleetProcess(args, { purpose, apiKey, stdio });
+    proc = runner !== 'fleet' ? spawn(cmd, args, env ? { stdio, env } : { stdio }) : new FleetProcess(args, { purpose, apiKey, stdio, redact });
   } catch (err) {
     untrack();
     throw err;
@@ -37,7 +37,7 @@ export function spawnFfmpeg(args, { purpose = 'unknown', apiKey = '', stdio = ['
 }
 
 class FleetProcess extends EventEmitter {
-  constructor(args, { purpose, apiKey, stdio }) {
+  constructor(args, { purpose, apiKey, stdio, redact = [] }) {
     super();
     this.pid = undefined;
     this.killed = false;
@@ -53,7 +53,7 @@ class FleetProcess extends EventEmitter {
     let markStarted;
     const started = new Promise((resolve) => { markStarted = resolve; });
 
-    const runner = new FleetFfmpegRunner({ args, purpose, apiKey, stdin: wantsStdin ? 'pipe' : 'ignore', stdout: wantsStdout ? 'pipe' : 'ignore' });
+    const runner = new FleetFfmpegRunner({ args, purpose, apiKey, redact, stdin: wantsStdin ? 'pipe' : 'ignore', stdout: wantsStdout ? 'pipe' : 'ignore' });
     this._runner = runner;
     if (wantsStdin) {
       this.stdin = new Writable({
