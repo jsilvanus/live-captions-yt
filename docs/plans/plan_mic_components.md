@@ -205,7 +205,7 @@ Proposal:
 - New Phase 2b (backend, separate PR): `feedId` in STT config and start, feed resolution, tests in `routes/stt` and `stt-manager`, `docs/api` update.
 - Phase 3: Setup Hub STT card feed picker; hide the server `webspeech` provider (see section 3).
 
-### 10.5 Open questions added
+### 10.5 Decisions (Juha, 2026-10-19)
 
-5. When both a browser STT and a server STT are configured, should Listen ever start both (e.g. browser for the speaker's mic, server for the room feed)? I assume exactly one, chosen by the card.
-6. Should the feed be chosen per language/feed pair (several STT sessions for several feeds)? Today there is one STT session per project; I assume that stays.
+- Exactly one STT runs at a time, chosen by the card. Listen never starts browser and server STT together.
+- One STT session per project, for now. No per-feed or per-language parallel sessions.
