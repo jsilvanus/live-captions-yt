@@ -104,6 +104,19 @@ npm run preview:web    # Preview the lcyt-web production build locally
 npm run screenshots    # Run Playwright screenshot capture (scripts/screenshots/capture.mjs)
 ```
 
+
+## Sequential Releases
+
+This monorepo uses **sequential product release tags** (`v1`, `v2`, `v3`, …), not SemVer, for its coordinated container release. The release marker and operator workflow are documented in [`.github/version/README.md`](.github/version/README.md).
+
+- To request a release, add `.github/version/release` in a PR. The file may contain a short human-readable reason; its contents do not affect version calculation.
+- When the PR merges to `main`, `.github/workflows/release.yml` verifies that the marker changed in that push, calculates the next unused numeric `vN` tag, removes the marker in a follow-up commit, creates an annotated tag on the marker-free commit, and invokes `.github/workflows/publish-images.yml`.
+- The image workflow publishes `ghcr.io/<owner>/lcyt` and `ghcr.io/<owner>/lcyt-fleet-worker` with the release tag, `latest`, and a commit-SHA tag. Ordinary pushes and PRs do not publish images.
+- The release workflow uses `GITHUB_TOKEN`; GitHub does not start a second workflow from a tag pushed with that token, so the release workflow calls the image publisher as a reusable workflow instead.
+- Do not create or move an existing `vN` tag. If a release fails after the marker is consumed, inspect the workflow and tag state before retrying; do not blindly add a new marker until you know whether the tag already exists.
+- This product release numbering does not replace independent package versions required for npm/PyPI publication.
+
+
 ---
 
 ## Package Index
