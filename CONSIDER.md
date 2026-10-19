@@ -471,6 +471,12 @@ The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel t
 
 Every instance starts every stored light, so with several instances each one polls YouTube (quota) and drives the lamp or sends `light_set`. Single instance is the supported setup for now. Fix: take a lease per light (`cluster.leases`, `tally:<id>`) and renew it while running, like the relay owner (L4 of the multi-instance plan). Mixer camera lights (LCYT software mixer) are fed by the backend and need the same owner lease: only the lease holder polls/pushes, other instances show the owner's last reading, and the lamp's own deadman covers a dead owner. Also not done: a `tally` project feature flag and the lamp-clash check across projects.
 
+## Broadcast lifecycle PR 4: what was left out of the UI
+
+- No Live/Selected chips and no graphics All/This-broadcast toggle yet (needs the graphics-to-broadcast link; `BroadcastsManager`, graphics lists).
+- The client never passes `broadcastId` to `POST /live`; the backend attaches to the current broadcast. An explicit pick is only needed with several broadcasts, which one-at-a-time rules out.
+- The `broadcast` pane is not in any built-in view; add it through the pane-type picker. Pane and manager strings are English only (neighbouring code has no i18n either).
+
 ## Broadcast lifecycle PR 3: what was left out of the session decoupling
 
 - Caption counter is write-through, not atomically reserved: two sessions on one broadcast can send the same number (`routes/captions.js`, `db/broadcasts.js` `setBroadcastSequence`). One session per broadcast is the normal case; a `runExclusive` bound branch with `incBroadcastSequence` would fix it.

@@ -13,6 +13,10 @@ const BROADCAST_STATUS_COLORS = {
   draft:     { bg: C.chipBg, color: '#999' },
   scheduled: { bg: 'rgba(46,95,163,.22)', color: '#6ea8e8' },
   live:      { bg: 'rgba(204,0,34,.25)', color: '#ff7788' },
+  staging:   { bg: 'rgba(199,154,58,.22)', color: '#e0b84a' },
+  stopping:  { bg: 'rgba(199,154,58,.22)', color: '#e0b84a' },
+  stopped:   { bg: C.chipBg, color: '#c79a3a' },
+  cancelled: { bg: C.chipBg, color: '#555' },
   completed: { bg: C.chipBg, color: '#777' },
   archived:  { bg: C.chipBg, color: '#555' },
 };
