@@ -4,6 +4,7 @@ import * as fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseCamera } from '../registry.js';
+import { linkedFeedKeys, withFeedKeys } from '../camera-feeds.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath, thumbnailObjectKey } from '../camera-thumbnail.js';
 import { requireTier } from '../route-access.js';
 import { createProductionCommands, commandStatus } from '../commands.js';
@@ -147,14 +148,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   async function withLinkedFeedKeys(cameras) {
     const missing = cameras.filter(c => !c.cameraKey).map(c => c.id);
     if (!missing.length) return cameras;
-    const feeds = await db.prod_feeds.findMany({
-      where: { device_type: 'camera', device_id: { in: missing } },
-      orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
-      select: { device_id: true, feed_key: true },
-    });
-    const first = new Map();
-    for (const f of feeds) if (!first.has(f.device_id)) first.set(f.device_id, f.feed_key);
-    return cameras.map(c => (c.cameraKey || !first.has(c.id)) ? c : { ...c, cameraKey: first.get(c.id) });
+    const keys = await linkedFeedKeys(db, missing);
+    return cameras.map(c => (c.cameraKey || !keys.has(c.id)) ? c : { ...c, cameraKey: keys.get(c.id) });
   }
 
   // -------------------------------------------------------------------------
@@ -297,7 +292,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
-    const camera = parseCamera(row);
+    const [feedRow] = await withFeedKeys(db, [row]);
+    const camera = parseCamera(feedRow);
     const { apiKey, mixerId, presetId } = req.body ?? {};
     if (presetId != null && typeof presetId !== 'string') return res.status(400).json({ error: 'presetId must be a string' });
     const result = await captureCameraThumbnail(db, camera, registry, {
@@ -389,7 +385,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
-    const camera = parseCamera(row);
+    const [feedRow] = await withFeedKeys(db, [row]);
+    const camera = parseCamera(feedRow);
     const apiKey = req.session?.apiKey ?? row.owner_api_key ?? null;
     if (!apiKey) return res.status(400).json({ error: 'No apiKey available for this camera (unowned camera needs an authenticated session)' });
 
@@ -410,7 +407,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     const enabled = req.body?.enabled;
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
-    if (enabled && !row.camera_key) return res.status(400).json({ error: 'camera has no cameraKey (dedicated-feed cameras only)' });
+    if (enabled && !(await withFeedKeys(db, [row]))[0].camera_key) return res.status(400).json({ error: 'camera has no cameraKey (dedicated-feed cameras only)' });
     await db.prod_cameras.updateMany({ where: { id: req.params.id }, data: { perception_enabled: enabled ? 1 : 0 } });
     res.json({ ok: true, perceptionEnabled: enabled });
   });

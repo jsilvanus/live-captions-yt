@@ -117,6 +117,9 @@ export { OBSClient };
 // Shared device-command service: camera preset / mixer switch for HTTP routes, AI tools, action runner
 export { createProductionCommands, commandStatus, slugifyLabel };
 
+// Where a camera's own feed key comes from: camera_key, else a linked prod_feeds row (feeds-and-devices PR 6)
+export { linkedFeedKeys, withFeedKeys } from './camera-feeds.js';
+
 // fps30 tracker subsystem job dispatch (plan_video_perception.md Phase 2/3)
 export { createPerceptionAutostart, setSharedAutostart, getSharedAutostart };
 export { createPerceptionManager, isPerceptionDispatchAvailable, DEFAULT_PREVIEW_BASE_URL, DEFAULT_THUMBNAILS_DIR, thumbnailPath, thumbnailObjectKey };

@@ -21,6 +21,12 @@ describe('vision source resolver', () => {
     assert.equal(r.tagForCapture('k1', 1), 'tag-capture');
     assert.equal(r.tagForCamera('a'), 'tag-a');
   });
+  it('a camera without its own key uses the key of a feed linked to it', async () => {
+    await ins('c', { label: 'Side' });
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES ('f-c', 'k1', 'Side feed', 'side-feed', 'rtmp', 'camera', 'camera', 'c', 0)`).run();
+    assert.equal(await r.feedKeyFor('c'), 'side-feed');
+  });
   it('feed key and ownership', async () => {
     assert.equal(await r.feedKeyFor('a'), 'a-key');
     assert.equal(await r.feedKeyFor('b'), null);
