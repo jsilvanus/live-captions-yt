@@ -1,0 +1,20 @@
+{
+  "name": "lcyt-notify",
+  "version": "0.1.0",
+  "description": "Notify plugin for LCYT: contact notifications over email and SMS through pluggable provider adapters, with consent, cooldown and rate limits",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  },
+  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "license": "",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jsilvanus/live-captions-yt.git",
+    "directory": "packages/plugins/lcyt-notify"
+  }
+}
