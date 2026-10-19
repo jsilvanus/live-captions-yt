@@ -286,6 +286,12 @@ CREATE TABLE IF NOT EXISTS "broadcasts" (
     "archived_at" TEXT,
     "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
     "updated_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "caption_sequence" INTEGER NOT NULL DEFAULT 0,
+    "sync_offset_ms" INTEGER,
+    "last_synced_at" TEXT,
+    "sync_failures" INTEGER NOT NULL DEFAULT 0,
+    "stage_report_json" TEXT,
+    "adhoc" INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT "broadcasts_api_key_fkey" FOREIGN KEY ("api_key") REFERENCES "api_keys" ("key") ON DELETE CASCADE ON UPDATE NO ACTION
 );
 

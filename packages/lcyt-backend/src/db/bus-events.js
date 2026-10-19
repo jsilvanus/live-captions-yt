@@ -31,6 +31,7 @@ export const AUDITED_TOPICS = [
   'production.command_result',
   'action.*',
   'production.arming_changed',
+  'broadcast.*',
   'target.*',
   'translation.*',
   'external.*',

@@ -341,6 +341,12 @@ model broadcasts {
   archived_at              String?
   created_at               String                     @default(dbgenerated("datetime('now')"))
   updated_at               String                     @default(dbgenerated("datetime('now')"))
+  caption_sequence         Int                        @default(0)
+  sync_offset_ms           Int?
+  last_synced_at           String?
+  sync_failures            Int                        @default(0)
+  stage_report_json        String?
+  adhoc                    Int                        @default(0)
   broadcast_assets         broadcast_assets[]
   broadcast_files          broadcast_files[]
   broadcast_platform_links broadcast_platform_links[]

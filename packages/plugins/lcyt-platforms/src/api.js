@@ -40,6 +40,7 @@ export { getAdapter, isSupportedPlatform, SUPPORTED_PLATFORMS } from './adapters
 export { assertAdapterShape } from './adapters/base.js';
 export { createOAuthRouter } from './routes/oauth.js';
 export { createBroadcastPlatformsRouter } from './routes/broadcast-platforms.js';
+export { createPlatformTransitions } from './transitions.js';
 
 /**
  * Build the token service and start the stats poller.

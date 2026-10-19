@@ -470,3 +470,13 @@ The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel t
 **Where:** `packages/plugins/lcyt-tally/src/manager.js` (`start`), `packages/lcyt-backend/src/server.js`.
 
 Every instance starts every stored light, so with several instances each one polls YouTube (quota) and drives the lamp or sends `light_set`. Single instance is the supported setup for now. Fix: take a lease per light (`cluster.leases`, `tally:<id>`) and renew it while running, like the relay owner (L4 of the multi-instance plan). Mixer camera lights (LCYT software mixer) are fed by the backend and need the same owner lease: only the lease holder polls/pushes, other instances show the owner's last reading, and the lamp's own deadman covers a dead owner. Also not done: a `tally` project feature flag and the lamp-clash check across projects.
+
+## Broadcast lifecycle PR 2: what was left out of staging and platform handling
+
+**Where:** `packages/lcyt-backend/src/broadcasts/steps.js`, `packages/plugins/lcyt-platforms/src/transitions.js` and `routes/broadcast-platforms.js`, plan `docs/plans/plan_broadcast_lifecycle.md`.
+
+- Staging only reports whether a YouTube link exists; it does not schedule the YouTube broadcast or bind the stream key (still the manual `.../platforms/youtube/schedule` route). `superseded_at` on `broadcast_platform_links` (go up again after YouTube completed) is not built, so `newPlatformBroadcast` (which resets the caption sequence) is wired in the lifecycle but no step returns it yet.
+- `createPlatformTransitions` and the `go-live`/`end` routes each hold their own copy of the link lookup, adapter call and link update. Fix: make the routes call `createPlatformTransitions` once the schedule step moves over as well.
+- Recording: the group id of a go-live lives in memory (`steps.js`), so a backend restart between go-live and stop loses it and the recording is not finalized by the stop. `closeSessions` (sessions closed at `completed`) and the idle-expiry exemption for bound sessions belong to PR 3.
+- The relay step uses today's `relay_active` flag and keeps `RTMP_RELAY_ACTIVE` off as "skip"; it moves to `broadcast_outputs` with PR 5.
+- Never run against a real MediaMTX or YouTube; the lifecycle tests use fake steps.

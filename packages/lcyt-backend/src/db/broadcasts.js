@@ -14,11 +14,14 @@ import { getActiveBroadcastId, setActiveBroadcastId } from './keys.js';
 import { sqlNow, num } from './helpers.js';
 
 export const BROADCAST_STATUSES = new Set([
-  'draft', 'scheduled', 'live', 'completed', 'archived',
+  'draft', 'scheduled', 'staging', 'live', 'stopping', 'stopped', 'completed', 'archived', 'cancelled',
 ]);
 
+/** Statuses in which the broadcast is on its way up, on air, or coming down. */
+export const RUNNING_STATUSES = new Set(['staging', 'live', 'stopping', 'stopped']);
+
 /** Statuses a PUT may not set by hand. */
-const LIFECYCLE_ONLY_STATUSES = new Set(['live', 'completed']);
+const LIFECYCLE_ONLY_STATUSES = new Set(['staging', 'live', 'stopping', 'stopped', 'completed', 'cancelled']);
 
 export const BROADCAST_ASSET_TYPES = new Set([
   'graphic', 'cue', 'action', 'icon', 'target', 'rundown',
@@ -66,6 +69,12 @@ function formatRow(row) {
     recordEnabled:      Boolean(row.record_enabled),
     privacyStatus:      row.privacy_status ?? 'unlisted',
     armed:              Boolean(row.armed),
+    captionSequence:    row.caption_sequence ?? 0,
+    syncOffsetMs:       row.sync_offset_ms ?? null,
+    lastSyncedAt:       row.last_synced_at ?? null,
+    syncFailures:       row.sync_failures ?? 0,
+    stageReport:        row.stage_report_json ? JSON.parse(row.stage_report_json) : null,
+    adhoc:              Boolean(row.adhoc),
     archivedAt:         row.archived_at ?? null,
     createdAt:          row.created_at,
     updatedAt:          row.updated_at,
@@ -239,6 +248,11 @@ export async function updateBroadcast(db, apiKey, id, patch = {}) {
   }
 
   const data = {};
+  // Setting or clearing the start time moves a planned broadcast between draft and scheduled.
+  if (patch.scheduledStart !== undefined && patch.status === undefined
+      && (existing.status === 'draft' || existing.status === 'scheduled')) {
+    data.status = patch.scheduledStart ? 'scheduled' : 'draft';
+  }
   for (const [key, col] of Object.entries(UPDATABLE)) {
     if (patch[key] !== undefined) {
       data[col] = key === 'recordEnabled' ? (patch[key] ? 1 : 0) : patch[key];
@@ -259,8 +273,8 @@ export async function updateBroadcast(db, apiKey, id, patch = {}) {
 export async function archiveBroadcast(db, apiKey, id) {
   const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
-  if (existing.status === 'live') {
-    return { ok: false, error: 'Cannot archive a live broadcast', status: 409 };
+  if (RUNNING_STATUSES.has(existing.status)) {
+    return { ok: false, error: `Cannot archive a broadcast that is ${existing.status}`, status: 409 };
   }
   const now = sqlNow();
   await db.broadcasts.updateMany({

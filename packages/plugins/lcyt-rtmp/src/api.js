@@ -71,6 +71,8 @@ export {
 } from './db/feeds.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
+// Relay on/off for callers outside the routes (the broadcast lifecycle's outputs step).
+export { getRelays, isRelayActive, setRelayActive } from './db/relay.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side
 // helpers only; mutation goes through CropManager.applyPosition() itself.
 export { getCropConfig, getCropPreset, listCropPresets } from './db.js';

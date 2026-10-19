@@ -6,7 +6,7 @@ import { createHandoffService } from './handoff/service.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast, disarmOnEnd, isArmed, getBroadcast, updateBroadcast, onKeyDeleted,
+  completeBroadcast, disarmOnEnd, isArmed, getBroadcast, updateBroadcast, onKeyDeleted, getKey,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -49,7 +49,7 @@ import {
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
 import { deprecatedRoute, NGINX_RTMP_MESSAGE } from './middleware/deprecation.js';
-import { initRtmpControl, createRtmpRouters, backfillFeeds, backfillPrimaryFeeds, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getRelays, isRelayActive, setRelayActive, backfillFeeds, backfillPrimaryFeeds, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -102,7 +102,10 @@ import {
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
 import { createNotifyRouter } from 'lcyt-notify';
-import { initPlatforms, createOAuthRouter as createPlatformsRouter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
+import { initPlatforms, createOAuthRouter as createPlatformsRouter, createPlatformTransitions, getAdapter as getPlatformAdapter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
+import { createBroadcastLifecycle } from './broadcasts/lifecycle.js';
+import { createBroadcastCaptionSync } from './broadcasts/caption-sync.js';
+import { createLifecycleSteps } from './broadcasts/steps.js';
 import { initTally, createTallyRouter, createTallyBridgeRouter } from 'lcyt-tally';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
@@ -880,6 +883,49 @@ apiRouter.get('/contact', (req, res) => {
 
 const handoffService = createHandoffService({ db, recordingsStore: mediaStores.recordingsStore, resolveStorage, jwtSecret, settings });
 
+// Broadcast lifecycle (plan_broadcast_lifecycle.md): own state machine, its steps and the
+// caption clock sync it runs while live. The relay switch is today's /stream/active.
+const broadcastCaptionSync = createBroadcastCaptionSync({
+  db, store, eventBus, leases: cluster.leases,
+  intervalS: () => settings.get('captions.sync_interval_s'),
+});
+// A restart must not leave a live broadcast without its periodic sync.
+db.broadcasts.findMany({ where: { status: 'live' }, select: { id: true, api_key: true } })
+  .then((rows) => rows.forEach((b) => broadcastCaptionSync.start(b.api_key, b.id)))
+  .catch((err) => console.warn(`[broadcast] could not resume caption sync: ${err.message}`));
+const broadcastRelay = {
+  async on(apiKey) {
+    if (!settings.get('media.rtmp_relay_active')) return;
+    if (!(await getRelays(db, apiKey)).length) return;
+    await setRelayActive(db, apiKey, true);
+    if (await readThrough(relayManager, 'isPublishing', apiKey)) {
+      const keyRow = await getKey(db, apiKey);
+      await relayManager.startAll(apiKey, await getRelays(db, apiKey), { cea708DelayMs: keyRow?.cea708_delay_ms ?? 0 });
+    }
+  },
+  async off(apiKey) {
+    if (!(await isRelayActive(db, apiKey))) return;
+    await setRelayActive(db, apiKey, false);
+    await relayManager.stopKey(apiKey);
+  },
+};
+const broadcastLifecycle = createBroadcastLifecycle({
+  db, eventBus, leases: cluster.leases,
+  steps: createLifecycleSteps({
+    db, eventBus, captionSync: broadcastCaptionSync,
+    platform: createPlatformTransitions(db, { getAdapter: getPlatformAdapter, getAccessToken: platformDeps.getAccessToken, eventBus }),
+    relay: broadcastRelay,
+    mediamtxClient: productionMediamtxClient, recordingsStore: mediaStores.recordingsStore, settings,
+    onRecordingFinalized: handoffService.onRecordingFinalized,
+  }),
+  deliverables: async (apiKey) => {
+    const captions = (await db.caption_targets.count({ where: { api_key: apiKey, enabled: 1 } })) > 0;
+    let video = false;
+    try { video = (await getRelays(db, apiKey)).length > 0; } catch { /* relay tables are optional */ }
+    return { captions, video, audio: false };
+  },
+});
+
 apiRouter.use(createSessionRouters(db, store, jwtSecret, auth, {
   onRecordingFinalized: handoffService.onRecordingFinalized,
   relayManager,
@@ -920,6 +966,8 @@ apiRouter.use(createContentRouters(
     settings,
     platforms: platformDeps,
     handoffService,
+    broadcastLifecycle,
+    broadcastCaptionSync,
   },
   scopedAuth
 ));
@@ -1204,4 +1252,4 @@ if (process.env.STATIC_DIR) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, settings, eventBus, cluster, ownership, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };
+export { app, db, store, settings, eventBus, cluster, ownership, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores, broadcastLifecycle, broadcastCaptionSync };
