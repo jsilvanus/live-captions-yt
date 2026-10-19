@@ -27,7 +27,7 @@ Phone calls (TTS, premade audio, AI calls, live audio) are **not** part of this 
   - `brevo`: email and SMS.
   - `smtp`: email only. SMS is not offered when it is the email provider.
 - `NotifyService` picks the adapter per channel from the Contact Providers config. Only it calls adapters.
-- **Brevo adapter:** email through the transactional API (`api-key` header). SMS through `POST /v3/transactionalSMS/send`. The SMS fields are **unverified**; check the official reference before coding.
+- **Brevo adapter:** email through the transactional API (`api-key` header). SMS through `POST /v3/transactionalSMS/send` with `sender` (11 alphanumeric or 15 digits), `recipient` (country code, no `+`), `content` and `type`; 201 with `messageId`. Checked against Brevo's transactional SMS endpoint page (via search extract; re-check the reference page before a production release).
 - **SMTP adapter:** host, port, TLS mode, username and password. Email only.
 - Table `notify_log`: time, project, channel, contact slug, masked recipient, result, provider message id. No message bodies with personal data. Kept 90 days.
 - **Rate limits per contact and channel** (per hour and per day), checked before the provider call. A project-wide cap is a backstop only.
