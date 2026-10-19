@@ -9,6 +9,7 @@ import { FeedsSection } from './FeedsSection.jsx';
 import { ViewerStreamSection } from './ViewerStreamSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
+import { ScreensSection } from './ScreensSection.jsx';
 import { CaptionTargetsSection } from './CaptionTargetsSection.jsx';
 import { IconsSection } from './IconsSection.jsx';
 import { LanguagesSection } from './LanguagesSection.jsx';
@@ -156,6 +157,7 @@ export function SetupHubPage() {
             {isVisible('radio') && <WebRadioSection />}
             {isVisible('viewer-stream') && <ViewerStreamSection />}
             {isVisible('viewports') && <ViewportsSection />}
+            {isVisible('screens') && <ScreensSection />}
 
             {/* ── Captions & language ── */}
             {isVisible('caption-targets') && <CaptionTargetsSection />}

@@ -1,5 +1,7 @@
 import { useContext, useEffect, useState, useCallback, useId } from 'react';
 import { SessionContext } from '../contexts/SessionContext';
+import { ScreensPanel } from './ScreensPanel.jsx';
+import { displayUrl } from '../lib/dskScreens.js';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { dark, btnPrimary, btnDanger, btnSmall, inputStyle, labelStyle } from './dsk-viewports/styles.js';
 import { TextLayersEditor } from './dsk-viewports/TextLayersEditor.jsx';
@@ -24,10 +26,6 @@ export function DskViewportsPage() {
   const [selected, setSelected]         = useState(null);   // viewport name or 'landscape'
   const [images, setImages]             = useState([]);     // all images for this key
   const [msg, setMsg]                   = useState('');
-  const [screens, setScreens]           = useState(null);   // ScreenDetailed[] | null
-  const [screenApiSupported, setScreenApiSupported] = useState(null); // null=unknown
-  const [presentBg, setPresentBg] = useState('');
-  const [presentTransparent, setPresentTransparent] = useState(false);
   const [projectSlug, setProjectSlug] = useState(null);
 
   // ── API helpers ──────────────────────────────────────────────────────────
@@ -74,7 +72,6 @@ export function DskViewportsPage() {
   useEffect(() => {
     loadViewports();
     loadImages();
-    setScreenApiSupported('getScreenDetails' in window);
   }, [loadViewports, loadImages]);
 
   // ── Selected viewport data ───────────────────────────────────────────────
@@ -214,40 +211,12 @@ export function DskViewportsPage() {
 
   // ── Present to screen ────────────────────────────────────────────────────
 
-  async function handleRequestScreens() {
-    try {
-      const details = await window.getScreenDetails();
-      setScreens(details.screens);
-    } catch (err) {
-      flash(err.message || 'Screen access denied');
-    }
-  }
-
   function getDisplayUrl(vp) {
-    // Prefer the slug form /dsk/<slug>/<viewport> when a project public slug
-    // is set; otherwise fall back to the legacy /dsk/<apikey>?viewport= form.
-    const named = vp && !vp._builtin;
-    let base;
-    if (projectSlug) {
-      base = `${window.location.origin}/dsk/${encodeURIComponent(projectSlug)}`;
-      if (named) base += `/${encodeURIComponent(vp.name)}`;
-    } else {
-      base = `${window.location.origin}/dsk/${encodeURIComponent(apiKey)}`;
-    }
-    const u = new URL(base);
-    if (!projectSlug && named) u.searchParams.set('viewport', vp.name);
-    if (presentTransparent) u.searchParams.set('bg', 'transparent');
-    else if (presentBg) u.searchParams.set('bg', presentBg);
-    return u.toString();
-  }
-
-  function openOnScreen(screen, url) {
-    const popup = window.open(
-      url, '_blank',
-      `left=${screen.left},top=${screen.top},width=${screen.width},height=${screen.height}`
-    );
-    popup?.addEventListener('load', () => {
-      try { popup.document.documentElement.requestFullscreen(); } catch {}
+    return displayUrl({
+      origin: window.location.origin,
+      projectSlug,
+      apiKey,
+      viewport: vp && !vp._builtin ? vp.name : '',
     });
   }
 
@@ -462,43 +431,11 @@ export function DskViewportsPage() {
               </Section>
 
               {/* Present to screen */}
-              <Section title="Present to Screen" style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 12, color: dark.muted, marginBottom: 10 }}>
-                  Open the display URL on a specific connected monitor in fullscreen.
-                  Requires browser permission to enumerate screens (Chrome/Chromium 100+).
+              <Section title="Screens" style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 12, color: dark.muted, marginBottom: 8 }}>
+                  Place viewports on the screens connected to this computer (Chrome or Edge). Mappings are kept in this browser.
                 </div>
-                {screenApiSupported === false && (
-                  <div style={{ color: dark.muted, fontSize: 12 }}>
-                    Window Placement API not available in this browser. Open the URL manually using the copy button above.
-                  </div>
-                )}
-                {screenApiSupported && !screens && (
-                  <button style={btnBase} onClick={handleRequestScreens}>List Connected Screens</button>
-                )}
-                <div style={{ marginTop: 10, display: 'flex', gap: 8, alignItems: 'center' }}>
-                  <label style={{ fontSize: 12, color: dark.muted }}>Background</label>
-                  <input type="color" value={presentBg || '#00B140'} onChange={e => { setPresentBg(e.target.value); setPresentTransparent(false); }} style={{ width: 48, height: 30, padding: 0, borderRadius: 6 }} />
-                  <label style={{ fontSize: 12, color: dark.muted, display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={presentTransparent} onChange={e => setPresentTransparent(e.target.checked)} />
-                    Transparent
-                  </label>
-                </div>
-                {screens && (
-                  <div>
-                    {screens.length === 0 && <div style={{ color: dark.muted, fontSize: 12 }}>No screens found.</div>}
-                    {screens.map((sc, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13, color: dark.text, minWidth: 180 }}>
-                          {sc.label || `Screen ${i + 1}`} ({sc.width}×{sc.height}){sc.isPrimary ? ' · primary' : ''}
-                        </span>
-                        <button style={btnSmall} onClick={() => openOnScreen(sc, getDisplayUrl(selectedVp))}>
-                          Open on this screen
-                        </button>
-                      </div>
-                    ))}
-                    <button style={{ ...btnSmall, marginTop: 6, color: dark.muted }} onClick={() => setScreens(null)}>Refresh screen list</button>
-                  </div>
-                )}
+                <ScreensPanel viewports={viewports} projectSlug={projectSlug} apiKey={apiKey} />
               </Section>
 
               {/* Per-image settings moved to the Editor — no longer shown here */}
