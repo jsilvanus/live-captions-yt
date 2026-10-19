@@ -621,3 +621,37 @@ describe('linked feed key shim (feeds and devices, PR 2)', () => {
     assert.equal(after.cameraKey, own);
   });
 });
+
+describe('feed-aware readers (feeds and devices, PR 6)', () => {
+  it('withFeedKeys fills camera_key from the linked feed and keeps an own key', async () => {
+    const { withFeedKeys, linkedFeedKeys } = await import('../src/camera-feeds.js');
+    const a = await insertCamera({ control_type: 'none' });
+    const b = await insertCamera({ camera_key: `own-${randomUUID()}` });
+    const c = await insertCamera({ control_type: 'none' });
+    const feedKey = `pr6-${a}`;
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, 'proj-a', 'F', ?, 'rtmp', 'camera', 'camera', ?, 0)`).run(randomUUID(), feedKey, a);
+    const rows = await db.prod_cameras.findMany({ where: { id: { in: [a, b, c] } } });
+    const out = await withFeedKeys(db, rows);
+    assert.equal(out.find(r => r.id === a).camera_key, feedKey);
+    assert.equal(out.find(r => r.id === b).camera_key, rows.find(r => r.id === b).camera_key);
+    assert.equal(out.find(r => r.id === c).camera_key, null);
+    assert.equal((await linkedFeedKeys(db, [a, c])).get(a), feedKey);
+  });
+
+  it('perception/auto accepts a camera whose only feed is a linked one, and the mixer sources list shows it', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = await insertCamera({ control_type: 'none' });
+    const none = await fetch(`${baseUrl}/production/cameras/${id}/perception/auto`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(none.status, 400, 'no feed at all');
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, 'proj-a', 'F', ?, 'rtmp', 'camera', 'camera', ?, 0)`).run(randomUUID(), `pr6auto-${id}`, id);
+    const ok = await fetch(`${baseUrl}/production/cameras/${id}/perception/auto`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }),
+    });
+    assert.equal(ok.status, 200);
+  });
+});
