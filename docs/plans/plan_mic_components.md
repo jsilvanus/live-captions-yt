@@ -292,3 +292,22 @@ The earlier proposal to hide the server `webspeech` provider from the Setup Hub 
 - Window toggle behaviour in the popup fallback (12.1) is a best effort; acceptable?
 - Should the "targets summary" line on the pane link to the Caption Targets card?
 - Fix 1 vs 2 for the 403 (my recommendation: 1 now, 2 only if API/CLI clients hit it).
+
+## 13. Per-target "original + translation" checkbox (Juha, 2026-10-19)
+
+Request: on the Caption Targets setup card each target gets a checkbox "original language + target language". If both languages are the same, show only one; otherwise show both.
+
+What exists (read from `lcyt-backend/prisma/schema.prisma` and `caption-files.js`, UI side not checked):
+- `caption_targets` rows (youtube / viewer / generic) have **no language column**.
+- `translation_targets` rows already carry `lang`, `target`, `format`, `caption_target_id` (link to a caption target) and a per-row `show_original`.
+- There is also a project-wide `translation_vendor_config.show_original`, and the browser keeps a global "Show original text" switch (`lcyt.translation.showOriginal`, sent as `showOriginal` with each caption). The send path still passes one global `showOriginal` and one `captionLang`.
+- `composeCaptionText` returns the original when the translation equals it (same language, no-op), `original<br>translation` when `showOriginal`, else the translation only.
+
+Proposal (a separate feature from the mic work, tracked here because the Listen pane shows the targets summary):
+1. Caption Targets card: per target, a **language** selector (default "same as speech", i.e. no translation) and a checkbox **"Show original + translation"**. Stored on the existing `translation_targets` row linked by `caption_target_id` (`lang`, `show_original`), so no new column; a target with no linked row sends the original unchanged.
+2. Delivery (`fanOutToTargets` / sender): compose per target, not once per caption: `composeCaptionText(text, target.lang, translations, target.showOriginal)`. When the target language equals the recognition language, the original is sent once regardless of the checkbox (the "if the same, drop either" rule). Mixed-language targets then receive different texts from the same final transcript.
+3. The global "Show original text" switch and `translation_vendor_config.show_original` become the default for newly created targets only, then are deprecated; migration copies the global value into existing rows that have none.
+4. The Listen pane shows the read-only summary "Targets: YouTube fi, Viewer fi + en" from these rows (section 12.2).
+5. Tests: `caption-files` compose cases (same language, original+translation, translation only), per-target fan-out with two targets of different languages, card test for the checkbox.
+
+Open: confirm that the current Caption Targets UI and the send path really only use the global switch (I read the schema and the compose helper, not every call site), and whether the translation vendor call should be made once per distinct language, not per target (yes, proposed).
