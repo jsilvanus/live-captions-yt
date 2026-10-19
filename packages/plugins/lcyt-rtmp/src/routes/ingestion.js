@@ -12,6 +12,19 @@
  *       dsk:   { enabled, ingestUrl, live: boolean|null }
  *     }
  *
+ *   GET   /ingestion/streams
+ *     Response: { available, streams: [{ path, kind: 'video'|'dsk'|'feed', label, video, audio, codecs,
+ *                 readers, readyTime, bytesReceived }] }
+ *     The project's incoming streams that MediaMTX reports as ready (publisher connected). `available: false`
+ *     (never an error) when no MediaMTX API is configured or it cannot be reached.
+ *
+ *   GET   /ingestion/streams/unclaimed
+ *     Response: { available, streams: [{ path, key, kind: 'video'|'dsk', video, audio, codecs, readers,
+ *                 readyTime, bytesReceived, attachable }] }
+ *     "Discover": ready MediaMTX paths that no project owns yet. Needs Setup-tier project access (read
+ *     requests too), since it shows stream names that belong to nobody. `attachable` paths can be bound to
+ *     the project as a named feed (`POST /production/cameras` with controlType 'rtmp' and cameraKey = key).
+ *
  *   PATCH /ingestion/config
  *     Body: { video?: { enabled? }, dsk?: { enabled? } }
  *     Response: same shape as GET
@@ -30,7 +43,9 @@
 
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
+import logger from 'lcyt/logger';
 import { getKey } from '../db.js';
+import { listIngestStreams, listUnclaimedStreams } from '../ingest-streams.js';
 
 /**
  * Returns true when feature-gate enforcement is active (mirrors
@@ -105,6 +120,52 @@ export function createIngestionRouter(db, auth, relayManager, settings = null, r
 
   router.get('/config', async (req, res) => {
     res.json(await buildConfig(req.session.apiKey));
+  });
+
+  router.get('/streams', async (req, res) => {
+    const mediamtx = relayManager.mediamtx;
+    if (!mediamtx) return res.json({ available: false, streams: [] });
+    const apiKey = req.session.apiKey;
+    try {
+      const keyRow = await getKey(db, apiKey) || {};
+      const keys = [{ key: keyRow.ingest_stream_key || apiKey, kind: 'video' }];
+      if (keyRow.ingest_stream_key) keys.push({ key: apiKey, kind: 'video' });
+      const cameras = await db.prod_cameras.findMany({
+        where: { owner_api_key: apiKey, control_type: 'rtmp', camera_key: { not: null } },
+        select: { camera_key: true, name: true, label: true },
+      });
+      for (const c of cameras) keys.push({ key: c.camera_key, kind: 'feed', label: c.label || c.name });
+      return res.json({ available: true, streams: await listIngestStreams(mediamtx, keys) });
+    } catch (err) {
+      logger.warn(`[ingestion] stream list failed: ${err.message}`);
+      return res.json({ available: false, streams: [] });
+    }
+  });
+
+  // requireSetup only checks writes; run it as a write to hold reads to the same tier.
+  const requireSetupForRead = (req, res, next) => {
+    const method = req.method;
+    req.method = 'POST';
+    requireSetup(req, res, (err) => { req.method = method; next(err); });
+  };
+
+  router.get('/streams/unclaimed', requireSetupForRead, async (req, res) => {
+    const mediamtx = relayManager.mediamtx;
+    if (!mediamtx) return res.json({ available: false, streams: [] });
+    try {
+      const known = new Set();
+      for (const k of await db.api_keys.findMany({ select: { key: true, ingest_stream_key: true } })) {
+        known.add(k.key);
+        if (k.ingest_stream_key) known.add(k.ingest_stream_key);
+      }
+      for (const c of await db.prod_cameras.findMany({ where: { camera_key: { not: null } }, select: { camera_key: true } })) {
+        known.add(c.camera_key);
+      }
+      return res.json({ available: true, streams: await listUnclaimedStreams(mediamtx, known) });
+    } catch (err) {
+      logger.warn(`[ingestion] unclaimed stream list failed: ${err.message}`);
+      return res.json({ available: false, streams: [] });
+    }
   });
 
   router.patch('/config', async (req, res) => {

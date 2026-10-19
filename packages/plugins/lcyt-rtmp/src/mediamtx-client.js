@@ -105,10 +105,15 @@ export class MediaMtxClient {
   /**
    * List all paths tracked by MediaMTX.
    *
+   * @param {{ page?: number, itemsPerPage?: number }} [opts]  MediaMTX paginates (default 100 per page, page 0 first)
    * @returns {Promise<{ itemCount: number, pageCount: number, items: object[] }>}
    */
-  async listPaths() {
-    return this._request('GET', '/v3/paths/list');
+  async listPaths({ page, itemsPerPage } = {}) {
+    const q = new URLSearchParams();
+    if (page) q.set('page', String(page));
+    if (itemsPerPage) q.set('itemsPerPage', String(itemsPerPage));
+    const qs = q.toString();
+    return this._request('GET', `/v3/paths/list${qs ? `?${qs}` : ''}`);
   }
 
   // ---------------------------------------------------------------------------

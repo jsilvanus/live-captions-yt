@@ -5,6 +5,7 @@ import { useUserAuth } from '../../hooks/useUserAuth';
 import { isLocalModeFeatures, isHiddenInLocalMode } from '../../lib/localMode.js';
 import { StatusPopover } from './StatusPopover.jsx';
 import JobsIndicator from '../JobsIndicator.jsx';
+import { IngestStreamsChip } from '../IngestStreamsChip.jsx';
 import { QuickActionsPopover } from './QuickActionsPopover.jsx';
 import { NAV_ITEMS, NAV_GROUPS, NAV_BOTTOM, ProjectIcon } from './navConfig.jsx';
 import { KEYS } from '../../lib/storageKeys.js';
@@ -195,6 +196,7 @@ export function TopBar({ onToggle, onOpenCommandPalette, onOpenShortcuts }) {
       </div>
       <TopBarContext />
       <TopBarBadges />
+      <IngestStreamsChip />
       <span className="top-bar__spacer" />
       <JobsIndicator />
       <QuickActionsPopover />
