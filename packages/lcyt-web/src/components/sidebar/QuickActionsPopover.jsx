@@ -13,9 +13,6 @@ export function QuickActionsPopover() {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const [controlsOpen, setControlsOpen] = useState(false);
-  const [customSequence, setCustomSequence] = useState(0);
-  const [hbResult, setHbResult] = useState(null);
-  const [syncResult, setSyncResult] = useState(null);
   const [inputLang, setInputLang] = useState(readInputLang);
   const [activeCodes, setActiveCodesState] = useState(getActiveCodes);
   const [langPickerOpen, setLangPickerOpen] = useState(false);
@@ -44,32 +41,6 @@ export function QuickActionsPopover() {
     document.addEventListener('mousedown', onDown);
     return () => document.removeEventListener('mousedown', onDown);
   }, [open]);
-
-  async function handleSync() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
-    try {
-      const data = await session.sync();
-      setSyncResult(`+${data.syncOffset}ms`);
-    } catch (err) { showToast(err.message, 'error'); }
-  }
-
-  async function handleHeartbeat() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
-    try {
-      const data = await session.heartbeat();
-      setHbResult(`${data.roundTripTime}ms`);
-    } catch (err) { showToast(err.message, 'error'); }
-  }
-
-  async function handleResetSequence() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
-    try { await session.updateSequence(0); showToast('Sequence reset to 0', 'success'); } catch (err) { showToast(err.message, 'error'); }
-  }
-
-  async function handleSetSequence() {
-    if (!session.connected) { showToast('Not connected', 'warning'); return; }
-    try { await session.updateSequence(customSequence); showToast(`Sequence set to ${customSequence}`, 'success'); } catch (err) { showToast(err.message, 'error'); }
-  }
 
   function selectLang(code) {
     writeInputLang(code);
@@ -122,32 +93,6 @@ export function QuickActionsPopover() {
               ⚙ Controls
             </button>
           </div>
-          <div className="quick-actions__section-label">Session</div>
-          <div className="quick-actions__row">
-            <button className="btn btn--secondary btn--sm" onClick={handleSync} disabled={!session.connected}>
-              🔄 Sync{syncResult && <span className="quick-actions__result">{syncResult}</span>}
-            </button>
-            <button className="btn btn--secondary btn--sm" onClick={handleHeartbeat} disabled={!session.connected}>
-              💓 Heartbeat{hbResult && <span className="quick-actions__result">{hbResult}</span>}
-            </button>
-            <button className="btn btn--secondary btn--sm" onClick={handleResetSequence} disabled={!session.connected}>
-              ↺ Reset seq
-            </button>
-          </div>
-          <div className="quick-actions__row quick-actions__row--seq">
-            <input
-              type="number"
-              className="settings-field__input quick-actions__seq-input"
-              min="0"
-              value={customSequence}
-              onChange={e => setCustomSequence(Math.max(0, parseInt(e.target.value, 10) || 0))}
-              aria-label="Set sequence number"
-            />
-            <button className="btn btn--secondary btn--sm" onClick={handleSetSequence} disabled={!session.connected}>
-              Set seq
-            </button>
-          </div>
-
           <div className="quick-actions__section-label quick-actions__section-label--mt">Caption codes</div>
           <div className="quick-actions__codes">
             <div className="quick-actions__code-wrap">

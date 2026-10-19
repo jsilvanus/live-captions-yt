@@ -96,6 +96,12 @@ export function BroadcastPane({ D }) {
           {shown.scheduledStart && <div style={{ color: '#888', fontSize: '.7rem' }}>Scheduled {new Date(shown.scheduledStart).toLocaleString()}</div>}
           {current && <div style={{ color: '#888', fontSize: '.7rem' }}>Caption number {current.captionSequence ?? 0}{sync ? ` · clock synced ${new Date(current.lastSyncedAt.replace(' ', 'T') + (/Z|[+-]\d\d:?\d\d$/.test(current.lastSyncedAt) ? '' : 'Z')).toLocaleTimeString()}` : ''}{current.syncFailures > 0 ? ` · ${current.syncFailures} sync failure(s)` : ''}</div>}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {current?.status === 'live' && (
+              <button disabled={!!busy} onClick={() => run(current.id, 'sync')} title="Sync the caption clock now (done automatically while live)"
+                style={{ padding: '7px 12px', borderRadius: 6, fontWeight: 600, fontSize: '.74rem', background: KIND.plain.background, border: `1px solid ${KIND.plain.border}`, color: KIND.plain.color }}>
+                {busy === 'sync' ? '…' : 'Sync clock'}
+              </button>
+            )}
             {actionsFor(status).map((a) => (
               <button key={a.action} disabled={!!busy} onClick={() => run(shown.id, a.action)}
                 style={{ padding: '7px 12px', borderRadius: 6, fontWeight: 600, fontSize: '.74rem', opacity: busy ? 0.6 : 1, background: KIND[a.kind].background, border: `1px solid ${KIND[a.kind].border}`, color: KIND[a.kind].color }}>
