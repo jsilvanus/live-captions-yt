@@ -471,6 +471,10 @@ The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel t
 
 Every instance starts every stored light, so with several instances each one polls YouTube (quota) and drives the lamp or sends `light_set`. Single instance is the supported setup for now. Fix: take a lease per light (`cluster.leases`, `tally:<id>`) and renew it while running, like the relay owner (L4 of the multi-instance plan). Mixer camera lights (LCYT software mixer) are fed by the backend and need the same owner lease: only the lease holder polls/pushes, other instances show the owner's last reading, and the lamp's own deadman covers a dead owner. Also not done: a `tally` project feature flag and the lamp-clash check across projects.
 
+## Broadcast lifecycle PR 7: scheduler (future work, Juha 2026-10-19)
+
+- Auto-start and auto-end of a `scheduled` broadcast at `scheduled_start` / `scheduled_end` is not built; scheduling is time only and every status change is a button press. Plan: `docs/plans/plan_broadcast_lifecycle.md` PR 7 (a tick under a lease calling `lifecycle.transition`, stage a few minutes ahead, never auto-start a broadcast whose pre-flight fails).
+
 ## Broadcast lifecycle PR 4: what was left out of the UI
 
 - No Live/Selected chips and no graphics All/This-broadcast toggle yet (needs the graphics-to-broadcast link; `BroadcastsManager`, graphics lists).
