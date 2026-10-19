@@ -12,6 +12,7 @@ import {
   clearSlot, buildInitialRelayList,
 } from '../../lib/relayConfig.js';
 import { sourceRequestFields } from '../../lib/relaySource.js';
+import { setupToken } from '../../lib/setupToken.js';
 
 function slotLabel(entry) {
   return entry.targetType === 'youtube' ? 'YouTube' : (entry.genericName || 'Generic RTMP');
@@ -64,12 +65,12 @@ export function EgressSection() {
   }, [connected, getRelayStatus]);
 
   const authedGet = useCallback(async (path) => {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     const r = await fetch(`${backendUrl}/api/v1${path}`, {
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
     });
     return r.ok ? r.json() : null;
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, session?.projectAccessToken]);
 
   // The source picker's feeds. Failure leaves the picker hidden.
   const refreshFeeds = useCallback(async () => {

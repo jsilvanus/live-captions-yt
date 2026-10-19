@@ -116,6 +116,7 @@ Where an implemented plan has known unbuilt parts (deferred phases, optional add
 | [plan_mixer_feed_sources.md](plans/plan_mixer_feed_sources.md) | Mixer Feed Sources â€” Looping File Sources & Low-Latency Preview Tiles | Adds a looping-video-file source type to the software mixer's program bus plus WHEP live preview tiles; its former 'encoder' source type is now covered by plan_ingest_feeds.md. |
 | [plan_postgres_option.md](plans/plan_postgres_option.md) | PostgreSQL as an Optional Backend | Adds PostgreSQL as optional backend for Node.js backend and plugin-owned DB layers. |
 | [plan_speech_to_sign_language.md](plans/plan_speech_to_sign_language.md) | Possible Future Feature: Speech to Finnish Sign Language (SVK) Avatar | Idea only, not scheduled: spoken Finnish during a livestream rendered as Finnish Sign Language by a signing avatar or signed video, as a separate picture-in-picture source. Staged, Deaf-led validation first; data licensing unresolved. |
+| [plan_mic_components.md](plans/plan_mic_components.md) | Microphone Components (top-bar mic + Production Listen pane) | Plan only: one shared in-browser listener (`useMicListener`), an always-visible `TopBarMic`, a blue/red `ListenPane` with quick language switch and attach/detach, WebSpeech prefer-local vs normal mode, and why saving WebSpeech in the Setup Hub STT card returns 403. Nothing built. |
 
 ### Reference
 

@@ -4,6 +4,7 @@ import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { SttServiceIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
 import { SttPanel } from '../panels/SttPanel.jsx';
+import { setupToken } from '../../lib/setupToken.js';
 
 const PROVIDER_LABELS = {
   webspeech: 'Web Speech API (browser)',
@@ -35,7 +36,7 @@ export function SttSection() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) return;
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     if (!token) return;
     setLoading(true);
     setError(null);
@@ -49,12 +50,12 @@ export function SttSection() {
     } finally {
       setLoading(false);
     }
-  }, [connected, backendUrl, getSessionToken]);
+  }, [connected, backendUrl, getSessionToken, session?.projectAccessToken]);
 
   useEffect(() => { load(); }, [load]);
 
   async function handleSave() {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     if (!token || !config) return;
     setSaving(true);
     setError(null);
