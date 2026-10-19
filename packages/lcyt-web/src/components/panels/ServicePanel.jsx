@@ -118,21 +118,36 @@ export function ServicePanel(props) {
         <span className="settings-field__hint">{sttLang}</span>
       </div>
 
-      {sttEngine === 'webkit' && localAvailability !== null && localAvailability !== 'no' && (
+      {sttEngine === 'webkit' && (
         <div className="settings-field">
-          <label className="settings-field__label">{t('settings.stt.onDevice')}</label>
+          <label className="settings-field__label">{t('settings.stt.speechMode')}</label>
           <label className="settings-checkbox">
             <input
-              type="checkbox"
-              checked={sttLocal}
-              onChange={e => onSttLocalChange(e.target.checked)}
+              type="radio"
+              name="stt-speech-mode"
+              checked={!sttLocal}
+              onChange={() => onSttLocalChange('normal')}
             />
-            {t('settings.stt.onDeviceCheckbox')}
+            {t('settings.stt.speechModeNormal')}
+          </label>
+          <label className="settings-checkbox">
+            <input
+              type="radio"
+              name="stt-speech-mode"
+              checked={!!sttLocal}
+              disabled={localAvailability === null || localAvailability === 'unavailable'}
+              onChange={() => onSttLocalChange('local')}
+            />
+            {t('settings.stt.speechModeLocal')}
           </label>
           <span className="settings-field__hint">
-            {localAvailability === 'readily'
-              ? t('settings.stt.onDeviceReady')
-              : t('settings.stt.onDeviceNotInstalled')}
+            {localAvailability === null
+              ? t('settings.stt.onDeviceUnsupported')
+              : localAvailability === 'available'
+                ? t('settings.stt.onDeviceReady')
+                : localAvailability === 'downloadable' || localAvailability === 'downloading'
+                  ? t('settings.stt.onDeviceNotInstalled')
+                  : t('settings.stt.onDeviceUnavailable')}
           </span>
         </div>
       )}

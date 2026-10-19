@@ -5,12 +5,13 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { getAnyTargetNoBatch } from '../lib/targetConfig';
 import { KEYS } from '../lib/storageKeys.js';
 import { useEscapeKey } from '../hooks/useEscapeKey';
+import { checkLocalSpeech, installLocalSpeech } from '../lib/speechLocal';
 import { getTargets, setTargets } from '../lib/targetConfig';
 import {
   getSttEngine, setSttEngine,
   getSttLang, setSttLang,
   getSttCloudConfig, patchSttCloudConfig,
-  getSttLocalProcessing, setSttLocalProcessing,
+  getSttLocalProcessing, setSttSpeechMode,
 } from '../lib/sttConfig';
 import {
   getGoogleCredential, setGoogleCredential, clearGoogleCredential,
@@ -199,24 +200,20 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
   }
 
   async function checkLocalAvailability(langCode) {
-    const speechRecognitionAPI = window.SpeechRecognition;
-    if (!speechRecognitionAPI || typeof speechRecognitionAPI.available !== 'function') { setLocalAvailability(null); return; }
-    try {
-      const result = await speechRecognitionAPI.available(langCode, { processLocally: true });
-      setLocalAvailability(result);
-    } catch { setLocalAvailability(null); }
+    const result = await checkLocalSpeech(langCode);
+    setLocalAvailability(result === 'unsupported' ? null : result);
   }
 
-  async function handleLocalToggle(enabled, langCode) {
-    setSttLocalState(enabled);
-    setSttLocalProcessing(enabled);
-    if (enabled && localAvailability === 'downloadable') {
+  async function handleSpeechMode(mode, langCode) {
+    setSttLocalState(mode === 'local');
+    setSttSpeechMode(mode);
+    if (mode === 'local' && localAvailability === 'downloadable') {
       showToast(t('settings.stt.onDeviceInstalling'), 'info');
-      try {
-        await window.SpeechRecognition.install(langCode);
-        setLocalAvailability('readily');
+      const ok = await installLocalSpeech(langCode);
+      if (ok) {
+        setLocalAvailability('available');
         showToast(t('settings.stt.onDeviceInstalled'), 'success');
-      } catch {
+      } else {
         showToast(t('settings.stt.onDeviceInstallFailed'), 'error');
       }
     }
@@ -313,7 +310,7 @@ export function CCModal({ isOpen, onClose, connected, inline }) {
               onSttLangChange={code => { setSttLangState(code); setSttLang(code); if (sttEngine === 'webkit') checkLocalAvailability(code); }}
 
               sttLocal={sttLocal}
-              onSttLocalChange={enabled => handleLocalToggle(enabled, sttLang)}
+              onSttLocalChange={mode => handleSpeechMode(mode, sttLang)}
               localAvailability={localAvailability}
 
               utteranceEndButton={utteranceEndButton}
