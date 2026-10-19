@@ -5,9 +5,9 @@ Research: [`notify-research-2026-10-18.md`](notify-research-2026-10-18.md) (kept
 
 ## Scope now
 
-- **Email and SMS**, with a Providers card to choose and configure the providers.
-- **Providers:** Brevo first (email and SMS), then plain SMTP (email only).
-- **Contacts:** a Setup Hub card where people are saved with a slug, an email and an SMS number.
+- **Email and SMS**, with a **Contact Providers** card to choose and configure the sending services.
+- **Contact Providers:** Brevo first (email and SMS), then plain SMTP (email only).
+- **Contacts:** a separate Setup Hub card where people are saved with a slug, an email and an SMS number.
 - **Metacode `notify`** in the rundown, so an operator can send a message on pointer arrival (`!notify`) or on send (`notify`).
 - An attempt log, rate limits and consent checks.
 
@@ -26,14 +26,14 @@ Phone calls (TTS, premade audio, AI calls, live audio) are **not** part of this 
 - Capabilities:
   - `brevo`: email and SMS.
   - `smtp`: email only. SMS is not offered when it is the email provider.
-- `NotifyService` picks the adapter per channel from the Providers config. Only it calls adapters.
+- `NotifyService` picks the adapter per channel from the Contact Providers config. Only it calls adapters.
 - **Brevo adapter:** email through the transactional API (`api-key` header). SMS through `POST /v3/transactionalSMS/send`. The SMS fields are **unverified**; check the official reference before coding.
 - **SMTP adapter:** host, port, TLS mode, username and password. Email only.
 - Table `notify_log`: time, project, channel, contact slug, masked recipient, result, provider message id. No message bodies with personal data. Kept 90 days.
 - **Rate limits per contact and channel** (per hour and per day), checked before the provider call. A project-wide cap is a backstop only.
 - Routes: `GET/PUT /notify/providers`, `POST /notify/providers/test`, `GET/POST /contacts`, `PATCH/DELETE /contacts/:id`, `POST /notify/send` (manual send), `GET /notify/log`.
 
-### 2. Providers (Setup Hub card "Providers")
+### 2. Contact Providers (Setup Hub card "Contact Providers")
 
 - Pick an email provider (Brevo or SMTP) and an SMS provider (Brevo, or none).
 - Brevo: API key, sender email, sender name, SMS sender ID.
@@ -42,9 +42,9 @@ Phone calls (TTS, premade audio, AI calls, live audio) are **not** part of this 
   - This changes the earlier plan, which had all secrets env-only. A hub card means the credentials are entered in the UI. **Needs Juha's OK.**
 - Secrets are write-only: the UI shows "set" or "not set", never the value.
 - **Test button:** sends a test email or SMS to the logged-in admin's own address or to a chosen contact with consent.
-- Only the Setup tier may change providers.
+- Only the Setup tier may change these settings.
 
-### 3. Contacts (Setup Hub card "Contacts")
+### 3. Contacts (separate Setup Hub card "Contacts")
 
 - Fields: `slug` (unique per project, lowercase letters, digits and hyphens, used in metacodes), display name (optional), `email`, `smsNumber` (E.164, validated), `consentEmail` and `consentSms` (each with a date and source), `active`.
 - Reserved slugs are refused. `admin` and `all` are reserved.
@@ -70,9 +70,9 @@ The `!` prefix is the same convention as the API-connector pointer tier (`!api:`
   - a **rate limit per contact** (per hour and per day), so one person can't be flooded.
 - The text after the colon is the message. For SMS its length is capped at one segment (to be decided).
 
-## Why Setup tier only for contacts and providers
+## Why Setup tier only for contacts and contact providers
 
-Contacts hold other people's email addresses and phone numbers, and providers hold the keys that send mail and SMS in the church's name. Editors and operators work on the rundown and the captions; they don't need to see or change either. Setup is the tier that already controls connectors and other settings that reach outside the project (`plan_project_roles.md`).
+Contacts hold other people's email addresses and phone numbers, and contact providers hold the keys that send mail and SMS in the church's name. Editors and operators work on the rundown and the captions; they don't need to see or change either. Setup is the tier that already controls connectors and other settings that reach outside the project (`plan_project_roles.md`).
 
 ## Safety and data protection
 
@@ -84,7 +84,7 @@ Contacts hold other people's email addresses and phone numbers, and providers ho
 
 ## Configuration
 
-- `PLATFORM_CREDENTIAL_KEY`: already used by `lcyt-platforms`; reused to encrypt notify credentials. Rotation is not built (same as today).
+- `PLATFORM_CREDENTIAL_KEY`: already used by `lcyt-platforms`; reused to encrypt contact-provider credentials. Rotation is not built (same as today).
 - Optional env overrides: `NOTIFY_BREVO_API_KEY`, `NOTIFY_SMTP_PASSWORD`, and others, which win over the stored values.
 - Rate, cooldown and retention settings can later move to the server settings registry.
 
@@ -92,8 +92,8 @@ Contacts hold other people's email addresses and phone numbers, and providers ho
 
 1. **This PR:** plan and research. Ready to implement on Juha's go.
 2. **Core:** plugin skeleton, interfaces, `NotifyService`, log, rate limits, Brevo email and SMS. Tests against a fake HTTP server, plus one contract suite every adapter must pass.
-3. **Providers card:** encrypted credential storage, Brevo settings, test button. Then the SMTP adapter with the same contract tests.
-4. **Contacts:** table, routes, Setup Hub card.
+3. **Contact Providers card:** encrypted credential storage, Brevo settings, test button. Then the SMTP adapter with the same contract tests.
+4. **Contacts card:** table, routes, Setup Hub card.
 5. **Metacode:** registry entries for `notify` and `!notify`, parser support for `[channel,slug]`, pointer and send wiring, operator feedback.
 6. **Later:** stream events and the notifications card, AI tool wiring in `lcyt-tools`, and phone calls (see the research).
 
@@ -108,12 +108,13 @@ When the basic system works, check whether the platform and RTMP layers emit sta
 - No confirmation step. Cooldown per contact and text, and a rate limit per contact.
 - `admin` is a reserved slug.
 - The notify log is kept 90 days.
-- Providers: Brevo first, then plain SMTP. Capabilities: Brevo email and SMS, SMTP email.
+- Contact Providers: Brevo first, then plain SMTP. Capabilities: Brevo email and SMS, SMTP email.
+- Contact Providers and Contacts are separate Setup Hub cards.
 - Stream events deferred.
 
 ## Open before implementation
 
-- **Encrypted provider credentials** instead of env-only secrets (see Providers). Needs Juha's OK.
+- **Encrypted provider credentials** instead of env-only secrets (see Contact Providers). Needs Juha's OK.
 - **Brevo SMS request fields**, sender ID rules and webhook payloads. Check the official reference first.
 - **Brevo data location** (EU?) and the Finnish SMS sender ID rules.
 
