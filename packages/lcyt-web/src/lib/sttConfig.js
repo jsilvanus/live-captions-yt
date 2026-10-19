@@ -2,6 +2,20 @@ const KEY_ENGINE = 'lcyt-stt-engine';
 const KEY_LANG   = 'lcyt-stt-lang';
 const KEY_CFG    = 'lcyt-stt-config';
 const KEY_LOCAL  = 'lcyt-stt-local';
+const KEY_MODE   = 'lcyt-stt-speech-mode';
+
+/** Fired on window whenever an STT setting changes (engine, language, speech mode). */
+export const STT_CONFIG_EVENT = 'lcyt:stt-config-changed';
+
+function notifyChanged() {
+  try { window.dispatchEvent(new CustomEvent(STT_CONFIG_EVENT)); } catch {}
+}
+
+/** Subscribe to STT setting changes; returns the unsubscribe function. */
+export function subscribeSttConfig(fn) {
+  window.addEventListener(STT_CONFIG_EVENT, fn);
+  return () => window.removeEventListener(STT_CONFIG_EVENT, fn);
+}
 
 export const COMMON_LANGUAGES = [
   { code: 'en-US', label: 'English (US)' },
@@ -50,7 +64,7 @@ export function getSttEngine() {
 
 export function setSttEngine(engine) {
   localStorage.setItem(KEY_ENGINE, engine);
-  window.dispatchEvent(new CustomEvent('lcyt:stt-config-changed'));
+  notifyChanged();
 }
 
 export function getSttLang() {
@@ -59,6 +73,7 @@ export function getSttLang() {
 
 export function setSttLang(code) {
   localStorage.setItem(KEY_LANG, code);
+  notifyChanged();
 }
 
 export function getSttCloudConfig() {
@@ -71,10 +86,34 @@ export function patchSttCloudConfig(patch) {
   try { localStorage.setItem(KEY_CFG, JSON.stringify({ ...cfg, ...patch })); } catch {}
 }
 
+/**
+ * Browser SpeechRecognition mode: 'normal' (the browser decides, usually its cloud service) or
+ * 'local' (prefer on-device recognition; falls back to normal when the language pack is missing).
+ * Falls back to the older boolean `lcyt-stt-local` flag when no mode was stored yet.
+ * @returns {'normal'|'local'}
+ */
+export function getSttSpeechMode() {
+  try {
+    const m = localStorage.getItem(KEY_MODE);
+    if (m === 'local' || m === 'normal') return m;
+    return localStorage.getItem(KEY_LOCAL) === '1' ? 'local' : 'normal';
+  } catch { return 'normal'; }
+}
+
+/** @param {'normal'|'local'} mode */
+export function setSttSpeechMode(mode) {
+  const m = mode === 'local' ? 'local' : 'normal';
+  try {
+    localStorage.setItem(KEY_MODE, m);
+    localStorage.setItem(KEY_LOCAL, m === 'local' ? '1' : '0'); // keep the older flag in step
+  } catch {}
+  notifyChanged();
+}
+
 export function getSttLocalProcessing() {
-  try { return localStorage.getItem(KEY_LOCAL) === '1'; } catch { return false; }
+  return getSttSpeechMode() === 'local';
 }
 
 export function setSttLocalProcessing(enabled) {
-  try { localStorage.setItem(KEY_LOCAL, enabled ? '1' : '0'); } catch {}
+  setSttSpeechMode(enabled ? 'local' : 'normal');
 }
