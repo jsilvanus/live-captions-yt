@@ -5,7 +5,7 @@
  * `VisionRoleManager.setSourceResolver()` expects. Lives in lcyt-backend
  * because lcyt-agent must not depend on lcyt-production or this attributor.
  */
-import { withFeedKeys } from 'lcyt-production';
+import { linkedFeedKeys } from 'lcyt-production';
 
 /**
  * @param {{ db: import('./db/connection.js').Db,
@@ -26,7 +26,7 @@ export function createVisionSourceResolver({ db, attributor, sceneState = null, 
   async function row(cameraId) {
     return (await db.prod_cameras.findUnique({
       where: { id: cameraId },
-      select: { id: true, name: true, label: true, zone: true, camera_key: true, owner_api_key: true, overlap_links: true },
+      select: { id: true, name: true, label: true, zone: true, owner_api_key: true, overlap_links: true },
     })) ?? null;
   }
 
@@ -37,7 +37,7 @@ export function createVisionSourceResolver({ db, attributor, sceneState = null, 
     async feedKeyFor(cameraId) {
       const r = await row(cameraId);
       if (!r) return null;
-      return (await withFeedKeys(db, [r]))[0].camera_key || null;
+      return (await linkedFeedKeys(db, [r.id])).get(r.id) || null;
     },
 
     async cameraAllowed(apiKey, cameraId) {

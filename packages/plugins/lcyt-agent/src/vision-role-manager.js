@@ -131,7 +131,7 @@ export class VisionRoleManager {
    *   tagForCapture(apiKey, ts)   source tag of the shared feed at capture time
    *   tagForCamera(cameraId)      tag for a camera's own (dedicated) feed
    *   cameraContext(apiKey, id)   short prompt text about a camera (label, zone, overlaps) or null
-   *   feedKeyFor(cameraId)        the camera's own preview key (camera_key) or null
+   *   feedKeyFor(cameraId)        the camera's own preview key (its linked feed key) or null
    *   cameraAllowed(apiKey, id)   false when the camera belongs to another project
    * Without one, every session stays project-scoped exactly as before.
    * @param {object|null} resolver

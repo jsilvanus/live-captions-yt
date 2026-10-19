@@ -3,9 +3,9 @@
  * Phase 2 Stream A). Deliberately not a new mechanism: it polls the same
  * already-public preview-JPEG route (`GET /preview/:key/incoming`) that
  * Tracker/Describer already poll from `lcyt-agent`'s
- * `vision-frame-fetcher.js` — a dedicated-feed camera's `prod_cameras.camera_key`
+ * `vision-frame-fetcher.js` — a dedicated-feed camera's the camera's linked feed key (`cameraKey`, read from prod_feeds)
  * IS that route's `:key` (verified against `lcyt-rtmp`'s `rtmp-manager.js`:
- * camera-sourced relays register the camera_key itself as the MediaMTX path
+ * camera-sourced relays register the feed key itself as the MediaMTX path
  * name), so no new frame-acquisition endpoint was needed for Phase 2.
  */
 
