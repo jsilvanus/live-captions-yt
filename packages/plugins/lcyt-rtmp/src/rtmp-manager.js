@@ -1394,6 +1394,9 @@ export class RtmpRelayManager {
   /** Mark that nginx-rtmp has stopped publishing for an API key (on_publish_done received). */
   markNotPublishing(apiKey) { this._publishing.delete(apiKey); }
 
+  /** The MediaMTX API client, or null when MEDIAMTX_API_URL is not set. */
+  get mediamtx() { return this._mediamtx ?? null; }
+
   /** Check whether nginx-rtmp is currently publishing for an API key. */
   isPublishing(apiKey) { return this._publishing.has(apiKey); }
 

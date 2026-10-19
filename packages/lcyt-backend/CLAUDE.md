@@ -220,6 +220,8 @@ POST /feed-rtmp/on_publish_done   — nginx-rtmp on_publish_done callback for na
 GET/POST /stream          — RTMP relay stream control (Bearer token + domain allowlist); slots may set sourceCameraId to relay from a named feed instead of the raw ingest, no cap on target count
 GET  /ingestion/config    — RTMP ingest status: { video: {enabled,active,streamKey,ingestUrl,rotatable,live}, dsk: {enabled,ingestUrl,live} } (Bearer token; mounted only when RTMP_RELAY_ACTIVE=1)
 PATCH /ingestion/config   — { video?: {enabled?}, dsk?: {enabled?} } — video flips relay_allowed (self-service, feature-gated on `ingest`); dsk is 501 (no real gate exists yet)
+GET  /ingestion/streams   — { available, streams[] }: the project's incoming (ready) MediaMTX paths with video/audio state
+GET  /ingestion/streams/unclaimed — ready paths no project owns (Setup tier); bind one with POST /production/cameras {controlType:'rtmp', cameraKey}
 POST /ingestion/config/rotate — rotate the video ingest stream key, decoupling it from the api_key (Bearer token)
 
 GET  /production/cameras  — list cameras (admin key)
