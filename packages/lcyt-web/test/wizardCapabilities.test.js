@@ -42,7 +42,7 @@ describe('resolveIntent()', () => {
   it('video relay + vertical crop + hls', () => {
     const r = resolveIntent(['video'], { videoInput: 'rtmp', relay: true, hlsOutput: true, verticalCrop: true });
     assert.deepEqual(sorted(r.features), ['crop', 'hls-stream', 'ingest', 'restream']);
-    assert.ok(r.hubCards.has('egress') && r.hubCards.has('ingestion'));
+    assert.ok(r.hubCards.has('egress') && r.hubCards.has('feeds'));
   });
 
   it('"I don\'t know" video input does not enable ingest by itself', () => {

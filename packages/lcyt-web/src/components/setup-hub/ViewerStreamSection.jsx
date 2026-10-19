@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
 import { SetupCard, SetupItemRow } from './SetupCard.jsx';
-import { IngestionIcon } from './icons.jsx';
+import { FeedsIcon } from './icons.jsx';
 
 /**
  * ViewerStreamSection — LCYT's own viewer stream (`hls-stream`) and the
@@ -38,7 +38,7 @@ export function ViewerStreamSection() {
   return (
     <SetupCard
       id="viewer-stream"
-      icon={IngestionIcon}
+      icon={FeedsIcon}
       color="cyan"
       title="Viewer stream"
       description="Your own viewer stream, without any platform. Needs the live video to reach LCYT."

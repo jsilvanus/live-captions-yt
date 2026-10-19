@@ -13,8 +13,19 @@ const list = (json, key) => {
   return Array.isArray(arr) ? arr.length : null;
 };
 
+/**
+ * Named feeds, plus the Video slot when it is enabled. The managed Video feed is always listed by
+ * GET /feeds, so the enable switch (GET /ingestion/config) is what says whether it is in use.
+ */
+const feedsCheck = {
+  path: () => '/feeds',
+  count: j => (Array.isArray(j?.feeds) ? j.feeds.filter(f => !f.managed).length : null),
+  also: { path: () => '/ingestion/config', count: j => (j?.video ? (j.video.enabled ? 1 : 0) : null) },
+};
+
 export const CARD_STATUS_CHECKS = {
   'caption-targets': { path: () => '/targets', count: j => list(j, 'targets') },
+  feeds: feedsCheck,
   cameras:  { path: () => '/production/cameras', count: j => list(j) },
   mixers:   { path: () => '/production/mixers', count: j => list(j) },
   encoders: { path: () => '/production/encoders', count: j => list(j) },
@@ -33,6 +44,23 @@ export function classifyCount(count) {
   return count > 0 ? 'configured' : 'empty';
 }
 
+/** Adds up the counts of one card's checks; a known count above zero wins over a failed request. */
+function combineCounts(counts) {
+  const known = counts.filter(c => c != null);
+  if (known.length === 0) return null;
+  const total = known.reduce((a, b) => a + b, 0);
+  return total > 0 || known.length === counts.length ? total : null;
+}
+
+async function countAt(check, path, { backendUrl, token, fetchFn }) {
+  try {
+    const r = await fetchFn(`${backendUrl}/api/v1${path}`, { headers: { Authorization: `Bearer ${token}` } });
+    return r.ok ? check.count(await r.json()) : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * @param {{
  *   backendUrl: string, token: string, apiKey: string,
@@ -46,14 +74,10 @@ export async function loadCardStatuses({ backendUrl, token, apiKey, cardIds, fet
   await Promise.all([...cardIds].map(async id => {
     const check = CARD_STATUS_CHECKS[id];
     if (!check || !backendUrl || !token) { result.set(id, { status: 'unknown', count: null }); return; }
-    try {
-      const r = await fetchFn(`${backendUrl}/api/v1${check.path(apiKey)}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (!r.ok) { result.set(id, { status: 'unknown', count: null }); return; }
-      const count = check.count(await r.json());
-      result.set(id, { status: classifyCount(count), count });
-    } catch {
-      result.set(id, { status: 'unknown', count: null });
-    }
+    const parts = [check, check.also].filter(Boolean);
+    const counts = await Promise.all(parts.map(c => countAt(c, c.path(apiKey), { backendUrl, token, fetchFn })));
+    const count = combineCounts(counts);
+    result.set(id, { status: classifyCount(count), count });
   }));
   return result;
 }

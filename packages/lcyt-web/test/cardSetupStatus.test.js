@@ -62,3 +62,39 @@ describe('broadcast-platforms status', () => {
     assert.deepEqual(r.get('broadcast-platforms'), { status: 'empty', count: 0 });
   });
 });
+
+describe('feeds status', () => {
+  const base = { backendUrl: 'http://x', token: 't', apiKey: 'k', cardIds: ['feeds'] };
+  // GET /feeds always lists the two managed feeds; the Video switch comes from GET /ingestion/config.
+  const managed = [{ id: 'managed:video', managed: true }, { id: 'managed:dsk', managed: true }];
+  const router = ({ feeds, config }) => async url => {
+    if (url.endsWith('/feeds')) return feeds === undefined ? { ok: false } : { ok: true, json: async () => ({ feeds }) };
+    if (url.endsWith('/ingestion/config')) return config === undefined ? { ok: false } : { ok: true, json: async () => config };
+    return { ok: false };
+  };
+
+  it('counts named feeds', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: router({ feeds: [...managed, { id: 'a' }], config: { video: { enabled: false } } }) });
+    assert.deepEqual(r.get('feeds'), { status: 'configured', count: 1 });
+  });
+
+  it('counts the Video slot when it is enabled, even without named feeds', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: router({ feeds: managed, config: { video: { enabled: true } } }) });
+    assert.deepEqual(r.get('feeds'), { status: 'configured', count: 1 });
+  });
+
+  it('is empty with no named feeds and the Video slot disabled', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: router({ feeds: managed, config: { video: { enabled: false } } }) });
+    assert.deepEqual(r.get('feeds'), { status: 'empty', count: 0 });
+  });
+
+  it('is unknown when the Video switch cannot be read and there are no named feeds', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: router({ feeds: managed }) });
+    assert.deepEqual(r.get('feeds'), { status: 'unknown', count: null });
+  });
+
+  it('is configured from a named feed even when the config request fails', async () => {
+    const r = await loadCardStatuses({ ...base, fetchFn: router({ feeds: [...managed, { id: 'a' }] }) });
+    assert.deepEqual(r.get('feeds'), { status: 'configured', count: 1 });
+  });
+});
