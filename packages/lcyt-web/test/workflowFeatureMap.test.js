@@ -26,9 +26,9 @@ describe('cardIdsForEnabledFeatures()', () => {
     assert.deepEqual([...result], []);
   });
 
-  it('expands a one-to-many feature (device-control) to all its card ids', () => {
+  it('expands a one-to-many feature (device-control) to the Devices card and Bridges', () => {
     const result = cardIdsForEnabledFeatures([{ code: 'device-control', enabled: true }]);
-    assert.deepEqual([...result].sort(), ['bridges', 'cameras', 'encoders', 'mixers']);
+    assert.deepEqual([...result].sort(), ['bridges', 'devices']);
   });
 
   it('de-duplicates card ids reached by multiple features (caption-targets)', () => {

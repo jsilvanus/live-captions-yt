@@ -30,7 +30,7 @@ export const FEATURE_TO_CARD_IDS = {
   'hls-stream': ['viewer-stream'],
   preview: ['viewer-stream'],
   'stt-server': ['stt'],
-  'device-control': ['cameras', 'mixers', 'encoders', 'bridges'],
+  'device-control': ['devices', 'bridges'],
   'broadcast-platforms': ['broadcast-platforms'],
   'ai-agent': ['ai-roles'],
   'mcp-access': ['mcp-access'],

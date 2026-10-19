@@ -20,15 +20,23 @@ const list = (json, key) => {
 const feedsCheck = {
   path: () => '/feeds',
   count: j => (Array.isArray(j?.feeds) ? j.feeds.filter(f => !f.managed).length : null),
-  also: { path: () => '/ingestion/config', count: j => (j?.video ? (j.video.enabled ? 1 : 0) : null) },
+  also: [{ path: () => '/ingestion/config', count: j => (j?.video ? (j.video.enabled ? 1 : 0) : null) }],
+};
+
+/** The Devices card: cameras, mixers and encoders added together. */
+const devicesCheck = {
+  path: () => '/production/cameras',
+  count: j => list(j),
+  also: [
+    { path: () => '/production/mixers', count: j => list(j) },
+    { path: () => '/production/encoders', count: j => list(j) },
+  ],
 };
 
 export const CARD_STATUS_CHECKS = {
   'caption-targets': { path: () => '/targets', count: j => list(j, 'targets') },
   feeds: feedsCheck,
-  cameras:  { path: () => '/production/cameras', count: j => list(j) },
-  mixers:   { path: () => '/production/mixers', count: j => list(j) },
-  encoders: { path: () => '/production/encoders', count: j => list(j) },
+  devices: devicesCheck,
   bridges:  { path: () => '/production/bridge/instances', count: j => list(j) },
   egress:   { path: () => '/stream', count: j => list(j, 'relays') },
   'broadcast-platforms': {
@@ -74,7 +82,7 @@ export async function loadCardStatuses({ backendUrl, token, apiKey, cardIds, fet
   await Promise.all([...cardIds].map(async id => {
     const check = CARD_STATUS_CHECKS[id];
     if (!check || !backendUrl || !token) { result.set(id, { status: 'unknown', count: null }); return; }
-    const parts = [check, check.also].filter(Boolean);
+    const parts = [check, ...[].concat(check.also || [])];
     const counts = await Promise.all(parts.map(c => countAt(c, c.path(apiKey), { backendUrl, token, fetchFn })));
     const count = combineCounts(counts);
     result.set(id, { status: classifyCount(count), count });
