@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useConnectionContext } from '../contexts/ConnectionContext';
 import { Dialog } from './Dialog';
+import { usePolling } from '../hooks/usePolling.js';
 
 /**
  * Monitors backend connection health and shows an error dialog when the backend is unreachable.
@@ -21,20 +22,16 @@ export function ConnectionStatusMonitor() {
   }, [healthStatus, connected]);
 
   // Check health more frequently to detect when backend comes back online
+  // Only while the backend is unreachable: when it is fine, useSession's own
+  // (slower) health poll keeps `healthStatus` current. Paused while the tab
+  // is hidden; backs off while the backend stays down.
   useEffect(() => {
-    if (!connected && !backendUrl) return;
-
-    // Check health immediately
-    checkHealth?.().catch(() => {});
-
-    // Then check periodically
-    const interval = setInterval(() => {
-      setLastCheckedAt(new Date());
-      checkHealth?.().catch(() => {});
-    }, 5000); // Check every 5 seconds when disconnected
-
-    return () => clearInterval(interval);
+    if (connected || backendUrl) checkHealth?.().catch(() => {});
   }, [connected, backendUrl, checkHealth]);
+  usePolling(async () => {
+    setLastCheckedAt(new Date());
+    if (!(await checkHealth?.())) throw new Error('backend unreachable'); // backs off
+  }, 5000, { enabled: healthStatus === 'unreachable', runImmediately: false });
 
   if (!showErrorDialog) return null;
 

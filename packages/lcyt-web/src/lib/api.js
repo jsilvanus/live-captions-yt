@@ -40,7 +40,7 @@ export function createApi(senderRef, backendUrlRef) {
           // JSON parsing failed, keep generic message
         }
       }
-      throw new Error(errorMessage);
+      throw Object.assign(new Error(errorMessage), { status: res.status });
     }
 
     try {

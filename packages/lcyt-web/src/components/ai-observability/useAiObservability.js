@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useEventStream } from '../../hooks/useEventStream.js';
+import { usePolling, STOP_POLLING } from '../../hooks/usePolling.js';
 
 // ---------------------------------------------------------------------------
 // useAiObservability — data + actions for the AI Observability page
@@ -58,6 +59,7 @@ export function useAiObservability() {
       const data = await res.json();
       setStatus((s) => ({ ...s, [roleCode]: data }));
     }
+    return res.status;
   }, [api, backendUrl, apiKey]);
 
   const loadCaptures = useCallback(async (roleCode) => {
@@ -75,9 +77,15 @@ export function useAiObservability() {
   useEffect(() => {
     if (!connected) return undefined;
     ROLE_CODES.forEach((code) => { loadStatus(code); loadCaptures(code); });
-    const id = setInterval(() => ROLE_CODES.forEach(loadStatus), 5000);
-    return () => clearInterval(id);
+    return undefined;
   }, [connected, loadStatus, loadCaptures]);
+
+  // Status refresh: paused while the tab is hidden, stops on an expired token.
+  usePolling(async () => {
+    const codes = await Promise.all(ROLE_CODES.map(loadStatus));
+    if (codes.includes(401)) return STOP_POLLING;
+    return undefined;
+  }, 10_000, { enabled: connected, runImmediately: false });
 
   // Live overlay: subscribe directly to role.tracker.*/role.describer.* on
   // the shared /events/stream multiplexer — both events already exist and
@@ -116,15 +124,12 @@ export function useAiObservability() {
     try {
       const res = await api('/production/perception/overview');
       if (res.ok) setPerception(await res.json());
+      else if (res.status === 401) return STOP_POLLING;
     } catch { /* panel just keeps its last state */ }
+    return undefined;
   }, [api, backendUrl, apiKey]);
 
-  useEffect(() => {
-    if (!connected) return undefined;
-    loadPerception();
-    const id = setInterval(loadPerception, 4000);
-    return () => clearInterval(id);
-  }, [connected, loadPerception]);
+  usePolling(loadPerception, 5000, { enabled: connected });
 
   /** POST to a perception/attribution route, refresh the overview, return an error string or null. */
   const perceptionAction = useCallback(async (path, body = {}) => {
@@ -136,10 +141,7 @@ export function useAiObservability() {
 
   // Cache-buster tick for the polled preview-JPEG <img> (same convention as
   // useCropEditor.js's previewTick).
-  useEffect(() => {
-    const id = setInterval(() => setPreviewTick((t) => t + 1), 3000);
-    return () => clearInterval(id);
-  }, []);
+  usePolling(() => { setPreviewTick((t) => t + 1); }, 3000, { runImmediately: false });
 
   const startRole = useCallback(async (roleCode) => {
     setBusy(true);

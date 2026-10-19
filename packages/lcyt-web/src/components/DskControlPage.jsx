@@ -3,6 +3,7 @@ import { SessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { templateSlug } from '../lib/formatting.js';
 import { readPersistedSessionConfig } from '../lib/projectSession.js';
+import { usePolling } from '../hooks/usePolling.js';
 import { DskBroadcastAssetPanel } from './DskBroadcastAssetPanel.jsx';
 
 /**
@@ -197,9 +198,10 @@ export function DskControlPage() {
     fetchRendererStatus();
     fetchImages();
     fetchPublicViewports();
-    const interval = setInterval(fetchRendererStatus, 10000);
-    return () => clearInterval(interval);
   }, [fetchTemplates, fetchRendererStatus, fetchImages, fetchPublicViewports]);
+
+  // Renderer status refresh: paused while the tab is hidden
+  usePolling(fetchRendererStatus, 10000, { enabled: !!(serverUrl && apiKey), runImmediately: false });
 
   // ── Load a template's full JSON to extract text layer ids ───────────────
 

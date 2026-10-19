@@ -4,6 +4,7 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useToastContext } from '../contexts/ToastContext';
 import { useLang } from '../contexts/LangContext';
 import { MusicChip } from './MusicChip';
+import { usePolling } from '../hooks/usePolling.js';
 import { readPersistedSessionConfig, savePersistedSessionConfig } from '../lib/projectSession.js';
 
 const STT_POLL_INTERVAL_MS = 10_000;
@@ -15,25 +16,18 @@ export function StatusBar({ onControlsOpen, onSettingsOpen, onCCOpen }) {
   const { t } = useLang();
   const [sttStatus, setSttStatus] = useState(null);
 
-  // Poll /stt/status while connected
+  // Poll /stt/status while connected (paused while the tab is hidden)
   useEffect(() => {
-    if (!session.connected) {
+    if (!session.connected) setSttStatus(null);
+  }, [session.connected]);
+  usePolling(async () => {
+    try {
+      setSttStatus(await session.getSttStatus());
+    } catch (err) {
       setSttStatus(null);
-      return;
+      if (err?.status === 401) throw err;
     }
-    let cancelled = false;
-    async function poll() {
-      try {
-        const s = await session.getSttStatus();
-        if (!cancelled) setSttStatus(s);
-      } catch {
-        if (!cancelled) setSttStatus(null);
-      }
-    }
-    poll();
-    const id = setInterval(poll, STT_POLL_INTERVAL_MS);
-    return () => { cancelled = true; clearInterval(id); };
-  }, [session.connected, session.getSttStatus]);
+  }, STT_POLL_INTERVAL_MS, { enabled: !!session.connected });
 
   async function handleLeaveProject() {
     await session.disconnect();

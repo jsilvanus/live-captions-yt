@@ -5,6 +5,7 @@ import { createApi } from '../lib/api';
 import { KEYS } from '../lib/storageKeys.js';
 import { readPersistedSessionConfig, savePersistedSessionConfig } from '../lib/projectSession.js';
 import { useEventStream } from './useEventStream.js';
+import { usePolling } from './usePolling.js';
 
 // Stable per-tab client ID for the soft mic lock
 const CLIENT_ID = crypto.randomUUID();
@@ -100,11 +101,8 @@ export function useSession({
   }, []);
 
   // Periodic health poll while connected.
-  useEffect(() => {
-    if (!connected) return;
-    const id = setInterval(() => { checkHealth().catch(() => {}); }, 30_000);
-    return () => clearInterval(id);
-  }, [connected]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Paused while the tab is hidden.
+  usePolling(() => { checkHealth().catch(() => {}); }, 30_000, { enabled: connected, runImmediately: false });
 
   // â”€â”€â”€ Persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 

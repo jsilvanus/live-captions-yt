@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
+import { usePolling } from '../../hooks/usePolling.js';
 
 export function BroadcastWidget({ size }) {
   const { connected, getRelayStatus } = useSessionContext();
@@ -7,20 +8,18 @@ export function BroadcastWidget({ size }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (!connected) { setRelayStatus(null); return; }
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      try {
-        const data = await getRelayStatus();
-        if (!cancelled) setRelayStatus(data);
-      } catch {}
-      if (!cancelled) setLoading(false);
-    }
-    load();
-    const id = setInterval(load, 10_000);
-    return () => { cancelled = true; clearInterval(id); };
+    if (!connected) setRelayStatus(null);
   }, [connected]);
+  usePolling(async () => {
+    setLoading(true);
+    try {
+      setRelayStatus(await getRelayStatus());
+    } catch (err) {
+      if (err?.status === 401) throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, 10_000, { enabled: connected });
 
   if (!connected) {
     return <div className="db-widget db-empty-note">Not connected.</div>;

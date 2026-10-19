@@ -4,6 +4,7 @@ import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { TallyIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
 import { useSetupT } from '../../lib/useSetupT.js';
+import { usePolling } from '../../hooks/usePolling.js';
 
 const API = '/api/v1/tally';
 const POLL_MS = 5000;
@@ -94,12 +95,8 @@ export function TallySection() {
     } catch (e) { setError(e.message); }
   }, [connected, backendUrl, api]);
 
-  useEffect(() => {
-    load();
-    if (!connected) return undefined;
-    const timer = setInterval(load, POLL_MS);
-    return () => clearInterval(timer);
-  }, [load, connected]);
+  useEffect(() => { load(); }, [load]);
+  usePolling(load, POLL_MS, { enabled: !!connected, runImmediately: false });
 
   useEffect(() => {
     if (!editing || editing.form.kind !== 'camera' || mixers.length) return;

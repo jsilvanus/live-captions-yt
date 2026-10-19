@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { MonarchHDX } from '@jsilvanus/matrox-monarch-control';
 import { useToastContext } from '../../contexts/ToastContext';
 import { broadcastKey } from '../../lib/storageKeys.js';
+import { usePolling } from '../../hooks/usePolling.js';
 
 const ENCODER_TYPES = [
   { id: 'matrox-monarch-hdx', label: 'Matrox Monarch HDx' },
@@ -33,23 +34,20 @@ export function EncoderTab() {
   }, [ip]);
 
   useEffect(() => {
-    if (!ip) { setStatus(null); setStatusErr(''); return; }
-    let cancelled = false;
-
-    async function fetchStatus() {
-      try {
-        const ctrl = new MonarchHDX({ host: ip, timeout: 4000 });
-        const s = await ctrl.getStatus();
-        if (!cancelled) { setStatus(s); setStatusErr(''); }
-      } catch (err) {
-        if (!cancelled) { setStatus(null); setStatusErr(err.message); }
-      }
-    }
-
-    fetchStatus();
-    const id = setInterval(fetchStatus, 8000);
-    return () => { cancelled = true; clearInterval(id); };
+    if (!ip) { setStatus(null); setStatusErr(''); }
   }, [ip]);
+
+  // Encoder status poll: paused while the tab is hidden
+  usePolling(async () => {
+    try {
+      const ctrl = new MonarchHDX({ host: ip, timeout: 4000 });
+      setStatus(await ctrl.getStatus());
+      setStatusErr('');
+    } catch (err) {
+      setStatus(null);
+      setStatusErr(err.message);
+    }
+  }, 8000, { enabled: !!ip });
 
   async function handleStart() {
     setBusy(true);

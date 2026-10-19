@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useProductionData } from '../workspace/useProductionData.js';
+import { usePolling, STOP_POLLING } from '../../../hooks/usePolling.js';
 
 // ---------------------------------------------------------------------------
 // useCropEditor — data + actions for the Vertical Crop operator page
@@ -107,17 +108,15 @@ export function useCropEditor() {
 
   // Poll status while mounted so the running/repositionMode chip and the
   // free-position (non-preset) readout stay current.
-  useEffect(() => {
-    if (!backendUrl || !apiKey) return;
-    const id = setInterval(loadConfig, 5000);
-    return () => clearInterval(id);
-  }, [backendUrl, apiKey, loadConfig]);
+  usePolling(async () => {
+    const r = await jfetch(`${CROP}/config`);
+    if (r.ok) setConfig(await r.json());
+    else if (r.status === 401) return STOP_POLLING;
+    return undefined;
+  }, 5000, { enabled: !!(backendUrl && apiKey), runImmediately: false });
 
-  // Refresh the incoming-preview cache-buster periodically.
-  useEffect(() => {
-    const id = setInterval(() => setPreviewTick((t) => t + 1), 4000);
-    return () => clearInterval(id);
-  }, []);
+  // Refresh the incoming-preview cache-buster periodically (paused while hidden).
+  usePolling(() => { setPreviewTick((t) => t + 1); }, 4000, { runImmediately: false });
 
   const presets = presetsBySet[setKeyOf(viewSetId)] || [];
   const editingPreset = presets.find((p) => p.id === editingPresetId) || null;
