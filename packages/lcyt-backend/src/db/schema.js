@@ -180,6 +180,8 @@ export function initSqliteSchema(dbPath) {
   // Rotatable RTMP ingest credential, decoupled from the api_key itself.
   // NULL = the RTMP stream key is the api_key (today's behavior, unchanged).
   if (!existingCols.has('ingest_stream_key')) db.exec('ALTER TABLE api_keys ADD COLUMN ingest_stream_key TEXT');
+  // The project's main incoming feed (prod_feeds.id); NULL = not set up yet, the key falls back to ingest_stream_key / api_key.
+  if (!existingCols.has('primary_feed_id'))   db.exec('ALTER TABLE api_keys ADD COLUMN primary_feed_id TEXT');
 
   const existingApiKeyIndexes = new Set(
     db.prepare('PRAGMA index_list(api_keys)').all().map(index => index.name)

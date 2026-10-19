@@ -780,6 +780,8 @@ export default {
       confirmDelete: 'Delete the feed "{name}"?',
       ingestUrl: 'Ingest URL',
       disabled: 'Disabled',
+      main: 'Main',
+      makeMain: 'Make main feed',
       rotate: 'Rotate stream key',
       rotateConfirm: 'Rotate the Video stream key? Encoders still using the old key are rejected until they switch to the new one.',
       managed: {
@@ -817,6 +819,7 @@ export default {
         keyTaken: 'That key is already in use. Choose another.',
         save: 'Could not save the feed.',
         delete: 'Could not delete the feed.',
+        makeMain: 'Could not make this the main feed.',
         rotate: 'Could not change the stream key.',
         toggle: 'Could not change that slot.',
       },

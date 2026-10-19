@@ -10,6 +10,7 @@ import { isAllowedDomain } from '../lib/allowed-domains.js';
 import { finishVideoRecording } from '../db/videos.js';
 import { configureMediaMtxRecording, finalizeVideoRecording } from '../recording/recorder.js';
 import { startRecordingGroup, stopRecordingGroup } from '../recording/feeds.js';
+import { getPrimaryFeedKey } from 'lcyt-rtmp';
 import { getMetricsInstance } from '../metrics/index.js';
 import { buildExtraTargets } from '../session-targets.js';
 
@@ -70,9 +71,8 @@ async function endSessionRecording(db, session, { mediamtxClient, recordingsStor
   }
   // A session started before feeds existed: one clean video, no group.
   await finishVideoRecording(db, session.apiKey, session.recordingVideoId, { status: 'processing', endedAt, durationMs });
-  const keyRow = await db.api_keys.findUnique({ where: { key: session.apiKey }, select: { ingest_stream_key: true } });
   await configureMediaMtxRecording(mediamtxClient, {
-    pathName: keyRow?.ingest_stream_key || session.apiKey,
+    pathName: await getPrimaryFeedKey(db, session.apiKey),
     apiKey: session.apiKey, videoId: session.recordingVideoId, enabled: false,
   });
   const timer = setTimeout(() => {

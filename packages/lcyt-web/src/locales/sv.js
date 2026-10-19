@@ -737,6 +737,8 @@ export default {
       confirmDelete: 'Ta bort flödet "{name}"?',
       ingestUrl: 'Inmatnings-URL',
       disabled: 'Avstängd',
+      main: 'Huvud',
+      makeMain: 'Gör till huvudflöde',
       rotate: 'Byt strömnyckel',
       rotateConfirm: 'Byta nyckel för Video-strömmen? Kodare som fortfarande använder den gamla nyckeln avvisas tills de byter till den nya.',
       managed: {
@@ -774,6 +776,7 @@ export default {
         keyTaken: 'Nyckeln används redan. Välj en annan.',
         save: 'Det gick inte att spara flödet.',
         delete: 'Det gick inte att ta bort flödet.',
+        makeMain: 'Det gick inte att göra detta till huvudflöde.',
         rotate: 'Det gick inte att byta strömnyckel.',
         toggle: 'Den här platsen kunde inte ändras.',
       },

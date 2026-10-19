@@ -9,7 +9,11 @@ import { createServer } from 'node:http';
 import express from 'express';
 import { initDb } from 'lcyt-backend/db';
 import { createFeedsRouter } from '../src/routes/feeds.js';
-import { backfillFeeds, listFeeds, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds } from '../src/db/feeds.js';
+import {
+  backfillFeeds, listFeeds, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds,
+  getPrimaryFeedKey, backfillPrimaryFeeds, ownerOfPrimaryFeedKey,
+} from '../src/db/feeds.js';
+import { resolveApiKeyFromIngestStreamKey } from '../src/db/relay.js';
 
 const KEY = 'feedsproj';
 const OTHER = 'otherproj';
@@ -45,16 +49,19 @@ const call = (method, path, body) => fetch(`${baseUrl}/feeds${path}`, {
 });
 
 describe('GET /feeds', () => {
-  it('leads with the two managed feeds built from the project keys', async () => {
+  it('leads with the DSK entry, then the main feed as an ordinary row created from the ingest key', async () => {
     const { feeds } = await (await call('GET', '')).json();
-    assert.deepEqual(feeds.map((f) => f.id), ['managed:video', 'managed:dsk']);
-    assert.equal(feeds[0].feedKey, 'rotated-key');
-    assert.equal(feeds[0].label, 'main');
-    assert.equal(feeds[0].managed, true);
-    assert.match(feeds[0].ingestUrl, /^rtmp:\/\/.+\/stream\/rotated-key$/);
-    assert.equal(feeds[1].kind, 'dsk');
-    assert.equal(feeds[1].feedKey, KEY);
-    assert.equal(feeds[1].live, null);
+    assert.equal(feeds[0].id, 'managed:dsk');
+    assert.equal(feeds[0].kind, 'dsk');
+    assert.equal(feeds[0].feedKey, KEY);
+    assert.equal(feeds[0].live, null);
+    const main = feeds[1];
+    assert.equal(main.primary, true);
+    assert.equal(main.managed, false);
+    assert.equal(main.feedKey, 'rotated-key');
+    assert.equal(main.label, 'main');
+    assert.match(main.ingestUrl, /^rtmp:\/\/.+\/stream\/rotated-key$/); // the video app, not the feed app
+    assert.equal(feeds.length, 2);
   });
 
   it('lists only the project\'s own feeds, with live status from MediaMTX', async () => {
@@ -62,7 +69,7 @@ describe('GET /feeds', () => {
     await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key) VALUES ('x', ?, 'Theirs', 'theirs')").run(OTHER);
     mediamtx.live.add('altar');
     const { feeds } = await (await call('GET', '')).json();
-    const named = feeds.filter((f) => !f.managed);
+    const named = feeds.filter((f) => !f.managed && !f.primary);
     assert.deepEqual(named.map((f) => f.name), ['Altar']);
     assert.equal(named[0].live, true);
     assert.equal(named[0].ingestUrl.endsWith('/feed/altar'), true);
@@ -137,7 +144,7 @@ describe('PATCH and DELETE /feeds/:id', () => {
     assert.equal((await call('PATCH', '/nope', { name: 'x' })).status, 404);
     assert.equal((await call('PATCH', '/theirs', { name: 'x' })).status, 404);
     assert.equal((await call('DELETE', '/theirs')).status, 404);
-    assert.equal((await call('PATCH', '/managed:video', { name: 'x' })).status, 400);
+    assert.equal((await call('PATCH', '/managed:dsk', { name: 'x' })).status, 400);
     assert.equal((await call('DELETE', '/managed:dsk')).status, 400);
   });
 
@@ -261,5 +268,71 @@ describe('unlinkDeviceFeeds', () => {
     const [f] = await listFeeds(db, KEY);
     assert.equal(f.deviceType, null);
     assert.equal(f.deviceId, null);
+  });
+});
+
+describe('the main (primary) feed', () => {
+  const mainOf = async () => (await (await call('GET', '')).json()).feeds.find((f) => f.primary);
+
+  it('is created once, from the old ingest key, and the project points at it', async () => {
+    const a = await mainOf();
+    const b = await mainOf();
+    assert.equal(a.id, b.id);
+    assert.equal(await getPrimaryFeedKey(db, KEY), 'rotated-key');
+    assert.equal((await db.prepare('SELECT primary_feed_id AS p FROM api_keys WHERE key = ?').get(KEY)).p, a.id);
+    assert.equal((await listFeeds(db, KEY)).length, 1);
+  });
+
+  it('falls back to the old ingest key or the api key while a project has no primary feed', async () => {
+    assert.equal(await getPrimaryFeedKey(db, OTHER), OTHER);
+    assert.equal(await getPrimaryFeedKey(db, 'nobody'), 'nobody');
+    assert.equal(await getPrimaryFeedKey(db, KEY), 'rotated-key');
+  });
+
+  it('backfillPrimaryFeeds creates one for every project without, and is idempotent', async () => {
+    await db.prepare('UPDATE api_keys SET primary_feed_id = NULL').run();
+    const first = await backfillPrimaryFeeds(db);
+    assert.ok(first >= 2);
+    assert.equal(await backfillPrimaryFeeds(db), 0);
+    assert.equal(await getPrimaryFeedKey(db, OTHER), OTHER); // no ingest key: the api key itself
+    assert.equal((await getFeedByKey(db, OTHER)).label, 'main');
+  });
+
+  it('renaming its key keeps ingest_stream_key in step and resolves the new name to the project', async () => {
+    const main = await mainOf();
+    const res = await call('PATCH', `/${main.id}`, { feedKey: 'renamed-main', name: 'Sanctuary' });
+    assert.equal(res.status, 200);
+    assert.equal(await getPrimaryFeedKey(db, KEY), 'renamed-main');
+    assert.equal((await db.prepare('SELECT ingest_stream_key AS k FROM api_keys WHERE key = ?').get(KEY)).k, 'renamed-main');
+    assert.equal(await resolveApiKeyFromIngestStreamKey(db, 'renamed-main'), KEY);
+    assert.equal(await ownerOfPrimaryFeedKey(db, 'renamed-main'), KEY);
+    await call('PATCH', `/${main.id}`, { feedKey: 'rotated-key' });
+  });
+
+  it('keeps transport rtmp, can be linked to a device, and is refused deletion', async () => {
+    const main = await mainOf();
+    assert.equal((await call('PATCH', `/${main.id}`, { transport: 'whip' })).status, 400);
+    await db.prepare("INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, owner_api_key) VALUES ('cam1', 'Cam', 'none', '{}', 0, ?)").run(KEY);
+    const linked = await (await call('PATCH', `/${main.id}`, { deviceType: 'camera', deviceId: 'cam1' })).json();
+    assert.equal(linked.deviceId, 'cam1');
+    assert.equal((await call('DELETE', `/${main.id}`)).status, 409);
+  });
+
+  it('POST /:id/primary moves the main stream to another rtmp feed; a whip feed cannot be main', async () => {
+    await mainOf();
+    const altar = await (await call('POST', '', { name: 'Altar', feedKey: 'altar-key' })).json();
+    const whip = await (await call('POST', '', { name: 'Phone', feedKey: 'phone-key', transport: 'whip' })).json();
+    assert.equal((await call('POST', `/${whip.id}/primary`)).status, 400);
+    assert.equal((await call('POST', `/nope/primary`)).status, 404);
+    const res = await call('POST', `/${altar.id}/primary`);
+    assert.equal(res.status, 200);
+    assert.equal((await res.json()).primary, true);
+    assert.equal(await getPrimaryFeedKey(db, KEY), 'altar-key');
+    const { feeds } = await (await call('GET', '')).json();
+    assert.deepEqual(feeds.filter((f) => f.primary).map((f) => f.id), [altar.id]);
+    // the old main feed is now an ordinary feed and may be deleted
+    const old = feeds.find((f) => f.feedKey === 'rotated-key');
+    assert.equal(old.primary, false);
+    assert.equal((await call('DELETE', `/${old.id}`)).status, 204);
   });
 });

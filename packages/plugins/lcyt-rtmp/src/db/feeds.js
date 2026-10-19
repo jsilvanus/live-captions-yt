@@ -338,3 +338,107 @@ export async function backfillFeeds(db) {
   }
   return { created, skipped, dropped };
 }
+
+// ─── Primary feed (feeds-and-devices PR 8) ────────────────────────────────────
+
+/** Name and label a project's primary feed gets when it is first created from the old ingest key. */
+export const PRIMARY_FEED_NAME = 'Main video';
+export const PRIMARY_FEED_LABEL = 'main';
+
+/**
+ * The MediaMTX path name of the project's main incoming stream: the primary feed's key, or — for a project that has
+ * none yet — what it always was, the rotated `ingest_stream_key` or else the api key itself.
+ * @returns {Promise<string>}
+ */
+export async function getPrimaryFeedKey(db, apiKey) {
+  const row = await db.api_keys.findUnique({
+    where: { key: apiKey },
+    select: { primary_feed_id: true, ingest_stream_key: true },
+  });
+  if (!row) return apiKey;
+  if (row.primary_feed_id) {
+    const feed = await db.prod_feeds.findFirst({
+      where: { id: row.primary_feed_id, owner_api_key: apiKey },
+      select: { feed_key: true },
+    });
+    if (feed) return feed.feed_key;
+  }
+  return row.ingest_stream_key || apiKey;
+}
+
+/** The primary feed row's id, or null when the project has none (yet). */
+export async function getPrimaryFeedId(db, apiKey) {
+  const row = await db.api_keys.findUnique({ where: { key: apiKey }, select: { primary_feed_id: true } });
+  if (!row?.primary_feed_id) return null;
+  const feed = await db.prod_feeds.findFirst({ where: { id: row.primary_feed_id, owner_api_key: apiKey }, select: { id: true } });
+  return feed ? feed.id : null;
+}
+
+/**
+ * Make sure the project has a primary feed: an ordinary prod_feeds row carrying the key the project's main stream
+ * already uses (`ingest_stream_key`, else the api key), so no publisher is reconfigured. Idempotent. Returns the
+ * feed id, or null when it could not be created (the key is taken by another feed; logged).
+ */
+export async function ensurePrimaryFeed(db, apiKey) {
+  const row = await db.api_keys.findUnique({
+    where: { key: apiKey },
+    select: { primary_feed_id: true, ingest_stream_key: true },
+  });
+  if (!row) return null;
+  const existing = await getPrimaryFeedId(db, apiKey);
+  if (existing) return existing;
+  const feedKey = row.ingest_stream_key || apiKey;
+  const id = `feed-main-${randomBytes(6).toString('hex')}`;
+  try {
+    const clash = await db.prod_feeds.findUnique({ where: { feed_key: feedKey }, select: { id: true, owner_api_key: true } });
+    if (clash) {
+      // A feed of this project that already carries the key becomes the primary one; any other clash is left alone.
+      if (clash.owner_api_key !== apiKey) { logger.warn(`[feeds] primary feed for a project not created: key '${feedKey}' is used by another project's feed`); return null; }
+      await db.api_keys.updateMany({ where: { key: apiKey }, data: { primary_feed_id: clash.id } });
+      return clash.id;
+    }
+    await db.prod_feeds.create({
+      data: {
+        id, owner_api_key: apiKey, name: PRIMARY_FEED_NAME, feed_key: feedKey, transport: 'rtmp', kind: 'generic',
+        label: PRIMARY_FEED_LABEL, device_type: null, device_id: null, sort_order: -1, created_at: db.$util.sqlNow(),
+      },
+    });
+    await db.api_keys.updateMany({ where: { key: apiKey }, data: { primary_feed_id: id } });
+    return id;
+  } catch (err) {
+    logger.warn(`[feeds] primary feed for a project not created: ${err.message}`);
+    return null;
+  }
+}
+
+/** Create the primary feed of every project that has none. @returns {Promise<number>} how many were created */
+export async function backfillPrimaryFeeds(db) {
+  const rows = await db.api_keys.findMany({ where: { primary_feed_id: null }, select: { key: true } });
+  let created = 0;
+  for (const { key } of rows) if (await ensurePrimaryFeed(db, key)) created++;
+  return created;
+}
+
+/** Make a feed of the project its primary one. @returns {Promise<boolean>} false when the feed is not the project's */
+export async function setPrimaryFeed(db, apiKey, feedId) {
+  const feed = await db.prod_feeds.findFirst({ where: { id: feedId, owner_api_key: apiKey }, select: { id: true, transport: true } });
+  if (!feed) return false;
+  await db.api_keys.updateMany({ where: { key: apiKey }, data: { primary_feed_id: feed.id } });
+  return true;
+}
+
+/**
+ * Keep the old column in step with the primary feed's key (`ingest_stream_key`, read by code that predates feeds and
+ * kept for a rollback). The api key itself is stored as NULL, as it always was.
+ */
+export async function syncIngestStreamKey(db, apiKey, feedKey) {
+  await db.api_keys.updateMany({ where: { key: apiKey }, data: { ingest_stream_key: feedKey === apiKey ? null : feedKey } });
+}
+
+/** Which project's primary feed carries this MediaMTX path name? null when none does. */
+export async function ownerOfPrimaryFeedKey(db, feedKey) {
+  const feed = await db.prod_feeds.findUnique({ where: { feed_key: feedKey }, select: { id: true, owner_api_key: true } });
+  if (!feed) return null;
+  const owner = await db.api_keys.findFirst({ where: { key: feed.owner_api_key, primary_feed_id: feed.id }, select: { key: true } });
+  return owner ? owner.key : null;
+}

@@ -11,9 +11,9 @@ export const SOURCE_GROUP_ORDER = Object.freeze(['camera', 'generic', 'dsk']);
 
 const FEED_PREFIX = 'feed:';
 
-/** Named feeds the relay may read from. Managed feeds (`managed:*`, the Video and DSK slots) are left out. */
+/** Named feeds the relay may read from. The DSK entry (`managed:*`) and the main feed (the program stream itself) are left out. */
 export function relaySelectableFeeds(feeds) {
-  return (feeds || []).filter(isLinkableFeed);
+  return (feeds || []).filter(f => isLinkableFeed(f) && !f.primary);
 }
 
 function kindOf(feed) {

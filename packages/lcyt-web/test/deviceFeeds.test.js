@@ -6,7 +6,7 @@ import {
 } from '../src/lib/deviceFeeds.js';
 
 const FEEDS = [
-  { id: 'managed:video', managed: true, name: 'Main', deviceType: null, deviceId: null },
+  { id: 'f-main', managed: false, primary: true, name: 'Main', deviceType: null, deviceId: null },
   { id: 'managed:dsk', managed: true, name: 'DSK', deviceType: null, deviceId: null },
   { id: 'f-altar', managed: false, name: 'Altar', deviceType: 'camera', deviceId: 'cam-1' },
   { id: 'f-second', managed: false, name: 'Second angle', deviceType: 'camera', deviceId: 'cam-1' },
@@ -31,10 +31,11 @@ describe('device types and link bodies', () => {
 });
 
 describe('feed selection for the Devices card', () => {
-  it('never treats a managed feed as linkable, by flag or by id', () => {
-    assert.equal(isLinkableFeed(FEEDS[0]), false);
+  it('never treats the DSK entry as linkable, by flag or by id, but the main feed is a feed like any other', () => {
+    assert.equal(isLinkableFeed(FEEDS[1]), false);
     assert.equal(isLinkableFeed({ id: 'managed:x', managed: false }), false);
-    assert.deepEqual(linkableFeeds(FEEDS).map(f => f.id), ['f-altar', 'f-second', 'f-prog', 'f-loose']);
+    assert.equal(isLinkableFeed(FEEDS[0]), true);
+    assert.deepEqual(linkableFeeds(FEEDS).map(f => f.id), ['f-main', 'f-altar', 'f-second', 'f-prog', 'f-loose']);
   });
 
   it('lists the named feeds linked to one device, several allowed', () => {
@@ -44,8 +45,8 @@ describe('feed selection for the Devices card', () => {
   });
 
   it('offers every named feed except the ones already on this device, whatever their kind or label', () => {
-    assert.deepEqual(linkCandidates(FEEDS, 'camera', 'cam-1').map(f => f.id), ['f-prog', 'f-loose']);
-    assert.deepEqual(linkCandidates(FEEDS, 'camera', 'cam-9').map(f => f.id), ['f-altar', 'f-second', 'f-prog', 'f-loose']);
+    assert.deepEqual(linkCandidates(FEEDS, 'camera', 'cam-1').map(f => f.id), ['f-main', 'f-prog', 'f-loose']);
+    assert.deepEqual(linkCandidates(FEEDS, 'camera', 'cam-9').map(f => f.id), ['f-main', 'f-altar', 'f-second', 'f-prog', 'f-loose']);
   });
 
   it('tolerates a missing feed list', () => {

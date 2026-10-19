@@ -49,7 +49,7 @@ import {
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
 import { deprecatedRoute, NGINX_RTMP_MESSAGE } from './middleware/deprecation.js';
-import { initRtmpControl, createRtmpRouters, backfillFeeds, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, backfillFeeds, backfillPrimaryFeeds, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -307,6 +307,7 @@ const ownership = cluster.shared && process.env.CLUSTER_PROCESS_OWNERSHIP !== '0
 const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, settings, hlsSubsStore: isMediaStorageS3(settings) ? mediaStores.hlsSubsStore : null, ownership });
 // Feeds card: copy the feeds that exist as cameras and mixer outputs into prod_feeds (idempotent, never throws).
 await backfillFeeds(db).catch((err) => console.warn(`[feeds] backfill failed: ${err.message}`));
+await backfillPrimaryFeeds(db).catch((err) => console.warn(`[feeds] primary feed backfill failed: ${err.message}`));
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer

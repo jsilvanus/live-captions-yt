@@ -139,6 +139,7 @@ CREATE TABLE IF NOT EXISTS "api_keys" (
     "device_code" TEXT,
     "ingest_stream_key" TEXT,
     "public_slug" TEXT,
+    "primary_feed_id" TEXT,
     CONSTRAINT "api_keys_org_id_fkey" FOREIGN KEY ("org_id") REFERENCES "organizations" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION,
     CONSTRAINT "api_keys_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION
 );

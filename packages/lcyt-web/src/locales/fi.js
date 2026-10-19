@@ -733,6 +733,8 @@ export default {
       confirmDelete: 'Poistetaanko syöte "{name}"?',
       ingestUrl: 'Sisäänotto-osoite',
       disabled: 'Pois käytöstä',
+      main: 'Pää',
+      makeMain: 'Aseta pääsyötteeksi',
       rotate: 'Vaihda virta-avain',
       rotateConfirm: 'Vaihdetaanko Video-virran avain? Kooderit, jotka käyttävät vanhaa avainta, hylätään, kunnes ne vaihtavat uuteen.',
       managed: {
@@ -770,6 +772,7 @@ export default {
         keyTaken: 'Avain on jo käytössä. Valitse toinen.',
         save: 'Syötteen tallentaminen epäonnistui.',
         delete: 'Syötteen poistaminen epäonnistui.',
+        makeMain: 'Pääsyötteeksi asettaminen epäonnistui.',
         rotate: 'Virta-avaimen vaihtaminen epäonnistui.',
         toggle: 'Tätä paikkaa ei voitu muuttaa.',
       },
