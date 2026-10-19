@@ -589,3 +589,35 @@ describe('Setup/Production tier gate', () => {
     assert.equal(res.status, 201, 'no auth configured at all → historical fully-open behavior preserved');
   });
 });
+
+describe('linked feed key shim (feeds and devices, PR 2)', () => {
+  async function insertFeed({ id = randomUUID(), feedKey, deviceId, ownerApiKey = 'proj-a' }) {
+    await db.prepare(`
+      INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, ?, ?, ?, 'rtmp', 'camera', 'camera', ?, 0)
+    `).run(id, ownerApiKey, 'Feed', feedKey, deviceId);
+    return id;
+  }
+
+  it('reports the linked feed key as cameraKey when the camera has none', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = await insertCamera({ control_type: 'none' });
+    await insertFeed({ feedKey: `shim-${id}`, deviceId: id });
+
+    const one = await (await fetch(`${baseUrl}/production/cameras/${id}`)).json();
+    assert.equal(one.cameraKey, `shim-${id}`);
+    const list = await (await fetch(`${baseUrl}/production/cameras`)).json();
+    assert.equal(list.find(c => c.id === id).cameraKey, `shim-${id}`);
+  });
+
+  it("the camera's own camera_key wins over a linked feed", async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = await insertCamera({ camera_key: `own-${randomUUID()}` });
+    const own = (await (await fetch(`${baseUrl}/production/cameras/${id}`)).json()).cameraKey;
+    await insertFeed({ feedKey: `other-${id}`, deviceId: id });
+    const after = await (await fetch(`${baseUrl}/production/cameras/${id}`)).json();
+    assert.equal(after.cameraKey, own);
+  });
+});

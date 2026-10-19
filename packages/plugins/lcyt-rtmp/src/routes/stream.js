@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceCameraKey } from '../db.js';
+import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceCameraKey, resolveRelaySourceFeedKey } from '../db.js';
 import logger from 'lcyt/logger';
 import { readThrough } from '../ownership.js';
 
@@ -12,7 +12,7 @@ import { readThrough } from '../ownership.js';
  * explicit non-goal of that plan, not built here).
  * The API key must have relay_allowed = true.
  *
- * POST   /stream              — create/replace a relay slot (body: { slot?, targetUrl, targetName?, captionMode?, sourceCameraId? })
+ * POST   /stream              — create/replace a relay slot (body: { slot?, targetUrl, targetName?, captionMode?, sourceCameraId?, sourceFeedId? })
  * GET    /stream              — get all configured slots + running status per slot
  * GET    /stream/history      — per-stream RTMP usage history for this key
  * PUT    /stream/:slot        — update a specific slot
@@ -61,7 +61,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   }
 
   async function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId } = req.body || {};
+    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceCameraId, sourceFeedId } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
@@ -99,6 +99,25 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       resolvedSourceCameraId = sourceCameraId;
     }
 
+    // Optional prod_feeds source (Feeds card). Wins over sourceCameraId, so a client may send only one of them.
+    let resolvedSourceFeedId = null;
+    if (sourceFeedId !== undefined && sourceFeedId !== null && sourceFeedId !== '') {
+      if (typeof sourceFeedId !== 'string') {
+        res.status(400).json({ error: 'sourceFeedId must be a string feed id' });
+        return null;
+      }
+      if (resolvedSourceCameraId) {
+        res.status(400).json({ error: 'Give either sourceFeedId or sourceCameraId, not both' });
+        return null;
+      }
+      if (!(await resolveRelaySourceFeedKey(db, sourceFeedId, req.session.apiKey))) {
+        // Same 400 for an unknown feed and another project's feed.
+        res.status(400).json({ error: `Unknown feed '${sourceFeedId}'` });
+        return null;
+      }
+      resolvedSourceFeedId = sourceFeedId;
+    }
+
     // Validate optional per-slot transcode options
     let resolvedScale = null;
     if (scale !== undefined && scale !== null && scale !== '') {
@@ -134,6 +153,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       audioBitrate: resolvedAudioBitrate,
       sourceView:   resolvedSourceView,
       sourceCameraId: resolvedSourceCameraId,
+      sourceFeedId: resolvedSourceFeedId,
     };
   }
 
@@ -175,6 +195,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
         sourceCameraId: fields.sourceCameraId,
+        sourceFeedId:   fields.sourceFeedId,
       });
       return res.status(201).json({ ok: true, relay });
     } catch (err) {
@@ -264,6 +285,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
         sourceCameraId: fields.sourceCameraId,
+        sourceFeedId:   fields.sourceFeedId,
       });
       return res.status(200).json({ ok: true, relay });
     } catch (err) {
