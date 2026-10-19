@@ -1,0 +1,96 @@
+name: Release
+
+# A PR requests a product release by adding .github/version/release.
+# On merge to main, consume that marker, create the next sequential vN tag,
+# and invoke the image publisher directly (GITHUB_TOKEN tag pushes do not
+# start a second workflow run).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: sequential-release-main
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare sequential release
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.prepare.outputs.should_release }}
+      release-tag: ${{ steps.prepare.outputs.release_tag }}
+      release-ref: ${{ steps.create.outputs.release_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Check release marker and calculate next version
+        id: prepare
+        shell: bash
+        run: |
+          MARKER=".github/version/release"
+          BEFORE="${{ github.event.before }}"
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
+          echo "release_tag=" >> "$GITHUB_OUTPUT"
+
+          # The marker must both exist in this commit and have changed in this
+          # push. A stale marker cannot trigger repeated releases.
+          [[ -f "$MARKER" ]] || exit 0
+          if [[ "$BEFORE" =~ ^0+$ ]]; then
+            CHANGED=$(git show --format= --name-only "$GITHUB_SHA")
+          else
+            CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- "$MARKER")
+          fi
+          grep -Fxq "$MARKER" <<< "$CHANGED" || exit 0
+
+          git fetch --tags --force
+          LATEST=$(git tag --list 'v*' | grep -E '^v[0-9]+$' | sort -V | tail -n 1 || true)
+          if [[ -z "$LATEST" ]]; then
+            NEXT="v1"
+          else
+            NUMBER="${LATEST#v}"
+            NEXT="v$((NUMBER + 1))"
+          fi
+
+          echo "Release requested; next version is $NEXT"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$NEXT" >> "$GITHUB_OUTPUT"
+
+      - name: Consume marker and create release tag
+        id: create
+        if: steps.prepare.outputs.should_release == 'true'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Remove the marker in a dedicated commit before tagging, so the
+          # release snapshot itself does not contain a pending release request.
+          git rm .github/version/release
+          git commit -m "chore(release): consume marker for $RELEASE_TAG"
+          git push origin HEAD:main
+
+          git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
+
+          echo "release_ref=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  publish-images:
+    name: Publish release images
+    needs: prepare-release
+    if: needs.prepare-release.outputs.should-release == 'true'
+    uses: ./.github/workflows/publish-images.yml
+    with:
+      release_ref: ${{ needs.prepare-release.outputs.release-ref }}
+      release_tag: ${{ needs.prepare-release.outputs.release-tag }}
+    permissions:
+      contents: read
+      packages: write
