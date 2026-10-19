@@ -379,14 +379,17 @@ export async function getPrimaryFeedId(db, apiKey) {
  * already uses (`ingest_stream_key`, else the api key), so no publisher is reconfigured. Idempotent. Returns the
  * feed id, or null when it could not be created (the key is taken by another feed; logged).
  */
-export async function ensurePrimaryFeed(db, apiKey) {
+export async function ensurePrimaryFeed(db, apiKey, { force = false, publishing = false } = {}) {
   const row = await db.api_keys.findUnique({
     where: { key: apiKey },
-    select: { primary_feed_id: true, ingest_stream_key: true },
+    select: { primary_feed_id: true, ingest_stream_key: true, relay_allowed: true },
   });
   if (!row) return null;
   const existing = await getPrimaryFeedId(db, apiKey);
   if (existing) return existing;
+  // A project may have no incoming stream at all (browser speech-to-text, cues, camera control only), so the main
+  // feed is made only for a project that uses one: its own stream key, the video relay, a publisher right now, or an explicit ask.
+  if (!force && !publishing && !row.ingest_stream_key && row.relay_allowed !== 1) return null;
   const feedKey = row.ingest_stream_key || apiKey;
   const id = `feed-main-${randomBytes(6).toString('hex')}`;
   try {
@@ -411,7 +414,7 @@ export async function ensurePrimaryFeed(db, apiKey) {
   }
 }
 
-/** Create the primary feed of every project that has none. @returns {Promise<number>} how many were created */
+/** Create the primary feed of every project that uses a main stream and has none. @returns {Promise<number>} how many were created */
 export async function backfillPrimaryFeeds(db) {
   const rows = await db.api_keys.findMany({ where: { primary_feed_id: null }, select: { key: true } });
   let created = 0;

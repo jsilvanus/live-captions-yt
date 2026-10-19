@@ -103,7 +103,7 @@ export function createFeedsRouter(db, auth, relayManager, settings = null, requi
   router.get('/', async (req, res) => {
     const apiKey = req.session.apiKey;
     try {
-      await ensurePrimaryFeed(db, apiKey);
+      await ensurePrimaryFeed(db, apiKey, { publishing: relayManager.isPublishing(apiKey) });
       const primaryId = await getPrimaryFeedId(db, apiKey);
       const rows = await listFeeds(db, apiKey);
       const feeds = await Promise.all(rows.map((f) => present(f, { primaryId, apiKey })));
@@ -155,6 +155,20 @@ export function createFeedsRouter(db, auth, relayManager, settings = null, requi
       if (/unique/i.test(err.message) || err.code === 'P2002') return res.status(409).json({ error: 'feedKey is already in use' });
       logger.error(`[feeds] update failed: ${err.message}`);
       res.status(500).json({ error: 'Could not update feed' });
+    }
+  });
+
+  // A project may run without any incoming stream; this is the explicit way to add the main one.
+  router.post('/main', async (req, res) => {
+    const apiKey = req.session.apiKey;
+    try {
+      const id = await ensurePrimaryFeed(db, apiKey, { force: true });
+      const feed = id && await getFeed(db, apiKey, id);
+      if (!feed) return res.status(409).json({ error: 'The main feed could not be created' });
+      res.status(201).json(await present(feed, { primaryId: feed.id, apiKey }));
+    } catch (err) {
+      logger.error(`[feeds] add main failed: ${err.message}`);
+      res.status(500).json({ error: 'Could not add the main feed' });
     }
   });
 

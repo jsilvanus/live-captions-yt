@@ -54,6 +54,20 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe('FeedsSection', () => {
+  it('offers to add the main stream only when the project has none, since a project may have no incoming stream', async () => {
+    routes['GET /feeds'] = () => reply({ feeds: FEEDS.filter(f => !f.primary) });
+    routes['POST /feeds/main'] = () => reply({ ...FEEDS[1] }, 201);
+    renderSection();
+    fireEvent.click(await screen.findByText('Add main stream'));
+    await waitFor(() => expect(calls.some(c => c.method === 'POST' && c.path === '/feeds/main')).toBe(true));
+  });
+
+  it('does not offer it when the main feed exists', async () => {
+    renderSection();
+    await screen.findByText('Altar cam');
+    expect(screen.queryByText('Add main stream')).toBeNull();
+  });
+
   it('renders the managed feeds, then the named feeds with kind, transport, live state and link', async () => {
     renderSection();
     expect(await screen.findByText('Altar cam')).toBeInTheDocument();

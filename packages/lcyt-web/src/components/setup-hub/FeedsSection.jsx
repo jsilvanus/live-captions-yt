@@ -158,6 +158,15 @@ export function FeedsSection() {
     } catch { setFormError(t('feeds.err.makeMain')); }
   }
 
+  async function addMain() {
+    setError('');
+    try {
+      const r = await authedFetch('/feeds/main', { method: 'POST' });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      notifyFeedsChanged();
+    } catch { setError(t('feeds.err.addMain')); }
+  }
+
   function openAdd() {
     setForm(EMPTY_FORM);
     setFormError('');
@@ -283,6 +292,9 @@ export function FeedsSection() {
               {managed.map(managedRow)}
               {named.map(feedRow)}
               {named.every(f => f.primary) && <p className="setup-card__empty">{t('feeds.empty')}</p>}
+              {!named.some(f => f.primary) && (
+                <button type="button" className="btn btn--secondary btn--sm" onClick={addMain}>{t('feeds.addMain')}</button>
+              )}
             </>
           )}
         </>
