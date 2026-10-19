@@ -1,6 +1,6 @@
 # Plan: Feeds and Devices
 
-**Status:** PR 1 of 8 (table, `/feeds` API, backfill) in review; nothing reads `prod_feeds` yet. Supersedes the "feeds are cameras" choice of `plan_ingest_feeds.md`. Eight-PR order in section 8; PRs are merged one at a time, in order.
+**Status:** PR 1 of 8 merged (table, `/feeds` API, backfill); PR 2 (reads: publish gate, Discover, relay `source_feed_id`, camera `cameraKey`) in review. Supersedes the "feeds are cameras" choice of `plan_ingest_feeds.md`. Eight-PR order in section 8; PRs are merged one at a time, in order.
 
 Status: plan only, nothing implemented. Repo: jsilvanus/live-captions-yt at main d4cc6d9 (after #378). Requested by Juha in the thread "Incoming streams chip".
 

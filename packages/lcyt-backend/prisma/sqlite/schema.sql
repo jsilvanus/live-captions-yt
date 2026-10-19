@@ -837,7 +837,8 @@ CREATE TABLE IF NOT EXISTS "rtmp_relays" (
     "video_bitrate" TEXT,
     "audio_bitrate" TEXT,
     "source_view" TEXT NOT NULL DEFAULT 'program',
-    "source_camera_id" TEXT
+    "source_camera_id" TEXT,
+    "source_feed_id" TEXT
 );
 
 -- CreateTable

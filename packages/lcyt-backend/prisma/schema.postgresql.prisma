@@ -920,6 +920,7 @@ model rtmp_relays {
   audio_bitrate    String?
   source_view      String  @default("program")
   source_camera_id String?
+  source_feed_id   String?
 
   @@unique([api_key, slot], map: "sqlite_autoindex_rtmp_relays_1")
 }
