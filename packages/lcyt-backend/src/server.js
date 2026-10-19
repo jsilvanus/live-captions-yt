@@ -101,6 +101,7 @@ import {
   createGlobalNetworkRulesRouter, createOrgNetworkRulesRouter,
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
+import { createNotifyRouter } from 'lcyt-notify';
 import { initPlatforms, createOAuthRouter as createPlatformsRouter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
 import { initTally, createTallyRouter, createTallyBridgeRouter } from 'lcyt-tally';
 import { createAdminMiddleware } from './middleware/admin.js';
@@ -981,6 +982,8 @@ apiRouter.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _age
 // requireProjectRole's own doc comment) — connector auth_config can hold
 // credentials, same risk class as /ai/providers (plan_project_roles.md).
 apiRouter.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
+// Notify contacts and providers (plan_notify_channels.md). Setup tier only: phone numbers and provider secrets.
+apiRouter.use('/notify', scopedAuth('notify'), requireProjectRole(db, 'setup'), createNotifyRouter(db, scopedAuth('notify')));
 apiRouter.use('/actions', createActionsRouter(db, scopedAuth('action'), {
   executor: _actionExecutor,
   checkProjectRole: _checkProjectRole,

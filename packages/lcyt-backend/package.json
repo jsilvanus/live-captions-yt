@@ -41,6 +41,7 @@
     "lcyt-dsk": "*",
     "lcyt-files": "*",
     "lcyt-music": "*",
+    "lcyt-notify": "*",
     "lcyt-production": "*",
     "lcyt-rtmp": "*",
     "lcyt-tally": "*",
@@ -52,7 +53,7 @@
   "optionalDependencies": {
     "@aws-sdk/client-s3": "^3.0.0"
   },
-  "author": "Juha Itäleino <jsilvanus@gmail.com>",
+  "author": "Juha It\u00e4leino <jsilvanus@gmail.com>",
   "license": "",
   "engines": {
     "node": ">=18.0.0"
