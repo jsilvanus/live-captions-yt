@@ -930,4 +930,12 @@ export default {
     sttBusy: 'tal till text {running} pågår / {queued} i kö',
     live: 'liveöversättning {count}',
   },
+  topMic: {
+    start: 'Lyssna: starta taligenkänning',
+    stop: 'Lyssnar: stoppa taligenkänning',
+    browser: 'Webbläsare',
+    server: 'Server',
+    local: 'på enheten',
+    cloud: 'moln',
+  },
 };

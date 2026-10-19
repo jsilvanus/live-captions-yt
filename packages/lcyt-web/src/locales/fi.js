@@ -926,4 +926,12 @@ export default {
     sttBusy: 'puheentunnistus {running} käynnissä / {queued} jonossa',
     live: 'live-käännös {count}',
   },
+  topMic: {
+    start: 'Kuuntele: käynnistä puheentunnistus',
+    stop: 'Kuuntelee: pysäytä puheentunnistus',
+    browser: 'Selain',
+    server: 'Palvelin',
+    local: 'laitteella',
+    cloud: 'pilvi',
+  },
 };
