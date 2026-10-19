@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useProductionData } from '../workspace/useProductionData.js';
-import { usePolling, STOP_POLLING } from '../../../hooks/usePolling.js';
+import { usePolling } from '../../../hooks/usePolling.js';
 
 // ---------------------------------------------------------------------------
 // useCropEditor — data + actions for the Vertical Crop operator page
@@ -111,8 +111,7 @@ export function useCropEditor() {
   usePolling(async () => {
     const r = await jfetch(`${CROP}/config`);
     if (r.ok) setConfig(await r.json());
-    else if (r.status === 401) return STOP_POLLING;
-    return undefined;
+    else if (r.status === 401) throw Object.assign(new Error('Unauthorized'), { status: 401 });
   }, 5000, { enabled: !!(backendUrl && apiKey), runImmediately: false });
 
   // Refresh the incoming-preview cache-buster periodically (paused while hidden).

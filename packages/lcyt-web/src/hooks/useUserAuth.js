@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { isLocalInstall } from '../lib/localMode.js';
+import { recoverLocalAuth } from '../lib/authRecovery.js';
 
 const STORAGE_KEY = 'lcyt-user';
 
@@ -50,6 +51,17 @@ export function useUserAuth() {
           setToken(stored.token);
           setBackendUrl(stored.backendUrl);
           setUser({ userId: data.userId, email: data.email, name: data.name, isAdmin: !!data.isAdmin });
+        } else if (isLocalInstall()) {
+          // Local install: the stored token is stale (e.g. secrets regenerated); sign in again.
+          recoverLocalAuth({ base, notify: false }).then(ok => {
+            const fresh = ok ? loadStored() : null;
+            if (!fresh?.token) { saveStored(null); return; }
+            setToken(fresh.token);
+            setBackendUrl(fresh.backendUrl);
+            return fetch(`${base}/api/v1/auth/me`, { headers: { Authorization: `Bearer ${fresh.token}` } })
+              .then(r => r.ok ? r.json() : null)
+              .then(d => { if (d?.userId) setUser({ userId: d.userId, email: d.email, name: d.name, isAdmin: !!d.isAdmin }); });
+          }).catch(() => {});
         } else {
           saveStored(null);
         }

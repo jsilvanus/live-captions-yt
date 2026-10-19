@@ -36,13 +36,15 @@ test('runs immediately, then reschedules after each run', async () => {
 });
 
 test('pauses while hidden and runs once on becoming visible', async () => {
-  let n = 0;
+  let n = 0; let t = 0;
   const h = harness();
-  const p = createPoller({ ...h.opts, task: () => { n += 1; } });
+  const p = createPoller({ ...h.opts, now: () => t, random: () => 0, task: () => { n += 1; } });
   p.start(); await settle();
   h.setHidden(true);
   assert.equal(h.pending().length, 0);
-  h.setHidden(false); await settle();
+  t = 5000;
+  h.setHidden(false);
+  await h.fire(); await settle();
   assert.equal(n, 2);
   assert.equal(h.pending().length, 1);
   p.stop();
@@ -106,5 +108,50 @@ test('never overlaps runs', async () => {
   h.setHidden(true); h.setHidden(false); await settle();
   assert.equal(max, 1);
   release(); await settle();
+  p.stop();
+});
+
+test('401: keeps polling when onUnauthorized renews the credentials', async () => {
+  let n = 0;
+  const h = harness();
+  const p = createPoller({ ...h.opts, onUnauthorized: async () => true, task: () => { n += 1; if (n === 1) throw Object.assign(new Error('no'), { status: 401 }); } });
+  p.start(); await settle();
+  assert.equal(p.stopped, false);
+  assert.equal(h.pending().length, 1);
+  await h.fire(); await settle();
+  assert.equal(n, 2);
+  p.stop();
+});
+
+test('401: stops when onUnauthorized does not renew', async () => {
+  const h = harness();
+  const p = createPoller({ ...h.opts, onUnauthorized: async () => false, task: () => { throw Object.assign(new Error('no'), { status: 401 }); } });
+  p.start(); await settle();
+  assert.equal(p.stopped, true);
+});
+
+test('resume: recent data is kept, refetch waits for the interval', async () => {
+  let n = 0; let t = 0;
+  const h = harness({ now: () => t });
+  const p = createPoller({ ...h.opts, now: () => t, task: () => { n += 1; } });
+  p.start(); await settle();
+  t = 300;
+  h.setHidden(true); h.setHidden(false); await settle();
+  assert.equal(n, 1);
+  assert.equal(h.pending().at(-1).ms, 700);
+  p.stop();
+});
+
+test('resume: stale data refetches once after a jitter', async () => {
+  let n = 0; let t = 0;
+  const h = harness();
+  const p = createPoller({ ...h.opts, now: () => t, random: () => 0.5, resumeJitterMs: 600, task: () => { n += 1; } });
+  p.start(); await settle();
+  t = 60_000;
+  h.setHidden(true); h.setHidden(false);
+  assert.equal(n, 1);
+  assert.equal(h.pending().at(-1).ms, 300);
+  await h.fire(); await settle();
+  assert.equal(n, 2);
   p.stop();
 });

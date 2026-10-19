@@ -5,8 +5,13 @@
  * - No overlap: the next run is scheduled after the previous one settles.
  * - Paused while the tab is hidden; runs once right away when it comes back.
  * - Backs off (interval x2 per consecutive failure, capped) after errors.
- * - Stops for good on a 401 (thrown error with `status === 401`, or the task
- *   returning `STOP_POLLING`): a stale token never recovers by retrying.
+ * - A 401 (thrown error with `status === 401`) asks `onUnauthorized()` whether
+ *   the credentials were renewed (local install: sign in again); if not, the
+ *   loop stops for good, since a stale token never recovers by retrying. The
+ *   task returning `STOP_POLLING` stops it unconditionally.
+ * - On becoming visible again the previous values stay on screen: the loop
+ *   refetches once, after a small random delay so pollers do not all fire in
+ *   the same instant, and only if the last run is older than one interval.
  */
 
 export const STOP_POLLING = Symbol('stop-polling');
@@ -19,6 +24,10 @@ const noop = () => {};
  *   intervalMs: number,
  *   maxBackoff?: number,
  *   runImmediately?: boolean,
+ *   onUnauthorized?: () => Promise<boolean>|boolean,
+ *   resumeJitterMs?: number,
+ *   random?: () => number,
+ *   now?: () => number,
  *   isHidden?: () => boolean,
  *   onVisibilityChange?: (cb: () => void) => (() => void),
  *   setTimer?: typeof setTimeout,
@@ -31,6 +40,10 @@ export function createPoller({
   intervalMs,
   maxBackoff = 4,
   runImmediately = true,
+  onUnauthorized = () => false,
+  resumeJitterMs = 600,
+  random = Math.random,
+  now = Date.now,
   isHidden = () => typeof document !== 'undefined' && document.hidden,
   onVisibilityChange = (cb) => {
     if (typeof document === 'undefined') return noop;
@@ -44,6 +57,7 @@ export function createPoller({
   let running = false;
   let stopped = true;
   let failures = 0;
+  let lastRunAt = 0;
   let unsubscribe = noop;
 
   const clear = () => { if (timer !== null) { clearTimer(timer); timer = null; } };
@@ -59,12 +73,17 @@ export function createPoller({
     timer = null;
     if (stopped || running || isHidden()) return;
     running = true;
+    lastRunAt = now();
     try {
       const result = await task();
       if (result === STOP_POLLING) { stop(); return; }
       failures = 0;
     } catch (err) {
-      if (err && err.status === 401) { stop(); return; }
+      if (err && err.status === 401) {
+        let renewed = false;
+        try { renewed = !!(await onUnauthorized()); } catch { /* treated as not renewed */ }
+        if (!renewed) { stop(); return; }
+      }
       failures += 1;
     } finally {
       running = false;
@@ -75,7 +94,11 @@ export function createPoller({
   function onVisible() {
     if (stopped) return;
     if (isHidden()) { clear(); return; }
-    if (!running) { clear(); void run(); }
+    if (running) return;
+    clear();
+    const age = now() - lastRunAt;
+    if (age >= intervalMs) timer = setTimer(run, Math.floor(random() * resumeJitterMs));
+    else timer = setTimer(run, intervalMs - age);
   }
 
   function start() {
