@@ -278,7 +278,7 @@ Juha's answers of 2026-10-19:
 
 Still open, with my recommendation:
 
-- **A. Ad-hoc broadcasts for old clients end when?** With answer 2 they never end by themselves. Recommendation: they stay `live` until someone presses Stop (the next legacy connect then binds to that same broadcast instead of creating another), and the auto-end in PR 6 later covers them.
+- **A. Ad-hoc broadcasts for old clients end when?** With answer 2 they never end by themselves. Recommendation: they stay `live` until someone presses Stop (the next legacy connect then binds to that same broadcast instead of creating another), and the auto-end in PR 7 later covers them.
 - **B. Recording on stop and re-up.** Recommendation: one recording group per go-live, handed off as separate groups in PR 2.
 - **C. Does recording start at staging or at go-live?** Recommendation: go-live, so tests during staging are not recorded.
 - **D. Cancelled can return to draft.** Recommendation: yes (cheap).
