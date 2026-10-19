@@ -17,6 +17,9 @@ export const BROADCAST_STATUSES = new Set([
   'draft', 'scheduled', 'live', 'completed', 'archived',
 ]);
 
+/** Statuses a PUT may not set by hand. */
+const LIFECYCLE_ONLY_STATUSES = new Set(['live', 'completed']);
+
 export const BROADCAST_ASSET_TYPES = new Set([
   'graphic', 'cue', 'action', 'icon', 'target', 'rundown',
 ]);
@@ -228,6 +231,11 @@ export async function updateBroadcast(db, apiKey, id, patch = {}) {
   }
   if (patch.status !== undefined && !BROADCAST_STATUSES.has(patch.status)) {
     return { ok: false, error: `Invalid status: ${patch.status}` };
+  }
+  // live and completed are reached by going live / ending, not by editing the
+  // field (plan_broadcast_lifecycle.md, PR 1).
+  if (patch.status !== undefined && patch.status !== existing.status && LIFECYCLE_ONLY_STATUSES.has(patch.status)) {
+    return { ok: false, error: `Status "${patch.status}" cannot be set directly; it follows the broadcast lifecycle`, status: 409 };
   }
 
   const data = {};
@@ -563,8 +571,31 @@ export async function completeBroadcast(db, id, { youtubeVideoIds, endedAt } = {
     updated_at: sqlNow(),
   };
   if (row.status !== 'archived') data.status = 'completed';
-  if (Array.isArray(youtubeVideoIds) && youtubeVideoIds.length) {
-    data.youtube_video_ids = JSON.stringify(youtubeVideoIds);
-  }
+  let videoIds = Array.isArray(youtubeVideoIds) ? youtubeVideoIds : [];
+  if (!videoIds.length) videoIds = await platformVideoIds(db, id);
+  if (videoIds.length) data.youtube_video_ids = JSON.stringify(videoIds);
   await db.broadcasts.updateMany({ where: { id }, data });
+}
+
+/**
+ * Video ids the platform links recorded for a broadcast (YouTube's broadcast
+ * id is also its watch-page video id). Used when the session did not carry any.
+ */
+async function platformVideoIds(db, id) {
+  try {
+    const links = await db.broadcast_platform_links.findMany({
+      where: { broadcast_id: id, platform: 'youtube' },
+      select: { external_broadcast_id: true, external_video_ids: true },
+    });
+    const ids = [];
+    for (const l of links) {
+      let list = [];
+      try { list = l.external_video_ids ? JSON.parse(l.external_video_ids) : []; } catch { list = []; }
+      if (!list.length && l.external_broadcast_id) list = [l.external_broadcast_id];
+      for (const v of list) if (v && !ids.includes(v)) ids.push(v);
+    }
+    return ids;
+  } catch {
+    return [];
+  }
 }
