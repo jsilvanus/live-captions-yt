@@ -125,65 +125,67 @@ jobs:
     outputs:
       matrix: ${{ steps.matrix.outputs.packages }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Build package matrix
         id: matrix
+        shell: bash
         run: |
           IS_MAIN="${{ needs.detect-changes.outputs.is-main }}"
-          PLUGINS="${{ needs.detect-changes.outputs.plugins }}"
-          BACKEND="${{ needs.detect-changes.outputs.backend }}"
-          FRONTEND="${{ needs.detect-changes.outputs.frontend }}"
-          CORE="${{ needs.detect-changes.outputs.core }}"
-          CLI="${{ needs.detect-changes.outputs.cli }}"
-
           PACKAGES=()
 
-          # Always test core if changed
-          [[ -n "$CORE" ]] && PACKAGES+=("packages/lcyt")
-
-          # Always test CLI if changed
-          [[ -n "$CLI" ]] && PACKAGES+=("packages/lcyt-cli")
-
-          # Test frontend if changed
-          if [[ -n "$FRONTEND" ]]; then
-            PACKAGES+=("packages/lcyt-web")
-          fi
-
-          # If any plugin changed, test backend + all changed plugins
-          if [[ -n "$PLUGINS" ]]; then
-            PACKAGES+=("packages/lcyt-backend")
-            IFS=',' read -ra PLUGIN_ARRAY <<< "$PLUGINS"
-            for plugin in "${PLUGIN_ARRAY[@]}"; do
-              PACKAGES+=("packages/plugins/$plugin")
-            done
-          elif [[ -n "$BACKEND" ]]; then
-            # If backend itself changed, test it
-            PACKAGES+=("packages/lcyt-backend")
-          fi
-
-          # On main or workflow changes, test everything (full CI)
+          # Discover every testable Node workspace, including future plugins.
+          # Full CI tests all packages; PR CI tests only packages whose paths changed.
           if [[ "$IS_MAIN" == "true" ]]; then
-            PACKAGES=()
             for d in packages/*/ packages/plugins/*/; do
               d=${d%/}
-              [[ "$d" == "packages/plugins" ]] && continue
-              grep -q '"test"' "$d/package.json" 2>/dev/null && PACKAGES+=("$d")
+              [[ -f "$d/package.json" ]] || continue
+              grep -q '"test"[[:space:]]*:' "$d/package.json" && PACKAGES+=("$d")
             done
+          else
+            BASE="${{ github.base_ref }}"
+            CHANGED=$(git diff --name-only "origin/$BASE...HEAD" || true)
+            PLUGIN_CHANGED=false
+
+            for d in packages/*/ packages/plugins/*/; do
+              d=${d%/}
+              [[ -f "$d/package.json" ]] || continue
+              grep -q '"test"[[:space:]]*:' "$d/package.json" || continue
+              if grep -Fq "$d/" <<< "$CHANGED"; then
+                PACKAGES+=("$d")
+              fi
+              if [[ "$d" == packages/plugins/* ]] && grep -Fq "$d/" <<< "$CHANGED"; then
+                PLUGIN_CHANGED=true
+              fi
+            done
+
+            # Plugin changes can affect backend integration and unit behaviour.
+            if [[ "$PLUGIN_CHANGED" == "true" ]] &&
+               grep -q '"test"[[:space:]]*:' packages/lcyt-backend/package.json &&
+               [[ ! " ${PACKAGES[*]} " == *" packages/lcyt-backend "* ]]; then
+              PACKAGES+=("packages/lcyt-backend")
+            fi
           fi
 
-          # Convert array to JSON using pure bash (no jq dependency)
-          JSON_ARRAY="["
-          for i in "${!PACKAGES[@]}"; do
-            if [[ $i -gt 0 ]]; then
-              JSON_ARRAY="$JSON_ARRAY,"
-            fi
-            JSON_ARRAY="$JSON_ARRAY\"${PACKAGES[$i]}\""
-          done
-          JSON_ARRAY="$JSON_ARRAY]"
+          # GitHub Actions rejects an empty matrix. Use a no-op sentinel so
+          # dependent integration jobs still run their normal conditions.
+          if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+            JSON_ARRAY='["__none__"]'
+          else
+            JSON_ARRAY='['
+            for i in "${!PACKAGES[@]}"; do
+              [[ "$i" -gt 0 ]] && JSON_ARRAY+=","
+              JSON_ARRAY+="\"${PACKAGES[$i]}\""
+            done
+            JSON_ARRAY+=']'
+          fi
 
-          echo "packages=$JSON_ARRAY" >> $GITHUB_OUTPUT
+          echo "Selected Node test packages: $JSON_ARRAY"
+          echo "packages=$JSON_ARRAY" >> "$GITHUB_OUTPUT"
 
   unit-node:
-    name: "Unit: ${{ matrix.package }}"
+    name: "${{ matrix.package == '__none__' && 'Unit: no changed packages' || format('Unit: {0}', matrix.package) }}"
     needs: [build, build-unit-matrix]
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -193,12 +195,16 @@ jobs:
         package: ${{ fromJSON(needs.build-unit-matrix.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4
+        if: matrix.package != '__none__'
       - uses: actions/setup-node@v4
+        if: matrix.package != '__none__'
         with:
           node-version: 20
           cache: npm
       - run: npm ci
+        if: matrix.package != '__none__'
       - name: Run unit tests
+        if: matrix.package != '__none__'
         run: npm test -w ${{ matrix.package }}
         env:
           NODE_ENV: test
