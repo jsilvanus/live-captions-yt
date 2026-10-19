@@ -1202,3 +1202,46 @@ model viewer_key_daily_stats {
 
   @@id([date, api_key, viewer_key])
 }
+
+/// Notification contacts of a project (Contacts card). Consent is per channel; slug is the name a metacode uses.
+model notify_contacts {
+  id            String  @id
+  api_key       String
+  slug          String
+  name          String?
+  email         String?
+  sms_number    String?
+  consent_email Int     @default(0)
+  consent_sms   Int     @default(0)
+  active        Int     @default(1)
+  created_at    String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  updated_at    String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+
+  @@unique([api_key, slug], map: "idx_notify_contacts_slug")
+  @@index([api_key], map: "idx_notify_contacts_key")
+}
+
+/// Email/SMS provider of a project (Contact Providers card). config_json holds the non-secret settings;
+/// secrets_enc is AES-256-GCM of the secret fields (lcyt-platforms crypto), never returned by the API.
+model notify_providers {
+  api_key     String  @id
+  provider    String
+  config_json String
+  secrets_enc String?
+  updated_at  String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+}
+
+/// One row per notification attempt (kept 90 days). status: sent | failed | skipped_* | cooldown | rate_limited.
+model notify_log {
+  id           String  @id
+  api_key      String
+  at           String
+  channel      String
+  contact_slug String
+  trigger      String
+  status       String
+  provider_id  String?
+  error        String?
+
+  @@index([api_key, at], map: "idx_notify_log_key_at")
+}
