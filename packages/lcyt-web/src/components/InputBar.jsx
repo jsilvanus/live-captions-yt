@@ -200,6 +200,7 @@ export const InputBar = forwardRef(function InputBar(_props, ref) {
     const prefetchTriggers = triggers.filter(t => t.tier === 'prefetch');
     if (prefetchTriggers.length > 0) {
       prefetchIntervalRef.current = setInterval(() => {
+        if (document.hidden) return;
         for (const { connectorSlug, requestSlug } of prefetchTriggers) {
           variables.refresh(connectorSlug, requestSlug);
         }

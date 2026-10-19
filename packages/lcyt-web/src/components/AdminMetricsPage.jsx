@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useUserAuth } from '../hooks/useUserAuth';
 import { adminFetch } from '../lib/admin.js';
+import { usePolling } from '../hooks/usePolling.js';
 import { AdminKeyGate } from './AdminKeyGate.jsx';
 import { AdminTabShell } from './AdminTabShell.jsx';
 import { Sparkline } from './charts/Sparkline.jsx';
@@ -75,18 +76,12 @@ function AdminMetricsContent({ backendUrl }) {
   const range = RANGES.find(r => r.id === rangeId) || RANGES[1];
 
   // Live panel — 5 s poll
-  useEffect(() => {
-    let stopped = false;
-    async function poll() {
-      try {
-        const res = await adminFetch(backendUrl, '/admin/metrics/live');
-        if (res.ok && !stopped) setLive(await res.json());
-      } catch { /* backend unreachable — keep last value */ }
-    }
-    poll();
-    const timer = setInterval(poll, 5000);
-    return () => { stopped = true; clearInterval(timer); };
-  }, [backendUrl]);
+  usePolling(async () => {
+    try {
+      const res = await adminFetch(backendUrl, '/admin/metrics/live');
+      if (res.ok) setLive(await res.json());
+    } catch { /* backend unreachable — keep last value */ }
+  }, 5000);
 
   // Rollup series for the selected range
   const loadSeries = useCallback(async () => {

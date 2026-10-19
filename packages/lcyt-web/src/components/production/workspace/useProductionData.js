@@ -3,6 +3,7 @@ import { SessionContext } from '../../../contexts/SessionContext';
 import { SentLogContext } from '../../../contexts/SentLogContext';
 import { VariablesContext } from '../../../contexts/VariablesContext.jsx';
 import { KEYS } from '../../../lib/storageKeys.js';
+import { usePolling } from '../../../hooks/usePolling.js';
 import { ACTIVE_BROADCAST_EVENT, notifyActiveBroadcastChanged } from '../../../hooks/useActiveBroadcast.js';
 
 // ---------------------------------------------------------------------------
@@ -182,10 +183,8 @@ export function useProductionData() {
     window.addEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
     return () => window.removeEventListener(ACTIVE_BROADCAST_EVENT, loadBroadcast);
   }, [loadBroadcast]);
-  useEffect(() => {
-    const id = setInterval(() => { pollMixers(); loadRelay(); loadArming(); }, POLL_MS);
-    return () => clearInterval(id);
-  }, [pollMixers, loadRelay, loadArming]);
+  // Paused while the tab is hidden
+  usePolling(() => Promise.all([pollMixers(), loadRelay(), loadArming()]), POLL_MS, { runImmediately: false });
 
   // ─── Local UI state ───────────────────────────────────────────────────
   const [ui, setUi] = useState({
