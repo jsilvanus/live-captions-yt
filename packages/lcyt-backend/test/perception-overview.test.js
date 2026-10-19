@@ -6,8 +6,13 @@ import { createPerceptionOverview } from '../src/perception-overview.js';
 
 describe('perception overview', () => {
   let db, overview;
-  const ins = async (id, name, label, key, owner, enabled) => await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, label, camera_key, owner_api_key, perception_enabled)
-    VALUES (?, ?, 'webcam', '{}', 0, ?, ?, ?, ?)`).run(id, name, label, key, owner, enabled);
+  // The camera's key is its linked feed (prod_feeds), as after feeds-and-devices PR 7.
+  const ins = async (id, name, label, key, owner, enabled) => {
+    await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, label, owner_api_key, perception_enabled)
+      VALUES (?, ?, 'webcam', '{}', 0, ?, ?, ?)`).run(id, name, label, owner, enabled);
+    if (key) await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, ?, ?, ?, 'whip', 'camera', 'camera', ?, 0)`).run(`feed-${id}`, owner ?? 'legacy', name, key, id);
+  };
   const clock = 50000;
   before(async () => {
     db = await initDb(':memory:'); ensurePluginTables(db);

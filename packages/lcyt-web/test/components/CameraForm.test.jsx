@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { LangProvider } from '../../src/contexts/LangContext.jsx';
-import { CameraForm, controlTypeOptions } from '../../src/components/ProductionCamerasPage.jsx';
+import { CameraForm } from '../../src/components/ProductionCamerasPage.jsx';
 
 /** The control-type select: the one that offers the webcam option (the connection picker is a select too). */
 function controlTypeSelect() {
@@ -16,19 +16,8 @@ function renderForm(initial) {
   );
 }
 
-describe('controlTypeOptions', () => {
-  it('leaves rtmp out for a new camera', () => {
-    expect(controlTypeOptions('none').map(o => o.value)).not.toContain('rtmp');
-    expect(controlTypeOptions(undefined).map(o => o.value)).toEqual(['none', 'amx', 'visca-ip', 'webcam', 'mobile']);
-  });
-
-  it('keeps rtmp for a camera that already has it, so its data stays editable', () => {
-    expect(controlTypeOptions('rtmp').map(o => o.value)).toContain('rtmp');
-  });
-});
-
 describe('CameraForm', () => {
-  it('does not offer the RTMP feed (pushed) type for a new camera, and points to the Feeds card', () => {
+  it('does not offer an RTMP option, and points to the Feeds card', () => {
     renderForm(undefined);
     const values = [...controlTypeSelect().querySelectorAll('option')].map(o => o.value);
     expect(values).not.toContain('rtmp');
@@ -36,11 +25,5 @@ describe('CameraForm', () => {
     const link = screen.getByRole('link', { name: 'Open the Feeds card' });
     expect(link).toHaveAttribute('href', '/setup/feeds');
     expect(screen.getByText(/are feeds now/)).toBeInTheDocument();
-  });
-
-  it('keeps an existing RTMP camera editable and shows the move-to-a-feed note', () => {
-    renderForm({ id: 'c1', name: 'Altar', controlType: 'rtmp', cameraKey: 'altar', controlConfig: {} });
-    expect(controlTypeSelect().value).toBe('rtmp');
-    expect(screen.getByText('This camera is a pushed RTMP feed. Move it to a feed.')).toBeInTheDocument();
   });
 });

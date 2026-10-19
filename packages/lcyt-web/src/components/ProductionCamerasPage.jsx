@@ -13,25 +13,14 @@ const CONTROL_TYPES = [
   { value: 'visca-ip', label: 'VISCA over IP' },
   { value: 'webcam',  label: 'Webcam (browser)' },
   { value: 'mobile',  label: 'Mobile camera (browser)' },
-  { value: 'rtmp',    label: 'RTMP feed (pushed)' },
 ];
 
 // webcam/mobile stream via WHIP from this very browser tab (CameraStreamPage) —
 // only these two ever get an "Open camera" capture link.
 const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
-// webcam/mobile/rtmp all get a camera_key (MediaMTX path identity) and have no
-// PTZ/hardware control channel — 'rtmp' (plan_ingest_feeds.md §1a/§3) is pushed
-// in externally via RTMP instead of captured from this browser.
-const HAS_CAMERA_KEY_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
-
-/**
- * Control types the camera form offers. A pushed RTMP stream is a feed now (Feeds card, plan_feeds_devices.md
- * PR 4), so `rtmp` is offered only to a camera that already has it: existing data stays editable, and the form
- * points at the Feeds card to move it.
- */
-export function controlTypeOptions(current) {
-  return CONTROL_TYPES.filter(ct => ct.value !== 'rtmp' || current === 'rtmp');
-}
+// webcam/mobile have no PTZ/hardware control channel. A camera's video comes from its linked feed
+// (Feeds card, plan_feeds_devices.md); the stream key and RTMP push were removed in PR 7.
+const NO_HARDWARE_TYPES = BROWSER_CAMERA_TYPES;
 
 const EMPTY_PRESET       = () => ({ id: crypto.randomUUID(), name: '', command: '' });
 const EMPTY_VISCA_PRESET = () => ({ id: crypto.randomUUID(), name: '', presetNumber: 0 });
@@ -113,7 +102,6 @@ export function CameraForm({ initial, bridges, onSave, onCancel }) {
   const [sortOrder,        setSortOrder]        = useState(initial?.sortOrder ?? 0);
   const [connectionSource, setConnectionSource] = useState(initial?.connectionSource ?? 'backend');
   const [bridgeInstanceId, setBridgeInstanceId] = useState(initial?.bridgeInstanceId ?? '');
-  const [cameraKey,        setCameraKey]        = useState(initial?.cameraKey ?? '');
 
   function handleControlTypeChange(newType) {
     if (newType === 'visca-ip' && Number(port) === 1319) setPort(52381);
@@ -148,7 +136,6 @@ export function CameraForm({ initial, bridges, onSave, onCancel }) {
       sortOrder: Number(sortOrder),
       connectionSource,
       bridgeInstanceId: bridgeInstanceId || null,
-      cameraKey: cameraKey.trim() || null,
     });
   }
 
@@ -181,10 +168,10 @@ export function CameraForm({ initial, bridges, onSave, onCancel }) {
       <div className="settings-field">
         <label className="settings-field__label">Control type</label>
         <select className="settings-field__input" value={controlType} onChange={e => handleControlTypeChange(e.target.value)}>
-          {controlTypeOptions(initType).map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
+          {CONTROL_TYPES.map(ct => <option key={ct.value} value={ct.value}>{ct.label}</option>)}
         </select>
         <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-          {controlType === 'rtmp' ? t('devices.rtmpLegacyNote') : t('devices.cameraFeedHint')}{' '}
+          {t('devices.cameraFeedHint')}{' '}
           <a href="/setup/feeds">{t('devices.feedsCardLink')}</a>
         </p>
       </div>
@@ -279,26 +266,8 @@ export function CameraForm({ initial, bridges, onSave, onCancel }) {
         </>
       )}
 
-      {/* webcam/mobile/rtmp: stream path key (camera_key) */}
-      {HAS_CAMERA_KEY_TYPES.has(controlType) && (
-        <div className="settings-field">
-          <label className="settings-field__label">Stream path key</label>
-          <input
-            className="settings-field__input"
-            value={cameraKey}
-            onChange={e => setCameraKey(e.target.value)}
-            placeholder="e.g. myevent-cam1"
-            style={{ fontFamily: 'monospace' }}
-          />
-          <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
-            MediaMTX path name for this camera stream. Convention: <code>yourkey-cam1</code>.
-            {controlType === 'rtmp' && ' Pasted into the encoder as rtmp://<host>/feed/<this key> — see the Feeds card.'}
-          </p>
-        </div>
-      )}
-
-      {/* Hardware connection options — hidden for webcam/mobile/rtmp (no PTZ/control channel) */}
-      {!HAS_CAMERA_KEY_TYPES.has(controlType) && (
+      {/* Hardware connection options — hidden for webcam/mobile (no PTZ/control channel) */}
+      {!NO_HARDWARE_TYPES.has(controlType) && (
         <ConnectionSourceSelect
           connectionSource={connectionSource}
           bridgeInstanceId={bridgeInstanceId}
@@ -323,14 +292,12 @@ function CameraRow({ camera, bridges, onEdit, onDelete, feedLinks }) {
   const presetCount  = camera.controlConfig?.presets?.length ?? 0;
   const typeBadge    = CONTROL_TYPES.find(ct => ct.value === camera.controlType)?.label ?? camera.controlType;
   const isBrowser    = BROWSER_CAMERA_TYPES.has(camera.controlType);
-  const hasCameraKey = HAS_CAMERA_KEY_TYPES.has(camera.controlType);
   // Progressive disclosure: show bridge name only when 2+ bridges exist
   const bridge       = bridges.length >= 2 ? bridges.find(b => b.id === camera.bridgeInstanceId) : null;
 
   const metaParts = [typeBadge];
   if (camera.mixerInput != null) metaParts.push(`Input ${camera.mixerInput}`);
-  if (hasCameraKey && camera.cameraKey) metaParts.push(camera.cameraKey);
-  if (!hasCameraKey && camera.controlType !== 'none') metaParts.push(`${presetCount} preset${presetCount !== 1 ? 's' : ''}`);
+  if (!isBrowser && camera.controlType !== 'none') metaParts.push(`${presetCount} preset${presetCount !== 1 ? 's' : ''}`);
   if (bridge) metaParts.push(`via ${bridge.name}`);
 
   return (
@@ -347,8 +314,6 @@ function CameraRow({ camera, bridges, onEdit, onDelete, feedLinks }) {
         >
           Open camera
         </a>
-      ) : camera.controlType === 'rtmp' ? (
-        <a href="/setup/feeds" style={{ fontSize: 12 }}>{t('devices.rtmpRowNote')}</a>
       ) : null}
       below={feedLinks}
       onSettings={() => onEdit(camera)}

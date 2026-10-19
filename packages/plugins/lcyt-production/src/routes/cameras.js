@@ -4,21 +4,16 @@ import * as fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseCamera } from '../registry.js';
-import { linkedFeedKeys, withFeedKeys } from '../camera-feeds.js';
+import { linkedFeedKeys, withCameraFeedKeys, ensureWhipFeed, findWhipFeedKey, unlinkCameraFeeds } from '../camera-feeds.js';
 import { captureCameraThumbnail, deleteCameraThumbnailFile, thumbnailPath, thumbnailObjectKey } from '../camera-thumbnail.js';
 import { requireTier } from '../route-access.js';
 import { createProductionCommands, commandStatus } from '../commands.js';
 
-// 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
-// than WHIP — no PTZ, uses camera_key/mixer_input exactly like webcam/mobile.
-const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'];
+// The 'rtmp' type is gone (feeds-and-devices PR 7): a pushed feed is a prod_feeds row linked to a camera of type 'none'.
+const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile'];
 const BROWSER_CAMERA_TYPES = new Set(['webcam', 'mobile']);
-// Mirrors lcyt-rtmp's rtmp-manager.js SAFE_NAME_RE — camera_key becomes a raw
-// MediaMTX path/shell-command fragment in that plugin's runOnPublish
-// registration (code-review follow-up: an unsafe camera_key previously
-// wasn't rejected until relay start time, where it could abort unrelated
-// relay slots — see rtmp-manager.js's per-group try/catch).
-const CAMERA_KEY_RE = /^[A-Za-z0-9_-]+$/;
+// A camera's stream key is a feed key now (camera_key was dropped): create a feed (POST /feeds) and link it.
+const CAMERA_KEY_REMOVED = 'cameraKey is no longer stored on cameras: create a feed (POST /feeds) and link it to the camera';
 
 // Whether a request carries anything auth() would recognise as a credential
 // (Authorization header, x-api-key, a query-string token, or an auth
@@ -121,12 +116,11 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   }
 
   /**
-   * Attach a computed `live` field for any camera with a camera_key —
-   * webcam/mobile (WHIP) and 'rtmp' (plan_ingest_feeds.md §2b) all publish
-   * to a MediaMTX path under that name, so the same liveness check already
-   * used by GET /:id/whip-url works uniformly for all three. `null` means
-   * "unknown" (no camera_key, or no MediaMTX client configured) — same
-   * dim/neutral-dot convention the Ingestion card's video/dsk slots use.
+   * Attach a computed `live` field for any camera with a feed: webcam/mobile
+   * (WHIP) and pushed feeds all publish to a MediaMTX path under the feed's
+   * key, so one liveness check covers them. `null` means "unknown" (no feed,
+   * or no MediaMTX client configured) — same dim/neutral-dot convention the
+   * Feeds card uses.
    * @param {object} camera  parseCamera() output (already has thumbnailUrl attached)
    * @returns {Promise<object>}
    */
@@ -135,21 +129,6 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     let live = null;
     try { live = await mediamtxClient.isPathPublishing(camera.cameraKey); } catch { /* ignore */ }
     return { ...camera, live };
-  }
-
-  /**
-   * Feeds-and-devices shim (PR 2): a camera without its own camera_key but linked to a prod_feeds row of its own
-   * reports that feed's key as cameraKey, so thumbnails, live status and the relay picker keep seeing "this camera
-   * has a feed" once feeds live in prod_feeds. The camera's own camera_key always wins. Reads only; prod_feeds is
-   * owned by lcyt-rtmp, same cross-plugin query convention as the rest of this file.
-   * @param {object[]} cameras  parseCamera() outputs
-   * @returns {Promise<object[]>}
-   */
-  async function withLinkedFeedKeys(cameras) {
-    const missing = cameras.filter(c => !c.cameraKey).map(c => c.id);
-    if (!missing.length) return cameras;
-    const keys = await linkedFeedKeys(db, missing);
-    return cameras.map(c => (c.cameraKey || !keys.has(c.id)) ? c : { ...c, cameraKey: keys.get(c.id) });
   }
 
   // -------------------------------------------------------------------------
@@ -179,7 +158,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const rows = await Promise.all(all
       .filter(row => canAccessCamera(row, req))
       .map(row => withThumbnailUrl(parseCamera(row), req)));
-    res.json(await Promise.all((await withLinkedFeedKeys(rows)).map(withLive)));
+    res.json(await Promise.all((await withCameraFeedKeys(db, rows)).map(withLive)));
   });
 
   // GET /production/cameras/:id — single camera
@@ -188,7 +167,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     // 404 (not 403) for a foreign camera — don't confirm its existence to a
     // caller who doesn't own it.
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
-    const [camera] = await withLinkedFeedKeys([await withThumbnailUrl(parseCamera(row), req)]);
+    const [camera] = await withCameraFeedKeys(db, [await withThumbnailUrl(parseCamera(row), req)]);
     res.json(await withLive(camera));
   });
 
@@ -197,7 +176,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const {
       name, mixerInput, mixerId = null, controlType = 'none', controlConfig = {},
       sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend',
-      cameraKey = null, label = null, zone = null, overlapLinks = [],
+      cameraKey, label = null, zone = null, overlapLinks = [],
     } = req.body;
     if (!name || typeof name !== 'string') {
       return res.status(400).json({ error: 'name is required' });
@@ -205,9 +184,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!CAMERA_CONTROL_TYPES.includes(controlType)) {
       return res.status(400).json({ error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` });
     }
-    if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
-      return res.status(400).json({ error: 'cameraKey may only contain letters, digits, underscore, and hyphen' });
-    }
+    if (cameraKey != null) return res.status(400).json({ error: CAMERA_KEY_REMOVED });
     const id = randomUUID();
     // Stamped from the now-real auth context when available; null (the
     // pre-existing open/legacy behavior) when this router is used without
@@ -217,12 +194,12 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       data: {
         id, name, mixer_input: mixerInput ?? null, control_type: controlType, control_config: JSON.stringify(controlConfig),
         bridge_instance_id: bridgeInstanceId, sort_order: sortOrder, connection_source: connectionSource,
-        camera_key: cameraKey ?? null, owner_api_key: ownerApiKey, label, zone,
+        owner_api_key: ownerApiKey, label, zone,
         overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
       },
     });
 
-    const camera = parseCamera(await db.prod_cameras.findUnique({ where: { id } }));
+    const [camera] = await withCameraFeedKeys(db, [parseCamera(await db.prod_cameras.findUnique({ where: { id } }))]);
     registry.reloadCamera(id).catch(err =>
       console.warn(`[production-control] reloadCamera after create: ${err.message}`)
     );
@@ -244,7 +221,6 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
       sortOrder        = existing.sort_order,
       bridgeInstanceId = existing.bridge_instance_id,
       connectionSource = existing.connection_source ?? 'backend',
-      cameraKey        = existing.camera_key,
       label            = existing.label,
       zone             = existing.zone,
       overlapLinks     = JSON.parse(existing.overlap_links || '[]'),
@@ -253,20 +229,18 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
       return res.status(400).json({ error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` });
     }
-    if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
-      return res.status(400).json({ error: 'cameraKey may only contain letters, digits, underscore, and hyphen' });
-    }
+    if (req.body?.cameraKey != null) return res.status(400).json({ error: CAMERA_KEY_REMOVED });
 
     await db.prod_cameras.updateMany({
       where: { id },
       data: {
         name, mixer_input: mixerInput ?? null, control_type: controlType, control_config: JSON.stringify(controlConfig),
         bridge_instance_id: bridgeInstanceId ?? null, sort_order: sortOrder, connection_source: connectionSource,
-        camera_key: cameraKey ?? null, label, zone, overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId ?? null,
+        label, zone, overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId ?? null,
       },
     });
 
-    const camera = parseCamera(await db.prod_cameras.findUnique({ where: { id } }));
+    const [camera] = await withCameraFeedKeys(db, [parseCamera(await db.prod_cameras.findUnique({ where: { id } }))]);
     registry.reloadCamera(id).catch(err =>
       console.warn(`[production-control] reloadCamera after update: ${err.message}`)
     );
@@ -280,6 +254,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!existing || !canAccessCamera(existing, req)) return res.status(404).json({ error: 'Camera not found' });
 
     await db.prod_cameras.deleteMany({ where: { id } });
+    await unlinkCameraFeeds(db, id);
     registry.removeCamera(id).catch(() => {});
     const presetIds = (await db.prod_camera_preset_thumbnails.findMany({ where: { camera_id: id }, select: { preset_id: true } })).map(r => r.preset_id);
     await db.prod_camera_preset_thumbnails.deleteMany({ where: { camera_id: id } });
@@ -292,8 +267,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
-    const [feedRow] = await withFeedKeys(db, [row]);
-    const camera = parseCamera(feedRow);
+    const [camera] = await withCameraFeedKeys(db, [parseCamera(row)]);
     const { apiKey, mixerId, presetId } = req.body ?? {};
     if (presetId != null && typeof presetId !== 'string') return res.status(400).json({ error: 'presetId must be a string' });
     const result = await captureCameraThumbnail(db, camera, registry, {
@@ -385,8 +359,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
 
-    const [feedRow] = await withFeedKeys(db, [row]);
-    const camera = parseCamera(feedRow);
+    const [camera] = await withCameraFeedKeys(db, [parseCamera(row)]);
     const apiKey = req.session?.apiKey ?? row.owner_api_key ?? null;
     if (!apiKey) return res.status(400).json({ error: 'No apiKey available for this camera (unowned camera needs an authenticated session)' });
 
@@ -407,7 +380,7 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
     const enabled = req.body?.enabled;
     if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
-    if (enabled && !(await withFeedKeys(db, [row]))[0].camera_key) return res.status(400).json({ error: 'camera has no cameraKey (dedicated-feed cameras only)' });
+    if (enabled && !(await linkedFeedKeys(db, [row.id])).has(row.id)) return res.status(400).json({ error: 'camera has no feed (dedicated-feed cameras only)' });
     await db.prod_cameras.updateMany({ where: { id: req.params.id }, data: { perception_enabled: enabled ? 1 : 0 } });
     res.json({ ok: true, perceptionEnabled: enabled });
   });
@@ -435,7 +408,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // Browser camera — WHIP info and proxy
   // -------------------------------------------------------------------------
 
-  // GET /production/cameras/:id/whip-url — WHIP proxy info for a browser camera
+  // GET /production/cameras/:id/whip-url — WHIP proxy info for a browser camera.
+  // The WHIP path is the camera's WHIP feed (prod_feeds, transport 'whip'); a camera that has none gets one now.
   router.get('/:id/whip-url', async (req, res) => {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     // A credential-less kiosk request never sets req.session (see
@@ -447,21 +421,20 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!BROWSER_CAMERA_TYPES.has(row.control_type)) {
       return res.status(400).json({ error: 'Camera is not a browser camera (webcam or mobile)' });
     }
-    if (!row.camera_key) {
-      return res.status(400).json({ error: 'Camera has no camera_key configured' });
-    }
+    const feedKey = await ensureWhipFeed(db, row);
+    if (!feedKey) return res.status(400).json({ error: 'Camera has no owning project, so it cannot get a WHIP feed' });
 
     let isLive = null;
     if (mediamtxClient) {
-      try { isLive = await mediamtxClient.isPathPublishing(row.camera_key); } catch { /* ignore */ }
+      try { isLive = await mediamtxClient.isPathPublishing(feedKey); } catch { /* ignore */ }
     }
 
     const origin = `${req.protocol}://${req.get('host')}`;
     res.json({
       cameraName: row.name,
-      cameraKey:  row.camera_key,
+      cameraKey:  feedKey,
       whipUrl:    `/production/cameras/${row.id}/whip`,
-      hlsUrl:     `${origin}/stream-hls/${row.camera_key}/index.m3u8`,
+      hlsUrl:     `${origin}/stream-hls/${feedKey}/index.m3u8`,
       isLive,
     });
   });
@@ -473,9 +446,8 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!BROWSER_CAMERA_TYPES.has(row.control_type)) {
       return res.status(400).json({ error: 'Camera is not a browser camera' });
     }
-    if (!row.camera_key) {
-      return res.status(400).json({ error: 'Camera has no camera_key configured' });
-    }
+    const feedKey = await ensureWhipFeed(db, row);
+    if (!feedKey) return res.status(400).json({ error: 'Camera has no owning project, so it cannot get a WHIP feed' });
     if (!mediamtxClient) {
       return res.status(503).json({ error: 'MediaMTX is not configured (MEDIAMTX_API_URL not set)' });
     }
@@ -484,9 +456,9 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
     if (!sdpOffer) return res.status(400).json({ error: 'SDP offer body is required' });
 
     // Kick any existing publisher so the new device replaces it
-    try { await mediamtxClient.kickPath(row.camera_key); } catch { /* no-op if no publisher */ }
+    try { await mediamtxClient.kickPath(feedKey); } catch { /* no-op if no publisher */ }
 
-    const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(row.camera_key)}/whip`;
+    const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(feedKey)}/whip`;
     try {
       const upstream = await fetch(whipUrl, {
         method: 'POST',
@@ -513,10 +485,11 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   router.patch('/:id/whip', async (req, res) => {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
     if (!row || !canAccessCamera(row, req)) return res.status(404).json({ error: 'Camera not found' });
-    if (!row.camera_key || !mediamtxClient) return res.status(204).end();
+    const feedKey = await findWhipFeedKey(db, row.id);
+    if (!feedKey || !mediamtxClient) return res.status(204).end();
 
     const body = req.rawBody ?? '';
-    const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(row.camera_key)}/whip`;
+    const whipUrl = `${mediamtxClient.webrtcBaseUrl}/${encodeURIComponent(feedKey)}/whip`;
     try {
       const upstream = await fetch(whipUrl, {
         method: 'PATCH',
@@ -532,9 +505,11 @@ export function createCamerasRouter(db, registry, bridgeManager = null, opts = {
   // DELETE /production/cameras/:id/whip — terminate WHIP session (kick publisher)
   router.delete('/:id/whip', async (req, res) => {
     const row = await db.prod_cameras.findUnique({ where: { id: req.params.id } });
-    if (!row || !canAccessCamera(row, req) || !row.camera_key || !mediamtxClient) return res.status(204).end();
+    if (!row || !canAccessCamera(row, req)) return res.status(204).end();
+    const feedKey = await findWhipFeedKey(db, row.id);
+    if (!feedKey || !mediamtxClient) return res.status(204).end();
 
-    try { await mediamtxClient.kickPath(row.camera_key); } catch { /* ignore */ }
+    try { await mediamtxClient.kickPath(feedKey); } catch { /* ignore */ }
     res.status(204).end();
   });
 

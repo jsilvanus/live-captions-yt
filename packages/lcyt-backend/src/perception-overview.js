@@ -3,7 +3,7 @@
  * operator needs to see whether the detector is working: per camera the job, the auto-start switch, whether it is on
  * program and what the detector last saw; the shared-feed job; and the feed attribution.
  */
-import { withFeedKeys } from 'lcyt-production';
+import { linkedFeedKeys } from 'lcyt-production';
 
 /**
  * @param {{
@@ -20,11 +20,13 @@ export function createPerceptionOverview({ db, sceneState, attributor, perceptio
   return async function overview(apiKey) {
     const attribution = attributor.status(apiKey);
     const scene = sceneState.getState(apiKey)?.cameras || {};
-    const rows = await withFeedKeys(db, await db.prod_cameras.findMany({
+    const cameras0 = await db.prod_cameras.findMany({
       where: { OR: [{ owner_api_key: apiKey }, { owner_api_key: null }] },
-      select: { id: true, name: true, label: true, zone: true, camera_key: true, perception_enabled: true, mixer_input: true },
+      select: { id: true, name: true, label: true, zone: true, perception_enabled: true, mixer_input: true },
       orderBy: [{ sort_order: 'asc' }, { name: 'asc' }],
-    }));
+    });
+    const feedKeys = await linkedFeedKeys(db, cameras0.map((c) => c.id));
+    const rows = cameras0.map((c) => ({ ...c, feedKey: feedKeys.get(c.id) ?? null }));
     const cameras = rows.map((r) => {
       const s = scene[r.id] ?? null;
       const people = s ? (s.subjects || []).filter((x) => x.label === 'person') : [];
@@ -32,7 +34,7 @@ export function createPerceptionOverview({ db, sceneState, attributor, perceptio
         id: r.id,
         name: r.label || r.name,
         zone: r.zone ?? null,
-        hasFeed: !!r.camera_key,
+        hasFeed: !!r.feedKey,
         perceptionEnabled: !!r.perception_enabled,
         jobRunning: !!perceptionManager.status(r.id),
         onProgram: attribution.tag?.cameraId === r.id,

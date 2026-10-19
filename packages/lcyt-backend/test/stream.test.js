@@ -64,9 +64,8 @@ before(() => new Promise(async (resolve) => {
      VALUES (?, 'Test Owner', 1, 1, 0)`
   ).run(TEST_API_KEY);
 
-  // prod_cameras is owned by lcyt-production; db/relay.js's resolveRelaySourceCameraKey()
-  // queries it directly (plan_ingest_feeds.md §1b/§2c), so seed a feed camera here.
-  await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key) VALUES ('cam-altar', 'Altar', 'altar-cam', 'rtmp', NULL)").run();
+  // A relay's source is a prod_feeds row of the project (db/relay.js's resolveRelaySourceFeedKey()).
+  await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind) VALUES ('feed-altar', ?, 'Altar', 'altar-cam', 'rtmp', 'camera')").run(TEST_API_KEY);
 
   mockRelay = makeMockRelayManager();
 
@@ -280,35 +279,45 @@ describe('POST /stream — create relay slot', () => {
     assert.equal(listBody.relays.length, 6);
   });
 
-  it('accepts sourceCameraId for a known camera with a camera_key', async () => {
+  it('accepts sourceFeedId for a feed of the project', async () => {
     const res = await streamFetch('/', {
       method: 'POST',
-      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'cam-altar' }),
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceFeedId: 'feed-altar' }),
     });
     assert.equal(res.status, 201);
     const body = await res.json();
-    assert.equal(body.relay.sourceCameraId, 'cam-altar');
+    assert.equal(body.relay.sourceFeedId, 'feed-altar');
+    assert.equal(body.relay.sourceFeedKey, 'altar-cam');
   });
 
-  it('returns 400 for an unknown sourceCameraId', async () => {
+  it('returns 400 for an unknown sourceFeedId', async () => {
     const res = await streamFetch('/', {
       method: 'POST',
-      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'no-such-camera' }),
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceFeedId: 'no-such-feed' }),
     });
     assert.equal(res.status, 400);
   });
 
-  it("returns 400 for a sourceCameraId owned by a different project (code-review follow-up: cross-tenant sourceCameraId)", async () => {
-    await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key) VALUES ('cam-other', 'Other', 'other-cam', 'rtmp', 'some-other-project-key')").run();
+  it("returns 400 for a sourceFeedId owned by a different project (cross-tenant feed source)", async () => {
+    await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport) VALUES ('feed-other', 'some-other-project-key', 'Other', 'other-feed', 'rtmp')").run();
     try {
       const res = await streamFetch('/', {
         method: 'POST',
-        body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'cam-other' }),
+        body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceFeedId: 'feed-other' }),
       });
       assert.equal(res.status, 400);
     } finally {
-      await db.prepare("DELETE FROM prod_cameras WHERE id = 'cam-other'").run();
+      await db.prepare("DELETE FROM prod_feeds WHERE id = 'feed-other'").run();
     }
+  });
+
+  it('refuses the removed sourceCameraId field (feeds-and-devices PR 7)', async () => {
+    const res = await streamFetch('/', {
+      method: 'POST',
+      body: JSON.stringify({ slot: 1, targetUrl: 'rtmp://teams.example.com/live/x', sourceCameraId: 'cam-altar' }),
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /sourceCameraId is no longer accepted/);
   });
 });
 

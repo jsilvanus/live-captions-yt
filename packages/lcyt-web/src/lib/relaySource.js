@@ -1,7 +1,7 @@
 /**
  * Pure helpers for the relay slot's source picker (plan_feeds_devices.md PR 5). A slot relays from the
- * program stream, the vertical crop, or a named feed (`sourceFeedId`). Older slots may still carry only
- * `sourceCameraId`; those keep working until the user picks something else. No React here, so node tests
+ * program stream, the vertical crop, or a named feed (`sourceFeedId`). Camera-sourced slots became feed-sourced
+ * (feeds-and-devices PR 7: the backend copies them), so no camera field is read here. No React here, so node tests
  * can import this file.
  */
 import { isLinkableFeed } from './deviceFeeds.js';
@@ -10,7 +10,6 @@ import { isLinkableFeed } from './deviceFeeds.js';
 export const SOURCE_GROUP_ORDER = Object.freeze(['camera', 'generic', 'dsk']);
 
 const FEED_PREFIX = 'feed:';
-const LEGACY_CAMERA_PREFIX = 'legacy-camera:';
 
 /** Named feeds the relay may read from. Managed feeds (`managed:*`, the Video and DSK slots) are left out. */
 export function relaySelectableFeeds(feeds) {
@@ -38,23 +37,12 @@ export function feedOptionLabel(feed) {
   return kindOf(feed) === 'generic' && feed.label ? `${name} (${feed.label})` : name;
 }
 
-/** The selectable feed linked to a camera (the first one GET /feeds returns), or null. */
-export function linkedFeedForCamera(feeds, cameraId) {
-  if (!cameraId) return null;
-  return relaySelectableFeeds(feeds).find(f => f.deviceType === 'camera' && f.deviceId === cameraId) || null;
-}
-
 /**
- * The <select> value that shows a slot's source. A legacy camera slot shows the feed linked to that camera
- * when there is one, otherwise a read-only `legacy-camera:` option.
- * @returns {'program'|'crop'|`feed:${string}`|`legacy-camera:${string}`}
+ * The <select> value that shows a slot's source.
+ * @returns {'program'|'crop'|`feed:${string}`}
  */
-export function relaySourceValue(entry, feeds) {
+export function relaySourceValue(entry) {
   if (entry.sourceFeedId) return `${FEED_PREFIX}${entry.sourceFeedId}`;
-  if (entry.sourceCameraId) {
-    const linked = linkedFeedForCamera(feeds, entry.sourceCameraId);
-    return linked ? `${FEED_PREFIX}${linked.id}` : `${LEGACY_CAMERA_PREFIX}${entry.sourceCameraId}`;
-  }
   return entry.sourceView === 'crop' ? 'crop' : 'program';
 }
 
@@ -69,22 +57,19 @@ export function feedIdFromSourceValue(value) {
 }
 
 /**
- * The slot fields a user's pick writes. Picking a feed clears the camera field, so a slot never holds both.
- * A legacy camera option cannot be picked (it is disabled), so it returns null and nothing changes.
- * @returns {{ sourceView: string, sourceFeedId: string, sourceCameraId: string } | null}
+ * The slot fields a user's pick writes. Picking a feed sets the feed and the view stays 'program'.
+ * @returns {{ sourceView: string, sourceFeedId: string } | null}
  */
 export function sourcePatch(value) {
-  if (value === 'program' || value === 'crop') return { sourceView: value, sourceFeedId: '', sourceCameraId: '' };
-  if (isFeedSourceValue(value)) return { sourceView: 'program', sourceFeedId: feedIdFromSourceValue(value), sourceCameraId: '' };
+  if (value === 'program' || value === 'crop') return { sourceView: value, sourceFeedId: '' };
+  if (isFeedSourceValue(value)) return { sourceView: 'program', sourceFeedId: feedIdFromSourceValue(value) };
   return null;
 }
 
 /**
- * The source fields of a POST/PUT /stream body. A feed wins over a camera and the camera wins over the view,
- * so only one of sourceFeedId / sourceCameraId is ever sent (the backend rejects both together).
+ * The source fields of a POST/PUT /stream body. A feed wins over the view, so only one source field is ever sent.
  */
-export function sourceRequestFields({ sourceView, sourceFeedId, sourceCameraId } = {}) {
+export function sourceRequestFields({ sourceView, sourceFeedId } = {}) {
   if (sourceFeedId) return { sourceFeedId };
-  if (sourceCameraId) return { sourceCameraId };
   return sourceView ? { sourceView } : {};
 }

@@ -3,7 +3,7 @@ import { createConnection } from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { createAuthWithBypass } from '../auth-bypass.js';
 import { parseMixer } from '../registry.js';
-import { withFeedKeys } from '../camera-feeds.js';
+import { linkedFeedKeys } from '../camera-feeds.js';
 import { createProductionCommands, commandStatus } from '../commands.js';
 import { requireTier } from '../route-access.js';
 
@@ -322,25 +322,27 @@ export function createMixersRouter(db, registry, bridgeManager = null, opts = {}
       return res.status(400).json({ error: 'Sources endpoint is only available for LCYT software mixers' });
     }
 
-    const cameras = await withFeedKeys(db, await db.prod_cameras.findMany({
+    const rows = await db.prod_cameras.findMany({
       where: { mixer_input: { not: null } },
       orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
-    }));
+    });
+    const feedKeys = await linkedFeedKeys(db, rows.map(r => r.id));
+    const cameras = rows.map(r => ({ ...r, feedKey: feedKeys.get(r.id) ?? null }));
 
     const origin = `${req.protocol}://${req.get('host')}`;
     const sources = await Promise.all(cameras.map(async cam => {
       let isLive = null;
-      if (mediamtxClient && cam.camera_key) {
-        try { isLive = await mediamtxClient.isPathPublishing(cam.camera_key); } catch { /* ignore */ }
+      if (mediamtxClient && cam.feedKey) {
+        try { isLive = await mediamtxClient.isPathPublishing(cam.feedKey); } catch { /* ignore */ }
       }
       return {
         cameraId:   cam.id,
         name:       cam.name,
         mixerInput: cam.mixer_input,
-        cameraKey:  cam.camera_key ?? null,
+        cameraKey:  cam.feedKey,
         controlType: cam.control_type,
-        hlsUrl:     cam.camera_key ? `${origin}/stream-hls/${cam.camera_key}/index.m3u8` : null,
-        thumbUrl:   cam.camera_key ? `${origin}/preview/${cam.camera_key}/incoming.jpg` : null,
+        hlsUrl:     cam.feedKey ? `${origin}/stream-hls/${cam.feedKey}/index.m3u8` : null,
+        thumbUrl:   cam.feedKey ? `${origin}/preview/${cam.feedKey}/incoming.jpg` : null,
         isLive,
       };
     }));

@@ -15,38 +15,40 @@
 
 import { randomUUID } from 'node:crypto';
 import { parseCamera, parseMixer } from './registry.js';
+import { withCameraFeedKeys, unlinkCameraFeeds } from './camera-feeds.js';
 import { getSwitchCommand as rolandGetSwitchCommand } from './adapters/mixer/roland.js';
 import { getSwitchCommand as amxGetSwitchCommand } from './adapters/mixer/amx.js';
 import { getSwitchCommand as atemGetSwitchCommand } from './adapters/mixer/atem.js';
 import { getSwitchCommand as monarchHdxGetSwitchCommand } from './adapters/mixer/monarch_hdx.js';
 import { getSwitchCommand as obsGetSwitchCommand } from './adapters/mixer/obs.js';
 
-// 'rtmp' (plan_ingest_feeds.md §1a): a named feed pushed via RTMP rather
-// than WHIP — kept in sync with routes/cameras.js's own copy of this list.
-const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile', 'rtmp'];
+// Kept in sync with routes/cameras.js's own copy of this list. The 'rtmp' type is gone (feeds-and-devices PR 7):
+// a pushed feed is a prod_feeds row linked to a camera of type 'none'.
+const CAMERA_CONTROL_TYPES = ['none', 'amx', 'visca-ip', 'webcam', 'mobile'];
 const MIXER_TYPES = ['roland', 'amx', 'atem', 'monarch_hdx', 'lcyt'];
-// Mirrors routes/cameras.js's own copy (and lcyt-rtmp's rtmp-manager.js
-// SAFE_NAME_RE) — camera_key becomes a raw MediaMTX path/shell-command
-// fragment in that plugin's runOnPublish registration.
-const CAMERA_KEY_RE = /^[A-Za-z0-9_-]+$/;
+// A camera's stream key is a feed key now: create a feed (Feeds card, POST /feeds) and link it to the camera.
+const CAMERA_KEY_REMOVED = 'cameraKey is no longer stored on cameras: create a feed (POST /feeds) and link it to the camera';
 
 // ---------------------------------------------------------------------------
 // Cameras
 // ---------------------------------------------------------------------------
 
 export async function listCameras(db) {
-  return (await db.prod_cameras.findMany({ orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] })).map(parseCamera);
+  const rows = await db.prod_cameras.findMany({ orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }] });
+  return withCameraFeedKeys(db, rows.map(parseCamera));
 }
 
 export async function getCameraById(db, id) {
   const row = await db.prod_cameras.findUnique({ where: { id } });
-  return row ? parseCamera(row) : null;
+  if (!row) return null;
+  const [camera] = await withCameraFeedKeys(db, [parseCamera(row)]);
+  return camera;
 }
 
 export async function createCamera(db, registry, fields = {}) {
   const {
     name, mixerInput = null, controlType = 'none', controlConfig = {},
-    sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend', cameraKey = null,
+    sortOrder = 0, bridgeInstanceId = null, connectionSource = 'backend', cameraKey,
     // Optional (plan_ingest_feeds.md's cross-tenant review finding). Not set
     // by packages/lcyt-tools' camera.create handler today — that tool group
     // deliberately treats cameras as a shared, project-wide pool (see
@@ -64,15 +66,13 @@ export async function createCamera(db, registry, fields = {}) {
   if (!CAMERA_CONTROL_TYPES.includes(controlType)) {
     return { ok: false, error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` };
   }
-  if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
-    return { ok: false, error: 'cameraKey may only contain letters, digits, underscore, and hyphen' };
-  }
+  if (cameraKey != null) return { ok: false, error: CAMERA_KEY_REMOVED };
   const id = randomUUID();
   await db.prod_cameras.create({
     data: {
       id, name, mixer_input: mixerInput, control_type: controlType, control_config: JSON.stringify(controlConfig),
       bridge_instance_id: bridgeInstanceId, sort_order: sortOrder, connection_source: connectionSource,
-      camera_key: cameraKey, owner_api_key: ownerApiKey, label, zone,
+      owner_api_key: ownerApiKey, label, zone,
       overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
     },
   });
@@ -91,7 +91,6 @@ export async function updateCamera(db, registry, id, patch = {}) {
   const sortOrder = patch.sortOrder ?? existing.sort_order;
   const bridgeInstanceId = patch.bridgeInstanceId !== undefined ? patch.bridgeInstanceId : existing.bridge_instance_id;
   const connectionSource = patch.connectionSource ?? existing.connection_source ?? 'backend';
-  const cameraKey = patch.cameraKey !== undefined ? patch.cameraKey : existing.camera_key;
   const label = patch.label !== undefined ? patch.label : existing.label;
   const zone = patch.zone !== undefined ? patch.zone : existing.zone;
   const overlapLinks = patch.overlapLinks !== undefined ? patch.overlapLinks : JSON.parse(existing.overlap_links || '[]');
@@ -100,16 +99,14 @@ export async function updateCamera(db, registry, id, patch = {}) {
   if (controlType && !CAMERA_CONTROL_TYPES.includes(controlType)) {
     return { ok: false, error: `controlType must be one of: ${CAMERA_CONTROL_TYPES.join(', ')}` };
   }
-  if (cameraKey != null && !CAMERA_KEY_RE.test(cameraKey)) {
-    return { ok: false, error: 'cameraKey may only contain letters, digits, underscore, and hyphen' };
-  }
+  if (patch.cameraKey != null) return { ok: false, error: CAMERA_KEY_REMOVED };
 
   await db.prod_cameras.updateMany({
     where: { id },
     data: {
       name, mixer_input: mixerInput, control_type: controlType, control_config: JSON.stringify(controlConfig),
       bridge_instance_id: bridgeInstanceId, sort_order: sortOrder, connection_source: connectionSource,
-      camera_key: cameraKey, label, zone, overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
+      label, zone, overlap_links: JSON.stringify(overlapLinks), mixer_id: mixerId,
     },
   });
 
@@ -121,6 +118,7 @@ export async function deleteCamera(db, registry, id) {
   const existing = await db.prod_cameras.findUnique({ where: { id } });
   if (!existing) return { ok: false, error: 'Camera not found', status: 404 };
   await db.prod_cameras.deleteMany({ where: { id } });
+  await unlinkCameraFeeds(db, id);
   registry.removeCamera(id).catch(() => {});
   return { ok: true };
 }

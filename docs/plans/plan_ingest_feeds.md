@@ -1,4 +1,6 @@
 ﻿---
+
+> **Superseded by [plan_feeds_devices.md](plan_feeds_devices.md).** Feeds are no longer cameras (`prod_cameras` `control_type: 'rtmp'`): they live in `prod_feeds`. PR 7 of that plan drops `camera_key` and `source_camera_id`.
 id: plan/ingest_feeds
 title: "Ingest Feeds â€” Arbitrary Named Ingestion, Egress, and Mixing"
 status: implemented

@@ -6,8 +6,13 @@ import { createVisionSourceResolver } from '../src/vision-source-resolver.js';
 
 describe('vision source resolver', () => {
   let db, r;
-  const ins = async (id, extra) => await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, label, zone, camera_key, owner_api_key, overlap_links)
-    VALUES (?, ?, 'webcam', '{}', 0, ?, ?, ?, ?, ?)`).run(id, `n-${id}`, extra.label ?? null, extra.zone ?? null, extra.key ?? null, extra.owner ?? null, extra.links ?? '[]');
+  // The camera's key is its linked feed (prod_feeds), as after feeds-and-devices PR 7.
+  const ins = async (id, extra) => {
+    await db.prepare(`INSERT INTO prod_cameras (id, name, control_type, control_config, sort_order, label, zone, owner_api_key, overlap_links)
+      VALUES (?, ?, 'webcam', '{}', 0, ?, ?, ?, ?)`).run(id, `n-${id}`, extra.label ?? null, extra.zone ?? null, extra.owner ?? null, extra.links ?? '[]');
+    if (extra.key) await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, ?, ?, ?, 'whip', 'camera', 'camera', ?, 0)`).run(`feed-${id}`, extra.owner ?? 'legacy', `n-${id}`, extra.key, id);
+  };
   const attributor = { tagForCapture: () => 'tag-capture', tagForCamera: (id) => `tag-${id}` };
   before(async () => {
     db = await initDb(':memory:'); ensurePluginTables(db);

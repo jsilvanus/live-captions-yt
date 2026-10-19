@@ -120,7 +120,6 @@ describe('parseCamera', () => {
       connection_source: 'backend',
       bridge_instance_id: null,
       sort_order: 1,
-      camera_key: null,
       created_at: '2024-01-01T00:00:00',
     };
     const cam = parseCamera(row);
@@ -135,7 +134,7 @@ describe('parseCamera', () => {
     const row = {
       id: 'c1', name: 'Cam', mixer_input: 1, control_type: 'none',
       control_config: '{}', connection_source: null,
-      bridge_instance_id: null, sort_order: 0, camera_key: null, created_at: '',
+      bridge_instance_id: null, sort_order: 0, created_at: '',
     };
     const cam = parseCamera(row);
     assert.equal(cam.connectionSource, 'backend');
@@ -145,7 +144,7 @@ describe('parseCamera', () => {
     const row = {
       id: 'c1', name: 'Cam', mixer_input: 1, control_type: 'none',
       control_config: '', connection_source: 'backend',
-      bridge_instance_id: null, sort_order: 0, camera_key: null, created_at: '',
+      bridge_instance_id: null, sort_order: 0, created_at: '',
     };
     // control_config = '' → JSON.parse('{}') via || '{}'
     const cam = parseCamera(row);

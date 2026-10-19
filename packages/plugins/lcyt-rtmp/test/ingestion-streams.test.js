@@ -70,8 +70,8 @@ describe('GET /ingestion/streams', () => {
   before(async () => {
     db = await initDb(':memory:');
     await db.prepare("INSERT INTO api_keys (key, owner) VALUES ('KEY1', 'o')").run();
-    await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key) VALUES ('c1', 'Altar', 'altar-cam', 'rtmp', 'KEY1')").run();
-    await db.prepare("INSERT INTO prod_cameras (id, name, camera_key, control_type, owner_api_key) VALUES ('c2', 'Other', 'other-cam', 'rtmp', 'KEY2')").run();
+    await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, label) VALUES ('f1', 'KEY1', 'Altar', 'altar-cam', 'rtmp', 'camera', 'Altar')").run();
+    await db.prepare("INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport) VALUES ('f2', 'KEY2', 'Other', 'other-cam', 'rtmp')").run();
     const app = express();
     app.use((req, res, next) => { req.session = { apiKey: 'KEY1' }; next(); });
     app.use('/ingestion', createIngestionRouter(db, (req, res, next) => next(), relayManager, null, (req, res, next) => (denySetup && req.method === 'POST' ? res.status(403).json({ error: 'no' }) : next())));
@@ -88,7 +88,7 @@ describe('GET /ingestion/streams', () => {
     assert.deepEqual(await res.json(), { available: false, streams: [] });
   });
 
-  it('lists the project streams and its own cameras only', async () => {
+  it('lists the project streams and its own rtmp feeds only', async () => {
     mediamtx = new FakeMediaMtx([ready('KEY1'), ready('altar-cam'), ready('other-cam'), ready('KEY2')]);
     const body = await (await fetch(`${baseUrl}/ingestion/streams`)).json();
     assert.equal(body.available, true);

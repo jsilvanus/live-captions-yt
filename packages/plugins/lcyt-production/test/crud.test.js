@@ -80,32 +80,37 @@ describe('camera CRUD', () => {
     assert.equal(res.ok, false);
   });
 
-  it("accepts controlType 'rtmp' with a camera_key (plan_ingest_feeds.md §1a)", async () => {
+  it("refuses controlType 'rtmp' (the type is gone: a pushed feed is a feed linked to a camera)", async () => {
     const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
-    assert.equal(created.ok, true);
-    assert.equal(created.camera.controlType, 'rtmp');
-    assert.equal(created.camera.cameraKey, 'altar-cam');
+    const res = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp' });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /controlType must be one of/);
   });
 
-  it('createCamera rejects a camera_key with unsafe characters (code-review follow-up)', async () => {
+  it('refuses a cameraKey on create and update: the key is a feed now (feeds-and-devices PR 7)', async () => {
     const db = await makeDb();
     const registry = makeRegistryStub();
-    const res = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar cam; rm -rf' });
+    const res = await createCamera(db, registry, { name: 'Altar', controlType: 'none', cameraKey: 'altar-cam' });
     assert.equal(res.ok, false);
-    assert.match(res.error, /letters, digits, underscore, and hyphen/);
+    assert.match(res.error, /cameraKey is no longer stored on cameras/);
+    const created = await createCamera(db, registry, { name: 'Altar', controlType: 'none' });
+    const upd = await updateCamera(db, registry, created.camera.id, { cameraKey: 'altar-cam' });
+    assert.equal(upd.ok, false);
+    assert.match(upd.error, /cameraKey is no longer stored on cameras/);
   });
 
-  it('updateCamera rejects a camera_key with unsafe characters (code-review follow-up)', async () => {
+  it('a camera reads its cameraKey from its linked feed, and deleting the camera unlinks the feed', async () => {
     const db = await makeDb();
     const registry = makeRegistryStub();
-    const created = await createCamera(db, registry, { name: 'Altar', controlType: 'rtmp', cameraKey: 'altar-cam' });
-    const res = await updateCamera(db, registry, created.camera.id, { cameraKey: '$(evil)' });
-    assert.equal(res.ok, false);
-    assert.match(res.error, /letters, digits, underscore, and hyphen/);
-    // Unchanged in the DB — the malformed value must not have been persisted.
+    const created = await createCamera(db, registry, { name: 'Altar', controlType: 'none' });
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES ('f-altar', 'proj', 'Altar', 'altar-cam', 'rtmp', 'camera', 'camera', ?, 0)`).run(created.camera.id);
     assert.equal((await getCameraById(db, created.camera.id)).cameraKey, 'altar-cam');
+    await deleteCamera(db, registry, created.camera.id);
+    const feed = await db.prod_feeds.findUnique({ where: { id: 'f-altar' } });
+    assert.equal(feed.feed_key, 'altar-cam', 'the feed stays');
+    assert.equal(feed.device_id, null, 'and is unlinked from the deleted camera');
   });
 
   it('createCamera stamps ownerApiKey when provided, and defaults to unowned (legacy) otherwise', async () => {

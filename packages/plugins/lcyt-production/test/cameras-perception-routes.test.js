@@ -17,16 +17,28 @@ import { createCamerasRouter } from '../src/routes/cameras.js';
 
 let server, baseUrl, db;
 
+// Feed keys are unique in the database (the old camera_key column was not), so a repeated key gets a suffix.
+async function uniqueFeedKey(key) {
+  let k = key;
+  for (let n = 2; await db.prepare('SELECT 1 AS found FROM prod_feeds WHERE feed_key = ?').get(k); n++) k = `${key}-${n}`;
+  return k;
+}
+
 async function insertCamera(overrides = {}) {
   const id = overrides.id ?? randomUUID();
   await db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key, owner_api_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, owner_api_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     id, overrides.name ?? 'Cam 1', overrides.mixer_input ?? null, overrides.control_type ?? 'webcam',
-    JSON.stringify(overrides.control_config ?? {}), overrides.sort_order ?? 0,
-    overrides.camera_key ?? 'feed-abc', overrides.owner_api_key ?? null,
+    JSON.stringify(overrides.control_config ?? {}), overrides.sort_order ?? 0, overrides.owner_api_key ?? null,
   );
+  // The camera's feed (prod_feeds). An empty key means the camera has none.
+  const key = 'camera_key' in overrides ? overrides.camera_key : 'feed-abc';
+  if (key) {
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, 'key1', 'Feed', ?, 'whip', 'camera', 'camera', ?, 0)`).run(randomUUID(), await uniqueFeedKey(key), id);
+  }
   return id;
 }
 
@@ -94,7 +106,7 @@ describe('camera perception routes', () => {
     await startApp({
       start: async (apiKey, camera, opts) => { calls.push({ apiKey, camera, opts }); return { jobId: 'job-123' }; },
     });
-    const id = await insertCamera();
+    const id = await insertCamera({ camera_key: 'feed-start-test' });
     const res = await fetch(`${baseUrl}/production/cameras/${id}/perception/start`, {
       method: 'POST', headers: { 'x-api-key': 'key1', 'Content-Type': 'application/json' },
       body: JSON.stringify({ emitIntervalMs: 250 }),
@@ -106,7 +118,7 @@ describe('camera perception routes', () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].apiKey, 'key1');
     assert.equal(calls[0].camera.id, id);
-    assert.equal(calls[0].camera.cameraKey, 'feed-abc');
+    assert.equal(calls[0].camera.cameraKey, 'feed-start-test');
     assert.equal(calls[0].opts.emitIntervalMs, 250);
   });
 
@@ -160,9 +172,9 @@ describe('camera perception auto-start switch', () => {
     assert.equal((await db.prepare('SELECT perception_enabled AS e FROM prod_cameras WHERE id = ?').get(id)).e, 0);
   });
 
-  it('validates the body, needs a camera_key, and hides other projects cameras', async () => {
+  it('validates the body, needs a feed, and hides other projects cameras', async () => {
     const mine = await insertCamera({ owner_api_key: 'key1' });
-    const noFeed = await insertCamera({ owner_api_key: 'key1', camera_key: '' });
+    const noFeed = await insertCamera({ owner_api_key: 'key1', camera_key: null });
     const foreign = await insertCamera({ owner_api_key: 'other' });
     await startApp(null);
     assert.equal((await post(mine, { enabled: 'yes' })).status, 400);

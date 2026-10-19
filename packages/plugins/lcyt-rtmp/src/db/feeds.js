@@ -141,19 +141,16 @@ export async function deviceExists(db, apiKey, deviceType, deviceId) {
 }
 
 /**
- * Is this MediaMTX path name free for the project? A name is taken by another feed, by any project's API key or
- * ingest stream key, or by a camera key (unless that camera is the one this feed links to and the project owns it).
+ * Is this MediaMTX path name free? A name is taken by another feed or by any project's API key or ingest stream key.
  */
-export async function isFeedKeyFree(db, apiKey, feedKey, { exceptFeedId = null, linkedCameraId = null } = {}) {
+export async function isFeedKeyFree(db, feedKey, { exceptFeedId = null } = {}) {
   const feed = await db.prod_feeds.findUnique({ where: { feed_key: feedKey }, select: { id: true } });
   if (feed && feed.id !== exceptFeedId) return false;
   const key = await db.api_keys.findFirst({
     where: { OR: [{ key: feedKey }, { ingest_stream_key: feedKey }] },
     select: { key: true },
   });
-  if (key) return false;
-  const cams = await db.prod_cameras.findMany({ where: { camera_key: feedKey }, select: { id: true, owner_api_key: true } });
-  return cams.every((c) => c.id === linkedCameraId && (c.owner_api_key == null || c.owner_api_key === apiKey));
+  return !key;
 }
 
 export async function createFeed(db, apiKey, id, v) {
@@ -205,49 +202,75 @@ export async function unlinkDeviceFeeds(db, deviceType, deviceId) {
 }
 
 /**
- * Create prod_feeds rows for the feeds that already exist as cameras and mixer outputs. Idempotent and read-only
- * on the old tables: it never changes a camera or mixer, and a device that already has a feed with the same key is
- * left alone, so it is safe to run at every start.
- *   - a camera with a camera_key and control_type rtmp/webcam/mobile and an owner → kind camera, transport rtmp|whip
- *   - a mixer with an output_key and an owner → kind generic, labelled with the mixer name, transport rtmp
- * Rows that cannot be created (no owner, or the key is already used by another feed) are counted in `skipped` and
- * logged, never thrown, so one bad row cannot stop the server from starting.
- * @returns {Promise<{ created: number, skipped: number }>}
+ * Does a column still exist? The legacy columns (prod_cameras.camera_key, rtmp_relays.source_camera_id) are only present
+ * on databases created before feeds-and-devices PR 7; PostgreSQL drops them in migration 0008.
+ */
+async function hasColumn(db, table, column) {
+  if (db.$dialect === 'postgres') {
+    const rows = await db.$queryRawUnsafe(
+      'SELECT 1 AS found FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1 AND column_name = $2',
+      table, column);
+    return rows.length > 0;
+  }
+  const rows = await db.$queryRawUnsafe(`SELECT name FROM pragma_table_info('${table}') WHERE name = ?`, column);
+  return rows.length > 0;
+}
+
+/**
+ * Feeds-and-devices PR 7: move the legacy camera keys into prod_feeds and drop the columns that held them.
+ * Idempotent, and a no-op once the columns are gone. Runs at every start, before the server takes requests.
+ *   - every prod_cameras.camera_key with an owner and a valid key gets a camera feed (same key, linked to the camera):
+ *     transport whip for webcam/mobile cameras, rtmp otherwise; a key that already has a feed is left alone
+ *   - control_type 'rtmp' becomes 'none' (the rtmp type is gone; such a camera is a device with a linked feed)
+ *   - rtmp_relays.source_camera_id is copied to source_feed_id: the camera's first feed (same order as linkedFeedKeys)
+ *   - a column is dropped only when nothing in it is left without a feed; otherwise it stays (the code no longer reads
+ *     it) and a warning names the rows, so no key is lost. Ownerless cameras and clashing keys are the usual cause.
+ * Rows that cannot be migrated are counted in `skipped` and logged, never thrown.
+ * @returns {Promise<{ created: number, skipped: number, dropped: string[] }>}
  */
 export async function backfillFeeds(db) {
   let created = 0;
   let skipped = 0;
+  const dropped = [];
+  let camerasKept = 0;
   const skip = (what, why) => { skipped++; logger.warn(`[feeds] backfill skipped ${what}: ${why}`); };
 
-  const cameras = await db.prod_cameras.findMany({
-    where: { camera_key: { not: null }, control_type: { in: ['rtmp', 'webcam', 'mobile'] } },
-    orderBy: { id: 'asc' },
-  });
-  for (const cam of cameras) {
-    const what = `camera ${cam.id}`;
-    if (!cam.owner_api_key) { skip(what, 'no owner project'); continue; }
-    if (!FEED_KEY_RE.test(cam.camera_key)) { skip(what, 'camera_key is not a valid feed key'); continue; }
-    try {
-      const linked = await db.prod_feeds.findFirst({ where: { device_type: 'camera', device_id: cam.id, feed_key: cam.camera_key } });
-      if (linked) continue;
-      if (await db.prod_feeds.findUnique({ where: { feed_key: cam.camera_key }, select: { id: true } })) {
-        skip(what, `feed key '${cam.camera_key}' is already used by another feed`);
-        continue;
+  const hasCameraKey = await hasColumn(db, 'prod_cameras', 'camera_key');
+  if (hasCameraKey) {
+    const cameras = await db.$queryRawUnsafe(
+      "SELECT id, name, label, control_type, owner_api_key, sort_order, camera_key FROM prod_cameras WHERE camera_key IS NOT NULL AND camera_key <> '' ORDER BY id");
+    for (const cam of cameras) {
+      const what = `camera ${cam.id}`;
+      const keep = () => { camerasKept++; };
+      if (!cam.owner_api_key) { skip(what, 'no owner project'); keep(); continue; }
+      if (!FEED_KEY_RE.test(cam.camera_key)) { skip(what, 'camera_key is not a valid feed key'); keep(); continue; }
+      try {
+        const linked = await db.prod_feeds.findFirst({ where: { device_type: 'camera', device_id: cam.id, feed_key: cam.camera_key } });
+        if (linked) continue;
+        if (await db.prod_feeds.findUnique({ where: { feed_key: cam.camera_key }, select: { id: true } })) {
+          skip(what, `feed key '${cam.camera_key}' is already used by another feed`);
+          keep();
+          continue;
+        }
+        const browser = cam.control_type === 'webcam' || cam.control_type === 'mobile';
+        await createFeed(db, cam.owner_api_key, `feed-cam-${cam.id}`, {
+          name: cam.label || cam.name,
+          feedKey: cam.camera_key,
+          transport: browser ? 'whip' : 'rtmp',
+          kind: 'camera',
+          deviceType: 'camera',
+          deviceId: cam.id,
+          sortOrder: Number(cam.sort_order ?? 0),
+        });
+        created++;
+      } catch (err) {
+        skip(what, err.message);
+        keep();
       }
-      await createFeed(db, cam.owner_api_key, `feed-cam-${cam.id}`, {
-        name: cam.label || cam.name,
-        feedKey: cam.camera_key,
-        transport: cam.control_type === 'rtmp' ? 'rtmp' : 'whip',
-        kind: 'camera',
-        deviceType: 'camera',
-        deviceId: cam.id,
-        sortOrder: cam.sort_order ?? 0,
-      });
-      created++;
-    } catch (err) {
-      skip(what, err.message);
     }
   }
+  // The rtmp control type is gone whatever happened to its key: an unknown type would stop the camera registry.
+  await db.$executeRawUnsafe("UPDATE prod_cameras SET control_type = 'none' WHERE control_type = 'rtmp'");
 
   const mixers = await db.prod_mixers.findMany({ where: { output_key: { not: null } }, orderBy: { id: 'asc' } });
   for (const mixer of mixers) {
@@ -276,6 +299,42 @@ export async function backfillFeeds(db) {
     }
   }
 
-  if (created || skipped) logger.info(`[feeds] backfill: ${created} created, ${skipped} skipped`);
-  return { created, skipped };
+  const hasRelaySource = await hasColumn(db, 'rtmp_relays', 'source_camera_id');
+  let relaysKept = 0;
+  if (hasRelaySource) {
+    const relays = await db.$queryRawUnsafe(
+      'SELECT id, source_camera_id FROM rtmp_relays WHERE source_camera_id IS NOT NULL AND source_feed_id IS NULL ORDER BY id');
+    for (const relay of relays) {
+      const feed = await db.prod_feeds.findFirst({
+        where: { device_type: 'camera', device_id: relay.source_camera_id },
+        orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
+        select: { id: true },
+      });
+      if (feed) {
+        await db.$executeRawUnsafe('UPDATE rtmp_relays SET source_feed_id = ? WHERE id = ?', feed.id, Number(relay.id));
+      } else if (hasCameraKey && (await db.$queryRawUnsafe(
+        "SELECT 1 AS found FROM prod_cameras WHERE id = ? AND camera_key IS NOT NULL AND camera_key <> ''", relay.source_camera_id)).length) {
+        // Its camera has a key but no feed (see the camera loop above): dropping the column would lose the source.
+        relaysKept++;
+      }
+    }
+  }
+
+  if (hasRelaySource && relaysKept === 0) {
+    await db.$executeRawUnsafe('ALTER TABLE rtmp_relays DROP COLUMN source_camera_id');
+    dropped.push('rtmp_relays.source_camera_id');
+  } else if (hasRelaySource) {
+    logger.warn(`[feeds] backfill kept rtmp_relays.source_camera_id: ${relaysKept} relay(s) point at a camera without a feed`);
+  }
+  if (hasCameraKey && camerasKept === 0) {
+    await db.$executeRawUnsafe('ALTER TABLE prod_cameras DROP COLUMN camera_key');
+    dropped.push('prod_cameras.camera_key');
+  } else if (hasCameraKey) {
+    logger.warn('[feeds] backfill kept prod_cameras.camera_key: some camera keys have no feed (see the skipped lines above)');
+  }
+
+  if (created || skipped || dropped.length) {
+    logger.info(`[feeds] backfill: ${created} created, ${skipped} skipped${dropped.length ? `, dropped ${dropped.join(', ')}` : ''}`);
+  }
+  return { created, skipped, dropped };
 }

@@ -29,11 +29,20 @@ function makeRegistryStub(activeSourceByMixer = {}) {
   };
 }
 
+// A camera's stream key is its linked feed (prod_feeds, feeds-and-devices PR 7): `camera_key` seeds a feed for the
+// camera, WHIP for webcam/mobile and RTMP for the rest, the way the migration does it.
+// Feed keys are unique in the database (the old camera_key column was not), so a repeated key gets a suffix.
+async function uniqueFeedKey(key) {
+  let k = key;
+  for (let n = 2; await db.prepare('SELECT 1 AS found FROM prod_feeds WHERE feed_key = ?').get(k); n++) k = `${key}-${n}`;
+  return k;
+}
+
 async function insertCamera(overrides = {}) {
   const id = overrides.id ?? randomUUID();
   await db.prepare(`
-    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, camera_key, owner_api_key)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO prod_cameras (id, name, mixer_input, control_type, control_config, sort_order, owner_api_key)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(
     id,
     overrides.name ?? 'Cam 1',
@@ -41,9 +50,13 @@ async function insertCamera(overrides = {}) {
     overrides.control_type ?? 'webcam',
     JSON.stringify(overrides.control_config ?? {}),
     overrides.sort_order ?? 0,
-    overrides.camera_key ?? null,
     overrides.owner_api_key ?? null,
   );
+  if (overrides.camera_key) {
+    const transport = ['webcam', 'mobile'].includes(overrides.control_type ?? 'webcam') ? 'whip' : 'rtmp';
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, ?, 'Feed', ?, ?, 'camera', 'camera', ?, 0)`).run(randomUUID(), overrides.owner_api_key ?? 'proj-a', await uniqueFeedKey(overrides.camera_key), transport, id);
+  }
   return id;
 }
 
@@ -246,8 +259,8 @@ describe('camera thumbnail routes', () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     const mtx = { isPathPublishing: async (key) => key === 'live-cam' };
     await startApp(makeRegistryStub(), mtx);
-    const liveId = await insertCamera({ camera_key: 'live-cam', control_type: 'rtmp' });
-    const offlineId = await insertCamera({ camera_key: 'offline-cam', control_type: 'rtmp' });
+    const liveId = await insertCamera({ camera_key: 'live-cam', control_type: 'none' });
+    const offlineId = await insertCamera({ camera_key: 'offline-cam', control_type: 'none' });
     const noKeyId = await insertCamera({ camera_key: null, control_type: 'none' });
 
     const list = await (await fetch(`${baseUrl}/production/cameras`)).json();
@@ -611,31 +624,34 @@ describe('linked feed key shim (feeds and devices, PR 2)', () => {
     assert.equal(list.find(c => c.id === id).cameraKey, `shim-${id}`);
   });
 
-  it("the camera's own camera_key wins over a linked feed", async () => {
+  it('a camera with two linked feeds reports the first one (sort order, then creation)', async () => {
     thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
     await startApp(makeRegistryStub());
-    const id = await insertCamera({ camera_key: `own-${randomUUID()}` });
-    const own = (await (await fetch(`${baseUrl}/production/cameras/${id}`)).json()).cameraKey;
-    await insertFeed({ feedKey: `other-${id}`, deviceId: id });
-    const after = await (await fetch(`${baseUrl}/production/cameras/${id}`)).json();
-    assert.equal(after.cameraKey, own);
+    const id = await insertCamera({ control_type: 'none' });
+    await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
+      VALUES (?, 'proj-a', 'Second', 'second-feed', 'rtmp', 'camera', 'camera', ?, 5)`).run(randomUUID(), id);
+    await insertFeed({ feedKey: `first-${id}`, deviceId: id });
+    const one = await (await fetch(`${baseUrl}/production/cameras/${id}`)).json();
+    assert.equal(one.cameraKey, `first-${id}`);
   });
 });
 
-describe('feed-aware readers (feeds and devices, PR 6)', () => {
-  it('withFeedKeys fills camera_key from the linked feed and keeps an own key', async () => {
-    const { withFeedKeys, linkedFeedKeys } = await import('../src/camera-feeds.js');
+describe('feed-aware readers (feeds and devices, PRs 6-7)', () => {
+  it('withCameraFeedKeys fills cameraKey from the linked feed and leaves unlinked cameras null', async () => {
+    const { withCameraFeedKeys, linkedFeedKeys } = await import('../src/camera-feeds.js');
+    const { parseCamera } = await import('../src/registry.js');
     const a = await insertCamera({ control_type: 'none' });
-    const b = await insertCamera({ camera_key: `own-${randomUUID()}` });
+    const b = await insertCamera({ camera_key: `own-${randomUUID()}`, control_type: 'none' });
     const c = await insertCamera({ control_type: 'none' });
     const feedKey = `pr6-${a}`;
     await db.prepare(`INSERT INTO prod_feeds (id, owner_api_key, name, feed_key, transport, kind, device_type, device_id, sort_order)
       VALUES (?, 'proj-a', 'F', ?, 'rtmp', 'camera', 'camera', ?, 0)`).run(randomUUID(), feedKey, a);
-    const rows = await db.prod_cameras.findMany({ where: { id: { in: [a, b, c] } } });
-    const out = await withFeedKeys(db, rows);
-    assert.equal(out.find(r => r.id === a).camera_key, feedKey);
-    assert.equal(out.find(r => r.id === b).camera_key, rows.find(r => r.id === b).camera_key);
-    assert.equal(out.find(r => r.id === c).camera_key, null);
+    const rows = (await db.prod_cameras.findMany({ where: { id: { in: [a, b, c] } } })).map(parseCamera);
+    const out = await withCameraFeedKeys(db, rows);
+    assert.equal(out.find(r => r.id === a).cameraKey, feedKey);
+    assert.equal(out.find(r => r.id === b).cameraKey.startsWith('own-'), true, 'a camera key seeds its feed');
+    assert.equal(out.find(r => r.id === c).cameraKey, null);
+    assert.equal(rows.every(r => r.cameraKey === null), true, 'the input rows are not mutated');
     assert.equal((await linkedFeedKeys(db, [a, c])).get(a), feedKey);
   });
 
@@ -653,5 +669,54 @@ describe('feed-aware readers (feeds and devices, PR 6)', () => {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true }),
     });
     assert.equal(ok.status, 200);
+  });
+});
+
+describe('WHIP feeds and the removed cameraKey (feeds-and-devices PR 7)', () => {
+  it('a webcam without a feed gets a WHIP feed on first whip-url, linked to it, and keeps the same key', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = await insertCamera({ owner_api_key: 'proj-whip', control_type: 'webcam' });
+    const first = await (await fetch(`${baseUrl}/production/cameras/${id}/whip-url`)).json();
+    assert.match(first.cameraKey, /^feed-[0-9a-f]{12}$/);
+    assert.equal(first.whipUrl, `/production/cameras/${id}/whip`);
+    assert.match(first.hlsUrl, new RegExp(`/stream-hls/${first.cameraKey}/index\\.m3u8$`));
+    const feed = await db.prepare("SELECT transport, device_type, device_id, owner_api_key FROM prod_feeds WHERE feed_key = ?").get(first.cameraKey);
+    assert.deepEqual({ ...feed }, { transport: 'whip', device_type: 'camera', device_id: id, owner_api_key: 'proj-whip' });
+    const second = await (await fetch(`${baseUrl}/production/cameras/${id}/whip-url`)).json();
+    assert.equal(second.cameraKey, first.cameraKey, 'no second feed is created');
+    assert.equal((await db.prepare('SELECT COUNT(*) AS n FROM prod_feeds WHERE device_id = ?').get(id)).n, 1);
+  });
+
+  it('a webcam whose key was migrated keeps its old WHIP path', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = await insertCamera({ owner_api_key: 'proj-a', control_type: 'mobile', camera_key: `old-phone-${randomUUID().slice(0, 8)}` });
+    const body = await (await fetch(`${baseUrl}/production/cameras/${id}/whip-url`)).json();
+    assert.match(body.cameraKey, /^old-phone-/);
+  });
+
+  it('refuses a cameraKey and the removed rtmp control type on create and update', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const json = { 'Content-Type': 'application/json' };
+    const withKey = await fetch(`${baseUrl}/production/cameras`, { method: 'POST', headers: json, body: JSON.stringify({ name: 'K', cameraKey: 'k-1' }) });
+    assert.equal(withKey.status, 400);
+    assert.match((await withKey.json()).error, /cameraKey is no longer stored on cameras/);
+    const rtmp = await fetch(`${baseUrl}/production/cameras`, { method: 'POST', headers: json, body: JSON.stringify({ name: 'R', controlType: 'rtmp' }) });
+    assert.equal(rtmp.status, 400);
+    const id = await insertCamera({ control_type: 'none' });
+    const upd = await fetch(`${baseUrl}/production/cameras/${id}`, { method: 'PUT', headers: json, body: JSON.stringify({ cameraKey: 'k-2' }) });
+    assert.equal(upd.status, 400);
+  });
+
+  it('deleting a camera unlinks its feed and keeps it', async () => {
+    thumbnailsDir = fs.mkdtempSync(join(tmpdir(), 'lcyt-cam-thumb-'));
+    await startApp(makeRegistryStub());
+    const id = await insertCamera({ owner_api_key: 'proj-a', control_type: 'none', camera_key: `unlink-${randomUUID().slice(0, 8)}` });
+    assert.equal((await fetch(`${baseUrl}/production/cameras/${id}`, { method: 'DELETE' })).status, 204);
+    const rows = await db.prepare('SELECT feed_key, device_type, device_id FROM prod_feeds WHERE feed_key LIKE ?').all('unlink-%');
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0].device_id, null);
   });
 });

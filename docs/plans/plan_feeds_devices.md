@@ -1,6 +1,6 @@
 # Plan: Feeds and Devices
 
-**Status:** PRs 1-5 merged (table and API, dual reads, Feeds card, Devices card, relay source picker); PR 6 (perception, thumbnails, mixer sources read the linked feed through `camera-feeds.js`) in review. Supersedes the "feeds are cameras" choice of `plan_ingest_feeds.md`. Eight-PR order in section 8; PRs are merged one at a time, in order.
+**Status:** PRs 1-6 merged (table and API, dual reads, Feeds card, Devices card, relay source picker); PR 7 (`camera_key` and `source_camera_id` dropped from both prisma schemas and Postgres migration 0008, startup backfill, `control_type 'rtmp'` becomes `none`, camera-key code removed from lcyt-rtmp, lcyt-production, lcyt-backend and lcyt-web) in review. Supersedes the "feeds are cameras" choice of `plan_ingest_feeds.md`. Eight-PR order in section 8; PRs are merged one at a time, in order.
 
 Status: plan only, nothing implemented. Repo: jsilvanus/live-captions-yt at main d4cc6d9 (after #378). Requested by Juha in the thread "Incoming streams chip".
 

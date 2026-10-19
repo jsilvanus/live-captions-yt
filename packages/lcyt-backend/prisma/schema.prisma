@@ -764,7 +764,6 @@ model prod_cameras {
   sort_order            Int                    @default(0)
   created_at            String                 @default(dbgenerated("datetime('now')"))
   connection_source     String                 @default("backend")
-  camera_key            String?
   thumbnail_captured_at String?
   perception_enabled    Int                    @default(0)
   owner_api_key         String?
@@ -922,7 +921,6 @@ model rtmp_relays {
   video_bitrate    String?
   audio_bitrate    String?
   source_view      String  @default("program")
-  source_camera_id String?
   source_feed_id   String?
 
   @@unique([api_key, slot], map: "sqlite_autoindex_rtmp_relays_1")
