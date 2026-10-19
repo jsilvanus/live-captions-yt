@@ -1,112 +1,103 @@
-# Plan: notification channels (`lcyt-notify`)
+# Plan: notifications, email and SMS (`lcyt-notify`)
 
 Status: **draft**, waiting for Juha's go. No code yet.
-Research: [`notify-research-2026-10-18.md`](notify-research-2026-10-18.md).
+Research: [`notify-research-2026-10-18.md`](notify-research-2026-10-18.md) (kept complete, including the phone research, which is for later).
 
-## Goal
+## Scope now
 
-Let LCYT send email, SMS and phone calls. Warnings such as "live is still on" are the first use. The same functions should later serve the Production Assistant and the Director.
+- **Email and SMS only**, through a Brevo adapter.
+- **Contacts**: a Setup Hub card where people are saved with a slug, an email and an SMS number.
+- **Metacode `notify[channel,slug]:text`** in the rundown, so an operator can send a message when the pointer reaches a line.
+- **Notifications card** on the Assets page: rules for stream alerts, such as "stream on for more than X" and stream health (start, degraded, end).
+- An attempt log, rate limits and consent checks.
 
-## Requirements (from Juha, 2026-10-18)
+Out of scope: phone calls, AI calls, live audio, and bell or hardware actions.
 
-1. **Call and play:** place a call and play a pre-recorded file, TTS, or a premade sound followed by TTS.
-2. **Call and discuss with AI:** an AI takes part in the call with a role (Production Assistant, Director, and others).
-3. **Call and listen:** stream live audio or feeds into the call.
+## Future: phone calls
 
-Not every adapter must implement all three. For now, **only Siptel and only functions 1 and 2**. Function 3 is designed for, but not built.
+Phone calls (TTS, premade audio, AI calls, live audio) are **not** part of this plan. The research on Siptel, Telnyx and others is kept in the research document for later. The channel design leaves room for a `call` channel, so it can be added later without changing the contact model.
 
-## Scope
+## Components
 
-- **In:** plugin skeleton, channel interfaces, Brevo adapter (email and SMS), Siptel adapter (calls: create, play text, play audio, hangup, status, and agent calls), a `POST /notify/*` test route, an attempt log, env config, tests against fake HTTP servers.
-- **Out (this plan):** streaming live audio, the Production Assistant tool wiring, UI beyond a minimal settings card, real-service verification.
+### 1. `lcyt-notify` plugin (backend)
 
-## Design
+- Channel interface: `email.send({to, subject, text})`, `sms.send({to, text})`. Each adapter declares its capabilities.
+- `NotifyService` picks the adapter per channel from config. Only it calls adapters.
+- **Brevo adapter:** email through the transactional API (`api-key` header). SMS through `POST /v3/transactionalSMS/send`. The SMS fields are **unverified**; check the official reference before coding.
+- Table `notify_log`: time, project, channel, contact slug, masked recipient, result, provider message id. No message bodies with personal data.
+- Rate limits per project (per minute and per day), checked before the provider call.
+- Routes: `GET/POST /contacts`, `PATCH/DELETE /contacts/:id`, `POST /notify/send` (manual send), `GET /notify/log`, `GET/PUT /notify/rules`.
 
-### Channel interfaces
+### 2. Contacts (Setup Hub card "Contacts")
+
+- Fields: `slug` (unique per project, lowercase letters, digits and hyphens, used in metacodes), display name (optional), `email`, `smsNumber` (E.164, validated), `consentEmail` and `consentSms` (each with a date and source), `active`.
+- Reserved slugs are refused (`all`, `admin` if we want it reserved; to decide).
+- UI: list, add, edit, disable. A contact without consent for a channel can't receive on that channel, and the UI says so.
+- Storage: a `notify_contacts` table scoped to the project, not in the project definition.
+- Only the Setup tier may add or edit contacts (`plan_project_roles.md`).
+
+### 3. Metacode `notify[channel,slug]:text`
+
+Examples from Juha:
 
 ```
-email.send({ to, subject, text, html? })            -> { id }
-sms.send({ to, text })                               -> { id }
-call.start({ to, from?, voice? })                    -> { callId }
-call.speak(callId, { text, voice? })                 -> void      # TTS
-call.playAudio(callId, { url })                      -> void      # premade WAV, 8 kHz
-call.ask(callId, { prompt, agent? })                 -> void      # AI conversation (Siptel agent call)
-call.hangup(callId)                                  -> void
-call.status(callId)                                  -> { status, hangupCause? }
+notify[sms,churchwarden]: We are now in Eucharist. Ring the church bells.
+notify[email,admin]: Stream is starting.
 ```
 
-Each adapter declares its `capabilities` (for example `{ call: { speak: true, playAudio: true, ask: true, stream: false } }`). Callers check capabilities before calling, so a missing function is a clear error, not a silent failure.
+- The registry (`packages/lcyt-web/src/lib/metacode-registry.js`) gets a `notify` entry with `kind: 'action'`. The bracket form already exists for `file[server]`, so the name pattern is supported. The comma inside the brackets is new and needs parser support.
+- **When it fires (proposed):** `pointer`, like `timer` and `goto`, so it runs when the operator reaches that line. The alternative is `send`, like named actions.
+- The client queues the send; the backend `NotifyService` does it; the operator sees the result (sent, skipped for no consent, rate-limited, or failed). Failures are never silent.
+- **Guard:** a cooldown per (channel, contact, text) of about 60 seconds, and the loop guard already used by backend actions.
+- Text after the colon is the message. Its length is capped (for SMS, one segment, to be decided).
 
-### Adapters
+### 4. Notifications card (Assets page)
 
-| Adapter | Channels | Notes |
-|---|---|---|
-| `brevo` | email, sms | Email via transactional API. SMS endpoint `transactionalSMS/send` (unverified fields). |
-| `siptel` | call, sms (optional) | `play-text`, `play-audio`, `hangup`, `call/{id}`, `agent/call`. |
+Rules configured per project, each with:
+- **trigger:** `stream.running_for` (threshold X, repeat interval), `stream.started`, `stream.degraded`, `stream.ended`.
+- **channels and recipients:** contacts by slug, or all contacts with consent for that channel.
+- **message template** with variables such as `{{project}}` and `{{minutes}}`.
+- **enabled** and a **cooldown**. Rules are off by default and must name recipients.
 
-A `NotifyService` picks an adapter per channel from config. It is the only place that calls adapters.
+Example rules: "stream on for over 4 hours, SMS admin"; "stream started, email admin".
 
-### Siptel mapping
+**Unverified:** whether the platform and RTMP layers already emit start, degraded and end events. `lcyt-platforms` has `platform.*` events (its `stats-poller.js`), but I haven't read the stream-health path yet. That check is part of phase 5.
 
-- `call.start` → `POST /v1/voiceapi/call` (`to`, `from`, `max_duration`, `webhook_url`).
-- `call.speak` → `POST /v1/voiceapi/play-text` (`call_id`, `text`, `voicename`).
-- `call.playAudio` → `POST /v1/voiceapi/play-audio` (`call_id`, `audio_url`, WAV 8 kHz). The URL must be public for Siptel.
-- `call.ask` → `POST /v1/agent/call` (`phone_number`, `caller_id`, `voice`, `task_prompt`, `greeting_message`, `record`, `voicemail_action`). Uses Siptel's LLM (`llm_provider`: groq or openai).
-- `call.hangup` → `POST /v1/voiceapi/hangup`. **Agent calls have no documented hangup**; use `max_duration` and `enable_auto_end` until confirmed.
-- `call.status` → `GET /v1/voiceapi/call/{call_id}`.
+## Safety and data protection
 
-### Brevo mapping
+- **Consent:** no send without consent for that contact and channel. Skipped sends are logged.
+- **Opt-out:** SMS opt-out (STOP) is handled by the provider and must be honoured. Email needs an unsubscribe link for non-transactional mail. Staff alerts may count as transactional; that needs a decision.
+- **Personal data:** phone numbers and email addresses. Record the lawful basis, set a retention period for the log (proposed: 90 days), and sign Brevo's DPA. Check Brevo's data location first.
+- **Church context:** these contacts are staff and volunteers. Before collecting anything about members, run the `church-data-protection-advisor` checks.
+- **Secrets:** the Brevo key is env-only (`NOTIFY_BREVO_API_KEY`) and never logged.
 
-- `email.send` → transactional email API (`api-key` header).
-- `sms.send` → `POST /v3/transactionalSMS/send`. **Verify** body fields and sender ID rules before coding.
-
-### Configuration
-
-Secrets and anything that touches the network are env-only (`CLAUDE.md`, Configuration):
+## Configuration (env-only secrets)
 
 - `NOTIFY_BREVO_API_KEY`, `NOTIFY_BREVO_SENDER_EMAIL`, `NOTIFY_BREVO_SENDER_NAME`
-- `NOTIFY_SIPTEL_API_KEY`, `NOTIFY_SIPTEL_FROM_NUMBER`, `NOTIFY_SIPTEL_VOICE`
-- `NOTIFY_PUBLIC_AUDIO_BASE_URL` (where premade WAV files are reachable for Siptel)
-- `NOTIFY_ALLOWED_RECIPIENTS` (optional allow-list, see Safety)
-
-Non-secret tuning can go into the server settings registry later.
-
-### Safety and guardrails
-
-- **Opt-in recipients:** calls and SMS go only to numbers in a per-project contact list with consent recorded. No free dialling from the AI.
-- **Human confirmation:** any call or SMS started by the AI needs a confirm step. A tool may only propose.
-- **Rate and cost limits:** per-minute cap on calls and SMS, plus a daily cap, enforced before the provider call.
-- **Attempt log:** every send and call is logged (channel, adapter, recipient hashed or masked, time, result, provider id). Never log message bodies with personal data.
-- **Failure handling:** a failed call or SMS is retried only where the provider says it is safe; otherwise it fails and is logged.
-- **Secrets:** keys never appear in logs or errors (scrub like the Facebook/Siptel bearer tokens elsewhere).
-
-### Data protection
-
-Phone numbers and email addresses are personal data. Before live use:
-- record the lawful basis and an opt-out for each recipient,
-- check where Brevo and Siptel process data (EU), and sign the DPAs,
-- keep the attempt log short-lived and say how long.
+- `NOTIFY_SMS_SENDER` (sender ID, subject to the rules to be verified)
+- Rate and retention settings can later move to the server settings registry.
 
 ## Phases
 
-1. **This PR:** research and plan. Wait for Juha's go.
-2. **Core:** plugin skeleton, interfaces, `NotifyService`, attempt log, config, tests with fakes. Email and SMS via Brevo.
-3. **Calls:** Siptel adapter for `start`, `speak`, `playAudio`, `hangup`, `status`. Test route. Public audio hosting for premade files.
-4. **AI calls:** `call.ask` via Siptel agent calls, with roles and prompts defined by LCYT. Human confirm step.
-5. **Warnings:** wire "live still on" warnings to notify, with the consent and rate rules above.
-6. **Later:** live-audio streaming (Telnyx media streaming or a Siptel SIP route), and the Production Assistant tools in `lcyt-tools`.
+1. **This PR:** plan and research. Waiting for Juha's go.
+2. **Core:** plugin skeleton, interfaces, `NotifyService`, log, rate limits, Brevo email and SMS. Tests against a fake HTTP server, plus one contract suite every adapter must pass.
+3. **Contacts:** table, routes, Setup Hub card.
+4. **Metacode:** registry entry, parser support for `[channel,slug]`, pointer wiring, operator feedback.
+5. **Notifications card:** rules, stream triggers (after the check above), cooldowns.
+6. **Later:** AI tool wiring in `lcyt-tools`, and phone calls (see the research).
 
 ## Open questions for Juha
 
-1. **Placement:** a plugin in live-captions-yt (my default) or a shared package for the other repos?
-2. **Accounts:** Siptel account and number, Brevo account and sender domain (SPF, DKIM, DMARC). Do you have these?
-3. **Siptel checks:** TTS engines for `play-text`, voices, call-end for agent calls, call and SMS pricing, live-media support on SIP trunks.
-4. **AI calls:** should they use Siptel's LLM (groq or openai), or LCYT's own AI roles driving `play-text` and `gather-text` turns? The second gives us control over prompts and logs, but takes more work.
-5. **Premade sounds:** keep them in LCYT's file storage and serve them at a public URL, or host them elsewhere?
-6. **Recipients:** who may be called or texted, and who records consent?
+1. Should `notify[...]` fire when the pointer reaches the line (my proposal) or when the line is sent?
+2. Allow several recipients in one metacode, such as `notify[sms,churchwarden+sexton]`?
+3. Ask for confirmation before a metacode send, or rely on the cooldown and rate limits only?
+4. Is `admin` a reserved slug?
+5. How long should the notify log be kept (proposed: 90 days)?
+6. Who may add contacts? Proposed: Setup tier only.
+7. Accounts: Brevo account, sender domain (SPF, DKIM, DMARC), and the SMS sender ID rules for Finland (to verify).
 
 ## Unverified
 
-- Brevo SMS request body, sender ID rules, webhook payloads, data location.
-- Siptel TTS engines for `play-text`, agent-call hangup, call-status values, pricing, SIP trunk media.
-- Everything about live streaming (phase 6).
+- Brevo SMS request fields, sender ID rules, and webhook payloads.
+- Whether stream start, degraded and end events exist in the platform or RTMP layers.
+- Whether Brevo stores data in the EU.
