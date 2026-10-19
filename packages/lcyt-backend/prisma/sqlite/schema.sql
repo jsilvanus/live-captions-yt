@@ -1100,6 +1100,43 @@ CREATE TABLE IF NOT EXISTS "viewer_key_daily_stats" (
     PRIMARY KEY ("date", "api_key", "viewer_key")
 );
 
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "notify_contacts" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "name" TEXT,
+    "email" TEXT,
+    "sms_number" TEXT,
+    "consent_email" INTEGER NOT NULL DEFAULT 0,
+    "consent_sms" INTEGER NOT NULL DEFAULT 0,
+    "active" INTEGER NOT NULL DEFAULT 1,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "notify_providers" (
+    "api_key" TEXT NOT NULL PRIMARY KEY,
+    "provider" TEXT NOT NULL,
+    "config_json" TEXT NOT NULL,
+    "secrets_enc" TEXT,
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "notify_log" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "at" TEXT NOT NULL,
+    "channel" TEXT NOT NULL,
+    "contact_slug" TEXT NOT NULL,
+    "trigger" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "provider_id" TEXT,
+    "error" TEXT
+);
+
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_action_defs_key" ON "action_defs"("api_key");
 
@@ -1399,4 +1436,13 @@ CREATE INDEX IF NOT EXISTS "idx_prod_feeds_owner" ON "prod_feeds"("owner_api_key
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_prod_feeds_device" ON "prod_feeds"("device_type", "device_id");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_notify_contacts_key" ON "notify_contacts"("api_key");
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_notify_contacts_slug" ON "notify_contacts"("api_key", "slug");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_notify_log_key_at" ON "notify_log"("api_key", "at");
 

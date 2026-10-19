@@ -18,6 +18,9 @@
     "directory": "packages/plugins/lcyt-notify"
   },
   "dependencies": {
-    "nodemailer": "^9.1.1"
-  }
+    "nodemailer": "^9.1.1",
+    "express": "^4.21",
+    "lcyt-platforms": "*"
+  },
+  "devDependencies": {}
 }
