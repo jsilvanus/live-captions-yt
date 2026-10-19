@@ -3,8 +3,9 @@ name: Publish images
 # Builds and publishes the container images the deployment stack (jsilvanus/deploy-media) uses:
 #   lcyt              the backend + frontend web UI (Dockerfile) — STATIC_DIR is set in the image
 #   lcyt-fleet-worker the fat fffleet worker: DSK graphics + perception (docker/lcyt-fleet-worker)
-# Tags: `latest` and `sha-<sha>` from main, `<version>` and `<major>.<minor>` from v*.*.* tags.
-# The images are not pushed from pull requests.
+# Tags: `latest`, `sha-<sha>`, `<version>` and `<major>.<minor>` from v*.*.* tags.
+# Images can also be built manually with workflow_dispatch; manual builds do not move `latest`.
+# The images are not pushed from pull requests or ordinary main pushes.
 #
 # Base images (node:22-slim) are pulled from docker.io.
 # If you encounter docker.io rate limiting or access issues:
@@ -14,7 +15,6 @@ name: Publish images
 
 on:
   push:
-    branches: [main]
     tags: ["v*.*.*"]
   workflow_dispatch:
 
@@ -46,7 +46,7 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
             type=sha
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
