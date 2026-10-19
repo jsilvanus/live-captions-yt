@@ -7,7 +7,7 @@ import { MixerSection } from './MixerSection.jsx';
 import { EncoderSection } from './EncoderSection.jsx';
 import { BridgeSection } from './BridgeSection.jsx';
 import { EgressSection } from './EgressSection.jsx';
-import { IngestionSection } from './IngestionSection.jsx';
+import { FeedsSection } from './FeedsSection.jsx';
 import { ViewerStreamSection } from './ViewerStreamSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
 import { ViewportsSection } from './ViewportsSection.jsx';
@@ -148,7 +148,7 @@ export function SetupHubPage() {
 
             {/* ── Streaming & graphics ── */}
             {isVisible('egress') && <EgressSection />}
-            {isVisible('ingestion') && <IngestionSection />}
+            {isVisible('feeds') && <FeedsSection />}
             {isVisible('radio') && <WebRadioSection />}
             {isVisible('viewer-stream') && <ViewerStreamSection />}
             {isVisible('viewports') && <ViewportsSection />}

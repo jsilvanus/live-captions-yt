@@ -23,7 +23,7 @@ function MediaState({ stream, t }) {
 /**
  * Top-bar chip with the number of incoming streams (encoders pushing to MediaMTX) of the project; hovering,
  * focusing or clicking it lists their paths with video/audio state. The list also has a "Discover" button that
- * shows streams nobody owns yet and can bind one to the project as a named feed.
+ * shows streams nobody owns yet and can bind one to the project as a named feed (a `/feeds` row, kind camera).
  * Hidden when the server has no ingest to report (relay off, no MediaMTX API, request failed).
  */
 export function IngestStreamsChip() {
@@ -88,9 +88,9 @@ export function IngestStreamsChip() {
   async function attach(stream) {
     setBusy(true); setError('');
     try {
-      await call('/production/cameras', {
+      await call('/feeds', {
         method: 'POST',
-        body: JSON.stringify({ name: stream.key, controlType: 'rtmp', cameraKey: stream.key }),
+        body: JSON.stringify({ name: stream.key, feedKey: stream.key, transport: 'rtmp', kind: 'camera' }),
       });
       setFound(list => (list ?? []).filter(s => s.path !== stream.path));
       refresh();

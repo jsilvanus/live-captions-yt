@@ -56,20 +56,20 @@ describe('IngestStreamsChip', () => {
     expect(screen.getByText('no audio')).toBeTruthy();
   });
 
-  it('discovers an unclaimed stream and adds it as a feed', async () => {
+  it('discovers an unclaimed stream and adds it as a feed (POST /feeds, not a camera)', async () => {
     routes['GET /ingestion/streams'] = () => json({ available: true, streams: [] });
     routes['GET /ingestion/streams/unclaimed'] = () => json({ available: true, streams: [
       { path: 'webcam', key: 'webcam', kind: 'video', video: true, audio: false, attachable: true },
     ] });
     const created = vi.fn(() => json({ ok: true }, 201));
-    routes['POST /production/cameras'] = created;
+    routes['POST /feeds'] = created;
     renderChip();
     const chip = await screen.findByRole('button', { name: '0 incoming streams' });
     fireEvent.click(chip);
     fireEvent.click(screen.getByText('Discover streams'));
     fireEvent.click(await screen.findByText('Add as feed'));
     await waitFor(() => expect(created).toHaveBeenCalled());
-    expect(JSON.parse(created.mock.calls[0][0].body)).toEqual({ name: 'webcam', controlType: 'rtmp', cameraKey: 'webcam' });
+    expect(JSON.parse(created.mock.calls[0][0].body)).toEqual({ name: 'webcam', feedKey: 'webcam', transport: 'rtmp', kind: 'camera' });
     await waitFor(() => expect(screen.queryByText('Add as feed')).toBeNull());
   });
 

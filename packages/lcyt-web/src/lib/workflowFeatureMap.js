@@ -25,7 +25,7 @@ export const FEATURE_TO_CARD_IDS = {
   'files-browser-local':  ['storage'],
   'graphics-server': ['viewports'],
   'graphics-client': ['viewports'],
-  ingest: ['egress', 'ingestion'],
+  ingest: ['egress', 'feeds'],
   radio:  ['radio'],
   'hls-stream': ['viewer-stream'],
   preview: ['viewer-stream'],

@@ -277,7 +277,7 @@ function CameraForm({ initial, bridges, onSave, onCancel }) {
           />
           <p style={{ margin: '4px 0 0', fontSize: 11, color: 'var(--color-text-muted)' }}>
             MediaMTX path name for this camera stream. Convention: <code>yourkey-cam1</code>.
-            {controlType === 'rtmp' && ' Pasted into the encoder as rtmp://<host>/feed/<this key> — see the Ingestion card.'}
+            {controlType === 'rtmp' && ' Pasted into the encoder as rtmp://<host>/feed/<this key> — see the Feeds card.'}
           </p>
         </div>
       )}

@@ -40,8 +40,8 @@ describe('cardIdsForEnabledFeatures()', () => {
     assert.deepEqual([...result], ['caption-targets']);
   });
 
-  it('maps ingest to both the egress and ingestion cards, restream to egress', () => {
-    assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'ingest', enabled: true }])].sort(), ['egress', 'ingestion']);
+  it('maps ingest to both the egress and feeds cards, restream to egress', () => {
+    assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'ingest', enabled: true }])].sort(), ['egress', 'feeds']);
     assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'restream', enabled: true }])], ['egress']);
   });
 

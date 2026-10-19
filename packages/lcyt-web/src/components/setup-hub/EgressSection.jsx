@@ -43,7 +43,7 @@ function slotMeta(entry) {
  */
 // Camera control types that carry a camera_key (a real MediaMTX ingest path) —
 // webcam/mobile (WHIP) and 'rtmp' (pushed — plan_ingest_feeds.md §1a). Same
-// filter IngestionSection.jsx uses.
+// filter the old Ingestion card used (FeedsSection.jsx lists feeds, not cameras).
 const FEED_CAMERA_TYPES = new Set(['webcam', 'mobile', 'rtmp']);
 
 export function EgressSection() {

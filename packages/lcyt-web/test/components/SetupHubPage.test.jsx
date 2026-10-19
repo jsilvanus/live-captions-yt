@@ -9,7 +9,7 @@ vi.mock('../../src/components/setup-hub/MixerSection.jsx', () => ({ MixerSection
 vi.mock('../../src/components/setup-hub/EncoderSection.jsx', () => ({ EncoderSection: () => <div data-testid="encoder-section" /> }));
 vi.mock('../../src/components/setup-hub/BridgeSection.jsx', () => ({ BridgeSection: () => <div data-testid="bridge-section" /> }));
 vi.mock('../../src/components/setup-hub/EgressSection.jsx', () => ({ EgressSection: () => <div data-testid="egress-section" /> }));
-vi.mock('../../src/components/setup-hub/IngestionSection.jsx', () => ({ IngestionSection: () => <div data-testid="ingestion-section" /> }));
+vi.mock('../../src/components/setup-hub/FeedsSection.jsx', () => ({ FeedsSection: () => <div data-testid="feeds-section" /> }));
 vi.mock('../../src/components/setup-hub/WebRadioSection.jsx', () => ({ WebRadioSection: () => <div data-testid="webradio-section" /> }));
 vi.mock('../../src/components/setup-hub/ViewportsSection.jsx', () => ({ ViewportsSection: () => <div data-testid="viewports-section" /> }));
 vi.mock('../../src/components/setup-hub/CaptionTargetsSection.jsx', () => ({ CaptionTargetsSection: () => <div data-testid="caption-targets-section" /> }));
@@ -49,7 +49,7 @@ describe('SetupHubPage', () => {
     expect(screen.getByTestId('encoder-section')).toBeInTheDocument();
     expect(screen.getByTestId('bridge-section')).toBeInTheDocument();
     expect(screen.getByTestId('egress-section')).toBeInTheDocument();
-    expect(screen.getByTestId('ingestion-section')).toBeInTheDocument();
+    expect(screen.getByTestId('feeds-section')).toBeInTheDocument();
     expect(screen.getByTestId('webradio-section')).toBeInTheDocument();
     expect(screen.getByTestId('viewports-section')).toBeInTheDocument();
     expect(screen.getByTestId('caption-targets-section')).toBeInTheDocument();
