@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createNotifyService } from '../src/notify/notify-service.js';
-import { createRateLimiter, createCooldown } from '../src/notify/rate-limit.js';
+import { createNotifyService } from '../src/notify-service.js';
+import { createRateLimiter, createCooldown } from '../src/rate-limit.js';
 
 const contact = {
   slug: 'churchwarden',

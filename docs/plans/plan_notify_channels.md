@@ -20,7 +20,7 @@ Phone calls (TTS, premade audio, AI calls, live audio) are **not** part of this 
 
 ## Components
 
-### 1. `lcyt-notify` plugin (backend)
+
 
 - Channel interface: `email.send({to, subject, text})`, `sms.send({to, text})`. Each adapter declares its capabilities.
 - Capabilities:

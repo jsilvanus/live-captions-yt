@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createBrevoEmailAdapter } from '../src/notify/brevo-email.js';
+import { createBrevoEmailAdapter } from '../src/brevo-email.js';
 
 function fakeFetch(response) {
   const calls = [];
