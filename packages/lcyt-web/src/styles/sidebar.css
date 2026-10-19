@@ -1787,6 +1787,26 @@
   color: var(--color-text);
 }
 
+/* Always-visible mic (blue = idle, red = listening) */
+.top-bar__mic {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid #1a6fd4;
+  border-radius: 14px;
+  background: #1a6fd4;
+  color: #fff;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.top-bar__mic--on { background: #cc0022; border-color: #cc0022; }
+.top-bar__mic-lang { font-size: 11px; opacity: 0.9; }
+@media (max-width: 600px) { .top-bar__mic-lang { display: none; } }
+
 /* ─── Command palette (5a) ─────────────────────────────────────────────────── */
 
 .cmd-palette-backdrop {

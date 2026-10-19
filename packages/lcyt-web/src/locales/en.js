@@ -973,4 +973,12 @@ export default {
     sttBusy: 'stt {running} run / {queued} queued',
     live: 'live translation {count}',
   },
+  topMic: {
+    start: 'Listen: start speech recognition',
+    stop: 'Listening: stop speech recognition',
+    browser: 'Browser',
+    server: 'Server',
+    local: 'on-device',
+    cloud: 'cloud',
+  },
 };
