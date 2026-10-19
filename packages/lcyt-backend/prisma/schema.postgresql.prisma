@@ -1168,6 +1168,26 @@ model tally_lights {
   @@index([api_key], map: "idx_tally_lights_api_key")
 }
 
+/// Named incoming feed of a project (Feeds card). kind: generic | camera | dsk; transport: rtmp | whip.
+/// label is free text for generic feeds (preview, program, mixer2 ...). device_type/device_id optionally
+/// link the feed to a camera, mixer or encoder (no foreign key, checked in code; a device may have many feeds).
+model prod_feeds {
+  id            String  @id
+  owner_api_key String
+  name          String
+  feed_key      String  @unique(map: "idx_prod_feeds_feed_key")
+  transport     String  @default("rtmp")
+  kind          String  @default("generic")
+  label         String?
+  device_type   String?
+  device_id     String?
+  sort_order    Int     @default(0)
+  created_at    String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+
+  @@index([owner_api_key], map: "idx_prod_feeds_owner")
+  @@index([device_type, device_id], map: "idx_prod_feeds_device")
+}
+
 model viewer_anon_daily_stats {
   date  String @id
   views Int    @default(0)

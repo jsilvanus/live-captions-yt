@@ -1070,6 +1070,21 @@ CREATE TABLE IF NOT EXISTS "tally_lights" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "prod_feeds" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "owner_api_key" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "feed_key" TEXT NOT NULL,
+    "transport" TEXT NOT NULL DEFAULT 'rtmp',
+    "kind" TEXT NOT NULL DEFAULT 'generic',
+    "label" TEXT,
+    "device_type" TEXT,
+    "device_id" TEXT,
+    "sort_order" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "viewer_anon_daily_stats" (
     "date" TEXT NOT NULL PRIMARY KEY,
     "views" INTEGER NOT NULL DEFAULT 0
@@ -1375,4 +1390,13 @@ CREATE INDEX IF NOT EXISTS "idx_handoffs_broadcast_id" ON "handoffs"("broadcast_
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_tally_lights_api_key" ON "tally_lights"("api_key");
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_prod_feeds_feed_key" ON "prod_feeds"("feed_key");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_prod_feeds_owner" ON "prod_feeds"("owner_api_key");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_prod_feeds_device" ON "prod_feeds"("device_type", "device_id");
 
