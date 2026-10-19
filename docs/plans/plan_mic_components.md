@@ -11,6 +11,8 @@ Two components that share one listener:
 
 Follow-up from Juha (same day): the WebSpeech API should have two modes, **prefer local** (on-device) and **normal** (cloud). He also hit `Explicit project admin/owner access required` when trying to select WebSpeech in the STT settings (section 3).
 
+> **Revision 3 (Juha, 2026-10-19, latest):** decisions and the real cause of the 403 are in section 12; it takes precedence over sections 3, 4.5 (language), 11.1 (window content) and 11.4.
+
 > **Revision 2 (Juha, 2026-10-19, later):** attach/detach and "Audio from" are redefined in section 11, which takes precedence over 4.3 and the attach/detach parts of 4.5 and 10.1.
 
 > **Revision 2026-10-19 (Juha):** the Listen pane is a start/stop **STT** action, not only a browser mic. Which STT it starts (browser or server) follows the STT card setting, and server STT must name a **feed** as its audio source. This changes sections 4.3 and 4.5; see section 10, which takes precedence where they differ.
@@ -251,3 +253,42 @@ Notes:
 
 7. Is the always-on-top window what you meant by "hover small screen"? (Alternative: only an in-page floating bar.)
 8. Should closing the floating window also stop browser listening, or leave it running? I assumed it keeps running.
+
+## 12. Revision 3: decisions, window content, language, and the 403 root cause
+
+### 12.1 Decisions (Juha, 2026-10-19)
+
+- Engine stays in the hidden provider component; the top-bar mic is its visible control (section 4.1 confirmed; Juha prefers it to a top-bar-hosted engine).
+- The floating window is **always-on-top**, with a **toggle in the window** for that. Document Picture-in-Picture windows are always on top by nature, so the toggle only applies to the popup fallback, where the browser offers no real "always on top": there the toggle can only re-raise the window (`window.focus()`) on a timer or on events, and the UI says plainly that a normal popup cannot be forced on top (OS pin needed). In PiP mode the toggle turns into "keep open / close when I leave the app". To verify.
+- Closing the floating window keeps listening (question 8 answered yes).
+- Floating window content (replaces 11.1's list): **STT start/stop button** (with backend, language and "Audio from"), a **sent captions list** (the `SentLogContext` entries, same data as `SentPanel`/`MiniSentLog`) and a **caption input box** (direct `CaptionContext.send`, like the existing `captionInput` pane, not the full `InputBar`). Level meter and interim text sit above the list. The same three blocks are reusable as one `ListenerConsole` component, which the Listen pane can also embed.
+
+### 12.2 Language: recognition only (replaces the checkbox in 4.5)
+
+Caption language is not one global value. The Caption Targets setup card defines, per target, the target language and whether the original, the translation, or both (original + translation) go to that target (`caption_targets`, `translationConfig.js`, `translateAll`). So the Listen pane's quick switcher changes the **recognition (source) language only**. It does not write `inputLang` and the "also caption language" checkbox is dropped. The pane may show, read-only, a line such as "Targets: YouTube fi + en, Viewer fi" taken from the targets list so the operator sees what the language change feeds. The `inputLang` badge in the top bar (a separate older notion) is out of scope; whether it should be retired in favour of the targets summary is a later question.
+
+### 12.3 Section 3 corrected: the 403 comes from the token, not (only) the role
+
+Juha uses **local mode** (`LCYT_INSTALL_MODE=local`), where the local user owns every project, yet gets "Explicit project admin/owner access required" when saving STT settings. Reading the code explains it:
+
+- `SttSection.jsx` sends the **session token** (`session.getSessionToken()`), the JWT from `POST /live` which only contains `{ sessionId, apiKey }` (`routes/live.js`).
+- `middleware/project-access.js` classifies that as kind `session` and authenticates it with `userId: null` (branch `kind === 'session'`).
+- `requireProjectRole(db, 'setup')` calls `hasProjectRole(db, 'setup', apiKey, req.user?.userId)`, which returns `false` when `userId` is missing (`!userId`), so every Setup-tier write sent with a session token gets the 403, whoever the person is. Local mode does not help: its middleware only injects the local-owner token into requests that carry **no** credentials, and the web app does send one.
+- The same pattern is used by other Setup Hub cards that write with the session token (Storage, Egress, Tally, WebRadio, Devices read `getSessionToken`); only `ViewportsSection` and `useSession` hold a `projectAccessToken`. Which of these writes are also gated needs a check, but the bug class is the same: **Setup-tier gates cannot pass for session-token callers.**
+
+Status: derived from reading the code; not reproduced. A quick confirmation is one `PUT /api/v1/stt/config` with the session token versus the project/user token on Juha's local stack.
+
+Proposed fix (separate small PR, before the mic work, since it blocks saving STT settings at all):
+
+1. **Web (recommended, smallest):** Setup Hub cards that write Setup-tier config send the **project access token** (`session.projectAccessToken`, a user-kind token that carries `userId` and `projectRole`) for write calls, via one shared helper `setupAuthHeader(session)`; reads keep using whichever token they use today. Fall back to the session token (with the 403 surfaced as a readable "log in with a user account to change setup") when no project token exists.
+2. **Backend (alternative/addition):** let a session token resolve its project owner for gating, i.e. `kind === 'session'` looks up the connecting user (store `userId` in the `POST /live` session when the request came with a user/project token, and put it in the session JWT). This also fixes API/CLI clients, but changes what a session token may do and needs a security review; so not recommended as the first step.
+3. In local mode, additionally treat the injected local owner as satisfying every tier for any token on the same project (`ensureLocalIdentity` already makes the local user owner of all projects); optional because (1) covers the web.
+4. Add a regression test: `PUT /stt/config` with a session token returns 403 (documents the gate) and with a project token of an owner returns 200.
+
+The earlier proposal to hide the server `webspeech` provider from the Setup Hub list stays as a separate, smaller cleanup, but it is no longer presented as the cause of Juha's 403. Whether the browser-side WebSpeech setting needs no backend write at all (section 6) is unchanged and still the plan.
+
+### 12.4 Open questions that remain
+
+- Window toggle behaviour in the popup fallback (12.1) is a best effort; acceptable?
+- Should the "targets summary" line on the pane link to the Caption Targets card?
+- Fix 1 vs 2 for the 403 (my recommendation: 1 now, 2 only if API/CLI clients hit it).
