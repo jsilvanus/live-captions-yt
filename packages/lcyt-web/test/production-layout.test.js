@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {
   defaultViews, activeView, updateActiveView, setActiveView,
   addCustomView, removeView, addColumn, addRow, addPane,
-  changePaneType, removePane, resizePair,
+  changePaneType, removePane, resizePair, refreshBuiltinViews,
 } from '../src/components/production/workspace/layout.js';
 
 // A hand-built state so we never touch localStorage (initialLayoutState does).
@@ -91,4 +91,25 @@ test('resizePair conserves total and respects the minimum share', () => {
   const [c, d] = resizePair([0.5, 0.5], 0, -1, 0.1);
   assert.ok(Math.abs((c + d) - 1) < 1e-9);
   assert.ok(c >= 0.1 - 1e-9, 'clamped to min');
+});
+
+test('captions view has the Listen pane and the caption input', () => {
+  const { views } = defaultViews();
+  const panes = views.captions.cols.flatMap((c) => c.rows.flatMap((r) => r.panels));
+  assert.ok(panes.includes('listen'));
+  assert.ok(panes.includes('captionInput'));
+});
+
+test('refreshBuiltinViews replaces a stale built-in, keeps current ones and custom views', () => {
+  const d = defaultViews().views;
+  const stale = JSON.parse(JSON.stringify(d.captions));
+  stale.cols[0].rows = [{ frac: 1, panels: ['general'], split: [1] }];
+  const resized = JSON.parse(JSON.stringify(d.relay));
+  resized.cols[0].frac = 0.4;
+  const custom = { name: '1', kind: 'custom', cols: [] };
+  const out = refreshBuiltinViews({ captions: stale, relay: resized, custom1: custom }, d);
+  assert.deepEqual(out.captions, d.captions);
+  assert.equal(out.relay.cols[0].frac, 0.4);
+  assert.equal(out.custom1, custom);
+  assert.ok(out.preflight, 'missing built-ins are added');
 });
