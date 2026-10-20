@@ -127,7 +127,7 @@ Case (Juha): the same program is sent out as (A) a general view to YouTube, (B) 
 | Output | Source | Layers | Audio (`audio_source`) | Destination |
 |---|---|---|---|---|
 | A General | feed Program | DSK as today | `source` | YouTube stream key 1 |
-| B Sign language | feed Program | DSK + interpreter picture-in-picture | `source` | YouTube stream key 2 |
+| B Sign language | feed Program | DSK + PiP (picture-in-picture, e.g. interpreter or close shot) | `source` | YouTube stream key 2 |
 | C Interpreted | feed Program | DSK as today | `{feed: interpreter-audio}` | YouTube stream key 3 |
 
 All three read the same Program feed; they differ only in what is added or replaced, which is why they must be outputs and not feed settings. Each destination is its own YouTube broadcast and stream key: to my knowledge YouTube Live carries one audio track per broadcast (several audio tracks exist for uploaded videos, not live; to be checked before the build), so a language is a separate broadcast, not a track.
@@ -139,11 +139,11 @@ All three read the same Program feed; they differ only in what is added or repla
 - Sync is the real problem, and it moves from "later" to "needed". An interpreter speaks (or signs) a few seconds behind the speaker, so C's audio lags the picture and B's sign video lags the speech. Either the viewer lives with it, or the output delays its source (video and original audio) by `delay_ms` so the interpretation lands closer to the picture. Add `outputs.delay_ms` (default 0, per output, so A stays live while C is delayed). Buffering several seconds of live video in an ffmpeg step is not free (memory, restart loses the buffer); this needs measuring on the Windows stack before promising it. Alternative if it is too heavy: delay at the feed (a delayed copy path of Program) and let C and B read that.
 - Audio must be present for the overlay in B: the PiP's own audio is dropped (`-map` only the base audio); a signing interpreter has no voice track to mix.
 
-### 8.3 Video: the interpreter overlay (B)
+### 8.3 Video: the picture-in-picture layer (B)
 
-The DSK viewport model renders HTML graphics, with chroma key for transparency. A live video of a person is not a graphic, so do not push it through Chromium. Add a second layer kind to the same step, in one ffmpeg run, no extra hop:
+The DSK viewport model renders HTML graphics, with chroma key for transparency. A live video of a person is not a graphic, so do not push it through Chromium. Add a second layer kind, called **PiP** in the UI and API (not "interpreter": the same layer serves a close shot or any second camera), to the same step, in one ffmpeg run, no extra hop:
 
-- `outputs.pip_json`: `[{ feedId, x, y, w, h, shape?: 'rect'|'rounded', border? }]` with fractions of the frame (0..1), so it follows the output size. The interpreter feed is a normal feed (camera). Order in the step: source, PiP, DSK viewports (graphics above the interpreter), then crop.
+- `outputs.pip_json`: `[{ feedId, x, y, w, h, shape?: 'rect'|'rounded'|'circle', radius?, border?: {width, color}, shadow? }]` with fractions of the frame (0..1), so it follows the output size. The PiP source is a normal feed (interpreter, close shot, any camera). Shapes are done in the same ffmpeg run by multiplying the PiP's alpha with a generated mask (`geq` or a mask built from the box size) before the overlay; a border is a second, larger mask in the border colour under it. A round PiP crops the feed to a square first (centre crop, or the camera's own crop offset). H.264 carries no alpha, but the mask is applied inside the filter graph, so that is fine. Not yet run against real ffmpeg; check the cost of `geq` at 1080p and prefer a pre-rendered mask image if it is slow. Order in the step: source, PiP, DSK viewports (graphics above the interpreter), then crop.
 - A vertical crop of B must keep the PiP inside the crop (chain order already puts the crop last; the crop presets would need a keep-out region or the PiP is placed relative to the cropped frame, a second PiP set per output). Open question; B vertical is not in the first version.
 - Common practice for accessibility is a picture at least about a sixth of the frame width, kept clear of the captions at the bottom; set the default to a bottom-left or bottom-right box with the default CC area free (to be checked with the church's accessibility guidance, not assumed).
 
