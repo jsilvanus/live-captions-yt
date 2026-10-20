@@ -117,3 +117,61 @@ One new `OutputStepManager` in `lcyt-rtmp`, modelled on `FanoutSupervisor` (rest
 ## 7. Not in scope (scheduled for later)
 
 Server-side mixer (video and audio, on the fleet), audio mixer (front end and server, several audio inputs per output), audio sync offset, combined DSK+crop step, outputs that mix two feeds themselves.
+
+## 8. One broadcast, three views (added 2026-10-20)
+
+Case (Juha): the same program is sent out as (A) a general view to YouTube, (B) a view with a sign-language interpreter video overlaid for deaf viewers, (C) a view with another audio track for simultaneous interpretation into another spoken language. This is the reason outputs exist, so it is the test of the model. Result: A and C fit the five PRs as planned; B needs one new layer kind; captions need per-output language; sync needs the delay that section 6 left out.
+
+### 8.1 The three outputs in the model
+
+| Output | Source | Layers | Audio (`audio_source`) | Destination |
+|---|---|---|---|---|
+| A General | feed Program | DSK as today | `source` | YouTube stream key 1 |
+| B Sign language | feed Program | DSK + interpreter picture-in-picture | `source` | YouTube stream key 2 |
+| C Interpreted | feed Program | DSK as today | `{feed: interpreter-audio}` | YouTube stream key 3 |
+
+All three read the same Program feed; they differ only in what is added or replaced, which is why they must be outputs and not feed settings. Each destination is its own YouTube broadcast and stream key: to my knowledge YouTube Live carries one audio track per broadcast (several audio tracks exist for uploaded videos, not live; to be checked before the build), so a language is a separate broadcast, not a track.
+
+### 8.2 Audio inputs
+
+- C is exactly case 1 of section 3b (one audio feed replaces all sound); no mixer is needed. The interpreter's audio arrives as a feed with `media = audio` (RTMP/WHIP from the interpreter's booth or a browser). Several interpreter feeds (one per language) are just several audio feeds, each chosen by its own output. That already fits "many audio inputs, one placed per output".
+- What the single-valued `audio_source` cannot do: C with the original sound kept low under the interpreter ("bed", mixer mode 4), or an interpreter who is switched on only while speaking. Both are mixer or audio-mixer work (section 7). The stored JSON can grow to `{main, bed: {source, gain}}` without a migration.
+- Sync is the real problem, and it moves from "later" to "needed". An interpreter speaks (or signs) a few seconds behind the speaker, so C's audio lags the picture and B's sign video lags the speech. Either the viewer lives with it, or the output delays its source (video and original audio) by `delay_ms` so the interpretation lands closer to the picture. Add `outputs.delay_ms` (default 0, per output, so A stays live while C is delayed). Buffering several seconds of live video in an ffmpeg step is not free (memory, restart loses the buffer); this needs measuring on the Windows stack before promising it. Alternative if it is too heavy: delay at the feed (a delayed copy path of Program) and let C and B read that.
+- Audio must be present for the overlay in B: the PiP's own audio is dropped (`-map` only the base audio); a signing interpreter has no voice track to mix.
+
+### 8.3 Video: the interpreter overlay (B)
+
+The DSK viewport model renders HTML graphics, with chroma key for transparency. A live video of a person is not a graphic, so do not push it through Chromium. Add a second layer kind to the same step, in one ffmpeg run, no extra hop:
+
+- `outputs.pip_json`: `[{ feedId, x, y, w, h, shape?: 'rect'|'rounded', border? }]` with fractions of the frame (0..1), so it follows the output size. The interpreter feed is a normal feed (camera). Order in the step: source, PiP, DSK viewports (graphics above the interpreter), then crop.
+- A vertical crop of B must keep the PiP inside the crop (chain order already puts the crop last; the crop presets would need a keep-out region or the PiP is placed relative to the cropped frame, a second PiP set per output). Open question; B vertical is not in the first version.
+- Common practice for accessibility is a picture at least about a sixth of the frame width, kept clear of the captions at the bottom; set the default to a bottom-left or bottom-right box with the default CC area free (to be checked with the church's accessibility guidance, not assumed).
+
+### 8.4 Captions
+
+What exists (checked in code): one caption stream per project; STT has one audio source (`hls`, `rtmp` or `whep`) and one language per project; the translation path already turns a transcript into each enabled target's language (`stt-manager.js`, `captionLang`, `translations`, `showOriginal`); targets (`caption_targets`) carry a language and a kind (youtube stream key, viewer, generic); a relay slot's `caption_mode` is `http` or `cea708`.
+
+What the three views mean:
+
+- A and B: captions in the source language (Finnish) on their stream keys. For B this is not optional in practice: deaf viewers need captions as well as the sign video. Same caption payload, two YouTube targets.
+- C: viewers hear another language, so the captions on that stream key should be in that language. Two ways, both useful: (1) translate the source transcript (exists, fast, follows the speaker, not the interpreter), (2) run STT on the interpreter's audio feed with that language (matches what is heard; lags and is condensed, as interpretation is). First version: (1); (2) comes with STT per audio feed.
+- The gap is the link between a caption target and an output. Today a target is a project-wide thing, so every target receives the same payload. Add `caption_targets.output_id` (NULL = every output, today's behaviour) and let the target's language decide which translation it takes. The Outputs card then shows, per destination, "captions: Finnish / Swedish via translation / none".
+- Source-language choice per output is not needed; the language belongs to the target.
+- Burned-in captions for B (instead of or in addition to YouTube CC) would be a DSK viewport that renders live caption text. Not checked whether a DSK template can bind to live captions; list it as an option, YouTube CC stays the default. CEA-708 is per relay slot and stays so.
+- STT audio source: with several audio feeds the STT must say which one it listens to. Today `audioSource` is about transport (`hls`/`rtmp`/`whep`), not which feed. Add an optional feed (default: Program) so a second STT session can follow an interpreter feed later; one session per project stays the first version.
+
+### 8.5 What changes in the PR order
+
+The five PRs stay as built (A and C work with them today). New, after PR 5, each its own small PR:
+
+6. Picture-in-picture layer in the DSK step (`pip_json`, one ffmpeg run, UI: feed picker plus position on the Outputs card).
+7. Caption targets per output (`caption_targets.output_id`, language per target, Outputs card shows it).
+8. `outputs.delay_ms` and the sync measurement; decide there between step buffer and delayed feed path.
+9. (Later, with the mixers) STT per audio feed; audio bed under the interpreter; interpreter switch.
+
+### 8.6 Risks specific to this case
+
+- Three outputs from one Program means three re-encodes plus three RTMP uploads; check fleet capacity and the project's `MAX_OUTPUT_STEPS` (A with a DSK and B with PiP are one step each, C needs a remux step for the audio map, so three steps, under the default cap of 4 only if nothing else runs).
+- Interpreter feed drops: B must fall back to the plain program (no overlay) and C to the source audio, not stop; decide the fallback per output.
+- Delayed interpretation and live CC drift apart on C if captions are translated from the speaker; accepted in the first version, noted for the viewer-facing description of the stream.
+- Nothing here is verified against a real MediaMTX, fleet or YouTube.
