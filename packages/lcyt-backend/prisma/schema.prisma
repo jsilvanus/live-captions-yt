@@ -1019,6 +1019,7 @@ model stt_config {
   confidence_threshold Float?
   created_at           Int     @default(dbgenerated("strftime('%s','now')"))
   updated_at           Int     @default(dbgenerated("strftime('%s','now')"))
+  feed_id              String?
 }
 
 model stt_source_languages {

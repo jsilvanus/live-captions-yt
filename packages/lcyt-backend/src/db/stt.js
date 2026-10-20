@@ -18,6 +18,7 @@ export async function getSttConfig(db, apiKey) {
     language:            row.language,
     audioSource:         row.audio_source,
     streamKey:           row.stream_key ?? null,
+    feedId:              row.feed_id ?? null,
     autoStart:           Boolean(row.auto_start),
     confidenceThreshold: row.confidence_threshold ?? null,
   };
@@ -25,12 +26,12 @@ export async function getSttConfig(db, apiKey) {
 
 /**
  * Upsert STT config. Omitted provider/language/audioSource/autoStart keep their value;
- * streamKey and confidenceThreshold only change when passed (null clears them).
+ * streamKey, feedId and confidenceThreshold only change when passed (null clears them).
  * @param {import('./connection.js').Db} db
  * @param {string} apiKey
- * @param {{ provider?: string, language?: string, audioSource?: string, streamKey?: string|null, autoStart?: boolean, confidenceThreshold?: number|null }} opts
+ * @param {{ provider?: string, language?: string, audioSource?: string, streamKey?: string|null, feedId?: string|null, autoStart?: boolean, confidenceThreshold?: number|null }} opts
  */
-export async function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = {}) {
+export async function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, feedId, autoStart, confidenceThreshold } = {}) {
   const existing = await db.stt_config.findUnique({ where: { api_key: apiKey } });
   if (!existing) {
     await db.stt_config.create({
@@ -40,6 +41,7 @@ export async function setSttConfig(db, apiKey, { provider, language, audioSource
         language: language ?? 'en-US',
         audio_source: audioSource ?? 'hls',
         stream_key: streamKey ?? null,
+        feed_id: feedId ?? null,
         auto_start: autoStart ? 1 : 0,
         confidence_threshold: confidenceThreshold ?? null,
         updated_at: nowSeconds(),
@@ -54,6 +56,7 @@ export async function setSttConfig(db, apiKey, { provider, language, audioSource
       language: language ?? existing.language,
       audio_source: audioSource ?? existing.audio_source,
       stream_key: streamKey !== undefined ? (streamKey ?? null) : existing.stream_key,
+      feed_id: feedId !== undefined ? (feedId ?? null) : existing.feed_id,
       auto_start: autoStart !== undefined ? (autoStart ? 1 : 0) : existing.auto_start,
       confidence_threshold: confidenceThreshold !== undefined ? (confidenceThreshold ?? null) : existing.confidence_threshold,
       updated_at: nowSeconds(),

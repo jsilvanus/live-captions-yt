@@ -21,6 +21,7 @@ export async function getSttConfig(db, apiKey) {
     language:            row.language,
     audioSource:         row.audio_source,
     streamKey:           row.stream_key ?? null,
+    feedId:              row.feed_id ?? null,
     autoStart:           Boolean(row.auto_start),
     confidenceThreshold: row.confidence_threshold ?? null,
   };
@@ -33,7 +34,7 @@ export async function getSttConfig(db, apiKey) {
  * @param {{ provider?: string, language?: string, audioSource?: string, streamKey?: string|null, autoStart?: boolean, confidenceThreshold?: number|null }} opts
  * @returns {Promise<void>}
  */
-export async function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = {}) {
+export async function setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, feedId, autoStart, confidenceThreshold } = {}) {
   const existing = await db.stt_config.findUnique({ where: { api_key: apiKey } });
   const now = Math.floor(Date.now() / 1000);
   if (!existing) {
@@ -44,6 +45,7 @@ export async function setSttConfig(db, apiKey, { provider, language, audioSource
         language:    language    ?? 'en-US',
         audio_source: audioSource ?? 'hls',
         stream_key:  streamKey   ?? null,
+        feed_id:     feedId      ?? null,
         auto_start:  autoStart ? 1 : 0,
         confidence_threshold: confidenceThreshold !== undefined ? (confidenceThreshold ?? null) : null,
         created_at: now,
@@ -58,6 +60,7 @@ export async function setSttConfig(db, apiKey, { provider, language, audioSource
         language:     language    ?? existing.language,
         audio_source: audioSource ?? existing.audio_source,
         stream_key:   streamKey   !== undefined ? (streamKey ?? null) : existing.stream_key,
+        feed_id:      feedId      !== undefined ? (feedId ?? null) : existing.feed_id,
         auto_start:   autoStart   !== undefined ? (autoStart ? 1 : 0) : existing.auto_start,
         confidence_threshold: confidenceThreshold !== undefined ? (confidenceThreshold ?? null) : existing.confidence_threshold ?? null,
         updated_at:   now,

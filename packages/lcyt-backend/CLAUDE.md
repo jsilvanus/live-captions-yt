@@ -272,11 +272,11 @@ DELETE /keys/:key/members/:userId — remove member (user Bearer)
 GET  /bridge/download/:platform — download pre-built bridge agent binary
 
 GET  /stt/status                       — current STT session state for the authenticated API key (Bearer token)
-POST /stt/start                        — start server-side STT { provider?, language?, audioSource?, streamKey?, confidenceThreshold? } (Bearer token)
+POST /stt/start                        — start server-side STT { provider?, language?, audioSource?, feedId?, streamKey?, confidenceThreshold? } (Bearer token). `feedId` (a prod_feeds id from GET /feeds) wins over `streamKey`: the feed's feed_key is the MediaMTX path; unknown id -> 400 `Unknown feedId`. Neither given -> the saved config's feedId, then streamKey. Response and GET /stt/status include `feedId`.
 POST /stt/stop                         — stop STT session (Bearer token)
 GET  /stt/events                       — SSE stream of transcript events (Bearer token or ?token=)
 GET  /stt/config                       — get per-key STT config from DB (Bearer token)
-PUT  /stt/config                       — update per-key STT config (Bearer token)
+PUT  /stt/config                       — update per-key STT config incl. `feedId` (omit keeps, null/'' clears; unknown id -> 400) (Bearer token)
 GET  /stt/source-languages             — get predefined source language list for the project (Bearer token; Phase 5)
 POST /stt/source-languages             — add a language to the predefined list { lang, label?, sortOrder? } (Bearer token; Phase 5)
 PUT  /stt/source-languages/:id         — update a source language entry (Bearer token; Phase 5)

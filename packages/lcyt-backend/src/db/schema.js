@@ -916,6 +916,8 @@ export function initSqliteSchema(dbPath) {
   addColumn('crop_source_map', 'output_id', 'output_id TEXT');
   // The output the project's legacy crop belongs to (its default crop output); NULL = none.
   addColumn('crop_config', 'output_id', 'output_id TEXT');
+  // The feed server STT listens to (stt_config.feed_id; NULL = the legacy audioSource/streamKey settings).
+  addColumn('stt_config', 'feed_id', 'feed_id TEXT');
 
   return db;
 }
