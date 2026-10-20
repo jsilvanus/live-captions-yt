@@ -30,6 +30,11 @@ const sha = (s, n = 12) => createHash('sha1').update(s).digest('hex').slice(0, n
 /**
  * @typedef {object} FanoutSpec
  * @property {string} sourcePath  MediaMTX path as it appears in the RTSP URL (already URL-encoded)
+ * @property {string} [audioPath] MediaMTX path (RTSP-encoded) whose audio replaces the source's own audio (video of
+ *                                `sourcePath`, audio of `audioPath`, both stream-copied). Runner mode only: a hook-mode
+ *                                registration is bound to one path, so there the audio override is ignored.
+ * @property {string} [path]      the MediaMTX path name behind `sourcePath` (decoded) when the registration key (the
+ *                                `pathName` argument of `set`) is not the path itself; hook mode registers on this path
  * @property {string} [tee]       `-f tee` target string, e.g. "[f=flv]rtmp://a/b|[f=flv]rtmp://c/d"
  * @property {string} [flvUrl]    single `-f flv` target (used instead of `tee`)
  * @property {string} [apiKey]
@@ -99,7 +104,12 @@ export class FanoutSupervisor {
   _runnerArgs(spec) {
     const out = spec.flvUrl ? ['-f', 'flv', spec.flvUrl] : ['-f', 'tee', spec.tee];
     // TCP: the worker may be on another host, and UDP does not survive NAT or a VPN.
-    return ['-rtsp_transport', 'tcp', '-re', '-i', `${this._rtspBase(true)}/${spec.sourcePath}`, '-c', 'copy', ...out];
+    const base = this._rtspBase(true);
+    if (spec.audioPath) {
+      return ['-rtsp_transport', 'tcp', '-re', '-i', `${base}/${spec.sourcePath}`, '-rtsp_transport', 'tcp', '-re', '-i', `${base}/${spec.audioPath}`,
+        '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', ...out];
+    }
+    return ['-rtsp_transport', 'tcp', '-re', '-i', `${base}/${spec.sourcePath}`, '-c', 'copy', ...out];
   }
 
   async _upsert(name, config) {
@@ -118,11 +128,12 @@ export class FanoutSupervisor {
    */
   async set(pathName, spec) {
     if (this.mode === 'hook') {
-      await this._upsert(pathName, { runOnPublish: this._hookCommand(spec), runOnPublishRestart: true });
-      if (spec.kick) this._mtx.kickPath(pathName).catch(() => {});
+      const hookPath = spec.path ?? pathName;
+      await this._upsert(hookPath, { runOnPublish: this._hookCommand(spec), runOnPublishRestart: true });
+      if (spec.kick) this._mtx.kickPath(hookPath).catch(() => {});
       return;
     }
-    const specHash = sha(JSON.stringify([spec.sourcePath, spec.tee ?? null, spec.flvUrl ?? null]));
+    const specHash = sha(JSON.stringify([spec.sourcePath, spec.audioPath ?? null, spec.tee ?? null, spec.flvUrl ?? null]));
     let st = this._paths.get(pathName);
     if (st && st.specHash !== specHash) {
       // Targets changed: stop first, a second connection to the same ingest URL would be refused.
@@ -142,7 +153,7 @@ export class FanoutSupervisor {
   /** Remove the fan-out for a path (hook mode: delete the path config). */
   async clear(pathName) {
     if (this.mode === 'hook') {
-      try { await this._mtx.deletePath(pathName); } catch { /* path may not exist */ }
+      try { await this._mtx.deletePath(pathName.split('|a|')[0]); } catch { /* path may not exist */ }
       return;
     }
     const st = this._paths.get(pathName);
@@ -155,9 +166,10 @@ export class FanoutSupervisor {
 
   /** A path became ready or not ready (MediaMTX hook). Unknown paths are ignored. */
   async onPathEvent(pathName, ready) {
-    const st = this._paths.get(pathName);
-    if (!st) return false;
-    await this._evaluate(st, ready === undefined ? undefined : !!ready);
+    const hit = [...this._paths.values()].filter(st => st.pathName === pathName || st.spec?.path === pathName || st.spec?.audioPath === pathName);
+    if (!hit.length) return false;
+    // A hook about a registration's own path says whether that path is ready; for its audio path it only means "look again".
+    await Promise.all(hit.map(st => this._evaluate(st, st.pathName === pathName || st.spec?.path === pathName ? (ready === undefined ? undefined : !!ready) : undefined)));
     return true;
   }
 
@@ -208,8 +220,19 @@ export class FanoutSupervisor {
   async _readiness(st, knownReady) {
     if (knownReady === false) return { ready: false };
     try {
-      const info = await this._mtx.getPath(st.pathName);
-      return { ready: info?.ready === true, readyTime: info?.readyTime ?? '' };
+      const info = await this._mtx.getPath(st.spec?.path ?? st.pathName);
+      if (info?.ready !== true) return { ready: false };
+      // An audio override needs its audio path up too, or ffmpeg would fail at once and spin on backoff.
+      if (st.spec?.audioPath) {
+        try {
+          const audio = await this._mtx.getPath(decodeURIComponent(st.spec.audioPath));
+          if (audio?.ready !== true) return { ready: false };
+        } catch (err) {
+          if (err?.statusCode === 404) return { ready: false };
+          throw err;
+        }
+      }
+      return { ready: true, readyTime: info?.readyTime ?? '' };
     } catch (err) {
       if (err?.statusCode === 404) return { ready: false };
       // MediaMTX unreachable: trust a hook that said ready, otherwise leave things as they are.

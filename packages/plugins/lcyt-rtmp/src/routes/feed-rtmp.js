@@ -29,7 +29,7 @@
 
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
-import { getApiKeysReferencingFeed, isRelayActive, getRelays, getKey } from '../db.js';
+import { getApiKeysReferencingFeed, isRelayActive, getRelays, getKey, hasOutputSlots } from '../db.js';
 import { readThrough } from '../ownership.js';
 import { startCropsForFeed, stopCropsForFeed } from '../crop-outputs.js';
 
@@ -92,6 +92,9 @@ export function createFeedRtmpRouter(db, relayManager, cropManager = null) {
       // trigger (routes/rtmp.js's on_publish, PUT /stream/active) keys off
       // the PRIMARY apiKey's own publish state, never a referenced feed's.
       const apiKeys = await getApiKeysReferencingFeed(db, feed.feedId);
+      // Slots that send an output built on this feed (egress outputs) name the output, not the feed: the owner's relay
+      // starts too, so the fan-out of the output's path is registered.
+      if (feed.ownerApiKey && !apiKeys.includes(feed.ownerApiKey) && (await hasOutputSlots(db, feed.ownerApiKey))) apiKeys.push(feed.ownerApiKey);
       for (const apiKey of apiKeys) {
         if (!(await isRelayActive(db, apiKey))) continue;
         try {
