@@ -155,12 +155,14 @@ export class SttManager extends EventEmitter {
    * @param {string} [opts.language='en-US']
    * @param {string} [opts.audioSource='hls']
    * @param {string} [opts.streamKey]  MediaMTX path; defaults to apiKey
+   * @param {string|null} [opts.feedId] prod_feeds id the caller resolved to `streamKey` (kept for status only)
    */
   async start(apiKey, {
     provider             = (this._settings ? this._settings.get('stt.provider') : 'google'),
     language             = (this._settings ? this._settings.get('stt.default_language') : process.env.STT_DEFAULT_LANGUAGE) || 'en-US',
     audioSource          = (this._settings ? this._settings.get('stt.audio_source') : process.env.STT_AUDIO_SOURCE) || 'hls',
     streamKey            = null,
+    feedId               = null,
     confidenceThreshold  = null,
   } = {}) {
     if (this._sessions.has(apiKey)) {
@@ -216,6 +218,7 @@ export class SttManager extends EventEmitter {
       language,
       audioSource,
       streamKey:           effectiveStreamKey,
+      feedId,
       startedAt:           new Date(),
       segmentsSent:        0,
       lastTranscript:      null,
@@ -394,6 +397,7 @@ export class SttManager extends EventEmitter {
       language:            session.language,
       audioSource:         session.audioSource,
       streamKey:           session.streamKey,
+      feedId:              session.feedId ?? null,
       startedAt:           session.startedAt,
       segmentsSent:        session.segmentsSent,
       lastTranscript:      session.lastTranscript,

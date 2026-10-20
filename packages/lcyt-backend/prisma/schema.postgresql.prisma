@@ -1016,6 +1016,7 @@ model stt_config {
   confidence_threshold Float?
   created_at           Int     @default(dbgenerated("(EXTRACT(epoch FROM now()))::integer"))
   updated_at           Int     @default(dbgenerated("(EXTRACT(epoch FROM now()))::integer"))
+  feed_id              String?
 }
 
 model stt_source_languages {
