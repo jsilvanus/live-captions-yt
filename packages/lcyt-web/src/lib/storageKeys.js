@@ -57,6 +57,7 @@ export const KEYS = {
   },
   setup: {
     favorites: 'lcyt.setup.favorites',
+    groupCards: 'lcyt.setup.groupCards',
   },
 };
 

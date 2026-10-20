@@ -897,6 +897,13 @@ export default {
         favorites: 'Favoriter',
         workflow: 'Arbetsflöde',
       },
+      groupCards: 'Gruppera kort',
+      group: {
+        devices: 'Produktionsenheter',
+        streaming: 'Streaming och grafik',
+        captions: 'Textning och språk',
+        integrations: 'AI och integrationer',
+      },
       neededFor: 'behövs för {features}',
       status: {
         configured: 'Konfigurerad ({count})',

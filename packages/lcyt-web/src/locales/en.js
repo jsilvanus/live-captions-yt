@@ -940,6 +940,13 @@ export default {
         favorites: 'Favorites',
         workflow: 'Workflow',
       },
+      groupCards: 'Group cards',
+      group: {
+        devices: 'Production devices',
+        streaming: 'Streaming & graphics',
+        captions: 'Captions & language',
+        integrations: 'AI & integrations',
+      },
       neededFor: 'needed for {features}',
       status: {
         configured: 'Set up ({count})',

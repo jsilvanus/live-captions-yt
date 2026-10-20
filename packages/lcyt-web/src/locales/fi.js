@@ -893,6 +893,13 @@ export default {
         favorites: 'Suosikit',
         workflow: 'Työnkulku',
       },
+      groupCards: 'Ryhmittele kortit',
+      group: {
+        devices: 'Tuotantolaitteet',
+        streaming: 'Striimaus ja grafiikka',
+        captions: 'Tekstitys ja kieli',
+        integrations: 'Tekoäly ja integraatiot',
+      },
       neededFor: 'tarvitaan: {features}',
       status: {
         configured: 'Määritetty ({count})',
