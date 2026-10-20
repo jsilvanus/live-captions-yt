@@ -335,6 +335,7 @@ export async function deleteBroadcast(db, apiKey, id) {
     await tx.sessions.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
     await tx.session_stats.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
     await tx.caption_files.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
+    await tx.broadcast_outputs.deleteMany({ where: { broadcast_id: id } });
     await tx.broadcasts.deleteMany({ where: { api_key: apiKey, id } });
   });
   return { ok: true };
@@ -515,6 +516,12 @@ export async function duplicateBroadcast(db, apiKey, id) {
     const fileLinks = await tx.broadcast_files.findMany({ where: { broadcast_id: id }, orderBy: { id: 'asc' } });
     for (const l of fileLinks) {
       await tx.broadcast_files.create({ data: { broadcast_id: newId, file_id: l.file_id } });
+    }
+    const outputLinks = await tx.broadcast_outputs.findMany({ where: { broadcast_id: id }, orderBy: { sort_order: 'asc' } });
+    for (const l of outputLinks) {
+      await tx.broadcast_outputs.create({
+        data: { broadcast_id: newId, output_id: l.output_id, enabled: l.enabled, sort_order: l.sort_order },
+      });
     }
   });
   return { ok: true, broadcast: await getBroadcast(db, apiKey, newId) };

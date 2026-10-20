@@ -25,6 +25,7 @@
  */
 
 import { Router } from 'express';
+import { listBroadcastOutputs, setBroadcastOutputs } from '../db/broadcast-outputs.js';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
   restoreBroadcast, deleteBroadcast,
@@ -136,6 +137,24 @@ export function createBroadcastsRouter(auth, db, { lifecycle = null, captionSync
     if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
     const r = await captionSync.syncNow(req.session.apiKey, broadcast.id);
     res.status(r.ok ? 200 : 502).json(r);
+  });
+
+  // The egress outputs this broadcast puts on air. Empty = the project as configured. Changes apply the next time it is staged.
+  router.get('/:id/outputs', auth, async (req, res) => {
+    const broadcast = await getBroadcast(db, req.session.apiKey, req.params.id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    res.json({ outputs: await listBroadcastOutputs(db, broadcast.id) });
+  });
+
+  router.put('/:id/outputs', auth, async (req, res) => {
+    const broadcast = await getBroadcast(db, req.session.apiKey, req.params.id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    if (['completed', 'cancelled', 'archived'].includes(broadcast.status)) {
+      return res.status(409).json({ error: `A ${broadcast.status} broadcast cannot change its outputs` });
+    }
+    const result = await setBroadcastOutputs(db, req.session.apiKey, broadcast.id, req.body?.outputs ?? req.body?.outputIds);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    res.json({ ok: true, outputs: result.outputs });
   });
 
   router.get('/:id', auth, async (req, res) => {

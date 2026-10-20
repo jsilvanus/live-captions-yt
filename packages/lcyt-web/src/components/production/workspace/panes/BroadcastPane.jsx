@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { C } from '../theme.js';
 import { Empty } from './parts.jsx';
 import { notifyActiveBroadcastChanged } from '../../../../hooks/useActiveBroadcast.js';
-import { STATUS_LABELS, actionsFor, pickUpcoming, canForce } from '../../../../lib/broadcast-lifecycle-ui.js';
+import { STATUS_LABELS, actionsFor, pickUpcoming, canForce, outputRows, toggleOutput, canEditOutputs } from '../../../../lib/broadcast-lifecycle-ui.js';
 
 const POLL_MS = 5000;
 const KIND = {
@@ -10,6 +10,50 @@ const KIND = {
   danger: { background: '#5a1d22', border: '#a33', color: '#ffb3b3' },
   plain: { background: C.btnBg, border: C.panelBorder, color: '#dcdcdc' },
 };
+
+/**
+ * Which egress outputs the broadcast puts on air (GET/PUT /broadcasts/:id/outputs). Nothing ticked = the project's
+ * outputs as configured. A change counts the next time the broadcast is staged.
+ */
+function BroadcastOutputs({ jfetch, broadcast, onError }) {
+  const [all, setAll] = useState(null);
+  const [linked, setLinked] = useState([]);
+  const id = broadcast.id;
+  const load = useCallback(async () => {
+    try {
+      const [a, l] = await Promise.all([jfetch('/outputs'), jfetch(`/broadcasts/${encodeURIComponent(id)}/outputs`)]);
+      setAll(a.ok ? ((await a.json().catch(() => ({})))?.outputs || []) : []);
+      setLinked(l.ok ? ((await l.json().catch(() => ({})))?.outputs || []) : []);
+    } catch { /* keep what is shown */ }
+  }, [jfetch, id]);
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = useCallback(async (outputId, checked) => {
+    try {
+      const r = await jfetch(`/broadcasts/${encodeURIComponent(id)}/outputs`, { method: 'PUT', body: JSON.stringify(toggleOutput(linked, outputId, checked)) });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok) setLinked(d.outputs || []); else onError(d.error || `Failed (${r.status})`);
+    } catch (e) { onError(e.message); }
+  }, [jfetch, id, linked, onError]);
+
+  const rows = outputRows(all, linked);
+  if (!rows.length) return null;
+  const editable = canEditOutputs(broadcast.status);
+  return (
+    <fieldset style={{ border: `1px solid ${C.panelBorder}`, borderRadius: 6, margin: 0, padding: '6px 8px' }}>
+      <legend style={{ fontSize: '.66rem', color: '#888', padding: '0 4px' }}>Outputs on air</legend>
+      {rows.map((r) => (
+        <label key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '2px 0', opacity: r.projectDisabled || r.missing ? 0.6 : 1 }}>
+          <input type="checkbox" checked={r.checked} disabled={!editable} onChange={(e) => toggle(r.id, e.target.checked)} />
+          <span>{r.name}{r.projectDisabled ? ' (disabled)' : ''}{r.missing ? ' (removed)' : ''}</span>
+        </label>
+      ))}
+      <div style={{ color: '#888', fontSize: '.66rem', marginTop: 4 }}>
+        {linked.length ? 'Only the ticked outputs go on air.' : 'None ticked: the project\'s outputs as configured.'}{broadcast.status === 'live' || broadcast.status === 'staging' ? ' Changes apply the next time it is staged.' : ''}
+      </div>
+    </fieldset>
+  );
+}
 
 /**
  * Broadcast pane: the one broadcast of the project (the running one, else the one
@@ -95,6 +139,7 @@ export function BroadcastPane({ D }) {
           </div>
           {shown.scheduledStart && <div style={{ color: '#888', fontSize: '.7rem' }}>Scheduled {new Date(shown.scheduledStart).toLocaleString()}</div>}
           {current && <div style={{ color: '#888', fontSize: '.7rem' }}>Caption number {current.captionSequence ?? 0}{sync ? ` · clock synced ${new Date(current.lastSyncedAt.replace(' ', 'T') + (/Z|[+-]\d\d:?\d\d$/.test(current.lastSyncedAt) ? '' : 'Z')).toLocaleTimeString()}` : ''}{current.syncFailures > 0 ? ` · ${current.syncFailures} sync failure(s)` : ''}</div>}
+          <BroadcastOutputs key={shown.id} jfetch={jfetch} broadcast={shown} onError={(message) => setProblem({ message })} />
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {current?.status === 'live' && (
               <button disabled={!!busy} onClick={() => run(current.id, 'sync')} title="Sync the caption clock now (done automatically while live)"

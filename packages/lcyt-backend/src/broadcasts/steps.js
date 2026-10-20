@@ -8,6 +8,7 @@
  */
 
 import { armOnGoLive, disarmOnEnd } from '../db/arming.js';
+import { getOutputSelection, outputFindings } from '../db/broadcast-outputs.js';
 import { startRecordingGroup, stopRecordingGroup } from '../recording/feeds.js';
 
 /**
@@ -16,7 +17,7 @@ import { startRecordingGroup, stopRecordingGroup } from '../recording/feeds.js';
  * @param {{ publish: Function }|null} [deps.eventBus]
  * @param {import('./caption-sync.js').createBroadcastCaptionSync extends (...a: any) => infer R ? R : never} [deps.captionSync]
  * @param {{ transition: Function, markStopped: Function }|null} [deps.platform]  lcyt-platforms `createPlatformTransitions`
- * @param {{ on: (apiKey: string) => Promise<any>, off: (apiKey: string) => Promise<any> }|null} [deps.relay]  today's relay switch
+ * @param {{ on: (apiKey: string, opts?: { outputIds: string[]|null }) => Promise<any>, off: (apiKey: string) => Promise<any> }|null} [deps.relay]  the relay switch; `outputIds` is the broadcast's output selection (null = project as configured)
  * @param {{ preflight?: (ctx: object) => Promise<object[]> }} [deps.checks]
  * @param {object|null} [deps.mediamtxClient]
  * @param {object|null} [deps.recordingsStore]
@@ -34,11 +35,19 @@ export function createLifecycleSteps(deps) {
   const startedAt = new Map();
 
   const steps = {
-    preflight: checks?.preflight,
+    async preflight(ctx) {
+      const findings = await outputFindings(db, ctx.broadcast.id);
+      if (checks?.preflight) findings.push(...((await checks.preflight(ctx)) || []));
+      return findings;
+    },
 
-    async outputsOn({ apiKey }) {
+    // Only the outputs chosen for the broadcast go on air; none chosen = the project as configured.
+    async outputsOn({ apiKey, broadcast }) {
       if (!relay) return { note: 'no relay configured' };
-      await relay.on(apiKey);
+      const sel = await getOutputSelection(db, broadcast.id);
+      const r = await relay.on(apiKey, { outputIds: sel.linked ? sel.outputIds : null });
+      const base = sel.linked ? `${sel.outputIds.length} output(s) chosen` : 'project outputs';
+      return { note: r?.note ? `${base}; ${r.note}` : base };
     },
     async outputsOff({ apiKey }) {
       if (!relay) return;

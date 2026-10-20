@@ -225,6 +225,18 @@ CREATE TABLE IF NOT EXISTS "broadcast_assets" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "broadcast_outputs" (
+    "broadcast_id" TEXT NOT NULL,
+    "output_id" TEXT NOT NULL,
+    "enabled" INTEGER NOT NULL DEFAULT 1,
+    "sort_order" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+
+    PRIMARY KEY ("broadcast_id", "output_id"),
+    CONSTRAINT "broadcast_outputs_broadcast_id_fkey" FOREIGN KEY ("broadcast_id") REFERENCES "broadcasts" ("id") ON DELETE CASCADE ON UPDATE NO ACTION
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "broadcast_files" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "broadcast_id" TEXT NOT NULL,
@@ -1268,6 +1280,9 @@ CREATE INDEX IF NOT EXISTS "idx_broadcast_assets_bid" ON "broadcast_assets"("bro
 Pragma writable_schema=1;
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_broadcast_assets_1" ON "broadcast_assets"("broadcast_id", "asset_type", "asset_ref");
 Pragma writable_schema=0;
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_broadcast_outputs_output" ON "broadcast_outputs"("output_id");
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_broadcast_files_fid" ON "broadcast_files"("file_id");

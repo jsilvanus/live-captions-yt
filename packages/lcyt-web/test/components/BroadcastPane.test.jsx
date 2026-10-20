@@ -44,4 +44,21 @@ describe('BroadcastPane', () => {
     render(<BroadcastPane D={D} />);
     expect(await screen.findByPlaceholderText('Broadcast title')).toBeTruthy();
   });
+
+  it('lists the project outputs with the broadcast\'s ones ticked and saves a change', async () => {
+    const { D, calls } = makeD({
+      'GET /broadcasts/current': { body: { broadcast: { id: 'b1', title: 'Mass', status: 'draft' } } },
+      'GET /outputs': { body: { outputs: [{ id: 'o1', name: 'Program' }, { id: 'o2', name: 'Vertical' }] } },
+      'GET /broadcasts/b1/outputs': { body: { outputs: [{ outputId: 'o1', enabled: true }] } },
+      'PUT /broadcasts/b1/outputs': { body: { outputs: [{ outputId: 'o1', enabled: true }, { outputId: 'o2', enabled: true }] } },
+    });
+    render(<BroadcastPane D={D} />);
+    const program = await screen.findByLabelText('Program');
+    expect(program.checked).toBe(true);
+    fireEvent.click(screen.getByLabelText('Vertical'));
+    await waitFor(() => {
+      const put = calls.find(c => c[0] === '/broadcasts/b1/outputs' && c[1] === 'PUT');
+      expect(JSON.parse(put[2]).outputs.map(o => o.outputId)).toEqual(['o1', 'o2']);
+    });
+  });
 });

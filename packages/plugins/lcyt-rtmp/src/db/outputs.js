@@ -177,6 +177,7 @@ export async function deleteOutput(db, apiKey, id) {
   if (child) return { ok: false, error: `output '${child.name}' is built on this output`, status: 409 };
   const slot = await db.rtmp_relays.findFirst({ where: { api_key: apiKey, source_output_id: id }, select: { slot: true } });
   if (slot) return { ok: false, error: `relay slot ${slot.slot} sends this output`, status: 409 };
+  await db.broadcast_outputs.deleteMany({ where: { output_id: id } });
   await db.output_crop_config.deleteMany({ where: { output_id: id } });
   await db.crop_config.updateMany({ where: { api_key: apiKey, output_id: id }, data: { output_id: null } });
   for (const table of ['crop_preset_sets', 'crop_presets', 'crop_source_map']) {

@@ -66,3 +66,31 @@ export function pickUpcoming(list, now = Date.now(), windowMs = 12 * 3600_000) {
 export function canForce(findings) {
   return Array.isArray(findings) && findings.length > 0 && findings.every((f) => f.severity === 'warn');
 }
+
+/** A broadcast that has finished or been cancelled can no longer change its outputs. */
+export function canEditOutputs(status) {
+  return !!status && !['completed', 'cancelled', 'archived'].includes(status);
+}
+
+/**
+ * Checkbox rows for the outputs of a broadcast: every project output, ticked when linked.
+ * Linked outputs that no longer exist are listed as missing so they can be unticked.
+ * @param {Array<{ id: string, name: string, enabled?: boolean }>} all  GET /outputs
+ * @param {Array<{ outputId: string, enabled: boolean, name?: string|null, missing?: boolean }>} linked  GET /broadcasts/:id/outputs
+ */
+export function outputRows(all, linked) {
+  const on = new Map((linked || []).map((l) => [l.outputId, l]));
+  const rows = (all || []).map((o) => ({
+    id: o.id, name: o.name, checked: !!on.get(o.id)?.enabled, projectDisabled: o.enabled === false, missing: false,
+  }));
+  for (const l of linked || []) {
+    if (l.missing) rows.push({ id: l.outputId, name: l.name || l.outputId, checked: !!l.enabled, projectDisabled: false, missing: true });
+  }
+  return rows;
+}
+
+/** The PUT body after ticking or unticking one output (keeps the order already chosen, new ones last). */
+export function toggleOutput(linked, outputId, checked) {
+  const rest = (linked || []).filter((l) => l.outputId !== outputId).map((l) => ({ outputId: l.outputId, enabled: l.enabled }));
+  return { outputs: checked ? [...rest, { outputId, enabled: true }] : rest };
+}

@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { actionsFor, pickUpcoming, canForce } from '../src/lib/broadcast-lifecycle-ui.js';
+import { actionsFor, pickUpcoming, canForce, outputRows, toggleOutput, canEditOutputs } from '../src/lib/broadcast-lifecycle-ui.js';
 
 describe('actionsFor', () => {
   it('offers the next step per status', () => {
@@ -35,5 +35,24 @@ describe('canForce', () => {
     assert.equal(canForce([{ severity: 'warn' }]), true);
     assert.equal(canForce([{ severity: 'warn' }, { severity: 'error' }]), false);
     assert.equal(canForce([]), false);
+  });
+});
+
+describe('output rows', () => {
+  const all = [{ id: 'o1', name: 'Program' }, { id: 'o2', name: 'Vertical', enabled: false }];
+  it('ticks the linked ones and lists a vanished output as missing', () => {
+    const rows = outputRows(all, [{ outputId: 'o1', enabled: true }, { outputId: 'gone', enabled: true, name: null, missing: true }]);
+    assert.deepEqual(rows.map((r) => [r.id, r.checked, r.projectDisabled, r.missing]),
+      [['o1', true, false, false], ['o2', false, true, false], ['gone', true, false, true]]);
+  });
+  it('toggling keeps order, adds last and removes', () => {
+    const linked = [{ outputId: 'o1', enabled: true }];
+    assert.deepEqual(toggleOutput(linked, 'o2', true), { outputs: [{ outputId: 'o1', enabled: true }, { outputId: 'o2', enabled: true }] });
+    assert.deepEqual(toggleOutput(linked, 'o1', false), { outputs: [] });
+  });
+  it('is editable until the broadcast is finished', () => {
+    assert.equal(canEditOutputs('live'), true);
+    assert.equal(canEditOutputs('completed'), false);
+    assert.equal(canEditOutputs(undefined), false);
   });
 });

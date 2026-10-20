@@ -475,6 +475,14 @@ Every instance starts every stored light, so with several instances each one pol
 
 - Auto-start and auto-end of a `scheduled` broadcast at `scheduled_start` / `scheduled_end` is not built; scheduling is time only and every status change is a button press. Plan: `docs/plans/plan_broadcast_lifecycle.md` PR 7 (a tick under a lease calling `lifecycle.transition`, stage a few minutes ahead, never auto-start a broadcast whose pre-flight fails).
 
+## Broadcast lifecycle PR 5: what outputs selection does not cover
+
+- `routes/feed-rtmp.js` starts **all** of a project's relay slots when a feed (re)publishes while the relay is active, so a feed that reconnects mid-broadcast brings back slots that the broadcast's selection left out. Fix: the relay start path should ask the current broadcast's selection (`getOutputSelection` + `filterRelaysForOutputs`); needs the lifecycle service reachable from lcyt-rtmp.
+- DSK steps and crops (`OutputStepManager`, `CropManager`) run for every enabled output of the project, not only the chosen ones; the selection only decides relay slots and deliverables. Starting steps per broadcast needs the step manager to take a "wanted outputs" filter.
+- `relay_active` stays one flag per project, so with a selection `outputsOff` still stops all slots.
+- Changing the selection of a live broadcast takes effect at the next staging; no live reconcile.
+- Audio deliverable is "output on an audio-only feed"; an `audio_source` feed replacing a video output's sound does not count as an audio feed out.
+
 ## Broadcast lifecycle PR 4: what was left out of the UI
 
 - No Live/Selected chips and no graphics All/This-broadcast toggle yet (needs the graphics-to-broadcast link; `BroadcastsManager`, graphics lists).

@@ -107,6 +107,7 @@ import { initPlatforms, createOAuthRouter as createPlatformsRouter, createPlatfo
 import { createBroadcastLifecycle } from './broadcasts/lifecycle.js';
 import { createBroadcastCaptionSync } from './broadcasts/caption-sync.js';
 import { createLifecycleSteps } from './broadcasts/steps.js';
+import { filterRelaysForOutputs, getOutputSelection, selectionDeliverables } from './db/broadcast-outputs.js';
 import { initTally, createTallyRouter, createTallyBridgeRouter } from 'lcyt-tally';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
@@ -889,14 +890,17 @@ db.broadcasts.findMany({ where: { status: 'live' }, select: { id: true, api_key:
   .then((rows) => rows.forEach((b) => broadcastCaptionSync.start(b.api_key, b.id)))
   .catch((err) => console.warn(`[broadcast] could not resume caption sync: ${err.message}`));
 const broadcastRelay = {
-  async on(apiKey) {
+  async on(apiKey, { outputIds = null } = {}) {
     if (!settings.get('media.rtmp_relay_active')) return;
-    if (!(await getRelays(db, apiKey)).length) return;
+    const relays = filterRelaysForOutputs(await getRelays(db, apiKey), outputIds);
+    if (!relays.length) return { note: 'no relay slot to start' };
     await setRelayActive(db, apiKey, true);
     if (await readThrough(relayManager, 'isPublishing', apiKey)) {
       const keyRow = await getKey(db, apiKey);
-      await relayManager.startAll(apiKey, await getRelays(db, apiKey), { cea708DelayMs: keyRow?.cea708_delay_ms ?? 0 });
+      await relayManager.startAll(apiKey, relays, { cea708DelayMs: keyRow?.cea708_delay_ms ?? 0 });
+      return { note: `${relays.length} relay slot(s) started` };
     }
+    return { note: `${relays.length} relay slot(s) armed, waiting for the stream` };
   },
   async off(apiKey) {
     if (!(await isRelayActive(db, apiKey))) return;
@@ -913,8 +917,11 @@ const broadcastLifecycle = createBroadcastLifecycle({
     mediamtxClient: productionMediamtxClient, recordingsStore: mediaStores.recordingsStore, settings,
     onRecordingFinalized: handoffService.onRecordingFinalized,
   }),
-  deliverables: async (apiKey) => {
+  deliverables: async (apiKey, broadcast) => {
     const captions = (await db.caption_targets.count({ where: { api_key: apiKey, enabled: 1 } })) > 0;
+    // Outputs chosen for the broadcast decide video/audio; with none chosen it is the project's relay slots.
+    const sel = broadcast ? await getOutputSelection(db, broadcast.id) : { linked: false, outputIds: [] };
+    if (sel.linked) return { captions, ...(await selectionDeliverables(db, apiKey, sel.outputIds)) };
     let video = false;
     try { video = (await getRelays(db, apiKey)).length > 0; } catch { /* relay tables are optional */ }
     return { captions, video, audio: false };
