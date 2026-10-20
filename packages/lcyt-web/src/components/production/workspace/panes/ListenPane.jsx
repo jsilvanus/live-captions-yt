@@ -6,6 +6,7 @@ import { useSourceLanguages } from '../../../../hooks/useSourceLanguages.js';
 import { COMMON_LANGUAGES, getSttEngine, getSttLang, getSttSpeechMode, setSttLang, subscribeSttConfig } from '../../../../lib/sttConfig.js';
 import { KEYS } from '../../../../lib/storageKeys.js';
 import { requestMicWindow } from '../../../../lib/micWindow.js';
+import { useSttFeed } from '../../../../hooks/useSttFeed.js';
 
 const BLUE = '#1a6fd4';
 const RED = '#cc0022';
@@ -45,6 +46,7 @@ export function ListenPane() {
   const { listening, toggle, interimText } = useAudioContext();
   const { sourceLanguages } = useSourceLanguages();
   const devices = useAudioInputs();
+  const { feeds, feedId, setFeed, error: feedError } = useSttFeed();
   const [stt, setStt] = useState(readStt);
   const [deviceId, setDeviceId] = useState(readDeviceId);
 
@@ -93,7 +95,17 @@ export function ListenPane() {
       <label style={{ fontSize: '.62rem', color: C.textMuted }}>
         {t('listenPane.audioFrom')}
         {isServer ? (
-          <div style={{ ...field, color: C.textMuted }}>{t('listenPane.serverSource')}</div>
+          feeds.length > 0 ? (
+            <>
+              <select value={feedId} onChange={(e) => setFeed(e.target.value)} style={field} aria-label={t('listenPane.audioFrom')}>
+                <option value="">{t('listenPane.serverSource')}</option>
+                {feeds.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+              {feedError && <span style={{ color: RED }}>{t('listenPane.feedError')}</span>}
+            </>
+          ) : (
+            <div style={{ ...field, color: C.textMuted }}>{t('listenPane.serverSource')}</div>
+          )
         ) : (
           <select value={deviceId} onChange={(e) => changeDevice(e.target.value)} style={field} aria-label={t('listenPane.audioFrom')}>
             <option value="">{t('listenPane.defaultInput')}</option>

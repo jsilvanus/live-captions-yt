@@ -981,6 +981,7 @@ export default {
     language: 'Igenkänningsspråk',
     audioFrom: 'Ljud från',
     serverSource: 'Serverns ljudkälla (ställs in på STT-kortet)',
+    feedError: 'Det gick inte att spara flödet',
     defaultInput: 'Webbläsarens standardingång',
     input: 'Ingång',
     webkitNote: 'Webbläsarens taligenkänning använder webbläsarens standardmikrofon; valet gäller nivåmätaren och moln-STT.',

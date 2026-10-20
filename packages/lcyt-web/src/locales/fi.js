@@ -977,6 +977,7 @@ export default {
     language: 'Tunnistuskieli',
     audioFrom: 'Äänilähde',
     serverSource: 'Palvelimen äänilähde (asetetaan STT-kortilla)',
+    feedError: 'Syötteen tallennus epäonnistui',
     defaultInput: 'Selaimen oletustulo',
     input: 'Tulo',
     webkitNote: 'Selaimen puheentunnistus käyttää selaimen oletusmikrofonia; tulovalinta koskee tasomittaria ja pilvi-STT:tä.',
