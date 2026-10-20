@@ -81,6 +81,7 @@ export { getRadioConfig, setRadioConfig } from './db.js';
 // helpers only; mutation goes through CropManager.applyPosition() itself.
 export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
 export { outputCropPath, outputDskPath } from './output-paths.js';
+export { resolveOutputRoute } from './output-routing.js';
 export { OutputStepManager, buildDskStepArgs } from './output-steps.js';
 export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follow.js';
 

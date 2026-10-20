@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { isRelayAllowed, isRelayActive, setRelayActive, getRelays, getRelaySlot, upsertRelay, deleteRelaySlot, deleteAllRelays, getRtmpStreamStats, getKey, resolveRelaySourceFeedKey } from '../db.js';
+import { getOutput } from '../db/outputs.js';
 import logger from 'lcyt/logger';
 import { readThrough } from '../ownership.js';
 
@@ -61,7 +62,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
   }
 
   async function validateBody(req, res) {
-    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId, sourceCameraId } = req.body || {};
+    const { targetUrl, targetName, captionMode, recordOnStart, recordOnButton, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId, sourceOutputId, sourceCameraId } = req.body || {};
     if (!targetUrl || typeof targetUrl !== 'string' || !targetUrl.startsWith('rtmp')) {
       res.status(400).json({ error: 'targetUrl must be a valid rtmp:// or rtmps:// URL' });
       return null;
@@ -102,6 +103,24 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       resolvedSourceFeedId = sourceFeedId;
     }
 
+    // Optional egress output source: the slot sends what that output produces (its crop, DSK step or feed).
+    let resolvedSourceOutputId = null;
+    if (sourceOutputId !== undefined && sourceOutputId !== null && sourceOutputId !== '') {
+      if (typeof sourceOutputId !== 'string') {
+        res.status(400).json({ error: 'sourceOutputId must be a string output id' });
+        return null;
+      }
+      if (resolvedSourceFeedId) {
+        res.status(400).json({ error: 'sourceOutputId and sourceFeedId cannot both be set' });
+        return null;
+      }
+      if (!(await getOutput(db, req.session.apiKey, sourceOutputId))) {
+        res.status(400).json({ error: `Unknown output '${sourceOutputId}'` });
+        return null;
+      }
+      resolvedSourceOutputId = sourceOutputId;
+    }
+
     // Validate optional per-slot transcode options
     let resolvedScale = null;
     if (scale !== undefined && scale !== null && scale !== '') {
@@ -137,6 +156,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
       audioBitrate: resolvedAudioBitrate,
       sourceView:   resolvedSourceView,
       sourceFeedId: resolvedSourceFeedId,
+      sourceOutputId: resolvedSourceOutputId,
     };
   }
 
@@ -178,6 +198,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
         sourceFeedId:   fields.sourceFeedId,
+        sourceOutputId: fields.sourceOutputId,
       });
       return res.status(201).json({ ok: true, relay });
     } catch (err) {
@@ -267,6 +288,7 @@ export function createStreamRouter(db, auth, relayManager, allowedRtmpDomains, r
         audioBitrate:  fields.audioBitrate,
         sourceView:    fields.sourceView,
         sourceFeedId:   fields.sourceFeedId,
+        sourceOutputId: fields.sourceOutputId,
       });
       return res.status(200).json({ ok: true, relay });
     } catch (err) {
