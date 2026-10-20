@@ -78,6 +78,7 @@ const AdminAiModelsPage      = lazyImport(() => import('./components/AdminAiMode
 const AiObservabilityPage    = lazyImport(() => import('./components/AiObservabilityPage.jsx').then(m => ({ default: m.AiObservabilityPage })));
 const AdminSiteFeaturesPage  = lazyImport(() => import('./components/AdminSiteFeaturesPage').then(m => ({ default: m.AdminSiteFeaturesPage })));
 const AdminServerSettingsPage = lazyImport(() => import('./components/AdminServerSettingsPage').then(m => ({ default: m.AdminServerSettingsPage })));
+const QuickApp               = lazyImport(() => import('./components/quick/QuickApp.jsx').then(m => ({ default: m.QuickApp })));
 const AdminTeamsPage         = lazyImport(() => import('./components/AdminTeamsPage').then(m => ({ default: m.AdminTeamsPage })));
 
 // Standalone / path-gated pages
@@ -279,9 +280,12 @@ function SidebarApp() {
 migrateStorageKeys();
 installLocalAuthFetch();
 
+// /quick: one-page workflows without the sidebar (small pop-out window); behind the same gate as the full app.
 const root = isStandalonePath(path)
   ? getStandalonePage()
-  : <AuthGate><SidebarApp /></AuthGate>;
+  : path === '/quick' || path.startsWith('/quick/')
+    ? <AuthGate><Suspense fallback={null}><QuickApp /></Suspense></AuthGate>
+    : <AuthGate><SidebarApp /></AuthGate>;
 
 createRoot(document.getElementById('app')).render(
   <StrictMode>
