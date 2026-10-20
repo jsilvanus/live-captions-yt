@@ -80,14 +80,21 @@ describe('buildDskStepArgs', () => {
 });
 
 describe('effectiveDskViewports', () => {
-  test('keeps order, drops unknown names and composite-mode viewports', async () => {
+  test('keeps order and drops unknown names; the composite viewport is the bare dsk/<key> stream', async () => {
     await viewport('lower', { chromaKey: { enabled: true, color: '#00B140' } });
-    await viewport('legacy', { mode: 'composite' });
+    await viewport('legacy', { mode: 'composite', chromaKey: { enabled: true, color: '#112233' } });
     await viewport('logo', null);
     const v = await effectiveDskViewports(db, KEY, ['logo', 'legacy', 'ghost', 'lower'], settings());
-    assert.deepEqual(v.map(x => x.name), ['logo', 'lower']);
+    assert.deepEqual(v.map(x => x.name), ['logo', 'legacy', 'lower']);
     assert.equal(v[0].path, `dsk/${KEY}__logo`);
-    assert.equal(v[1].chromaKey.enabled, true);
+    assert.deepEqual([v[1].path, v[1].composite, v[1].chromaKey.color], [`dsk/${KEY}`, true, '#112233']);
+    assert.equal(v[2].chromaKey.enabled, true);
+  });
+  test('with outputs.composite_in_step off the composite viewport is left to the relay', async () => {
+    await viewport('lower', null);
+    await viewport('legacy', { mode: 'composite' });
+    const v = await effectiveDskViewports(db, KEY, ['legacy', 'lower'], settings({ 'outputs.composite_in_step': false }));
+    assert.deepEqual(v.map(x => x.name), ['lower']);
   });
 });
 
@@ -100,11 +107,12 @@ describe('source paths through a DSK step', () => {
     await updateOutput(db, KEY, progId, { cropEnabled: true });
     assert.equal(await outputSourcePath(db, KEY, child, null, settings()), `out-${progId}-crop`);
   });
-  test('a composite-only DSK list leaves the child on the feed (the relay still composites it)', async () => {
+  test('a composite-only DSK list is a step; with outputs.composite_in_step off the child stays on the feed', async () => {
     await viewport('legacy', { mode: 'composite' });
     await updateOutput(db, KEY, progId, { dsk: ['legacy'] });
     const child = (await createOutput(db, KEY, { name: 'Child', sourceType: 'output', sourceId: progId })).output.id;
-    assert.equal(await outputSourcePath(db, KEY, child, null, settings()), 'main-key');
+    assert.equal(await outputSourcePath(db, KEY, child, null, settings()), outputDskPath(progId));
+    assert.equal(await outputSourcePath(db, KEY, child, null, settings({ 'outputs.composite_in_step': false })), 'main-key');
   });
 });
 

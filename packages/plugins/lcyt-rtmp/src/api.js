@@ -53,6 +53,7 @@ import { createRtmpRouter } from './routes/rtmp.js';
 import { createFeedRtmpRouter } from './routes/feed-rtmp.js';
 import { createOutputsRouter } from './routes/outputs.js';
 import { OutputStepManager } from './output-steps.js';
+import { setOutputSettings, compositeHandledBySteps } from './output-paths.js';
 import { createCropRouter } from './routes/crop.js';
 import { createIngestionRouter } from './routes/ingestion.js';
 import { createFeedsRouter } from './routes/feeds.js';
@@ -204,6 +205,10 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
   const cropManager    = new CropManager({ ffmpegCaps, mediamtxClient, settings });
   // DSK steps of egress outputs (plan_egress_outputs.md PR 3). Started by the backend after the outputs backfill.
   const outputStepManager = new OutputStepManager({ db, mediamtx: mediamtxClient, settings });
+  // Path helpers, routes and the step manager read the same settings; the relay stops compositing the composite DSK viewport
+  // itself once an output's DSK step keys it (the legacy overlay moved there).
+  setOutputSettings(settings);
+  relayManager.setCompositeGate((apiKey) => compositeHandledBySteps(db, apiKey));
 
   if (nginxManager.isEnabled) {
     logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
