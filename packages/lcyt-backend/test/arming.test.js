@@ -111,23 +111,18 @@ describe('/production/arming route', () => {
   });
 });
 
-describe('go-live and session end', () => {
-  it('POST /live arms the new broadcast and DELETE /live disarms it', async () => {
+describe('sessions and arming', () => {
+  it('POST /live and DELETE /live no longer arm or disarm (the broadcast lifecycle does)', async () => {
     const res = await fetch(`${baseUrl}/live`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ apiKey: key, domain: 'http://127.0.0.1:5173', targets: [{ id: '1', type: 'youtube', streamKey: 'k' }] }),
     });
     const body = await res.json();
     assert.equal(res.status, 200, JSON.stringify(body));
-    const { token } = body;
-    const live = await getArming(db, key);
-    assert.equal(live.armed, true);
-    assert.equal(live.status, 'live');
-    assert.equal(events[0].reason, 'go_live');
-    const del = await fetch(`${baseUrl}/live`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    const before = events.length;
+    assert.equal((await getArming(db, key)).armed, false);
+    const del = await fetch(`${baseUrl}/live`, { method: 'DELETE', headers: { Authorization: `Bearer ${body.token}` } });
     assert.equal(del.status, 200);
-    assert.equal(events.at(-1).reason, 'session_end');
-    assert.equal(events.at(-1).armed, false);
-    assert.equal((await db.prepare('SELECT armed FROM broadcasts WHERE api_key = ?').get(key)).armed, 0);
+    assert.equal(events.length, before);
   });
 });

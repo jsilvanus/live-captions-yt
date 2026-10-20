@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState, useId, useCallback } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
+import { BroadcastPane } from './BroadcastPane.jsx';
 import { Dialog } from '../../../Dialog.jsx';
 import { useCaptionContext } from '../../../../contexts/CaptionContext';
 import { useConnectionContext } from '../../../../contexts/ConnectionContext';
@@ -786,6 +787,7 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
     case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     case 'captionInput': return <CaptionInputPane />;
     case 'actionLog':   return <ActionLogPane D={D} />;
+    case 'broadcast':   return <BroadcastPane D={D} />;
     case 'listen':      return <ListenPane />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }

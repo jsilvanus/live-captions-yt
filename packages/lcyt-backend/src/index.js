@@ -1,6 +1,6 @@
 import logger from 'lcyt/logger';
 import { closeFileHandles } from 'lcyt-files';
-import { app, db, store, cluster, ownership, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores } from './server.js';
+import { app, db, store, cluster, ownership, settings, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, stopDsk, musicManager, metrics, mediaStores, broadcastCaptionSync } from './server.js';
 import { cleanRevokedKeys, getDialect } from './db.js';
 import { deleteBusEventsOlderThan } from './db/bus-events.js';
 import { deleteAuditLogOlderThan } from './db/audit-log.js';
@@ -177,6 +177,7 @@ scheduleRearmable(rollupInterval, once('rollup-maintenance', rollupInterval, run
 
 async function shutdown() {
   logger.info('Shutting down...');
+  broadcastCaptionSync.stopAll();
   await stopDsk();
   await relayManager.stopAll();
   await radioManager.stopAll();

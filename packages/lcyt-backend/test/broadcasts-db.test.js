@@ -248,6 +248,23 @@ describe('session-lifecycle binding', () => {
     assert.deepEqual(done.youtubeVideoIds, ['abc', 'def']);
   });
 
+  it('completeBroadcast falls back to the YouTube platform link for video ids', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'linked' })).broadcast;
+    await db.broadcast_platform_links.create({ data: { broadcast_id: b.id, platform: 'youtube', external_broadcast_id: 'yt-abc' } });
+    await completeBroadcast(db, b.id, {});
+    assert.deepEqual((await getBroadcast(db, KEY, b.id)).youtubeVideoIds, ['yt-abc']);
+  });
+
+  it('updateBroadcast refuses to set live or completed by hand', async () => {
+    const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
+    for (const status of ['live', 'completed']) {
+      const r = await updateBroadcast(db, KEY, b.id, { status });
+      assert.equal(r.ok, false);
+      assert.equal(r.status, 409);
+    }
+    assert.equal((await updateBroadcast(db, KEY, b.id, { status: 'scheduled' })).ok, true);
+  });
+
   it('completeBroadcast does not revive an archived broadcast', async () => {
     const b = (await createBroadcast(db, KEY, { title: 'x' })).broadcast;
     await archiveBroadcast(db, KEY, b.id);

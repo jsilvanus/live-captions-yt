@@ -471,6 +471,41 @@ The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel t
 
 Every instance starts every stored light, so with several instances each one polls YouTube (quota) and drives the lamp or sends `light_set`. Single instance is the supported setup for now. Fix: take a lease per light (`cluster.leases`, `tally:<id>`) and renew it while running, like the relay owner (L4 of the multi-instance plan). Mixer camera lights (LCYT software mixer) are fed by the backend and need the same owner lease: only the lease holder polls/pushes, other instances show the owner's last reading, and the lamp's own deadman covers a dead owner. Also not done: a `tally` project feature flag and the lamp-clash check across projects.
 
+## Broadcast lifecycle PR 7: scheduler (future work, Juha 2026-10-19)
+
+- Auto-start and auto-end of a `scheduled` broadcast at `scheduled_start` / `scheduled_end` is not built; scheduling is time only and every status change is a button press. Plan: `docs/plans/plan_broadcast_lifecycle.md` PR 7 (a tick under a lease calling `lifecycle.transition`, stage a few minutes ahead, never auto-start a broadcast whose pre-flight fails).
+
+## Broadcast lifecycle PR 5: what outputs selection does not cover
+
+- `routes/feed-rtmp.js` starts **all** of a project's relay slots when a feed (re)publishes while the relay is active, so a feed that reconnects mid-broadcast brings back slots that the broadcast's selection left out. Fix: the relay start path should ask the current broadcast's selection (`getOutputSelection` + `filterRelaysForOutputs`); needs the lifecycle service reachable from lcyt-rtmp.
+- DSK steps and crops (`OutputStepManager`, `CropManager`) run for every enabled output of the project, not only the chosen ones; the selection only decides relay slots and deliverables. Starting steps per broadcast needs the step manager to take a "wanted outputs" filter.
+- `relay_active` stays one flag per project, so with a selection `outputsOff` still stops all slots.
+- Changing the selection of a live broadcast takes effect at the next staging; no live reconcile.
+- Audio deliverable is "output on an audio-only feed"; an `audio_source` feed replacing a video output's sound does not count as an audio feed out.
+
+## Broadcast lifecycle PR 4: what was left out of the UI
+
+- No Live/Selected chips and no graphics All/This-broadcast toggle yet (needs the graphics-to-broadcast link; `BroadcastsManager`, graphics lists).
+- The client never passes `broadcastId` to `POST /live`; the backend attaches to the current broadcast. An explicit pick is only needed with several broadcasts, which one-at-a-time rules out.
+- The `broadcast` pane is not in any built-in view; add it through the pane-type picker. Pane and manager strings are English only (neighbouring code has no i18n either).
+
+## Broadcast lifecycle PR 3: what was left out of the session decoupling
+
+- Caption counter is write-through, not atomically reserved: two sessions on one broadcast can send the same number (`routes/captions.js`, `db/broadcasts.js` `setBroadcastSequence`). One session per broadcast is the normal case; a `runExclusive` bound branch with `incBroadcastSequence` would fix it.
+- A session on a broadcast without `recordEnabled` still starts its own recording for relay `recordOnStart` at session start, not at go-live (`routes/live.js`).
+- Idempotent reconnect keeps the session's own sequence; it is not re-read from the broadcast.
+- `closeSessions` closes sessions on this instance only (`store.closeBoundSessions`); other instances' sessions of a completed broadcast end by TTL.
+
+## Broadcast lifecycle PR 2: what was left out of staging and platform handling
+
+**Where:** `packages/lcyt-backend/src/broadcasts/steps.js`, `packages/plugins/lcyt-platforms/src/transitions.js` and `routes/broadcast-platforms.js`, plan `docs/plans/plan_broadcast_lifecycle.md`.
+
+- Staging only reports whether a YouTube link exists; it does not schedule the YouTube broadcast or bind the stream key (still the manual `.../platforms/youtube/schedule` route). `superseded_at` on `broadcast_platform_links` (go up again after YouTube completed) is not built, so `newPlatformBroadcast` (which resets the caption sequence) is wired in the lifecycle but no step returns it yet.
+- `createPlatformTransitions` and the `go-live`/`end` routes each hold their own copy of the link lookup, adapter call and link update. Fix: make the routes call `createPlatformTransitions` once the schedule step moves over as well.
+- Recording: the group id of a go-live lives in memory (`steps.js`), so a backend restart between go-live and stop loses it and the recording is not finalized by the stop. `closeSessions` (sessions closed at `completed`) and the idle-expiry exemption for bound sessions belong to PR 3.
+- The relay step uses today's `relay_active` flag and keeps `RTMP_RELAY_ACTIVE` off as "skip"; it moves to `broadcast_outputs` with PR 5.
+- Never run against a real MediaMTX or YouTube; the lifecycle tests use fake steps.
+
 ## Output DSK steps have no multi-instance owner
 
 **Where:** `packages/plugins/lcyt-rtmp/src/output-steps.js` (egress outputs PR 3).

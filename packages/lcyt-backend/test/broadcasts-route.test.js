@@ -160,3 +160,20 @@ describe('/broadcasts active pointer', () => {
     assert.equal(res.status, 404);
   });
 });
+
+describe('/broadcasts lifecycle routes', () => {
+  it('answer 501 without a lifecycle service wired', async () => {
+    const created = await api('', { method: 'POST', body: JSON.stringify({ title: 'x' }) });
+    const id = created.body.broadcast.id;
+    assert.equal((await api(`/${id}/stage`, { method: 'POST' })).status, 501);
+    assert.equal((await api('/current')).status, 501);
+  });
+
+  it('refuse to create a broadcast that is already live, and to set live by hand', async () => {
+    const bad = await api('', { method: 'POST', body: JSON.stringify({ title: 'x', status: 'live' }) });
+    assert.equal(bad.status, 409);
+    const created = await api('', { method: 'POST', body: JSON.stringify({ title: 'x' }) });
+    const put = await api(`/${created.body.broadcast.id}`, { method: 'PUT', body: JSON.stringify({ status: 'live' }) });
+    assert.equal(put.status, 409);
+  });
+});

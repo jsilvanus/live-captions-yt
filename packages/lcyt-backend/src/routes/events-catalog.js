@@ -37,6 +37,7 @@ export const EVENT_TOPIC_CATALOG = {
     { topic: 'external.*', label: 'External events', description: 'Events published by third-party integrations via POST /events. Only the external.* namespace is writable by external tokens.' },
     { topic: 'production.command_result', label: 'Production commands', description: 'A camera preset recall or mixer switch was attempted (success or failure, transport, duration, and which caller triggered it).' },
     { topic: 'production.arming_changed', label: 'Production arming', description: 'The ARMED / SAFE switch changed (armed, broadcastId, and reason: go_live, session_end or manual).' },
+    { topic: 'broadcast.*', label: 'Broadcast lifecycle', description: 'A broadcast changed state (broadcast.state_changed), a lifecycle step failed (broadcast.step_failed) or its caption clock was synced (broadcast.caption_synced).' },
     { topic: 'action.*', label: 'Action runs', description: 'A named or inline action was run on the server: action.started, action.step (one per atom, with status), action.completed or action.failed.' },
     { topic: 'mcp.*', label: 'MCP tool events', description: 'Tool execution and staging events from the MCP endpoint (mcp.tool_executed, mcp.tool_staged).' },
     { topic: 'operator.*', label: 'Operator events', description: 'Hosted operator lifecycle and action events (operator.started, operator.stopped, operator.action_executed, operator.action_staged).' },

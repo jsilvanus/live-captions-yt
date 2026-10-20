@@ -270,6 +270,19 @@ model broadcast_assets {
   @@index([broadcast_id], map: "idx_broadcast_assets_bid")
 }
 
+/// Which egress outputs a broadcast puts on air (plan_broadcast_lifecycle.md PR 5). output_id is an outputs.id, no foreign key (checked in code, like outputs.source_id).
+model broadcast_outputs {
+  broadcast_id String
+  output_id    String
+  enabled      Int        @default(1)
+  sort_order   Int        @default(0)
+  created_at   String     @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  broadcasts   broadcasts @relation(fields: [broadcast_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([broadcast_id, output_id])
+  @@index([output_id], map: "idx_broadcast_outputs_output")
+}
+
 model broadcast_files {
   id            Int           @id @default(autoincrement())
   broadcast_id  String
@@ -338,8 +351,15 @@ model broadcasts {
   archived_at              String?
   created_at               String                     @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
   updated_at               String                     @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  caption_sequence         Int                        @default(0)
+  sync_offset_ms           Int?
+  last_synced_at           String?
+  sync_failures            Int                        @default(0)
+  stage_report_json        String?
+  adhoc                    Int                        @default(0)
   broadcast_assets         broadcast_assets[]
   broadcast_files          broadcast_files[]
+  broadcast_outputs        broadcast_outputs[]
   broadcast_platform_links broadcast_platform_links[]
   broadcast_platform_stats broadcast_platform_stats[]
   api_keys                 api_keys                   @relation(fields: [api_key], references: [key], onDelete: Cascade, onUpdate: NoAction)

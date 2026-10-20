@@ -431,6 +431,14 @@ export function initSqliteSchema(dbPath) {
       -- actions skip device steps. Auto-set on go-live / session end.
       armed                INTEGER NOT NULL DEFAULT 0,
       archived_at          TEXT,
+      -- Lifecycle (plan_broadcast_lifecycle.md): the broadcast owns the caption
+      -- sequence and the clock sync, and remembers what its last staging did.
+      caption_sequence     INTEGER NOT NULL DEFAULT 0,
+      sync_offset_ms       INTEGER,
+      last_synced_at       TEXT,
+      sync_failures        INTEGER NOT NULL DEFAULT 0,
+      stage_report_json    TEXT,
+      adhoc                INTEGER NOT NULL DEFAULT 0,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
     )
@@ -532,6 +540,16 @@ export function initSqliteSchema(dbPath) {
   if (!broadcastCols.has('record_enabled')) db.exec('ALTER TABLE broadcasts ADD COLUMN record_enabled INTEGER NOT NULL DEFAULT 0');
   if (!broadcastCols.has('armed')) db.exec('ALTER TABLE broadcasts ADD COLUMN armed INTEGER NOT NULL DEFAULT 0');
   if (!broadcastCols.has('privacy_status')) db.exec("ALTER TABLE broadcasts ADD COLUMN privacy_status TEXT NOT NULL DEFAULT 'unlisted'");
+  for (const [col, ddl] of [
+    ['caption_sequence', 'INTEGER NOT NULL DEFAULT 0'],
+    ['sync_offset_ms', 'INTEGER'],
+    ['last_synced_at', 'TEXT'],
+    ['sync_failures', 'INTEGER NOT NULL DEFAULT 0'],
+    ['stage_report_json', 'TEXT'],
+    ['adhoc', 'INTEGER NOT NULL DEFAULT 0'],
+  ]) {
+    if (!broadcastCols.has(col)) db.exec(`ALTER TABLE broadcasts ADD COLUMN ${col} ${ddl}`);
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS viewer_key_daily_stats (

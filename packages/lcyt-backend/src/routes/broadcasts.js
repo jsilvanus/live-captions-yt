@@ -11,7 +11,11 @@
  *   GET    /broadcasts/:id                — one broadcast + linked assets
  *   PUT    /broadcasts/:id                — edit title/desc/schedule/status
  *   DELETE /broadcasts/:id                — archive, or hard-delete if already archived past cooling-off
- *   POST   /broadcasts/:id/restore        — un-archive
+ *   POST   /broadcasts/:id/restore        — un-archive (archived) or back to draft (cancelled)
+ *   GET    /broadcasts/current            — the project's staging/live/stopping/stopped broadcast
+ *   GET    /broadcasts/:id/preflight      — pre-flight findings for staging (no side effects)
+ *   POST   /broadcasts/:id/stage|go-live|stop|complete|cancel — lifecycle transitions (plan_broadcast_lifecycle.md)
+ *   POST   /broadcasts/:id/sync           — caption clock sync now
  *   POST   /broadcasts/:id/duplicate      — clone (config + asset links, no produced content)
  *   GET    /broadcasts/:id/files          — list files linked to this broadcast
  *   POST   /broadcasts/:id/files          — link a file to this broadcast
@@ -21,6 +25,7 @@
  */
 
 import { Router } from 'express';
+import { listBroadcastOutputs, setBroadcastOutputs } from '../db/broadcast-outputs.js';
 import {
   listBroadcasts, getBroadcast, createBroadcast, updateBroadcast,
   restoreBroadcast, deleteBroadcast,
@@ -29,14 +34,45 @@ import {
   linkAsset, unlinkAsset,
 } from '../db/broadcasts.js';
 import { getProjectName } from '../db/keys.js';
+import { LifecycleError } from '../broadcasts/lifecycle.js';
 
 /**
  * @param {import('express').RequestHandler} auth  project-access / session Bearer middleware
  * @param {import('better-sqlite3').Database} db
+ * @param {{ lifecycle?: ReturnType<typeof import('../broadcasts/lifecycle.js').createBroadcastLifecycle>, captionSync?: object }} [opts]
+ *   lifecycle: state machine behind stage / go-live / stop / complete / cancel; captionSync: manual "sync now"
  * @returns {import('express').Router}
  */
-export function createBroadcastsRouter(auth, db) {
+export function createBroadcastsRouter(auth, db, { lifecycle = null, captionSync = null } = {}) {
   const router = Router();
+
+  function lifecycleError(res, err) {
+    if (err instanceof LifecycleError) {
+      return res.status(err.status).json({
+        error: err.message,
+        ...(err.code ? { code: err.code } : {}),
+        ...(err.findings ? { findings: err.findings } : {}),
+        ...(err.report ? { report: err.report } : {}),
+        ...(err.step ? { step: err.step } : {}),
+      });
+    }
+    throw err;
+  }
+
+  const ACTIONS = ['stage', 'go-live', 'stop', 'complete', 'cancel'];
+  for (const action of ACTIONS) {
+    router.post(`/:id/${action}`, auth, async (req, res) => {
+      if (!lifecycle) return res.status(501).json({ error: 'Broadcast lifecycle is not available' });
+      try {
+        const { force, reason } = req.body || {};
+        const out = await lifecycle.transition(req.session.apiKey, req.params.id, action, {
+          force: force === true || req.query?.force === '1', reason: reason || null,
+        });
+        const warnings = out.report?.warnings ?? [];
+        res.json({ ok: true, broadcast: out.broadcast, warnings });
+      } catch (err) { lifecycleError(res, err); }
+    });
+  }
 
   router.get('/', auth, async (req, res) => {
     const { status, from, to, includeArchived } = req.query || {};
@@ -51,6 +87,9 @@ export function createBroadcastsRouter(auth, db) {
 
   router.post('/', auth, async (req, res) => {
     const { title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled, privacyStatus } = req.body || {};
+    if (status !== undefined && status !== 'draft' && status !== 'scheduled') {
+      return res.status(409).json({ error: `A broadcast is created as draft or scheduled, not "${status}"` });
+    }
     const result = await createBroadcast(db, req.session.apiKey, {
       title, description, status, scheduledStart, scheduledEnd, youtubeBroadcastId, rundownFileId, recordEnabled, privacyStatus,
     });
@@ -76,6 +115,46 @@ export function createBroadcastsRouter(auth, db) {
     const result = await activateBroadcast(db, req.session.apiKey, req.params.id);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, activeBroadcastId: result.broadcast.id, broadcast: result.broadcast });
+  });
+
+  // The project's broadcast that is staging, live, stopping or stopped (null when none).
+  router.get('/current', auth, async (req, res) => {
+    if (!lifecycle) return res.status(501).json({ error: 'Broadcast lifecycle is not available' });
+    res.json({ broadcast: await lifecycle.current(req.session.apiKey) });
+  });
+
+  router.get('/:id/preflight', auth, async (req, res) => {
+    if (!lifecycle) return res.status(501).json({ error: 'Broadcast lifecycle is not available' });
+    try {
+      res.json(await lifecycle.preflight(req.session.apiKey, req.params.id, { force: req.query?.force === '1' }));
+    } catch (err) { lifecycleError(res, err); }
+  });
+
+  // Manual clock sync, same fields as the periodic one.
+  router.post('/:id/sync', auth, async (req, res) => {
+    if (!captionSync) return res.status(501).json({ error: 'Caption sync is not available' });
+    const broadcast = await getBroadcast(db, req.session.apiKey, req.params.id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    const r = await captionSync.syncNow(req.session.apiKey, broadcast.id);
+    res.status(r.ok ? 200 : 502).json(r);
+  });
+
+  // The egress outputs this broadcast puts on air. Empty = the project as configured. Changes apply the next time it is staged.
+  router.get('/:id/outputs', auth, async (req, res) => {
+    const broadcast = await getBroadcast(db, req.session.apiKey, req.params.id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    res.json({ outputs: await listBroadcastOutputs(db, broadcast.id) });
+  });
+
+  router.put('/:id/outputs', auth, async (req, res) => {
+    const broadcast = await getBroadcast(db, req.session.apiKey, req.params.id);
+    if (!broadcast) return res.status(404).json({ error: 'Broadcast not found' });
+    if (['completed', 'cancelled', 'archived'].includes(broadcast.status)) {
+      return res.status(409).json({ error: `A ${broadcast.status} broadcast cannot change its outputs` });
+    }
+    const result = await setBroadcastOutputs(db, req.session.apiKey, broadcast.id, req.body?.outputs ?? req.body?.outputIds);
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    res.json({ ok: true, outputs: result.outputs });
   });
 
   router.get('/:id', auth, async (req, res) => {
@@ -104,6 +183,15 @@ export function createBroadcastsRouter(auth, db) {
   });
 
   router.post('/:id/restore', auth, async (req, res) => {
+    // A cancelled broadcast goes back to draft through the lifecycle; an archived one is un-archived.
+    const existing = await getBroadcast(db, req.session.apiKey, req.params.id);
+    if (existing?.status === 'cancelled') {
+      if (!lifecycle) return res.status(501).json({ error: 'Broadcast lifecycle is not available' });
+      try {
+        const out = await lifecycle.transition(req.session.apiKey, req.params.id, 'restore');
+        return res.json({ ok: true, broadcast: out.broadcast });
+      } catch (err) { return lifecycleError(res, err); }
+    }
     const result = await restoreBroadcast(db, req.session.apiKey, req.params.id);
     if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
     res.json({ ok: true, broadcast: result.broadcast });

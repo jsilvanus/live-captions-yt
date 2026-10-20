@@ -95,6 +95,7 @@ const TIER_B = [
 
   // --- Sessions & retention ------------------------------------------------
   { key: 'retention.session_ttl', env: 'SESSION_TTL', type: 'int', default: 7_200_000, category: 'retention', apply: 'timer', description: 'Session timeout in ms.' },
+  { key: 'captions.sync_interval_s', env: 'CAPTION_SYNC_INTERVAL_S', type: 'int', default: 300, category: 'retention', apply: 'timer', description: 'Seconds between caption clock syncs while a broadcast is live (plus up to 10 % jitter).' },
   { key: 'retention.cleanup_interval', env: 'CLEANUP_INTERVAL', type: 'int', default: 300_000, category: 'retention', apply: 'timer', description: 'Session cleanup sweep interval in ms.' },
   { key: 'retention.revoked_key_ttl_days', env: 'REVOKED_KEY_TTL_DAYS', type: 'int', default: 30, category: 'retention', apply: 'timer', description: 'Days before revoked API keys are purged.' },
   { key: 'retention.revoked_key_cleanup_interval', env: 'REVOKED_KEY_CLEANUP_INTERVAL', type: 'int', default: 86_400_000, category: 'retention', apply: 'timer', description: 'Revoked-key cleanup sweep interval in ms.' },

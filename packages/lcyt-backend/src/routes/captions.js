@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
-import { checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled } from '../db.js';
+import { setBroadcastSequence, checkAndIncrementUsage, writeCaptionError, writeAuthEvent, incrementDomainHourlyCaptions, updateKeySequence, isBackendFileEnabled } from '../db.js';
 import { composeCaptionText, buildVttCue } from '../caption-files.js';
 import { applyMetacodeProcessors } from '../metacode.js';
 import { writeToBackendFile } from 'lcyt-files';
@@ -163,6 +163,8 @@ export function createCaptionsRouter(store, auth, db, relayManager = null, dskPr
         // Persist per-API-key sequence so it survives session expiry
         if (db) {
           try { await updateKeySequence(db, session.apiKey, session.sequence); } catch (_) {}
+          // The broadcast owns the counter; never lower it from a send that finished late.
+          if (session.broadcastId) { try { await setBroadcastSequence(db, session.broadcastId, session.sequence, { raiseOnly: true }); } catch (_) {} }
         }
         store.touch(sessionId);
 

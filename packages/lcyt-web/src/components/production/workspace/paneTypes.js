@@ -2,6 +2,7 @@
 // Order here drives the custom-view <select> and the empty-pane default.
 
 export const TYPE_OPTIONS = [
+  ['broadcast',   'Broadcast'],
   ['cameras',     'Cameras'],
   ['thumbnails',  'Camera Thumbnails'],
   ['mixer',       'Mixer'],
@@ -24,6 +25,7 @@ export const TYPE_OPTIONS = [
 ];
 
 export const PANE_META = {
+  broadcast:   { title: 'Broadcast',               dot: '#cc3344' },
   cameras:     { title: 'Cameras',                 dot: '#3b6fb0' },
   thumbnails:  { title: 'Camera Thumbnails',       dot: '#2f9e8f' },
   mixer:       { title: 'Mixer',                   dot: '#8b6fd0' },

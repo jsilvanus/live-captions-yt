@@ -6,7 +6,7 @@ import { createHandoffService } from './handoff/service.js';
 import {
   initDb, writeSessionStat, incrementDomainHourlySessionEnd,
   getCaptionTargets, createCaptionTarget, updateCaptionTarget, deleteCaptionTarget,
-  completeBroadcast, disarmOnEnd, isArmed, getBroadcast, updateBroadcast, onKeyDeleted,
+  isArmed, getBroadcast, updateBroadcast, onKeyDeleted, getKey,
 } from './db.js';
 import { SessionStore } from './store.js';
 import { createCorsMiddleware } from './middleware/cors.js';
@@ -30,6 +30,7 @@ import { createMcpEndpointRouter } from './routes/mcp-endpoint.js';
 import { createEventsPublishRouter } from './routes/events-publish.js';
 import { createOperatorRouter } from './routes/operator.js';
 import { OperatorManager } from './operator-manager.js';
+import { endAdhocBroadcast } from './broadcasts/session-binding.js';
 import { attachBusAuditLog } from './db/bus-events.js';
 import { startCluster } from './cluster/index.js';
 import { createOwnership } from './cluster/ownership.js';
@@ -49,7 +50,7 @@ import {
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
 import { deprecatedRoute, NGINX_RTMP_MESSAGE } from './middleware/deprecation.js';
-import { initRtmpControl, createRtmpRouters, backfillFeeds, backfillPrimaryFeeds, backfillOutputs, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getRelays, isRelayActive, setRelayActive, backfillFeeds, backfillPrimaryFeeds, backfillOutputs, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -102,7 +103,11 @@ import {
 } from 'lcyt-connectors';
 import { initActions, createActionsRouter, createActionExecutor, createCueActionDispatcher, createAuthoringGuard } from 'lcyt-actions';
 import { createNotifyRouter } from 'lcyt-notify';
-import { initPlatforms, createOAuthRouter as createPlatformsRouter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
+import { initPlatforms, createOAuthRouter as createPlatformsRouter, createPlatformTransitions, getAdapter as getPlatformAdapter, getCredential as getPlatformCredential, getDefaultCredential as getDefaultPlatformCredential } from 'lcyt-platforms';
+import { createBroadcastLifecycle } from './broadcasts/lifecycle.js';
+import { createBroadcastCaptionSync } from './broadcasts/caption-sync.js';
+import { createLifecycleSteps } from './broadcasts/steps.js';
+import { filterRelaysForOutputs, getOutputSelection, selectionDeliverables } from './db/broadcast-outputs.js';
 import { initTally, createTallyRouter, createTallyBridgeRouter } from 'lcyt-tally';
 import { createAdminMiddleware } from './middleware/admin.js';
 import { createProjectAccessMiddleware, hasProjectRole, requireProjectRole } from './middleware/project-access.js';
@@ -637,7 +642,7 @@ store.onSessionDropped = (session) => {
   if (session._fileHandles?.size > 0) closeFileHandles(session._fileHandles).catch(() => {});
 };
 
-store.onSessionEnd = async (session) => {
+store.onSessionEnd = async (session, reason) => {
   // Close open caption file handles before cleanup.
   // For local FS this is a graceful flush; for S3 this completes the multipart upload.
   if (session._fileHandles?.size > 0) {
@@ -659,21 +664,11 @@ store.onSessionEnd = async (session) => {
       captionsSent: session.captionsSent,
       captionsFailed: session.captionsFailed,
       finalSequence: session.sequence,
-      endedBy: 'ttl',
+      endedBy: reason || 'ttl',
       broadcastId: session.broadcastId ?? null,
     });
-    // Transition the bound broadcast to completed (plan/broadcasts).
-    if (session.broadcastId) {
-      try {
-        await disarmOnEnd(db, eventBus, session.apiKey, session.broadcastId);
-        await completeBroadcast(db, session.broadcastId, {
-          youtubeVideoIds: session.youtubeVideoIds,
-          endedAt,
-        });
-      } catch (err) {
-        console.warn(`[broadcasts] completeBroadcast failed (broadcastId=${session.broadcastId})`, err);
-      }
-    }
+    // The broadcast outlives its sessions; only a session-made one ends with its last session.
+    if (reason !== 'broadcast') await endAdhocBroadcast(db, store, broadcastLifecycle, session);
   } else {
     console.warn(`[store] session ended without apiKey (sessionId=${session.sessionId}) — skipping session_stats write`);
   }
@@ -884,7 +879,64 @@ apiRouter.get('/contact', (req, res) => {
 
 const handoffService = createHandoffService({ db, recordingsStore: mediaStores.recordingsStore, resolveStorage, jwtSecret, settings });
 
+// Broadcast lifecycle (plan_broadcast_lifecycle.md): own state machine, its steps and the
+// caption clock sync it runs while live. The relay switch is today's /stream/active.
+const broadcastCaptionSync = createBroadcastCaptionSync({
+  db, store, eventBus, leases: cluster.leases,
+  intervalS: () => settings.get('captions.sync_interval_s'),
+});
+// A restart must not leave a live broadcast without its periodic sync.
+db.broadcasts.findMany({ where: { status: 'live' }, select: { id: true, api_key: true } })
+  .then((rows) => rows.forEach((b) => broadcastCaptionSync.start(b.api_key, b.id)))
+  .catch((err) => console.warn(`[broadcast] could not resume caption sync: ${err.message}`));
+const broadcastRelay = {
+  async on(apiKey, { outputIds = null } = {}) {
+    if (!settings.get('media.rtmp_relay_active')) return;
+    const relays = filterRelaysForOutputs(await getRelays(db, apiKey), outputIds);
+    if (!relays.length) return { note: 'no relay slot to start' };
+    await setRelayActive(db, apiKey, true);
+    if (await readThrough(relayManager, 'isPublishing', apiKey)) {
+      const keyRow = await getKey(db, apiKey);
+      await relayManager.startAll(apiKey, relays, { cea708DelayMs: keyRow?.cea708_delay_ms ?? 0 });
+      return { note: `${relays.length} relay slot(s) started` };
+    }
+    return { note: `${relays.length} relay slot(s) armed, waiting for the stream` };
+  },
+  async off(apiKey) {
+    if (!(await isRelayActive(db, apiKey))) return;
+    await setRelayActive(db, apiKey, false);
+    await relayManager.stopKey(apiKey);
+  },
+};
+const broadcastLifecycle = createBroadcastLifecycle({
+  db, eventBus, leases: cluster.leases,
+  steps: createLifecycleSteps({
+    db, store, eventBus, captionSync: broadcastCaptionSync,
+    platform: createPlatformTransitions(db, { getAdapter: getPlatformAdapter, getAccessToken: platformDeps.getAccessToken, eventBus }),
+    relay: broadcastRelay,
+    mediamtxClient: productionMediamtxClient, recordingsStore: mediaStores.recordingsStore, settings,
+    onRecordingFinalized: handoffService.onRecordingFinalized,
+  }),
+  deliverables: async (apiKey, broadcast) => {
+    const captions = (await db.caption_targets.count({ where: { api_key: apiKey, enabled: 1 } })) > 0;
+    // Outputs chosen for the broadcast decide video/audio; with none chosen it is the project's relay slots.
+    const sel = broadcast ? await getOutputSelection(db, broadcast.id) : { linked: false, outputIds: [] };
+    if (sel.linked) return { captions, ...(await selectionDeliverables(db, apiKey, sel.outputIds)) };
+    let video = false;
+    try { video = (await getRelays(db, apiKey)).length > 0; } catch { /* relay tables are optional */ }
+    return { captions, video, audio: false };
+  },
+});
+
+// An idle session of a staged or live broadcast the operator made stays until it is completed.
+store.keepSessionAlive = async (session) => {
+  if (!session.broadcastId) return false;
+  const b = await db.broadcasts.findUnique({ where: { id: session.broadcastId }, select: { status: true, adhoc: true } });
+  return Boolean(b && !b.adhoc && (b.status === 'staging' || b.status === 'live'));
+};
+
 apiRouter.use(createSessionRouters(db, store, jwtSecret, auth, {
+  broadcastLifecycle,
   onRecordingFinalized: handoffService.onRecordingFinalized,
   relayManager,
   dskCaptionProcessor: _dskCaptionProcessor,
@@ -924,6 +976,8 @@ apiRouter.use(createContentRouters(
     settings,
     platforms: platformDeps,
     handoffService,
+    broadcastLifecycle,
+    broadcastCaptionSync,
   },
   scopedAuth
 ));
@@ -1209,4 +1263,4 @@ if (process.env.STATIC_DIR) {
 // Exports (for testing and graceful shutdown wiring in index.js)
 // ---------------------------------------------------------------------------
 
-export { app, db, store, settings, eventBus, cluster, ownership, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores };
+export { app, db, store, settings, eventBus, cluster, ownership, relayManager, radioManager, hlsManager, hlsSubsManager, previewManager, sttManager, productionRegistry, productionBridgeManager, stopDsk, musicManager, metrics, mediaStores, broadcastLifecycle, broadcastCaptionSync };
