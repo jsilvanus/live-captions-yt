@@ -971,6 +971,7 @@ export default {
     cloud: 'pilvi',
   },
   listenPane: {
+    short: { start: 'Kuuntele', stop: 'Pysäytä' },
     start: 'Aloita kuuntelu',
     stop: 'Lopeta kuuntelu',
     language: 'Tunnistuskieli',
@@ -979,5 +980,18 @@ export default {
     defaultInput: 'Selaimen oletustulo',
     input: 'Tulo',
     webkitNote: 'Selaimen puheentunnistus käyttää selaimen oletusmikrofonia; tulovalinta koskee tasomittaria ja pilvi-STT:tä.',
+  },
+  micWindow: {
+    title: 'Kelluva ikkuna',
+    close: 'Sulje',
+    sent: 'Lähetetyt tekstitykset',
+    none: 'Ei vielä lähetettyjä tekstityksiä.',
+    pending: 'odottaa',
+    placeholder: 'Lähetä tekstitys…',
+    offline: 'Ei yhteyttä',
+    send: 'Lähetä',
+    sendFailed: 'Lähetys epäonnistui',
+    popupNote: 'Tämä selain ei tue aina päällimmäistä ikkunaa; pidä ikkuna näkyvissä, jotta kuuntelu ei hidastu.',
+    open: 'Avaa kelluva ikkuna',
   },
 };

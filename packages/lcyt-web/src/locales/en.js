@@ -1018,6 +1018,7 @@ export default {
     cloud: 'cloud',
   },
   listenPane: {
+    short: { start: 'Listen', stop: 'Stop' },
     start: 'Start listening',
     stop: 'Stop listening',
     language: 'Recognition language',
@@ -1026,5 +1027,18 @@ export default {
     defaultInput: 'Browser default input',
     input: 'Input',
     webkitNote: 'Browser speech recognition uses the browser\'s default microphone; the input choice applies to the level meter and cloud STT.',
+  },
+  micWindow: {
+    title: 'Floating window',
+    close: 'Close',
+    sent: 'Sent captions',
+    none: 'No captions sent yet.',
+    pending: 'pending',
+    placeholder: 'Send a caption…',
+    offline: 'Not connected',
+    send: 'Send',
+    sendFailed: 'Send failed',
+    popupNote: 'This browser has no always-on-top window; keep this window visible so listening is not throttled.',
+    open: 'Open floating window',
   },
 };

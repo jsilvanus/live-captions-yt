@@ -6,7 +6,7 @@ vi.mock('../../src/contexts/AudioContext', () => ({ useAudioContext: () => audio
 vi.mock('../../src/contexts/LangContext', () => ({ useLang: () => ({ t: (k) => k }) }));
 vi.mock('../../src/hooks/useSourceLanguages.js', () => ({ useSourceLanguages: () => ({ sourceLanguages: [] }) }));
 
-import { ListenPane } from '../../src/components/production/workspace/panes/ListenPane.jsx';
+import { ListenPane, ListenButton } from '../../src/components/production/workspace/panes/ListenPane.jsx';
 import { PaneBody } from '../../src/components/production/workspace/panes/index.jsx';
 import { getSttLang, setSttEngine } from '../../src/lib/sttConfig.js';
 import { TYPE_OPTIONS, paneMeta } from '../../src/components/production/workspace/paneTypes.js';
@@ -39,5 +39,11 @@ describe('ListenPane', () => {
     setSttEngine('server');
     render(<ListenPane />);
     expect(screen.getByText('listenPane.serverSource')).toBeTruthy();
+  });
+
+  it('ListenButton toggles from a pane header', () => {
+    render(<ListenButton />);
+    fireEvent.click(screen.getByText('listenPane.short.start'));
+    expect(audio.toggle).toHaveBeenCalledTimes(1);
   });
 });
