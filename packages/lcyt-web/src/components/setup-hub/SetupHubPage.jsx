@@ -219,6 +219,7 @@ export function SetupHubPage() {
               title="Workflows"
               description="Guided, curated setup for a specific goal — pick what you need."
               headerAction={{ label: 'Run setup wizard', href: '/setup/wizard' }}
+              footerLink={{ label: 'Quick start: one-page workflows', href: '/quick' }}
             />
           </div>
         </div>
