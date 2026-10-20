@@ -10,6 +10,7 @@ import express from 'express';
 import { initDb } from 'lcyt-backend/db';
 import { createStreamRouter } from '../src/routes/stream.js';
 import { resolveOutputRoute } from '../src/output-routing.js';
+import { compositeHandledBySteps } from '../src/output-paths.js';
 import { getRelays, upsertRelay, hasOutputSlots } from '../src/db/relay.js';
 import { createOutput, updateOutput } from '../src/db/outputs.js';
 import { FanoutSupervisor } from '../src/fanout-supervisor.js';
@@ -52,7 +53,7 @@ describe('resolveOutputRoute', () => {
   test('a DSK step or another output\'s crop is a step path', async () => {
     await db.prepare("INSERT INTO dsk_viewports (api_key, name) VALUES (?, 'lower')").run(KEY);
     await updateOutput(db, KEY, prog, { dsk: ['lower'] });
-    assert.deepEqual(await resolveOutputRoute(db, KEY, prog), { kind: 'path', path: `out-${prog}-dsk`, audioPath: null });
+    assert.deepEqual(await resolveOutputRoute(db, KEY, prog), { kind: 'path', path: `out-${prog}-dsk`, audioPath: null, programStep: true });
     await updateOutput(db, KEY, wide, { cropEnabled: true });
     assert.deepEqual(await resolveOutputRoute(db, KEY, wide), { kind: 'path', path: `out-${wide}-crop`, audioPath: null });
     await updateOutput(db, KEY, wide, { cropEnabled: false });
@@ -152,5 +153,64 @@ describe('fan-out of an output path', () => {
     assert.ok(cmds.some(c => !c.includes('mic-key') && c.includes('a/one')));
     assert.ok(cmds.some(c => c.includes('-map 1:a:0') && c.includes('a/two')));
     await mgr.stopAll();
+  });
+});
+
+describe('composite DSK viewport moved into the program output\'s step', () => {
+  const composite = JSON.stringify({ stream: { mode: 'composite', chromaKey: { enabled: true, color: '#00B140' } } });
+  const settingsOff = { get: (k) => (k === 'outputs.composite_in_step' ? false : undefined) };
+
+  async function setup() {
+    await db.prepare("INSERT INTO dsk_viewports (api_key, name, display_settings_json) VALUES (?, 'legacy', ?)").run(KEY, composite);
+    await updateOutput(db, KEY, prog, { dsk: ['legacy'] });
+  }
+  async function teardown() {
+    await updateOutput(db, KEY, prog, { dsk: [] });
+    await db.exec('DELETE FROM dsk_viewports');
+  }
+
+  test('the program output becomes the step path, marked as a program step', async () => {
+    await setup();
+    try {
+      assert.deepEqual(await resolveOutputRoute(db, KEY, prog), { kind: 'path', path: `out-${prog}-dsk`, audioPath: null, programStep: true });
+      assert.deepEqual(await resolveOutputRoute(db, KEY, prog, settingsOff), { kind: 'program' });
+      assert.equal(await compositeHandledBySteps(db, KEY), true);
+      assert.equal(await compositeHandledBySteps(db, KEY, settingsOff), false);
+    } finally { await teardown(); }
+  });
+
+  test('a plain program slot and a program-output slot read the step; CEA-708 and transcode slots stay on the raw program', async () => {
+    await setup();
+    try {
+      await upsertRelay(db, KEY, 1, 'rtmp://a/plain', {});
+      await upsertRelay(db, KEY, 2, 'rtmp://a/out', { sourceOutputId: prog });
+      await upsertRelay(db, KEY, 3, 'rtmp://a/cea', { sourceOutputId: prog, captionMode: 'cea708' });
+      await upsertRelay(db, KEY, 4, 'rtmp://a/small', { scale: '1280:720' });
+      const r = await getRelays(db, KEY);
+      assert.equal(r[0].sourceFeedKey, `out-${prog}-dsk`);
+      assert.equal(r[1].sourceFeedKey, `out-${prog}-dsk`);
+      assert.deepEqual([r[2].sourceFeedKey, r[2].sourceView], [null, 'program']);
+      assert.deepEqual([r[3].sourceFeedKey, r[3].sourceView], [null, 'program']);
+    } finally { await teardown(); }
+  });
+
+  test('without a composite viewport a plain program slot is untouched', async () => {
+    await upsertRelay(db, KEY, 1, 'rtmp://a/plain', {});
+    const [r] = await getRelays(db, KEY);
+    assert.deepEqual([r.sourceFeedKey, r.sourceView], [null, 'program']);
+  });
+
+  test('the relay manager does not composite the DSK stream while a step keys it', async () => {
+    const m = new RtmpRelayManager({ ffmpegCaps: {}, mediamtxClient: null, settings: null });
+    let handled = true;
+    m.setCompositeGate(async () => handled);
+    await m.setDskRtmpSource(KEY, 'rtmp://x/dsk/k', { chromaKey: null });
+    assert.equal(m._dskState.has(KEY), false);
+    handled = false;
+    await m.setDskRtmpSource(KEY, 'rtmp://x/dsk/k', { chromaKey: null });
+    assert.equal(m._dskState.get(KEY).rtmpUrl, 'rtmp://x/dsk/k');
+    handled = true;
+    await m.setDskRtmpSource(KEY, 'rtmp://x/dsk/k', { chromaKey: null });
+    assert.equal(m._dskState.has(KEY), false);
   });
 });
