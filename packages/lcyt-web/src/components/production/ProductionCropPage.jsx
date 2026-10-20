@@ -117,6 +117,20 @@ export function ProductionCropPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 18px', background: C.panelBg, borderBottom: `1px solid ${C.headerBorder}`, flexShrink: 0, flexWrap: 'wrap' }}>
         <Link href="/production" style={{ fontSize: '.72rem', color: C.textMuted, textDecoration: 'none' }}>← Production</Link>
         <span style={{ fontSize: '.98rem', fontWeight: 700, letterSpacing: '-.01em' }}>Vertical Crop</span>
+        {hook.outputs.length > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.7rem', color: '#ccc' }}>
+            Output
+            <select
+              aria-label="Crop output"
+              value={hook.outputId || ''}
+              onChange={(e) => hook.actions.selectOutput(e.target.value)}
+              style={{ fontSize: '.7rem', background: C.btnBg, color: '#ccc', border: `1px solid ${C.panelBorder}`, borderRadius: 5, padding: '3px 6px' }}
+            >
+              <option value="">Default crop</option>
+              {hook.outputs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+            </select>
+          </label>
+        )}
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '.7rem', color: '#ccc' }}>
           <input type="checkbox" checked={!!config?.enabled} onChange={toggleEnabled} />
           Enabled

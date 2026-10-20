@@ -181,6 +181,19 @@ export function setSlotSourceFeedId(slot, feedId) {
   } catch {}
 }
 
+/** @param {number} slot @returns {string} an egress output id, or '' for none */
+export function getSlotSourceOutputId(slot) {
+  try { return localStorage.getItem(slotKey(slot, 'sourceOutputId')) || ''; } catch { return ''; }
+}
+
+/** @param {number} slot @param {string} outputId */
+export function setSlotSourceOutputId(slot, outputId) {
+  try {
+    if (outputId) localStorage.setItem(slotKey(slot, 'sourceOutputId'), outputId);
+    else localStorage.removeItem(slotKey(slot, 'sourceOutputId'));
+  } catch {}
+}
+
 /** Remove all localStorage keys for a slot. */
 export function clearSlot(slot) {
   try {
@@ -188,7 +201,7 @@ export function clearSlot(slot) {
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
     ['scale', 'fps', 'videoBitrate', 'audioBitrate', 'recordOnStart', 'recordOnButton']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
-    ['sourceView', 'sourceFeedId']
+    ['sourceView', 'sourceFeedId', 'sourceOutputId']
       .forEach(f => localStorage.removeItem(slotKey(slot, f)));
   } catch {}
 }
@@ -230,7 +243,7 @@ export const MAX_RELAY_SLOTS = 16;
 /**
  * Get config for a specific slot.
  * @param {number} slot 1-16
- * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, recordOnStart, recordOnButton, sourceView, sourceFeedId }}
+ * @returns {{ slot, targetType, youtubeKey, genericUrl, genericName, captionMode, scale, fps, videoBitrate, audioBitrate, recordOnStart, recordOnButton, sourceView, sourceFeedId, sourceOutputId }}
  */
 export function getSlotConfig(slot) {
   return {
@@ -248,6 +261,7 @@ export function getSlotConfig(slot) {
     recordOnButton:  getSlotRecordOnButton(slot),
     sourceView:      getSlotSourceView(slot),
     sourceFeedId:    getSlotSourceFeedId(slot),
+    sourceOutputId:  getSlotSourceOutputId(slot),
   };
 }
 
