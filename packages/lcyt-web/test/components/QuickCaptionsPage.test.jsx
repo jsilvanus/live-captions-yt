@@ -16,6 +16,8 @@ vi.mock('../../src/components/quick/IngestDirections.jsx', () => ({
     return <div>ingest</div>;
   },
 }));
+const sttFeed = { feeds: [], feedId: '', setFeed: vi.fn(async () => true) };
+vi.mock('../../src/hooks/useSttFeed.js', () => ({ useSttFeed: () => sttFeed }));
 vi.mock('../../src/hooks/usePolling.js', () => ({ usePolling: () => {} }));
 vi.mock('../../src/hooks/useSourceLanguages.js', () => ({ useSourceLanguages: () => ({ sourceLanguages: [] }) }));
 vi.mock('../../src/contexts/SessionContext', () => ({ useSessionContext: () => session }));
@@ -31,6 +33,7 @@ beforeEach(() => {
   localStorage.clear();
   call.mockReset(); send.mockClear(); updateTargets.mockClear(); audio.toggle.mockClear();
   session.startStt.mockClear();
+  sttFeed.feeds = []; sttFeed.feedId = ''; sttFeed.setFeed.mockClear();
 });
 
 describe('QuickCaptionsPage', () => {
@@ -75,17 +78,16 @@ describe('QuickCaptionsPage', () => {
   });
 
   it('starts the auditor from a chosen feed with feedId', async () => {
-    call.mockImplementation(async (path) => {
-      if (path === '/targets') return { targets: [{ id: 't1', type: 'youtube', streamKey: 'abcd-efgh-ijkl-mnop', enabled: true }] };
-      if (path === '/feeds') return { feeds: [{ id: 'f9', name: 'Mixer', kind: 'generic', transport: 'rtmp', feedKey: 'k9', ingestUrl: 'rtmp://h/stream/k9' }] };
-      return {};
-    });
-    render(<QuickCaptionsPage />);
+    call.mockResolvedValue({ targets: [{ id: 't1', type: 'youtube', streamKey: 'abcd-efgh-ijkl-mnop', enabled: true }] });
+    sttFeed.feeds = [{ id: 'f9', name: 'Mixer', kind: 'generic', transport: 'rtmp', feedKey: 'k9', ingestUrl: 'rtmp://h/stream/k9' }];
+    const view = render(<QuickCaptionsPage />);
     await waitFor(() => expect(screen.queryByText('quick.captions.key.none')).toBeNull());
     await act(async () => { fireEvent.click(screen.getByRole('radio', { name: 'quick.captions.engine.auditor' })); });
     const pick = await screen.findByRole('combobox', { name: 'quick.captions.audioFrom' });
     await act(async () => { fireEvent.change(pick, { target: { value: 'f9' } }); });
-    expect(call).toHaveBeenCalledWith('/stt/config', { method: 'PUT', body: { feedId: 'f9' } });
+    expect(sttFeed.setFeed).toHaveBeenCalledWith('f9');
+    sttFeed.feedId = 'f9';
+    view.rerender(<QuickCaptionsPage />);
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'quick.captions.start' })); });
     const arg = session.startStt.mock.calls[0][0];
     expect(arg.feedId).toBe('f9');

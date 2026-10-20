@@ -513,7 +513,7 @@ Every instance starts every stored light, so with several instances each one pol
 Every instance reconciles and tries to start each step; MediaMTX refuses the second publisher so the extra ffmpeg fails and backs off, but it wastes a start per instance. Skipped because the ownership lease design (`ownership.js`) is keyed per api key and a step is keyed per output; do it with PR 4 when relay slots read outputs. Composite-mode viewports are skipped by the step on purpose (the relay still composites them).
 
 ## Quick workflows (`/quick`, 2026-10-20)
-- Quick captions has its own small "Audio from" select (feedId, #410) beside #412's picker; merge them into one shared component if both stay. The main stream still goes by ingest key, not its feed id.
+- Quick captions now shares `useSttFeed` with the microphone window (feed list and `PUT /stt/config {feedId}`); the two `<select>`s are still separate small pieces of markup. The main stream still goes by ingest key, not its feed id.
 - Editing or removing an output while the relay runs does not restart the relay; the user stops and starts it. Not checked in the UI beyond a hint.
 - Pop-out window (`window.open`) may be throttled in the background; not verified in real browsers. Nothing here was run against real YouTube, the auditor service or a real relay.
 - Locking outputs to one ffmpeg process is a separate design thread and is not part of these pages.
