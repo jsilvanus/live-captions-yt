@@ -471,4 +471,8 @@ The mechanism (allow-list, `stop` on registry entries, 404/409, inline "Cancel t
 
 Every instance starts every stored light, so with several instances each one polls YouTube (quota) and drives the lamp or sends `light_set`. Single instance is the supported setup for now. Fix: take a lease per light (`cluster.leases`, `tally:<id>`) and renew it while running, like the relay owner (L4 of the multi-instance plan). Mixer camera lights (LCYT software mixer) are fed by the backend and need the same owner lease: only the lease holder polls/pushes, other instances show the owner's last reading, and the lamp's own deadman covers a dead owner. Also not done: a `tally` project feature flag and the lamp-clash check across projects.
 
-- **Output DSK steps have no multi-instance owner** (egress outputs PR 3, `packages/plugins/lcyt-rtmp/src/output-steps.js`): every instance reconciles and tries to start each step; MediaMTX refuses the second publisher so the extra ffmpeg fails and backs off, but it wastes a start per instance. Skipped because the ownership lease design (`ownership.js`) is keyed per api key and a step is keyed per output; do it with PR 4 when relay slots read outputs. Composite-mode viewports are skipped by the step on purpose (the relay still composites them).
+## Output DSK steps have no multi-instance owner
+
+**Where:** `packages/plugins/lcyt-rtmp/src/output-steps.js` (egress outputs PR 3).
+
+Every instance reconciles and tries to start each step; MediaMTX refuses the second publisher so the extra ffmpeg fails and backs off, but it wastes a start per instance. Skipped because the ownership lease design (`ownership.js`) is keyed per api key and a step is keyed per output; do it with PR 4 when relay slots read outputs. Composite-mode viewports are skipped by the step on purpose (the relay still composites them).
