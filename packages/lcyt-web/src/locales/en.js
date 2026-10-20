@@ -1024,6 +1024,7 @@ export default {
     language: 'Recognition language',
     audioFrom: 'Audio from',
     serverSource: 'Server audio source (set on the STT card)',
+    feedError: 'Could not save the feed',
     defaultInput: 'Browser default input',
     input: 'Input',
     webkitNote: 'Browser speech recognition uses the browser\'s default microphone; the input choice applies to the level meter and cloud STT.',

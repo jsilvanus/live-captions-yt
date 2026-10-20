@@ -4,6 +4,8 @@ import { render, screen, fireEvent } from '@testing-library/react';
 const audio = { listening: false, toggle: vi.fn(), interimText: '' };
 vi.mock('../../src/contexts/AudioContext', () => ({ useAudioContext: () => audio }));
 vi.mock('../../src/contexts/LangContext', () => ({ useLang: () => ({ t: (k) => k }) }));
+const sttFeed = { feeds: [], feedId: '', setFeed: vi.fn(), error: false };
+vi.mock('../../src/hooks/useSttFeed.js', () => ({ useSttFeed: () => sttFeed }));
 vi.mock('../../src/hooks/useSourceLanguages.js', () => ({ useSourceLanguages: () => ({ sourceLanguages: [] }) }));
 
 import { ListenPane, ListenButton } from '../../src/components/production/workspace/panes/ListenPane.jsx';
@@ -11,7 +13,7 @@ import { PaneBody } from '../../src/components/production/workspace/panes/index.
 import { getSttLang, setSttEngine } from '../../src/lib/sttConfig.js';
 import { TYPE_OPTIONS, paneMeta } from '../../src/components/production/workspace/paneTypes.js';
 
-beforeEach(() => { localStorage.clear(); audio.listening = false; audio.toggle.mockClear(); audio.interimText = ''; });
+beforeEach(() => { localStorage.clear(); audio.listening = false; audio.toggle.mockClear(); audio.interimText = ''; sttFeed.feeds = []; sttFeed.feedId = ''; sttFeed.setFeed.mockClear(); });
 
 describe('ListenPane', () => {
   it('is registered as a pane type', () => {
@@ -39,6 +41,14 @@ describe('ListenPane', () => {
     setSttEngine('server');
     render(<ListenPane />);
     expect(screen.getByText('listenPane.serverSource')).toBeTruthy();
+  });
+
+  it('lets server STT pick a feed as the audio source', () => {
+    setSttEngine('server');
+    sttFeed.feeds = [{ id: 'f1', name: 'Program' }, { id: 'f2', name: 'Camera 2' }];
+    render(<ListenPane />);
+    fireEvent.change(screen.getByLabelText('listenPane.audioFrom'), { target: { value: 'f2' } });
+    expect(sttFeed.setFeed).toHaveBeenCalledWith('f2');
   });
 
   it('ListenButton toggles from a pane header', () => {
