@@ -5,6 +5,7 @@ import { useLang } from '../../../../contexts/LangContext';
 import { useSourceLanguages } from '../../../../hooks/useSourceLanguages.js';
 import { COMMON_LANGUAGES, getSttEngine, getSttLang, getSttSpeechMode, setSttLang, subscribeSttConfig } from '../../../../lib/sttConfig.js';
 import { KEYS } from '../../../../lib/storageKeys.js';
+import { requestMicWindow } from '../../../../lib/micWindow.js';
 
 const BLUE = '#1a6fd4';
 const RED = '#cc0022';
@@ -77,6 +78,10 @@ export function ListenPane() {
         {listening ? t('listenPane.stop') : t('listenPane.start')}
       </button>
       <div style={{ fontSize: '.62rem', color: C.textMuted }}>{how}</div>
+      <button type="button" onClick={() => requestMicWindow('toggle')}
+        style={{ padding: '6px', borderRadius: 6, background: C.btnBg, border: `1px solid ${C.panelBorder}`, color: '#dcdcdc', fontSize: '.68rem', fontWeight: 600 }}>
+        {t('micWindow.open')}
+      </button>
 
       <label style={{ fontSize: '.62rem', color: C.textMuted }}>
         {t('listenPane.language')}
@@ -100,5 +105,22 @@ export function ListenPane() {
 
       {interimText && <div style={{ fontSize: '.72rem', color: '#d0d0d0', fontStyle: 'italic' }}>{interimText}</div>}
     </div>
+  );
+}
+
+/** Compact blue/red Listen toggle for other panes' headers (e.g. Sent Captions). */
+export function ListenButton() {
+  const { t } = useLang();
+  const { listening, toggle } = useAudioContext();
+  return (
+    <button
+      type="button"
+      onClick={toggle}
+      aria-pressed={listening}
+      title={listening ? t('listenPane.stop') : t('listenPane.start')}
+      style={{ fontSize: '.56rem', fontWeight: 700, letterSpacing: '.05em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 5, border: 'none', color: '#fff', background: listening ? RED : BLUE }}
+    >
+      {listening ? t('listenPane.short.stop') : t('listenPane.short.start')}
+    </button>
   );
 }

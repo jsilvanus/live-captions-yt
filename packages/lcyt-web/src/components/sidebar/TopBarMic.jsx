@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAudioContext } from '../../contexts/AudioContext';
 import { useLang } from '../../contexts/LangContext';
+import { requestMicWindow } from '../../lib/micWindow.js';
 import { getSttEngine, getSttLang, getSttSpeechMode, subscribeSttConfig } from '../../lib/sttConfig';
 
 function readStt() {
@@ -25,6 +26,7 @@ export function TopBarMic() {
   const label = `${listening ? t('topMic.stop') : t('topMic.start')} (${where}, ${stt.lang})`;
 
   return (
+    <>
     <button
       type="button"
       className={['top-bar__mic', listening ? 'top-bar__mic--on' : ''].filter(Boolean).join(' ')}
@@ -37,5 +39,8 @@ export function TopBarMic() {
       <span aria-hidden="true">🎤</span>
       <span className="top-bar__mic-lang">{stt.lang}</span>
     </button>
+    <button type="button" className="top-bar__icon-btn" onClick={() => requestMicWindow('toggle')}
+      title={t('micWindow.open')} aria-label={t('micWindow.open')} data-testid="top-bar-mic-window">⧉</button>
+    </>
   );
 }

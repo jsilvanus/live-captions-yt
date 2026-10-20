@@ -63,13 +63,31 @@ export function defaultViews() {
     },
     captions: {
       name: 'Captions', kind: 'builtin', cols: [
-        { frac: 0.20, rows: [makeRow(0.6, ['general']), makeRow(0.4, ['captionInput'])] },
-        { frac: 0.50, rows: [makeRow(1, ['rundown'])] },
+        { frac: 0.22, rows: [makeRow(0.34, ['listen']), makeRow(0.26, ['captionInput']), makeRow(0.4, ['general'])] },
+        { frac: 0.48, rows: [makeRow(1, ['rundown'])] },
         { frac: 0.30, rows: [makeRow(0.5, ['sent']), makeRow(0.5, ['chat'])] },
       ],
     },
   };
   return { views, viewOrder: ['preflight', 'relay', 'mixer', 'captions'] };
+}
+
+function paneSignature(view) {
+  return JSON.stringify((view?.cols || []).map((c) => c.rows.map((r) => r.panels.map(paneType))));
+}
+
+/**
+ * Built-in views are read-only, so a stored copy whose panes differ from the shipped one is stale
+ * (the app added or moved a pane since it was saved): replace it with the shipped view. Same panes
+ * keep the stored copy, so dragged column widths survive. Custom views are never touched.
+ */
+export function refreshBuiltinViews(storedViews, defaults) {
+  const out = { ...storedViews };
+  for (const [id, def] of Object.entries(defaults)) {
+    const cur = out[id];
+    if (!cur || (cur.kind === 'builtin' && paneSignature(cur) !== paneSignature(def))) out[id] = def;
+  }
+  return out;
 }
 
 /** Full persisted layout state (views + order + which is active + custom counter). */
@@ -84,7 +102,7 @@ export function initialLayoutState(scope) {
     }
   } catch { /* ignore malformed */ }
   return {
-    views:       stored ? stored.views : d.views,
+    views:       stored ? refreshBuiltinViews(stored.views, d.views) : d.views,
     viewOrder:   stored ? stored.viewOrder : d.viewOrder,
     activeView:  stored && stored.views[stored.activeView] ? stored.activeView : 'preflight',
     customCount: stored ? stored.customCount : 0,

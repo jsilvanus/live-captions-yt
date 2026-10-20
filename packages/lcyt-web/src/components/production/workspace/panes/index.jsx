@@ -7,7 +7,7 @@ import { useCaptionContext } from '../../../../contexts/CaptionContext';
 import { useConnectionContext } from '../../../../contexts/ConnectionContext';
 import { useEventStream } from '../../../../hooks/useEventStream.js';
 import { foldActionEvent } from '../../../../lib/action-atoms.js';
-import { ListenPane } from './ListenPane.jsx';
+import { ListenPane, ListenButton } from './ListenPane.jsx';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -795,6 +795,7 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
 
 /** Header-right actions specific to a pane type (thumbs toggle, mixer mode). */
 export function PaneHeaderActions({ type, D }) {
+  if (type === 'sent') return <ListenButton />;
   if (type === 'cameras') {
     return (
       <button onClick={() => D.patch({ showThumbs: !D.ui.showThumbs })}

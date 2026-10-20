@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useLocation } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
 import { TopBar, Sidebar } from './sidebar/Sidebar.jsx';
+import { MicWindow } from './MicWindow.jsx';
 import { CommandPalette } from './CommandPalette.jsx';
 import { KeyboardShortcutsHelp } from './KeyboardShortcutsHelp.jsx';
 import { ConnectionStatusMonitor } from './ConnectionStatusMonitor.jsx';
@@ -143,6 +144,7 @@ export function SidebarLayout({ children }) {
       </div>
       <CommandPalette open={cmdPaletteOpen} onClose={() => setCmdPaletteOpen(false)} />
       <KeyboardShortcutsHelp open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
+      <MicWindow />
     </div>
   );
 }

@@ -975,6 +975,7 @@ export default {
     cloud: 'moln',
   },
   listenPane: {
+    short: { start: 'Lyssna', stop: 'Stoppa' },
     start: 'Börja lyssna',
     stop: 'Sluta lyssna',
     language: 'Igenkänningsspråk',
@@ -983,5 +984,18 @@ export default {
     defaultInput: 'Webbläsarens standardingång',
     input: 'Ingång',
     webkitNote: 'Webbläsarens taligenkänning använder webbläsarens standardmikrofon; valet gäller nivåmätaren och moln-STT.',
+  },
+  micWindow: {
+    title: 'Flytande fönster',
+    close: 'Stäng',
+    sent: 'Skickade textningar',
+    none: 'Inga textningar skickade ännu.',
+    pending: 'väntar',
+    placeholder: 'Skicka en textning…',
+    offline: 'Ingen anslutning',
+    send: 'Skicka',
+    sendFailed: 'Sändningen misslyckades',
+    popupNote: 'Webbläsaren saknar ett fönster som alltid ligger överst; håll fönstret synligt så att lyssningen inte bromsas.',
+    open: 'Öppna flytande fönster',
   },
 };
