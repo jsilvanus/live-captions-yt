@@ -310,6 +310,9 @@ export class RtmpRelayManager {
      */
     this._dskState = new Map();
 
+    /** @type {((apiKey: string) => Promise<boolean>)|null} true when an output's DSK step keys the composite overlay itself */
+    this._compositeGate = null;
+
     /**
      * MediaMTX output path names registered for processing modes (CEA-708, DSK overlay,
      * per-slot transcode). Cleaned up by _stopProc() so fan-out runOnPublish hooks are
@@ -1381,6 +1384,9 @@ export class RtmpRelayManager {
     }
   }
 
+  /** Install the check `setDskRtmpSource` asks before it makes the relay composite the DSK stream (see `compositeHandledBySteps`). */
+  setCompositeGate(fn) { this._compositeGate = typeof fn === 'function' ? fn : null; }
+
   /**
    * Set an RTMP stream as the server-side DSK overlay source for an API key.
    * Call this when an OBS/broadcaster publishes to the backend's DSK nginx-rtmp endpoint.
@@ -1391,8 +1397,14 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   async setDskRtmpSource(apiKey, rtmpUrl, { chromaKey = null } = {}) {
-    if (!rtmpUrl) {
-      this._dskState.delete(apiKey);
+    // An output's DSK step composites this stream already (plan_egress_outputs.md): never key the program twice.
+    let handledBySteps = false;
+    if (rtmpUrl && this._compositeGate) {
+      try { handledBySteps = await this._compositeGate(apiKey); } catch { /* unknown: keep the legacy composite */ }
+    }
+    if (!rtmpUrl || handledBySteps) {
+      const had = this._dskState.delete(apiKey);
+      if (handledBySteps && !had) return;
     } else {
       this._dskState.set(apiKey, { names: ['rtmp-dsk'], imagePaths: [], rtmpUrl, chromaKey });
     }

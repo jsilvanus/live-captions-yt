@@ -12,7 +12,7 @@
  * An unknown output gives null and the slot falls back to its own `source_view`, like a deleted feed does.
  */
 
-import { outputCropPath, outputDskPath, effectiveDskViewports, MAX_CROP_SOURCE_DEPTH } from './output-paths.js';
+import { outputCropPath, outputDskPath, effectiveDskViewports, stepsActive, MAX_CROP_SOURCE_DEPTH } from './output-paths.js';
 
 function parseJson(text, fallback) {
   try { return JSON.parse(text); } catch { return fallback; }
@@ -23,7 +23,10 @@ function parseJson(text, fallback) {
  * @param {string} apiKey
  * @param {string} outputId
  * @param {{ get: (key: string) => any }|null} [settings]
- * @returns {Promise<{ kind: 'program' } | { kind: 'crop' } | { kind: 'path', path: string, audioPath: string|null } | null>}
+ * `path` routes carry `programStep: true` when the path is the DSK step of a picture built on the project's main stream:
+ * a slot that needs the relay's own ffmpeg (CEA-708, per-slot transcoding) keeps the old 'program' handling there (the
+ * relay's composite never applied to such slots either).
+ * @returns {Promise<{ kind: 'program' } | { kind: 'crop' } | { kind: 'path', path: string, audioPath: string|null, programStep?: boolean } | null>}
  */
 export async function resolveOutputRoute(db, apiKey, outputId, settings = null) {
   const first = await db.outputs.findFirst({ where: { id: outputId, owner_api_key: apiKey } });
@@ -34,13 +37,13 @@ export async function resolveOutputRoute(db, apiKey, outputId, settings = null) 
   ]);
   const defaultCropId = cfg?.output_id ?? null;
 
-  let final = null; // { path } | { program: true }
+  let final = null; // { path, dskStepOf? } | { program: true }
   let cursor = first;
   for (let i = 0; i < MAX_CROP_SOURCE_DEPTH && cursor && !final; i++) {
     if (cursor.crop_enabled === 1) {
       final = { path: outputCropPath(apiKey, cursor.id, cursor.id === defaultCropId) };
-    } else if (cursor.enabled !== 0 && (await effectiveDskViewports(db, apiKey, parseJson(cursor.dsk_json, []), settings)).length) {
-      final = { path: outputDskPath(cursor.id) };
+    } else if (cursor.enabled !== 0 && stepsActive(settings) && (await effectiveDskViewports(db, apiKey, parseJson(cursor.dsk_json, []), settings)).length) {
+      final = { path: outputDskPath(cursor.id), dskStepOf: cursor };
     } else if (cursor.source_type === 'feed') {
       const feed = await db.prod_feeds.findFirst({ where: { id: cursor.source_id, owner_api_key: apiKey }, select: { id: true, feed_key: true } });
       if (!feed) return null;
@@ -59,5 +62,13 @@ export async function resolveOutputRoute(db, apiKey, outputId, settings = null) 
     const feed = await db.prod_feeds.findFirst({ where: { id: audio.feed, owner_api_key: apiKey }, select: { feed_key: true, media: true } });
     if (feed && feed.media !== 'video') audioPath = feed.feed_key;
   }
-  return { kind: 'path', path: final.path, audioPath };
+  let programStep = false;
+  if (final.dskStepOf) {
+    let c = final.dskStepOf;
+    for (let i = 0; i < MAX_CROP_SOURCE_DEPTH && c; i++) {
+      if (c.source_type === 'feed') { programStep = c.source_id === primary?.primary_feed_id; break; }
+      c = await db.outputs.findFirst({ where: { id: c.source_id, owner_api_key: apiKey } });
+    }
+  }
+  return { kind: 'path', path: final.path, audioPath, ...(programStep ? { programStep: true } : {}) };
 }

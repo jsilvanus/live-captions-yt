@@ -4,6 +4,7 @@
  * Props:
  *   config: { provider, language, audioSource, confidenceThreshold }
  *   onChange: (config) => void
+ *   feeds: optional [{ id, name }] — when non-empty, a feed can be picked as the audio source (config.feedId)
  */
 const PROVIDERS = [
   { value: 'webspeech',    label: 'Web Speech API (browser, no server needed)' },
@@ -19,11 +20,12 @@ const AUDIO_SOURCES = [
   { value: 'whep', label: 'WHEP (WebRTC)' },
 ];
 
-export function SttPanel({ config = {}, onChange }) {
+export function SttPanel({ config = {}, onChange, feeds = [] }) {
   const {
     provider = 'google',
     language = 'en-US',
     audioSource = 'hls',
+    feedId = '',
     confidenceThreshold = 0,
   } = config;
 
@@ -77,6 +79,23 @@ export function SttPanel({ config = {}, onChange }) {
               ))}
             </select>
           </div>
+
+          {feeds.length > 0 && (
+            <div>
+              <label className="settings-field__label">Feed (overrides the audio source above)</label>
+              <select
+                className="settings-field__input"
+                value={feedId || ''}
+                onChange={e => onChange({ ...config, feedId: e.target.value || null })}
+                style={{ width: '100%' }}
+              >
+                <option value="">Use the audio source above</option>
+                {feeds.map(f => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div>
             <label className="settings-field__label">

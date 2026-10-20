@@ -2213,6 +2213,22 @@
 }
 .setup-hub-page__pill--active:hover { color: #fff; }
 
+.setup-hub-page__groupbar { margin: 0 0 14px; }
+.setup-hub-page__group-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.setup-hub-page__group { margin: 0 0 22px; }
+.setup-hub-page__group-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0 0 10px;
+}
+
 .setup-hub-page__grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));

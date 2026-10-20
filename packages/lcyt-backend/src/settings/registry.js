@@ -147,6 +147,7 @@ const TIER_B = [
 
   { key: 'outputs.steps_active', env: 'OUTPUT_STEPS_ACTIVE', type: 'bool', boolStyle: 'not0', default: true, category: 'mediamtx', apply: 'hot', description: "Egress outputs: run the processing steps of outputs (a DSK step per output with DSK viewports, ffmpeg through FFMPEG_RUNNER) while the relay stack is active. Off stops every step; outputs keep their settings." },
   { key: 'outputs.max_steps', env: 'MAX_OUTPUT_STEPS', type: 'int', default: 4, category: 'mediamtx', apply: 'hot', description: 'Egress outputs: most processing steps (DSK steps plus crops) one project may run at the same time. Outputs beyond it are skipped and listed in GET /outputs/steps.' },
+  { key: 'outputs.composite_in_step', env: 'OUTPUT_COMPOSITE_IN_STEP', type: 'bool', boolStyle: 'not0', default: true, category: 'mediamtx', apply: 'hot', description: "Egress outputs: the composite DSK viewport (the overlay on the program picture) is keyed by the DSK step of the output that lists it, not by the relay's own ffmpeg. Slots that send the program read that output's picture (always encoded while the step runs). Off = the old relay composite; steps skip composite viewports." },
   { key: 'outputs.step_poll_ms', env: 'OUTPUT_STEP_POLL_MS', type: 'int', default: 0, category: 'mediamtx', apply: 'manager', description: 'Egress outputs: how often DSK steps are checked against the database and MediaMTX. 0 = 3000 ms.' },
 
   // --- Compute -----------------------------------------------------------

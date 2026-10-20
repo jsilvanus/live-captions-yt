@@ -46,8 +46,8 @@ test('helpers that prepend the base URL to a path add the /api/v1 prefix', () =>
   for (const f of files) {
     const text = readFileSync(f, 'utf8');
     text.split('\n').forEach((line, i) => {
-      // TallySection passes full /api/v1/... paths to its helper, so it is exempt.
-      if (re.test(line) && !relative(SRC, f).endsWith("TallySection.jsx")) bad.push(`${relative(SRC, f)}:${i + 1}: ${line.trim()}`);
+      // TallySection and ContactSection pass full /api/v1/... paths to their helper, so they are exempt.
+      if (re.test(line) && !/(Tally|Contact)Section\.jsx$/.test(relative(SRC, f))) bad.push(`${relative(SRC, f)}:${i + 1}: ${line.trim()}`);
       re.lastIndex = 0;
     });
   }

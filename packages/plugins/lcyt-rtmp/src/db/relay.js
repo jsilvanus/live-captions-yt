@@ -1,5 +1,6 @@
 import { ownerOfPrimaryFeedKey } from './feeds.js';
 import { resolveOutputRoute } from '../output-routing.js';
+import { compositeHandledBySteps, programOutputId } from '../output-paths.js';
 
 /**
  * Get a full api_keys row by key value.
@@ -169,11 +170,22 @@ async function withSourceFeedKeys(db, rows) {
   // Slots that send an output (source_feed_id wins when both are set): the output's route decides the source. A route that
   // is the main stream or the default crop leaves the slot on the old 'program' / 'crop' handling (an old 'crop' slot never
   // silently turns into a program slot); any other route fans out that MediaMTX path like a feed-sourced slot.
+  let compositeOwned = null; // does a DSK step key the composite viewport? (looked up once, only when a plain program slot asks)
   for (const r of out) {
-    if (!r.source_output_id || r.source_feed_key) continue;
-    const route = await resolveOutputRoute(db, r.api_key, r.source_output_id);
+    if (r.source_feed_key) continue;
+    let outputId = r.source_output_id;
+    // A plain 'program' slot (no feed, no output) used to get the relay's composite DSK overlay. When a step keys it now,
+    // the slot reads the program output's picture instead.
+    if (!outputId && (r.source_view || 'program') === 'program') {
+      if (compositeOwned === null) compositeOwned = await compositeHandledBySteps(db, r.api_key);
+      if (compositeOwned) outputId = await programOutputId(db, r.api_key);
+    }
+    if (!outputId) continue;
+    const route = await resolveOutputRoute(db, r.api_key, outputId);
     if (!route) continue;
     if (route.kind === 'path') {
+      // CEA-708 and per-slot transcoding need the relay's own ffmpeg on the raw program: keep that handling
+      if (route.programStep && (r.caption_mode === 'cea708' || r.scale || r.fps != null || r.video_bitrate || r.audio_bitrate)) continue;
       r.source_feed_key = route.path;
       r.source_audio_path = route.audioPath;
     } else if (route.kind === 'crop') {

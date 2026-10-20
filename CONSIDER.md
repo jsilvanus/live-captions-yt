@@ -517,3 +517,22 @@ Every instance reconciles and tries to start each step; MediaMTX refuses the sec
 - Editing or removing an output while the relay runs does not restart the relay; the user stops and starts it. Not checked in the UI beyond a hint.
 - Pop-out window (`window.open`) may be throttled in the background; not verified in real browsers. Nothing here was run against real YouTube, the auditor service or a real relay.
 - Locking outputs to one ffmpeg process is a separate design thread and is not part of these pages.
+---
+
+## Mic / Listen follow-ups left open after the server-STT feed choice (#399-#412)
+
+**Where:** `packages/lcyt-web` (`AudioContext`, `AudioPanel`, `CCModal`, caption targets), `packages/lcyt-backend` (`routes/stt.js`).
+
+**Open, not built (Juha, 2026-10-20: "I'll get back to those later"):**
+- **Per-target "original + translation" checkbox** on caption targets (mic plan section 13).
+- **AudioContext split** into state and transcript, and reuse of the mic controls in `AudioPage`, `AudioWidget` and `MobileAudioBar`.
+- **Delete the unused `CaptionsModal.jsx`.**
+- **Hide the server `webspeech` provider** in the STT card (Phase 3).
+- **Floating mic window popup fallback:** the popup-fallback toggle behaviour was never decided, and whether Document Picture-in-Picture avoids background throttling is unverified.
+- **Caption Targets card link:** whether the targets summary in the Listen/floating window should link to the Caption Targets card.
+- **Optional built-in view refresh work** (`refreshBuiltinViews`, `production/workspace/layout.js`).
+- **403 on STT settings:** Juha's role/login method was not confirmed; the fix in #398 needs a project access token (`lib/setupToken.js`).
+
+**Unverified:** the server `feedId` path (`stt_config.feed_id`, #410) and the feed pickers (#412) were never run against a real MediaMTX; the 'rtmp' audio source uses the app path 'live', which may be wrong for non-primary feeds (hls/whep use the bare path = feed key). `processLocally` and the availability API shape were not checked in real Chrome. Test in real Chrome: the ⧉ window button, the Captions view, "Prefer local".
+
+**Why skipped:** out of scope for the mic/feed work; waiting on Juha's decisions.

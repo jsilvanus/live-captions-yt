@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import { SetupCard } from './SetupCard.jsx';
 import { PlatformsSection } from './PlatformsSection.jsx';
 import { WorkflowsIcon } from './icons.jsx';
@@ -20,6 +20,8 @@ import { McpAccessSection } from './McpAccessSection.jsx';
 import { ConnectorsSection } from './ConnectorsSection.jsx';
 import { AiRoleModelsSection } from './AiRoleModelsSection.jsx';
 import { TallySection } from './TallySection.jsx';
+import { ContactSection } from './ContactSection.jsx';
+import { KEYS } from '../../lib/storageKeys.js';
 import { useCardFavorites } from '../../lib/cardFavorites.js';
 import { useUserAuth } from '../../hooks/useUserAuth.js';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
@@ -28,9 +30,38 @@ import { useProjectRequired } from '../../hooks/useProjectRequired.js';
 import { cardIdsForEnabledFeatures, cardReasons } from '../../lib/workflowFeatureMap.js';
 import { useSetupT } from '../../lib/useSetupT.js';
 import { hasSetupText } from '../../lib/setupText.js';
+import { HUB_GROUPS, HUB_CARD_ORDER } from '../../lib/hubGroups.js';
 import { loadCardStatuses } from '../../lib/cardSetupStatus.js';
 import { GuidedActionProvider } from '../../hooks/useGuidedAction.jsx';
 import { RoleAssistantPanel } from '../agent/RoleAssistantPanel.jsx';
+
+function readGrouped() {
+  try { return localStorage.getItem(KEYS.setup.groupCards) === '1'; } catch { return false; }
+}
+
+/** Card elements by id; the group view and the flat view both pick from here. */
+const cards = {
+  devices: <DevicesSection />,
+  bridges: <BridgeSection />,
+  outputs: <OutputsSection />,
+  egress: <EgressSection />,
+  feeds: <FeedsSection />,
+  radio: <WebRadioSection />,
+  'viewer-stream': <ViewerStreamSection />,
+  viewports: <ViewportsSection />,
+  screens: <ScreensSection />,
+  'caption-targets': <CaptionTargetsSection />,
+  icons: <IconsSection />,
+  languages: <LanguagesSection />,
+  stt: <SttSection />,
+  storage: <StorageSection />,
+  'mcp-access': <McpAccessSection />,
+  connectors: <ConnectorsSection />,
+  'broadcast-platforms': <PlatformsSection />,
+  'ai-roles': <AiRoleModelsSection />,
+  tally: <TallySection />,
+  contact: <ContactSection />,
+};
 
 const FILTERS = ['all', 'favorites', 'workflow'];
 
@@ -64,6 +95,11 @@ const LEGACY_DEVICE_CARD_IDS = ['cameras', 'mixers', 'encoders'];
 export function SetupHubPage() {
   useProjectRequired();
   const [filter, setFilter] = useState('all');
+  const [grouped, setGroupedState] = useState(readGrouped);
+  function setGrouped(v) {
+    setGroupedState(v);
+    try { localStorage.setItem(KEYS.setup.groupCards, v ? '1' : '0'); } catch { /* ignore */ }
+  }
   const { favorites } = useCardFavorites();
 
   const { token: userToken, backendUrl: userBackendUrl } = useUserAuth();
@@ -147,37 +183,26 @@ export function SetupHubPage() {
             </div>
           )}
 
+          <div className="setup-hub-page__groupbar">
+            <label className="setup-hub-page__group-toggle">
+              <input type="checkbox" checked={grouped} onChange={e => setGrouped(e.target.checked)} />
+              {t('hub.groupCards')}
+            </label>
+          </div>
+
+          {grouped && HUB_GROUPS.map(g => {
+            const ids = g.cards.filter(isVisible);
+            if (ids.length === 0) return null;
+            return (
+              <section key={g.id} className="setup-hub-page__group" data-testid={`hub-group-${g.id}`}>
+                <h2 className="setup-hub-page__group-title">{t(`hub.group.${g.id}`)}</h2>
+                <div className="setup-hub-page__grid">{ids.map(id => <Fragment key={id}>{cards[id]}</Fragment>)}</div>
+              </section>
+            );
+          })}
+
           <div className="setup-hub-page__grid">
-            {/* ── Production devices ── */}
-            {isVisible('devices') && <DevicesSection />}
-            {isVisible('bridges') && <BridgeSection />}
-
-            {/* ── Streaming & graphics ── */}
-            {isVisible('outputs') && <OutputsSection />}
-            {isVisible('egress') && <EgressSection />}
-            {isVisible('feeds') && <FeedsSection />}
-            {isVisible('radio') && <WebRadioSection />}
-            {isVisible('viewer-stream') && <ViewerStreamSection />}
-            {isVisible('viewports') && <ViewportsSection />}
-            {isVisible('screens') && <ScreensSection />}
-
-            {/* ── Captions & language ── */}
-            {isVisible('caption-targets') && <CaptionTargetsSection />}
-            {isVisible('icons') && <IconsSection />}
-            {isVisible('languages') && <LanguagesSection />}
-
-            {/* ── Speech & storage ── */}
-            {isVisible('stt') && <SttSection />}
-            {isVisible('storage') && <StorageSection />}
-
-            {/* ── AI & integrations ── */}
-            {isVisible('mcp-access') && <McpAccessSection />}
-            {isVisible('connectors') && <ConnectorsSection />}
-            {isVisible('broadcast-platforms') && <PlatformsSection />}
-            {isVisible('ai-roles') && <AiRoleModelsSection />}
-
-            {/* ── Live status lights ── */}
-            {isVisible('tally') && <TallySection />}
+            {!grouped && HUB_CARD_ORDER.filter(isVisible).map(id => <Fragment key={id}>{cards[id]}</Fragment>)}
 
             {/* ── Workflows — always visible regardless of the active filter
                  pill (matches the mockup's own "Workflows (always visible)"
