@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useSentLogContext } from '../contexts/SentLogContext';
-import { getSttEngine, getSttLang, setSttLang, getSttCloudConfig, COMMON_LANGUAGES } from '../lib/sttConfig';
+import { getSttEngine, getSttLang, setSttLang, getSttSpeechMode, getSttCloudConfig, COMMON_LANGUAGES } from '../lib/sttConfig';
 import { getGoogleCredential, fetchOAuthToken } from '../lib/googleCredential';
 import { KEYS } from '../lib/storageKeys.js';
 import { getEnabledTranslations, getTranslationShowOriginal } from '../lib/translationConfig';
@@ -31,6 +31,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
   const [listening, setListening] = useState(false);
   const [interimText, setInterimText] = useState('');
   const [engine, setEngine] = useState(getSttEngine);
+  const [sttLangState, setSttLangState] = useState(getSttLang);
+  const [speechMode, setSpeechMode] = useState(getSttSpeechMode);
   const [credLoaded, setCredLoaded] = useState(!!getGoogleCredential());
   const [webkitSupported] = useState(
     () => !!(window.SpeechRecognition || window.webkitSpeechRecognition),
@@ -47,7 +49,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
 
   // WebKit speech hook (extracted)
   const webkitSpeech = useWebSpeech({
-    lang: getSttLang(),
+    lang: sttLangState,
+    mode: speechMode,
     continuous: true,
     interim: !isMobile,
     onInterim: (interim) => {
@@ -173,6 +176,8 @@ export const AudioPanel = forwardRef(function AudioPanel(
   useEffect(() => {
     function onCfgChange()  {
       setEngine(getSttEngine());
+      setSttLangState(getSttLang());
+      setSpeechMode(getSttSpeechMode());
       try { setHoldSpeakEnabled(localStorage.getItem(KEYS.audio.holdToSpeak) === '1'); } catch {}
     }
     function onCredChange() { setCredLoaded(!!getGoogleCredential()); }
@@ -995,10 +1000,9 @@ export const AudioPanel = forwardRef(function AudioPanel(
           <label className="audio-panel__language-label">Language:</label>
           <select
             className="audio-panel__language-select"
-            value={getSttLang()}
+            value={sttLangState}
             onChange={(e) => {
               setSttLang(e.target.value);
-              webkitSpeech.setLanguage?.(e.target.value);
             }}
           >
             {sourceLanguages.length > 0 ? (

@@ -1,0 +1,89 @@
+name: Release
+
+# A PR requests a product release by adding or editing .github/version/release.
+# On merge to main, create the next sequential vN tag and invoke the image
+# publisher directly. GitHub suppresses follow-up workflows for GITHUB_TOKEN
+# tag pushes, so publishing is a reusable-workflow call in this run.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: sequential-release-main
+  cancel-in-progress: false
+
+jobs:
+  prepare-release:
+    name: Prepare sequential release
+    runs-on: ubuntu-latest
+    outputs:
+      should-release: ${{ steps.prepare.outputs.should_release }}
+      release-tag: ${{ steps.prepare.outputs.release_tag }}
+      release-ref: ${{ steps.prepare.outputs.release_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Check release marker and calculate next version
+        id: prepare
+        shell: bash
+        run: |
+          MARKER=".github/version/release"
+          BEFORE="${{ github.event.before }}"
+          echo "should_release=false" >> "$GITHUB_OUTPUT"
+          echo "release_tag=" >> "$GITHUB_OUTPUT"
+          echo "release_ref=" >> "$GITHUB_OUTPUT"
+
+          # The marker must exist in this commit and have changed in this push.
+          # Editing its contents for each release prevents stale-marker releases.
+          [[ -f "$MARKER" ]] || exit 0
+          if [[ "$BEFORE" =~ ^0+$ ]]; then
+            CHANGED=$(git show --format= --name-only "$GITHUB_SHA")
+          else
+            CHANGED=$(git diff --name-only "$BEFORE" "$GITHUB_SHA" -- "$MARKER")
+          fi
+          grep -Fxq "$MARKER" <<< "$CHANGED" || exit 0
+
+          git fetch --tags --force
+          LATEST=$(git tag --list 'v*' | grep -E '^v[0-9]+$' | sort -V | tail -n 1 || true)
+          if [[ -z "$LATEST" ]]; then
+            NEXT="v1"
+          else
+            NUMBER="${LATEST#v}"
+            NEXT="v$((NUMBER + 1))"
+          fi
+
+          echo "Release requested; next version is $NEXT at $GITHUB_SHA"
+          echo "should_release=true" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "release_ref=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Create release tag
+        if: steps.prepare.outputs.should_release == 'true'
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.prepare.outputs.release_tag }}
+          RELEASE_REF: ${{ steps.prepare.outputs.release_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$RELEASE_TAG" "$RELEASE_REF" -m "Release $RELEASE_TAG"
+          git push origin "$RELEASE_TAG"
+
+  publish-images:
+    name: Publish release images
+    needs: prepare-release
+    if: needs.prepare-release.outputs.should-release == 'true'
+    uses: ./.github/workflows/publish-images.yml
+    with:
+      release_ref: ${{ needs.prepare-release.outputs.release-ref }}
+      release_tag: ${{ needs.prepare-release.outputs.release-tag }}
+    permissions:
+      contents: read
+      packages: write

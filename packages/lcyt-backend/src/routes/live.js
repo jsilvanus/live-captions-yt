@@ -3,7 +3,8 @@ import rateLimit from 'express-rate-limit';
 import jwt from 'jsonwebtoken';
 import logger from 'lcyt/logger';
 import { YoutubeLiveCaptionSender } from 'lcyt';
-import { setSessionSequence, validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, bindSessionStart, autoCreateForSession, completeBroadcast, getBroadcast, armOnGoLive, disarmOnEnd, loadSession } from '../db.js';
+import { setSessionSequence, validateApiKey, writeSessionStat, writeAuthEvent, incrementDomainHourlySessionStart, incrementDomainHourlySessionEnd, saveSession, getKeySequence, updateKeySequence, resetKeySequence, isGraphicsEnabled, getCaptionTargets, getBroadcast, setBroadcastSequence, loadSession } from '../db.js';
+import { resolveSessionBroadcast, endAdhocBroadcast, SessionBindingError } from '../broadcasts/session-binding.js';
 import { makeSessionId } from '../store.js';
 import { createAuthMiddleware } from '../middleware/auth.js';
 import { isAllowedDomain } from '../lib/allowed-domains.js';
@@ -108,7 +109,7 @@ async function stopSessionRecording(db, session, deps, recordingUploadDelayMs = 
  * @param {{ mediamtxClient?: object | null }} [opts]
  * @returns {Router}
  */
-export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, recordingsStore = null, settings = null, onRecordingFinalized = null } = {}) {
+export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, recordingsStore = null, settings = null, onRecordingFinalized = null, broadcastLifecycle = null } = {}) {
   const router = Router();
   const auth = createAuthMiddleware(jwtSecret);
   const recordingLimiter = rateLimit({
@@ -196,8 +197,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       // Recreate primary sender for rehydrated sessions that have no active sender,
       // but only when a streamKey is available (target-array sessions have no primary sender).
       if (!existing.sender && streamKey) {
-        const keySeq = await getKeySequence(db, apiKey);
-        const newSender = new YoutubeLiveCaptionSender({ streamKey, sequence: keySeq });
+        const newSender = new YoutubeLiveCaptionSender({ streamKey, sequence: existing.sequence ?? await getKeySequence(db, apiKey) });
         try {
           newSender.start();
           existing.sender = newSender;
@@ -237,6 +237,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         sequence: existing.sequence,
         syncOffset: existing.syncOffset,
         startedAt: existing.startedAt,
+        broadcastId: existing.broadcastId ?? null,
         graphicsEnabled: await isGraphicsEnabled(db, apiKey),
       });
     }
@@ -270,24 +271,31 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       }
     }
 
-    // Bind this session to a broadcast (plan/broadcasts). An explicit broadcastId
-    // binds an existing broadcast (rejected if it already has a live session);
-    // omitting it auto-creates a fresh `live` broadcast so every session always
-    // has exactly one and produced content attaches back to it.
-    let boundBroadcastId = null;
-    if (broadcastId) {
-      const bind = await bindSessionStart(db, apiKey, broadcastId, { recordEnabled: broadcastRecordEnabled });
-      if (!bind.ok) return res.status(bind.status || 400).json({ error: bind.error });
-      boundBroadcastId = broadcastId;
-    } else {
-      boundBroadcastId = (await autoCreateForSession(db, apiKey, { recordEnabled: broadcastRecordEnabled })).id;
+    // Attach to the broadcast (never drives its status; see broadcasts/session-binding.js).
+    let broadcast;
+    try {
+      ({ broadcast } = await resolveSessionBroadcast(db, broadcastLifecycle, apiKey, {
+        broadcastId, sequence: initialSeq, recordEnabled: broadcastRecordEnabled,
+      }));
+    } catch (err) {
+      if (sender) { try { await sender.end(); } catch { /* best effort */ } }
+      for (const t of extraTargets) { if (t.type === 'youtube' && t.sender) Promise.resolve(t.sender.end()).catch(() => {}); }
+      if (err instanceof SessionBindingError || err?.status) {
+        return res.status(err.status || 409).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
+      }
+      throw err;
     }
-    // Going live arms production (plan_backend_actions.md); the operator can override.
-    await armOnGoLive(db, store.eventBus, apiKey, boundBroadcastId);
+    const boundBroadcastId = broadcast.id;
 
-    const broadcast = boundBroadcastId ? await getBroadcast(db, apiKey, boundBroadcastId) : null;
+    // The broadcast owns the caption counter: continue from it, whatever the client sent.
+    const boundSeq = broadcast.captionSequence ?? 0;
+    if (sender) sender.setSequence?.(boundSeq);
+    for (const t of extraTargets) { if (t.type === 'youtube' && t.sender) t.sender.setSequence?.(boundSeq); }
+
+    // Recording belongs to the broadcast when it asks for it (lifecycle go-live); a
+    // session starts its own only for the old triggers (body flag, relay recordOnStart).
     const relaySlots = await safeGetRelaySlots(db, apiKey);
-    const shouldRecord = Boolean(broadcastRecordEnabled) || Boolean(broadcast?.recordEnabled) || relaySlots.some(slot => slot.recordOnStart);
+    const shouldRecord = !broadcast.recordEnabled && (Boolean(broadcastRecordEnabled) || relaySlots.some(slot => slot.recordOnStart));
     let recordingGroup = null;
     if (shouldRecord) {
       recordingGroup = await startRecordingGroup(db, {
@@ -306,7 +314,7 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
       streamKey: streamKey || null,
       domain,
       jwt: token,
-      sequence: sender ? sender.sequence : initialSeq,
+      sequence: boundSeq,
       syncOffset,
       sender,
       extraTargets,
@@ -360,6 +368,12 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
     if (!matchingSlot.recordOnButton) {
       return res.status(400).json({ error: 'This relay slot is not configured for manual recording' });
     }
+    if (session.broadcastId) {
+      const b = await getBroadcast(db, session.apiKey, session.broadcastId).catch(() => null);
+      if (b?.recordEnabled) {
+        return res.status(409).json({ error: 'Recording of this broadcast is controlled by its broadcast', code: 'broadcast_owns_recording' });
+      }
+    }
     if (enabled) {
       const result = await startSessionRecording(db, session, { mediamtxClient, recordingsStore, settings, eventBus: store.eventBus });
       if (!result.ok) return res.status(result.status || 400).json({ error: result.error || 'Failed to start recording' });
@@ -412,6 +426,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
         // Ignore sender errors but continue to update session value
       }
       session.sequence = seq;
+      // A bound session sets the broadcast's counter (an explicit set may lower it).
+      if (session.broadcastId) { try { await setBroadcastSequence(db, session.broadcastId, seq); } catch (_) {} }
       // An explicit set may lower the stored value (touch() only ever raises it).
       try { await setSessionSequence(db, sessionId, seq); } catch (_) {}
       // Persist to per-API-key store; seq=0 is an explicit reset (clears last_caption_at)
@@ -501,18 +517,8 @@ export function createLiveRouter(db, store, jwtSecret, { mediamtxClient = null, 
           logger.warn(`[videos] ending the recording failed (videoId=${removed.recordingVideoId})`, err);
         }
       }
-      // Transition the bound broadcast to completed (plan/broadcasts).
-      if (removed.broadcastId) {
-        try {
-          await disarmOnEnd(db, store.eventBus, removed.apiKey, removed.broadcastId);
-          await completeBroadcast(db, removed.broadcastId, {
-            youtubeVideoIds: removed.youtubeVideoIds,
-            endedAt,
-          });
-        } catch (err) {
-          logger.warn(`[broadcasts] completeBroadcast failed (broadcastId=${removed.broadcastId})`, err);
-        }
-      }
+      // The broadcast outlives its sessions; only a session-made one ends with its last session.
+      await endAdhocBroadcast(db, store, broadcastLifecycle, removed);
       await incrementDomainHourlySessionEnd(db, removed.domain, durationMs);
     }
     return res.status(200).json({ removed: true, sessionId });

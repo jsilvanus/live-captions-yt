@@ -431,6 +431,14 @@ export function initSqliteSchema(dbPath) {
       -- actions skip device steps. Auto-set on go-live / session end.
       armed                INTEGER NOT NULL DEFAULT 0,
       archived_at          TEXT,
+      -- Lifecycle (plan_broadcast_lifecycle.md): the broadcast owns the caption
+      -- sequence and the clock sync, and remembers what its last staging did.
+      caption_sequence     INTEGER NOT NULL DEFAULT 0,
+      sync_offset_ms       INTEGER,
+      last_synced_at       TEXT,
+      sync_failures        INTEGER NOT NULL DEFAULT 0,
+      stage_report_json    TEXT,
+      adhoc                INTEGER NOT NULL DEFAULT 0,
       created_at           TEXT    NOT NULL DEFAULT (datetime('now')),
       updated_at           TEXT    NOT NULL DEFAULT (datetime('now'))
     )
@@ -532,6 +540,16 @@ export function initSqliteSchema(dbPath) {
   if (!broadcastCols.has('record_enabled')) db.exec('ALTER TABLE broadcasts ADD COLUMN record_enabled INTEGER NOT NULL DEFAULT 0');
   if (!broadcastCols.has('armed')) db.exec('ALTER TABLE broadcasts ADD COLUMN armed INTEGER NOT NULL DEFAULT 0');
   if (!broadcastCols.has('privacy_status')) db.exec("ALTER TABLE broadcasts ADD COLUMN privacy_status TEXT NOT NULL DEFAULT 'unlisted'");
+  for (const [col, ddl] of [
+    ['caption_sequence', 'INTEGER NOT NULL DEFAULT 0'],
+    ['sync_offset_ms', 'INTEGER'],
+    ['last_synced_at', 'TEXT'],
+    ['sync_failures', 'INTEGER NOT NULL DEFAULT 0'],
+    ['stage_report_json', 'TEXT'],
+    ['adhoc', 'INTEGER NOT NULL DEFAULT 0'],
+  ]) {
+    if (!broadcastCols.has(col)) db.exec(`ALTER TABLE broadcasts ADD COLUMN ${col} ${ddl}`);
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS viewer_key_daily_stats (
@@ -886,6 +904,20 @@ export function initSqliteSchema(dbPath) {
   // Columns added to plugin tables after their first release (CREATE TABLE IF NOT EXISTS above does not add them).
   const relayCols = new Set(db.prepare('PRAGMA table_info(rtmp_relays)').all().map(c => c.name));
   if (!relayCols.has('source_feed_id')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN source_feed_id TEXT');
+  if (!relayCols.has('source_output_id')) db.exec('ALTER TABLE rtmp_relays ADD COLUMN source_output_id TEXT');
+  // Egress outputs (plan_egress_outputs.md): audio/video kind of a feed, and the output a crop row belongs to.
+  const addColumn = (table, column, ddl) => {
+    const cols = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name));
+    if (!cols.has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+  };
+  addColumn('prod_feeds', 'media', "media TEXT NOT NULL DEFAULT 'av'");
+  addColumn('crop_preset_sets', 'output_id', 'output_id TEXT');
+  addColumn('crop_presets', 'output_id', 'output_id TEXT');
+  addColumn('crop_source_map', 'output_id', 'output_id TEXT');
+  // The output the project's legacy crop belongs to (its default crop output); NULL = none.
+  addColumn('crop_config', 'output_id', 'output_id TEXT');
+  // The feed server STT listens to (stt_config.feed_id; NULL = the legacy audioSource/streamKey settings).
+  addColumn('stt_config', 'feed_id', 'feed_id TEXT');
 
   return db;
 }

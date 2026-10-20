@@ -14,8 +14,14 @@ import { getActiveBroadcastId, setActiveBroadcastId } from './keys.js';
 import { sqlNow, num } from './helpers.js';
 
 export const BROADCAST_STATUSES = new Set([
-  'draft', 'scheduled', 'live', 'completed', 'archived',
+  'draft', 'scheduled', 'staging', 'live', 'stopping', 'stopped', 'completed', 'archived', 'cancelled',
 ]);
+
+/** Statuses in which the broadcast is on its way up, on air, or coming down. */
+export const RUNNING_STATUSES = new Set(['staging', 'live', 'stopping', 'stopped']);
+
+/** Statuses a PUT may not set by hand. */
+const LIFECYCLE_ONLY_STATUSES = new Set(['staging', 'live', 'stopping', 'stopped', 'completed', 'cancelled']);
 
 export const BROADCAST_ASSET_TYPES = new Set([
   'graphic', 'cue', 'action', 'icon', 'target', 'rundown',
@@ -63,6 +69,12 @@ function formatRow(row) {
     recordEnabled:      Boolean(row.record_enabled),
     privacyStatus:      row.privacy_status ?? 'unlisted',
     armed:              Boolean(row.armed),
+    captionSequence:    row.caption_sequence ?? 0,
+    syncOffsetMs:       row.sync_offset_ms ?? null,
+    lastSyncedAt:       row.last_synced_at ?? null,
+    syncFailures:       row.sync_failures ?? 0,
+    stageReport:        row.stage_report_json ? JSON.parse(row.stage_report_json) : null,
+    adhoc:              Boolean(row.adhoc),
     archivedAt:         row.archived_at ?? null,
     createdAt:          row.created_at,
     updatedAt:          row.updated_at,
@@ -229,8 +241,18 @@ export async function updateBroadcast(db, apiKey, id, patch = {}) {
   if (patch.status !== undefined && !BROADCAST_STATUSES.has(patch.status)) {
     return { ok: false, error: `Invalid status: ${patch.status}` };
   }
+  // live and completed are reached by going live / ending, not by editing the
+  // field (plan_broadcast_lifecycle.md, PR 1).
+  if (patch.status !== undefined && patch.status !== existing.status && LIFECYCLE_ONLY_STATUSES.has(patch.status)) {
+    return { ok: false, error: `Status "${patch.status}" cannot be set directly; it follows the broadcast lifecycle`, status: 409 };
+  }
 
   const data = {};
+  // Setting or clearing the start time moves a planned broadcast between draft and scheduled.
+  if (patch.scheduledStart !== undefined && patch.status === undefined
+      && (existing.status === 'draft' || existing.status === 'scheduled')) {
+    data.status = patch.scheduledStart ? 'scheduled' : 'draft';
+  }
   for (const [key, col] of Object.entries(UPDATABLE)) {
     if (patch[key] !== undefined) {
       data[col] = key === 'recordEnabled' ? (patch[key] ? 1 : 0) : patch[key];
@@ -251,8 +273,8 @@ export async function updateBroadcast(db, apiKey, id, patch = {}) {
 export async function archiveBroadcast(db, apiKey, id) {
   const existing = await getRow(db, apiKey, id);
   if (!existing) return { ok: false, error: 'Broadcast not found', status: 404 };
-  if (existing.status === 'live') {
-    return { ok: false, error: 'Cannot archive a live broadcast', status: 409 };
+  if (RUNNING_STATUSES.has(existing.status)) {
+    return { ok: false, error: `Cannot archive a broadcast that is ${existing.status}`, status: 409 };
   }
   const now = sqlNow();
   await db.broadcasts.updateMany({
@@ -313,6 +335,7 @@ export async function deleteBroadcast(db, apiKey, id) {
     await tx.sessions.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
     await tx.session_stats.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
     await tx.caption_files.updateMany({ where: { broadcast_id: id }, data: { broadcast_id: null } });
+    await tx.broadcast_outputs.deleteMany({ where: { broadcast_id: id } });
     await tx.broadcasts.deleteMany({ where: { api_key: apiKey, id } });
   });
   return { ok: true };
@@ -494,6 +517,12 @@ export async function duplicateBroadcast(db, apiKey, id) {
     for (const l of fileLinks) {
       await tx.broadcast_files.create({ data: { broadcast_id: newId, file_id: l.file_id } });
     }
+    const outputLinks = await tx.broadcast_outputs.findMany({ where: { broadcast_id: id }, orderBy: { sort_order: 'asc' } });
+    for (const l of outputLinks) {
+      await tx.broadcast_outputs.create({
+        data: { broadcast_id: newId, output_id: l.output_id, enabled: l.enabled, sort_order: l.sort_order },
+      });
+    }
   });
   return { ok: true, broadcast: await getBroadcast(db, apiKey, newId) };
 }
@@ -563,8 +592,65 @@ export async function completeBroadcast(db, id, { youtubeVideoIds, endedAt } = {
     updated_at: sqlNow(),
   };
   if (row.status !== 'archived') data.status = 'completed';
-  if (Array.isArray(youtubeVideoIds) && youtubeVideoIds.length) {
-    data.youtube_video_ids = JSON.stringify(youtubeVideoIds);
-  }
+  let videoIds = Array.isArray(youtubeVideoIds) ? youtubeVideoIds : [];
+  if (!videoIds.length) videoIds = await platformVideoIds(db, id);
+  if (videoIds.length) data.youtube_video_ids = JSON.stringify(videoIds);
   await db.broadcasts.updateMany({ where: { id }, data });
+}
+
+/**
+ * Video ids the platform links recorded for a broadcast (YouTube's broadcast
+ * id is also its watch-page video id). Used when the session did not carry any.
+ */
+export async function platformVideoIds(db, id) {
+  try {
+    const links = await db.broadcast_platform_links.findMany({
+      where: { broadcast_id: id, platform: 'youtube' },
+      select: { external_broadcast_id: true, external_video_ids: true },
+    });
+    const ids = [];
+    for (const l of links) {
+      let list = [];
+      try { list = l.external_video_ids ? JSON.parse(l.external_video_ids) : []; } catch { list = []; }
+      if (!list.length && l.external_broadcast_id) list = [l.external_broadcast_id];
+      for (const v of list) if (v && !ids.includes(v)) ids.push(v);
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+// ── Caption sequence owned by the broadcast ──────────────────────────────
+
+/** Next free caption sequence number of a broadcast (null when it is gone). */
+export async function getBroadcastSequence(db, id) {
+  const row = await db.broadcasts.findUnique({ where: { id }, select: { caption_sequence: true } });
+  return row ? (row.caption_sequence ?? 0) : null;
+}
+
+/**
+ * Set the counter. `raiseOnly` never lowers it, so a late write of an older value
+ * (a send finishing after a reset) cannot undo a newer one; an explicit set may lower it.
+ */
+export async function setBroadcastSequence(db, id, seq, { raiseOnly = false } = {}) {
+  const n = Math.max(0, Math.floor(Number(seq) || 0));
+  await db.broadcasts.updateMany({
+    where: raiseOnly ? { id, caption_sequence: { lt: n } } : { id },
+    data: { caption_sequence: n, updated_at: sqlNow() },
+  });
+}
+
+/**
+ * The broadcast a session with no broadcast of its own gets (old clients).
+ * Created as a draft marked `adhoc`; the caller stages and starts it. The
+ * counter is seeded so such a session keeps counting from where it was.
+ */
+export async function createAdhocBroadcast(db, apiKey, { sequence = 0, recordEnabled = false } = {}) {
+  const id = randomUUID();
+  const title = `Broadcast ${new Date().toISOString().slice(0, 16).replace('T', ' ')}`;
+  await db.broadcasts.create({
+    data: { id, api_key: apiKey, title, status: 'draft', adhoc: 1, caption_sequence: Math.max(0, Math.floor(Number(sequence) || 0)), record_enabled: recordEnabled ? 1 : 0 },
+  });
+  return getBroadcast(db, apiKey, id);
 }

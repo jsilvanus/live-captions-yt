@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   relaySelectableFeeds, groupRelaySourceFeeds, feedOptionLabel,
   relaySourceValue, sourcePatch, sourceRequestFields, isFeedSourceValue,
+  isOutputSourceValue, outputIdFromSourceValue, relaySelectableOutputs,
 } from '../src/lib/relaySource.js';
 
 const FEEDS = [
@@ -51,12 +52,21 @@ describe('relay source value and patch', () => {
   });
 
   it('a feed pick sends sourceFeedId with the view at program', () => {
-    assert.deepEqual(sourcePatch('feed:f-prog'), { sourceView: 'program', sourceFeedId: 'f-prog' });
+    assert.deepEqual(sourcePatch('feed:f-prog'), { sourceView: 'program', sourceFeedId: 'f-prog', sourceOutputId: '' });
   });
 
   it('program and crop clear the feed', () => {
-    assert.deepEqual(sourcePatch('crop'), { sourceView: 'crop', sourceFeedId: '' });
-    assert.deepEqual(sourcePatch('program'), { sourceView: 'program', sourceFeedId: '' });
+    assert.deepEqual(sourcePatch('crop'), { sourceView: 'crop', sourceFeedId: '', sourceOutputId: '' });
+    assert.deepEqual(sourcePatch('program'), { sourceView: 'program', sourceFeedId: '', sourceOutputId: '' });
+  });
+
+  it('shows and picks an egress output, clearing the feed', () => {
+    assert.equal(relaySourceValue({ sourceOutputId: 'out-1', sourceFeedId: 'f-prog' }), 'output:out-1');
+    assert.deepEqual(sourcePatch('output:out-1'), { sourceView: 'program', sourceFeedId: '', sourceOutputId: 'out-1' });
+    assert.equal(isOutputSourceValue('output:out-1'), true);
+    assert.equal(isOutputSourceValue('feed:out-1'), false);
+    assert.equal(outputIdFromSourceValue('output:out-1'), 'out-1');
+    assert.deepEqual(relaySelectableOutputs([{ id: 'a', enabled: true }, { id: 'b', enabled: false }, null]).map(o => o.id), ['a']);
   });
 
   it('an unknown value changes nothing', () => {
@@ -65,6 +75,10 @@ describe('relay source value and patch', () => {
 });
 
 describe('relay request source fields', () => {
+  it('sends an output alone, ahead of a feed', () => {
+    assert.deepEqual(sourceRequestFields({ sourceOutputId: 'out-1', sourceFeedId: 'f-prog', sourceView: 'crop' }), { sourceOutputId: 'out-1' });
+  });
+
   it('sends a feed alone, never with the view', () => {
     assert.deepEqual(sourceRequestFields({ sourceFeedId: 'f-prog', sourceView: 'program' }), { sourceFeedId: 'f-prog' });
   });

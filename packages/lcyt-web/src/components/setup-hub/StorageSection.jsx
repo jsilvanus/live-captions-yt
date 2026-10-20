@@ -3,6 +3,7 @@ import { useSessionContext } from '../../contexts/SessionContext';
 import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { StorageIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
+import { setupToken } from '../../lib/setupToken.js';
 
 const EMPTY = { storage_type: 's3', bucket: '', region: 'auto', endpoint: '', prefix: 'captions', access_key_id: '', secret_access_key: '' };
 
@@ -28,7 +29,7 @@ export function StorageSection() {
 
   const load = useCallback(async () => {
     if (!connected || !backendUrl) return;
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     if (!token) return;
     setLoading(true);
     setError(null);
@@ -43,7 +44,7 @@ export function StorageSection() {
     } finally {
       setLoading(false);
     }
-  }, [connected, backendUrl, getSessionToken]);
+  }, [connected, backendUrl, getSessionToken, session?.projectAccessToken]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -53,7 +54,7 @@ export function StorageSection() {
   }
 
   async function handleSave() {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     if (!token) return;
     setSaving(true);
     setError(null);
@@ -76,7 +77,7 @@ export function StorageSection() {
   }
 
   async function handleReset() {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     if (!token) return;
     setSaving(true);
     setError(null);

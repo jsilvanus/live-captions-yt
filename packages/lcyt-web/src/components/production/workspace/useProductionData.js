@@ -122,7 +122,10 @@ export function useProductionData() {
   const loadBroadcast = useCallback(async () => {
     if (!backendUrl || !token) return;
     try {
-      const r = await jfetch('/api/v1/broadcasts/active');
+      // The running broadcast (staging to stopped), else the one marked active.
+      let r = await jfetch('/broadcasts/current');
+      if (r.ok) { const d = await r.json(); if (d.broadcast) { setBroadcast(d.broadcast); return; } }
+      r = await jfetch('/broadcasts/active');
       if (r.ok) { const d = await r.json(); setBroadcast(d.broadcast ?? null); }
     } catch { /* ignore */ }
   }, [backendUrl, token, jfetch]);

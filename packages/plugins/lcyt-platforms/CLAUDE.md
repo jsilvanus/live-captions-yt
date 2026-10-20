@@ -35,6 +35,7 @@ One capability from the old code was deliberately carried forward rather than dr
 | `src/adapters/index.js` | Registry. Registers `youtube` only — `facebook` is deliberately absent, so no route can reach it. |
 | `src/routes/oauth.js` | `/platforms` list, `oauth/start`, `oauth/callback`, `disconnect`. |
 | `src/routes/broadcast-platforms.js` | Per-broadcast schedule/thumbnail/go-live/end/stats. |
+| `src/transitions.js` | `createPlatformTransitions(db, deps)`: go-live / complete / mark-stopped for a linked broadcast without an HTTP request, used by the lcyt-backend broadcast lifecycle (a broadcast with no link is `skipped`). The `go-live`/`end` routes still hold their own copy of the logic. |
 | `src/routes/helpers.js` | `requireApiKey`, `requireAdapter`, `resolveCredential`, `respondToPlatformError`. |
 
 ---

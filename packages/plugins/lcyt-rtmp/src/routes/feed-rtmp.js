@@ -29,7 +29,9 @@
 
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
-import { getApiKeysReferencingFeed, isRelayActive, getRelays, getKey } from '../db.js';
+import { getApiKeysReferencingFeed, isRelayActive, getRelays, getKey, hasOutputSlots } from '../db.js';
+import { readThrough } from '../ownership.js';
+import { startCropsForFeed, stopCropsForFeed } from '../crop-outputs.js';
 
 // feed_key validation: same shape as the main relay keys / DSK app names.
 const FEED_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
@@ -38,11 +40,11 @@ const FEED_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
  * Resolve an incoming nginx-rtmp stream `name` to a feed: a prod_feeds row with transport 'rtmp'.
  * @param {object} db  Prisma client
  * @param {string} key
- * @returns {Promise<{ key: string, feedId: string }|null>}
+ * @returns {Promise<{ key: string, feedId: string, ownerApiKey: string }|null>}
  */
 async function resolveFeed(db, key) {
-  const feed = await db.prod_feeds.findUnique({ where: { feed_key: key }, select: { id: true, feed_key: true, transport: true } });
-  if (feed && feed.transport === 'rtmp') return { key: feed.feed_key, feedId: feed.id };
+  const feed = await db.prod_feeds.findUnique({ where: { feed_key: key }, select: { id: true, feed_key: true, transport: true, owner_api_key: true } });
+  if (feed && feed.transport === 'rtmp') return { key: feed.feed_key, feedId: feed.id, ownerApiKey: feed.owner_api_key };
   return null;
 }
 
@@ -51,9 +53,10 @@ async function resolveFeed(db, key) {
  *
  * @param {object} db  Prisma client
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {import('../crop-manager.js').CropManager} [cropManager]  starts/stops the crops whose source is this feed
  * @returns {Router}
  */
-export function createFeedRtmpRouter(db, relayManager) {
+export function createFeedRtmpRouter(db, relayManager, cropManager = null) {
   const router = Router();
 
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
@@ -89,6 +92,9 @@ export function createFeedRtmpRouter(db, relayManager) {
       // trigger (routes/rtmp.js's on_publish, PUT /stream/active) keys off
       // the PRIMARY apiKey's own publish state, never a referenced feed's.
       const apiKeys = await getApiKeysReferencingFeed(db, feed.feedId);
+      // Slots that send an output built on this feed (egress outputs) name the output, not the feed: the owner's relay
+      // starts too, so the fan-out of the output's path is registered.
+      if (feed.ownerApiKey && !apiKeys.includes(feed.ownerApiKey) && (await hasOutputSlots(db, feed.ownerApiKey))) apiKeys.push(feed.ownerApiKey);
       for (const apiKey of apiKeys) {
         if (!(await isRelayActive(db, apiKey))) continue;
         try {
@@ -100,12 +106,15 @@ export function createFeedRtmpRouter(db, relayManager) {
         }
       }
 
+      if (cropManager && feed.ownerApiKey) await startCropsForFeed(db, cropManager, readThrough, feed.ownerApiKey, feed.feedId);
+
       return res.status(200).send('ok');
     }
 
     if (call === 'publish_done') {
       logger.info(`[feed-rtmp] on_publish_done: feed '${name}' (feed ${feed.feedId.slice(0, 8)}…)`);
       relayManager.markFeedNotPublishing(feed.key);
+      if (cropManager && feed.ownerApiKey) await stopCropsForFeed(db, cropManager, readThrough, feed.ownerApiKey, feed.feedId);
       return res.status(200).send('ok');
     }
 

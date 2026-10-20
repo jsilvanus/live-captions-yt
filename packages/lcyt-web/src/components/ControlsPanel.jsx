@@ -27,9 +27,6 @@ export function ControlsPanel({ onClose }) {
   const [statusExpanded, setStatusExpanded] = useState(false);
 
   // ── Actions section state ─────────────────────────────────
-  const [customSequence, setCustomSequence] = useState(0);
-  const [hbResult, setHbResult] = useState(null);
-  const [syncResult, setSyncResult] = useState(null);
 
   // Caption code state
   const [inputLang, setInputLang] = useState(readInputLang);
@@ -80,46 +77,6 @@ export function ControlsPanel({ onClose }) {
   }
 
   // ── Actions section handlers ──────────────────────────────
-
-  async function handleSync() {
-    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
-    try {
-      const data = await session.sync();
-      setSyncResult(`${data.syncOffset}ms`);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  }
-
-  async function handleHeartbeat() {
-    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
-    try {
-      const data = await session.heartbeat();
-      setHbResult(`${data.roundTripTime}ms`);
-    } catch (err) {
-      showToast(err.message, 'error');
-    }
-  }
-
-  async function handleResetSequence() {
-    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
-    try {
-      await session.updateSequence(0);
-      showToast(t('settings.actions.sequenceReset'), 'success');
-    } catch (err) {
-      showToast(err.message || t('settings.actions.sequenceSetError'), 'error');
-    }
-  }
-
-  async function handleSetSequence() {
-    if (!session.connected) { showToast(t('settings.actions.notConnected'), 'warning'); return; }
-    try {
-      await session.updateSequence(customSequence);
-      showToast(`${t('settings.actions.setSequence')}: ${customSequence}`, 'success');
-    } catch (err) {
-      showToast(err.message || t('settings.actions.sequenceSetError'), 'error');
-    }
-  }
 
   function handleClearConfig() {
     session.clearPersistedConfig();
@@ -287,38 +244,7 @@ export function ControlsPanel({ onClose }) {
 
         <hr style={{ borderColor: 'var(--color-border)', margin: '12px 0' }} />
 
-        {/* ── Actions section ── */}
-        <div className="settings-modal__actions">
-          <button className="btn btn--secondary btn--sm" onClick={handleSync}>{t('settings.actions.syncNow')}</button>
-          <button className="btn btn--secondary btn--sm" onClick={handleHeartbeat}>{t('settings.actions.heartbeat')}</button>
-          <button className="btn btn--secondary btn--sm" onClick={handleResetSequence}>{t('settings.actions.resetSequence')}</button>
-        </div>
-        {hbResult && (
-          <div className="settings-status-row">
-            <span className="settings-status-row__label">{t('settings.actions.roundTrip')}</span>
-            <span className="settings-status-row__value">{hbResult}</span>
-          </div>
-        )}
-        {syncResult && (
-          <div className="settings-status-row">
-            <span className="settings-status-row__label">{t('settings.actions.syncOffset')}</span>
-            <span className="settings-status-row__value">{syncResult}</span>
-          </div>
-        )}
-        <div className="settings-field">
-          <label className="settings-field__label">{t('settings.actions.setSequence')}</label>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input
-              type="number"
-              className="settings-field__input"
-              style={{ width: 90 }}
-              min="0"
-              value={customSequence}
-              onChange={e => setCustomSequence(Math.max(0, parseInt(e.target.value, 10) || 0))}
-            />
-            <button className="btn btn--secondary btn--sm" onClick={handleSetSequence}>{t('settings.actions.setSequenceBtn')}</button>
-          </div>
-        </div>
+        {/* Sync, heartbeat and sequence belong to the broadcast now (Production → Broadcast pane). */}
         <hr style={{ borderColor: 'var(--color-border)', margin: '8px 0' }} />
 
         {/* ── Caption Codes ── */}

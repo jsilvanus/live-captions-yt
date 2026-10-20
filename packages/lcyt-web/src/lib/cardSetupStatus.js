@@ -39,9 +39,16 @@ export const CARD_STATUS_CHECKS = {
   devices: devicesCheck,
   bridges:  { path: () => '/production/bridge/instances', count: j => list(j) },
   egress:   { path: () => '/stream', count: j => list(j, 'relays') },
+  outputs:  { path: () => '/outputs', count: j => list(j, 'outputs') },
   'broadcast-platforms': {
     path: () => '/platforms',
     count: j => (Array.isArray(j?.credentials) ? j.credentials.filter(c => !c.revokedAt).length : null),
+  },
+  // Contact: saved contacts plus the sending service (setup tier; other roles get 403 -> unknown).
+  contact: {
+    path: () => '/notify/contacts',
+    count: j => list(j, 'contacts'),
+    also: [{ path: () => '/notify/provider', count: j => (typeof j?.configured === 'boolean' ? (j.configured ? 1 : 0) : null) }],
   },
   viewports: { path: apiKey => `/dsk/${encodeURIComponent(apiKey)}/viewports`, count: j => list(j, 'viewports') },
 };

@@ -701,7 +701,7 @@ export function useSession({
 
   // â”€â”€â”€ RTMP relay â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-  const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId } = {}) {
+  const configureRelay = useCallback(async function configureRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId, sourceOutputId } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
     const body = { slot, targetUrl, targetName, captionMode, recordOnStart, recordOnButton };
     if (scale) body.scale = scale;
@@ -709,18 +709,18 @@ export function useSession({
     if (videoBitrate) body.videoBitrate = videoBitrate;
     if (audioBitrate) body.audioBitrate = audioBitrate;
     // One source field per request (sourceFeedId > sourceView; see lib/relaySource.js).
-    Object.assign(body, sourceRequestFields({ sourceView, sourceFeedId }));
+    Object.assign(body, sourceRequestFields({ sourceView, sourceFeedId, sourceOutputId }));
     return api.post('/api/v1/stream', body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId } = {}) {
+  const updateRelay = useCallback(async function updateRelay({ slot = 1, targetUrl, targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale, fps, videoBitrate, audioBitrate, sourceView, sourceFeedId, sourceOutputId } = {}) {
     if (!targetUrl) throw new Error('targetUrl is required');
     const body = { targetUrl, targetName, captionMode, recordOnStart, recordOnButton };
     if (scale) body.scale = scale;
     if (fps != null) body.fps = fps;
     if (videoBitrate) body.videoBitrate = videoBitrate;
     if (audioBitrate) body.audioBitrate = audioBitrate;
-    Object.assign(body, sourceRequestFields({ sourceView, sourceFeedId }));
+    Object.assign(body, sourceRequestFields({ sourceView, sourceFeedId, sourceOutputId }));
     return api.put(`/api/v1/stream/${slot}`, body);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

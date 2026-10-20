@@ -5,7 +5,9 @@
  *
  * Routes:
  *   GET  /stt/status   — current STT state for the authenticated API key
- *   POST /stt/start    — start STT { provider?, language?, audioSource?, streamKey? }
+ *   POST /stt/start    — start STT { provider?, language?, audioSource?, streamKey?, feedId? }
+ *                        feedId (a /feeds id) wins over streamKey: the audio comes from that feed's MediaMTX path.
+ *                        Without feedId or streamKey the saved config's feedId is used, if any.
  *   POST /stt/stop     — stop STT
  *   GET  /stt/events   — SSE stream of transcript events (Bearer or ?token=)
  *   GET  /stt/config   — get per-key STT config from DB
@@ -25,7 +27,7 @@
  */
 
 import { Router } from 'express';
-import { readThrough } from 'lcyt-rtmp';
+import { readThrough, getFeed } from 'lcyt-rtmp';
 import { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from '../db/stt.js';
 import { extractSseToken, verifySessionToken } from '../middleware/auth.js';
 import { getMetricsInstance } from '../metrics/index.js';
@@ -55,6 +57,18 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     if (durationMs > 0) getMetricsInstance()?.count('stt.seconds', durationMs / 1000, { project: apiKey });
   });
 
+  /**
+   * Resolve a /feeds id of this project to its MediaMTX path (the feed key).
+   * @returns {Promise<{ ok: true, feed: object|null }|{ ok: false, error: string }>}  feed is null for an empty id
+   */
+  async function resolveFeed(apiKey, feedId) {
+    if (feedId === undefined || feedId === null || feedId === '') return { ok: true, feed: null };
+    if (typeof feedId !== 'string') return { ok: false, error: 'feedId must be a string' };
+    const feed = await getFeed(db, apiKey, feedId);
+    if (!feed) return { ok: false, error: 'Unknown feedId' };
+    return { ok: true, feed };
+  }
+
   // ── GET /stt/status ────────────────────────────────────────────────────────
 
   router.get('/status', auth, async (req, res) => {
@@ -74,6 +88,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
       streamKey            = null,
       confidenceThreshold  = null,
     } = req.body || {};
+    let { feedId } = req.body || {};
 
     if (!VALID_PROVIDERS.includes(provider)) {
       return res.status(400).json({ error: `Invalid provider. Supported: ${VALID_PROVIDERS.join(', ')}` });
@@ -83,8 +98,17 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     }
 
     try {
-      await sttManager.start(apiKey, { provider, language, audioSource, streamKey, confidenceThreshold });
-      res.status(200).json({ ok: true, provider, language, audioSource });
+      // No explicit source in the request: use the feed saved on the STT card, if any.
+      if ((feedId === undefined || feedId === null) && !streamKey) feedId = (await getSttConfig(db, apiKey))?.feedId ?? null;
+      const resolved = await resolveFeed(apiKey, feedId);
+      if (!resolved.ok) return res.status(400).json({ error: resolved.error });
+      const feed = resolved.feed;
+      await sttManager.start(apiKey, {
+        provider, language, audioSource, confidenceThreshold,
+        streamKey: feed ? feed.feedKey : streamKey,
+        feedId: feed ? feed.id : null,
+      });
+      res.status(200).json({ ok: true, provider, language, audioSource, feedId: feed ? feed.id : null });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -167,6 +191,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
         language:            (settings ? settings.get('stt.default_language') : null) || 'en-US',
         audioSource:         (settings ? settings.get('stt.audio_source') : null) || 'hls',
         streamKey:           null,
+        feedId:              null,
         autoStart:           false,
         confidenceThreshold: null,
       });
@@ -183,7 +208,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
   // out of scope for this pass.
   router.put('/config', auth, requireProjectRole(db, 'setup'), async (req, res) => {
     const { apiKey } = req.session;
-    const { provider, language, audioSource, streamKey, autoStart, confidenceThreshold } = req.body || {};
+    const { provider, language, audioSource, streamKey, feedId, autoStart, confidenceThreshold } = req.body || {};
 
     if (provider !== undefined && !VALID_PROVIDERS.includes(provider)) {
       return res.status(400).json({ error: `Invalid provider. Supported: ${VALID_PROVIDERS.join(', ')}` });
@@ -199,7 +224,11 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
     }
 
     try {
-      await setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, autoStart, confidenceThreshold });
+      const resolved = await resolveFeed(apiKey, feedId);
+      if (!resolved.ok) return res.status(400).json({ error: resolved.error });
+      // undefined keeps the saved feed, null or '' clears it.
+      const feedValue = feedId === undefined ? undefined : (resolved.feed ? resolved.feed.id : null);
+      await setSttConfig(db, apiKey, { provider, language, audioSource, streamKey, feedId: feedValue, autoStart, confidenceThreshold });
       res.json({ ok: true });
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -298,6 +327,7 @@ export function createSttRouter(auth, sttManager, db, jwtSecret, settings = null
           language:            lang,
           audioSource:         currentStatus.audioSource,
           streamKey:           currentStatus.streamKey,
+          feedId:              currentStatus.feedId ?? null,
           confidenceThreshold: currentStatus.confidenceThreshold,
         });
       } catch (err) {

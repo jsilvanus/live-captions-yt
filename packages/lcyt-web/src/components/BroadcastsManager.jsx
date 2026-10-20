@@ -8,6 +8,8 @@ import { useSessionContext } from '../contexts/SessionContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { Dialog } from './Dialog';
 import { BroadcastPlatformPanel } from './broadcast/BroadcastPlatformPanel.jsx';
+import { STATUS_LABELS, actionsFor, canForce } from '../lib/broadcast-lifecycle-ui.js';
+import { notifyActiveBroadcastChanged } from '../hooks/useActiveBroadcast.js';
 
 function formatDate(value) {
   if (!value) return '—';
@@ -20,8 +22,12 @@ function statusBadge(status) {
   const colors = {
     draft: '#999',
     scheduled: '#0066cc',
+    staging: '#c79a3a',
     live: '#cc0000',
+    stopping: '#c79a3a',
+    stopped: '#a0702a',
     completed: '#008000',
+    cancelled: '#777',
     archived: '#999',
   };
   return (
@@ -35,7 +41,7 @@ function statusBadge(status) {
       backgroundColor: colors[status] || '#ccc',
       color: 'white',
     }}>
-      {status || 'draft'}
+      {STATUS_LABELS[status] || status || 'Draft'}
     </span>
   );
 }
@@ -112,6 +118,33 @@ export function BroadcastsManager() {
     }
   }
 
+  // Lifecycle buttons (stage, go live, stop, ...). The backend runs the pre-flight; a
+  // warning-only pre-flight is offered again with "go anyway".
+  async function handleAction(id, action, force = false) {
+    if (!token || !backendUrl) return;
+    setError(null);
+    try {
+      const response = await fetch(`${backendUrl}/api/v1/broadcasts/${encodeURIComponent(id)}/${action}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ force }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const list = (data.findings || []).map(f => f.message).join('; ');
+        if (!force && canForce(data.findings) && window.confirm(`${data.error || 'Pre-flight failed'}: ${list}\n\nGo anyway?`)) {
+          return handleAction(id, action, true);
+        }
+        throw new Error([data.error || 'Action failed', list].filter(Boolean).join(': '));
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      load();
+      notifyActiveBroadcastChanged();
+    }
+  }
+
   async function handleUpdate(id, payload) {
     if (!token || !backendUrl) return;
     try {
@@ -185,7 +218,7 @@ export function BroadcastsManager() {
           </button>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {['all', 'draft', 'scheduled', 'live', 'completed'].map(status => (
+          {['all', 'draft', 'scheduled', 'staging', 'live', 'stopped', 'completed'].map(status => (
             <button
               key={status}
               onClick={() => setStatusFilter(status)}
@@ -291,6 +324,21 @@ export function BroadcastsManager() {
                   </div>
                 )}
 
+                {actionsFor(broadcast.status).length > 0 && (
+                  <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                    {actionsFor(broadcast.status).map(a => (
+                      <button
+                        key={a.action}
+                        className={`btn btn--sm${a.kind === 'danger' ? ' btn--danger' : a.kind === 'primary' ? ' btn--primary' : ''}`}
+                        onClick={() => handleAction(broadcast.id, a.action)}
+                        style={{ flex: 1 }}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button
                     className="btn btn--sm"
@@ -307,7 +355,7 @@ export function BroadcastsManager() {
                   >
                     {platformsFor === broadcast.id ? 'Hide platforms' : 'Platforms'}
                   </button>
-                  {broadcast.status !== 'live' && (
+                  {!['staging', 'live', 'stopping', 'stopped'].includes(broadcast.status) && (
                     <button
                       className="btn btn--danger btn--sm"
                       onClick={() => handleDelete(broadcast.id)}

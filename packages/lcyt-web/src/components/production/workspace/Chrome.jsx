@@ -8,17 +8,20 @@ function short(key) {
   return key.length > 12 ? `${key.slice(0, 6)}…${key.slice(-4)}` : key;
 }
 
-const BROADCAST_STATUS_OPTIONS = ['draft', 'scheduled', 'live', 'completed'];
 
 const BROADCAST_STATUS_COLORS = {
   draft:     { bg: C.chipBg, color: '#999' },
   scheduled: { bg: 'rgba(46,95,163,.22)', color: '#6ea8e8' },
   live:      { bg: 'rgba(204,0,34,.25)', color: '#ff7788' },
+  staging:   { bg: 'rgba(199,154,58,.22)', color: '#e0b84a' },
+  stopping:  { bg: 'rgba(199,154,58,.22)', color: '#e0b84a' },
+  stopped:   { bg: C.chipBg, color: '#c79a3a' },
+  cancelled: { bg: C.chipBg, color: '#555' },
   completed: { bg: C.chipBg, color: '#777' },
   archived:  { bg: C.chipBg, color: '#555' },
 };
 
-function BroadcastStatusControl({ broadcast, onSetStatus }) {
+function BroadcastStatusControl({ broadcast }) {
   if (!broadcast) return null;
   const status = broadcast.status || 'draft';
   const colors = BROADCAST_STATUS_COLORS[status] || BROADCAST_STATUS_COLORS.draft;
@@ -28,20 +31,12 @@ function BroadcastStatusControl({ broadcast, onSetStatus }) {
       <span style={{ fontSize: '.72rem', fontWeight: 600, color: '#cfcfcf', maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={broadcast.title}>
         {broadcast.title || `Broadcast ${broadcast.id}`}
       </span>
-      {status === 'archived' ? (
-        <span style={{ fontSize: '.62rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 5, background: colors.bg, color: colors.color }}>
-          Archived
-        </span>
-      ) : (
-        <select
-          value={status}
-          onChange={(e) => onSetStatus(e.target.value)}
-          title="Broadcast status"
-          style={{ fontSize: '.66rem', fontWeight: 700, letterSpacing: '.04em', textTransform: 'uppercase', padding: '3px 6px', borderRadius: 5, background: colors.bg, color: colors.color, border: `1px solid ${C.panelBorder}`, cursor: 'pointer' }}
-        >
-          {BROADCAST_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
-        </select>
-      )}
+      <span
+        title="Broadcast status (changed from the broadcast controls)"
+        style={{ fontSize: '.62rem', fontWeight: 700, letterSpacing: '.06em', textTransform: 'uppercase', padding: '3px 8px', borderRadius: 5, background: colors.bg, color: colors.color }}
+      >
+        {status}
+      </span>
     </span>
   );
 }
@@ -82,7 +77,7 @@ export function ProductionHeader({ D }) {
       {projectLabel && (
         <span style={{ fontSize: '.68rem', color: '#666', fontFamily: C.mono, background: C.chipBg, padding: '3px 8px', borderRadius: 5 }}>{projectLabel}</span>
       )}
-      <BroadcastStatusControl broadcast={D.broadcast} onSetStatus={D.actions.setBroadcastStatus} />
+      <BroadcastStatusControl broadcast={D.broadcast} />
       <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 10 }}>
         <ArmingBadge arming={D.arming} onToggle={D.actions.setArmed} />
         <Link href="/production/crop" style={{ fontSize: '.64rem', fontWeight: 700, letterSpacing: '.04em', padding: '4px 9px', borderRadius: 5, background: C.chipBg, color: '#8fbef0', textDecoration: 'none' }}>

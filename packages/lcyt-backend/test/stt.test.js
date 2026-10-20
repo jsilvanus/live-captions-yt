@@ -29,7 +29,7 @@ function makeMockSttManager() {
   const _running = new Map();
 
   mgr.start = async (apiKey, opts = {}) => {
-    _running.set(apiKey, { provider: opts.provider || 'google', language: opts.language || 'en-US', audioSource: opts.audioSource || 'hls', startedAt: new Date(), segmentsSent: 0, lastTranscript: null });
+    _running.set(apiKey, { provider: opts.provider || 'google', language: opts.language || 'en-US', audioSource: opts.audioSource || 'hls', streamKey: opts.streamKey ?? null, feedId: opts.feedId ?? null, startedAt: new Date(), segmentsSent: 0, lastTranscript: null });
   };
   mgr.stop = async (apiKey) => {
     _running.delete(apiKey);
@@ -279,6 +279,63 @@ describe('/stt routes', () => {
       const forged = `${fakeHeader}.${fakePayload}.`;
       const res = await fetch(`${baseUrl}/stt/events?token=${encodeURIComponent(forged)}`);
       assert.equal(res.status, 401);
+    });
+  });
+  describe('feedId (audio source = a feed)', () => {
+    const FEED_ID = 'feed-stt-1';
+
+    before(async () => {
+      await db.prod_feeds.create({ data: { id: FEED_ID, owner_api_key: API_KEY, name: 'Church audio', feed_key: 'church-audio-key', transport: 'rtmp', kind: 'generic', created_at: db.$util.sqlNow() } });
+    });
+    beforeEach(async () => {
+      await sttManager.stop(API_KEY);
+      await setSttConfig(db, API_KEY, { feedId: null, streamKey: null });
+    });
+
+    it('starts on the feed\'s MediaMTX path and reports the feed in status', async () => {
+      const res = await post('/stt/start', { feedId: FEED_ID, audioSource: 'hls' });
+      assert.equal(res.status, 200);
+      assert.equal((await res.json()).feedId, FEED_ID);
+      const status = await (await get('/stt/status')).json();
+      assert.equal(status.streamKey, 'church-audio-key');
+      assert.equal(status.feedId, FEED_ID);
+    });
+
+    it('feedId wins over an explicit streamKey', async () => {
+      await post('/stt/start', { feedId: FEED_ID, streamKey: 'other' });
+      assert.equal((await (await get('/stt/status')).json()).streamKey, 'church-audio-key');
+    });
+
+    it('rejects a feed of another project or an unknown id', async () => {
+      const res = await post('/stt/start', { feedId: 'nope' });
+      assert.equal(res.status, 400);
+      assert.equal((await res.json()).error, 'Unknown feedId');
+    });
+
+    it('PUT /config saves the feed, GET returns it, and /start falls back to it', async () => {
+      assert.equal((await put('/stt/config', { feedId: FEED_ID })).status, 200);
+      assert.equal((await (await get('/stt/config')).json()).feedId, FEED_ID);
+      await post('/stt/start', {});
+      const status = await (await get('/stt/status')).json();
+      assert.equal(status.feedId, FEED_ID);
+      assert.equal(status.streamKey, 'church-audio-key');
+    });
+
+    it('an explicit streamKey without feedId ignores the saved feed', async () => {
+      await put('/stt/config', { feedId: FEED_ID });
+      await post('/stt/start', { streamKey: 'manual' });
+      const status = await (await get('/stt/status')).json();
+      assert.equal(status.streamKey, 'manual');
+      assert.equal(status.feedId, null);
+    });
+
+    it('PUT /config clears the feed with null, keeps it when omitted, rejects an unknown id', async () => {
+      await put('/stt/config', { feedId: FEED_ID });
+      await put('/stt/config', { language: 'fi-FI' });
+      assert.equal((await getSttConfig(db, API_KEY)).feedId, FEED_ID);
+      assert.equal((await put('/stt/config', { feedId: 'nope' })).status, 400);
+      await put('/stt/config', { feedId: null });
+      assert.equal((await getSttConfig(db, API_KEY)).feedId, null);
     });
   });
 });

@@ -2,6 +2,7 @@
 // Order here drives the custom-view <select> and the empty-pane default.
 
 export const TYPE_OPTIONS = [
+  ['broadcast',   'Broadcast'],
   ['cameras',     'Cameras'],
   ['thumbnails',  'Camera Thumbnails'],
   ['mixer',       'Mixer'],
@@ -20,9 +21,11 @@ export const TYPE_OPTIONS = [
   ['variables',   'Variables'],
   ['connectorPolls', 'Connector Polls'],
   ['actionLog',   'Action Log'],
+  ['listen',      'Listen'],
 ];
 
 export const PANE_META = {
+  broadcast:   { title: 'Broadcast',               dot: '#cc3344' },
   cameras:     { title: 'Cameras',                 dot: '#3b6fb0' },
   thumbnails:  { title: 'Camera Thumbnails',       dot: '#2f9e8f' },
   mixer:       { title: 'Mixer',                   dot: '#8b6fd0' },
@@ -41,6 +44,7 @@ export const PANE_META = {
   variables:   { title: 'Variables',               dot: '#4ab0a0' },
   connectorPolls: { title: 'Connector Polls',      dot: '#1a7f4b' },
   actionLog:   { title: 'Action Log',              dot: '#c79a3a' },
+  listen:      { title: 'Listen',                  dot: '#1a6fd4' },
 };
 
 export function paneMeta(type) {

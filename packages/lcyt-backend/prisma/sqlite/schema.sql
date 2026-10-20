@@ -225,6 +225,18 @@ CREATE TABLE IF NOT EXISTS "broadcast_assets" (
 );
 
 -- CreateTable
+CREATE TABLE IF NOT EXISTS "broadcast_outputs" (
+    "broadcast_id" TEXT NOT NULL,
+    "output_id" TEXT NOT NULL,
+    "enabled" INTEGER NOT NULL DEFAULT 1,
+    "sort_order" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+
+    PRIMARY KEY ("broadcast_id", "output_id"),
+    CONSTRAINT "broadcast_outputs_broadcast_id_fkey" FOREIGN KEY ("broadcast_id") REFERENCES "broadcasts" ("id") ON DELETE CASCADE ON UPDATE NO ACTION
+);
+
+-- CreateTable
 CREATE TABLE IF NOT EXISTS "broadcast_files" (
     "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     "broadcast_id" TEXT NOT NULL,
@@ -286,6 +298,12 @@ CREATE TABLE IF NOT EXISTS "broadcasts" (
     "archived_at" TEXT,
     "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
     "updated_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "caption_sequence" INTEGER NOT NULL DEFAULT 0,
+    "sync_offset_ms" INTEGER,
+    "last_synced_at" TEXT,
+    "sync_failures" INTEGER NOT NULL DEFAULT 0,
+    "stage_report_json" TEXT,
+    "adhoc" INTEGER NOT NULL DEFAULT 0,
     CONSTRAINT "broadcasts_api_key_fkey" FOREIGN KEY ("api_key") REFERENCES "api_keys" ("key") ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
@@ -387,7 +405,8 @@ CREATE TABLE IF NOT EXISTS "crop_config" (
     "transition_ms" INTEGER NOT NULL DEFAULT 0,
     "active_set_id" TEXT,
     "updated_at" TEXT NOT NULL DEFAULT (datetime('now')),
-    "auto_follow" INTEGER NOT NULL DEFAULT 0
+    "auto_follow" INTEGER NOT NULL DEFAULT 0,
+    "output_id" TEXT
 );
 
 -- CreateTable
@@ -396,7 +415,8 @@ CREATE TABLE IF NOT EXISTS "crop_preset_sets" (
     "api_key" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "sort_order" INTEGER NOT NULL DEFAULT 0,
-    "created_at" TEXT NOT NULL DEFAULT (datetime('now'))
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "output_id" TEXT
 );
 
 -- CreateTable
@@ -409,6 +429,7 @@ CREATE TABLE IF NOT EXISTS "crop_presets" (
     "y_norm" REAL NOT NULL DEFAULT 0.0,
     "sort_order" INTEGER NOT NULL DEFAULT 0,
     "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "output_id" TEXT,
     CONSTRAINT "crop_presets_set_id_fkey" FOREIGN KEY ("set_id") REFERENCES "crop_preset_sets" ("id") ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
@@ -421,6 +442,7 @@ CREATE TABLE IF NOT EXISTS "crop_source_map" (
     "camera_id" TEXT,
     "camera_preset" TEXT,
     "preset_id" TEXT NOT NULL,
+    "output_id" TEXT,
     CONSTRAINT "crop_source_map_preset_id_fkey" FOREIGN KEY ("preset_id") REFERENCES "crop_presets" ("id") ON DELETE CASCADE ON UPDATE NO ACTION
 );
 
@@ -837,7 +859,8 @@ CREATE TABLE IF NOT EXISTS "rtmp_relays" (
     "video_bitrate" TEXT,
     "audio_bitrate" TEXT,
     "source_view" TEXT NOT NULL DEFAULT 'program',
-    "source_feed_id" TEXT
+    "source_feed_id" TEXT,
+    "source_output_id" TEXT
 );
 
 -- CreateTable
@@ -912,7 +935,8 @@ CREATE TABLE IF NOT EXISTS "stt_config" (
     "auto_start" INTEGER NOT NULL DEFAULT 0,
     "confidence_threshold" REAL,
     "created_at" INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-    "updated_at" INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    "updated_at" INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    "feed_id" TEXT
 );
 
 -- CreateTable
@@ -1081,7 +1105,8 @@ CREATE TABLE IF NOT EXISTS "prod_feeds" (
     "device_type" TEXT,
     "device_id" TEXT,
     "sort_order" INTEGER NOT NULL DEFAULT 0,
-    "created_at" TEXT NOT NULL DEFAULT (datetime('now'))
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "media" TEXT NOT NULL DEFAULT 'av'
 );
 
 -- CreateTable
@@ -1098,6 +1123,74 @@ CREATE TABLE IF NOT EXISTS "viewer_key_daily_stats" (
     "views" INTEGER NOT NULL DEFAULT 0,
 
     PRIMARY KEY ("date", "api_key", "viewer_key")
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "notify_contacts" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "slug" TEXT NOT NULL,
+    "name" TEXT,
+    "email" TEXT,
+    "sms_number" TEXT,
+    "consent_email" INTEGER NOT NULL DEFAULT 0,
+    "consent_sms" INTEGER NOT NULL DEFAULT 0,
+    "active" INTEGER NOT NULL DEFAULT 1,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "notify_providers" (
+    "api_key" TEXT NOT NULL PRIMARY KEY,
+    "provider" TEXT NOT NULL,
+    "config_json" TEXT NOT NULL,
+    "secrets_enc" TEXT,
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "notify_log" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "api_key" TEXT NOT NULL,
+    "at" TEXT NOT NULL,
+    "channel" TEXT NOT NULL,
+    "contact_slug" TEXT NOT NULL,
+    "trigger" TEXT NOT NULL,
+    "status" TEXT NOT NULL,
+    "provider_id" TEXT,
+    "error" TEXT
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "outputs" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "owner_api_key" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "source_type" TEXT NOT NULL DEFAULT 'feed',
+    "source_id" TEXT,
+    "dsk_json" TEXT NOT NULL DEFAULT '[]',
+    "crop_enabled" INTEGER NOT NULL DEFAULT 0,
+    "audio_source" TEXT NOT NULL DEFAULT '"source"',
+    "enabled" INTEGER NOT NULL DEFAULT 1,
+    "sort_order" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "output_crop_config" (
+    "output_id" TEXT NOT NULL PRIMARY KEY,
+    "enabled" INTEGER NOT NULL DEFAULT 0,
+    "aspect_w" INTEGER NOT NULL DEFAULT 9,
+    "aspect_h" INTEGER NOT NULL DEFAULT 16,
+    "out_w" INTEGER,
+    "out_h" INTEGER,
+    "video_bitrate" TEXT,
+    "follow_program" INTEGER NOT NULL DEFAULT 1,
+    "transition_ms" INTEGER NOT NULL DEFAULT 0,
+    "active_set_id" TEXT,
+    "updated_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "auto_follow" INTEGER NOT NULL DEFAULT 0
 );
 
 -- CreateIndex
@@ -1188,6 +1281,9 @@ CREATE INDEX IF NOT EXISTS "idx_broadcast_assets_bid" ON "broadcast_assets"("bro
 Pragma writable_schema=1;
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_broadcast_assets_1" ON "broadcast_assets"("broadcast_id", "asset_type", "asset_ref");
 Pragma writable_schema=0;
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_broadcast_outputs_output" ON "broadcast_outputs"("output_id");
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_broadcast_files_fid" ON "broadcast_files"("file_id");
@@ -1399,4 +1495,19 @@ CREATE INDEX IF NOT EXISTS "idx_prod_feeds_owner" ON "prod_feeds"("owner_api_key
 
 -- CreateIndex
 CREATE INDEX IF NOT EXISTS "idx_prod_feeds_device" ON "prod_feeds"("device_type", "device_id");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_notify_contacts_key" ON "notify_contacts"("api_key");
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_notify_contacts_slug" ON "notify_contacts"("api_key", "slug");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_notify_log_key_at" ON "notify_log"("api_key", "at");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_outputs_owner" ON "outputs"("owner_api_key");
+
+-- CreateIndex
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_outputs_owner_name" ON "outputs"("owner_api_key", "name");
 

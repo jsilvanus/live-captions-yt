@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createBrevoEmailAdapter } from '../src/brevo-email.js';
+import { runAdapterContract } from './adapter-contract.js';
 
 function fakeFetch(response) {
   const calls = [];
@@ -64,4 +65,13 @@ test('network errors are reported without the request details', async () => {
 test('requires an api key and a sender address', () => {
   assert.throws(() => createBrevoEmailAdapter({ senderEmail: 'a@b.c' }), /apiKey/);
   assert.throws(() => createBrevoEmailAdapter({ apiKey: 'k' }), /senderEmail/);
+});
+
+runAdapterContract({
+  name: 'brevo email',
+  channel: 'email',
+  provider: 'brevo',
+  secret: 'secret-key',
+  make: (fetchImpl) => createBrevoEmailAdapter({ apiKey: 'secret-key', senderEmail: 'a@b.c', fetchImpl }),
+  sample: { to: 'x@y.z', subject: 's', text: 't' },
 });

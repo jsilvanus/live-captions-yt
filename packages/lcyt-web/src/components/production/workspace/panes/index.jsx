@@ -1,11 +1,13 @@
 import { useRef, useEffect, useState, useId, useCallback } from 'react';
 import { C, HATCH } from '../theme.js';
 import { Tile, Empty, camThumb, presetColors } from './parts.jsx';
+import { BroadcastPane } from './BroadcastPane.jsx';
 import { Dialog } from '../../../Dialog.jsx';
 import { useCaptionContext } from '../../../../contexts/CaptionContext';
 import { useConnectionContext } from '../../../../contexts/ConnectionContext';
 import { useEventStream } from '../../../../hooks/useEventStream.js';
 import { foldActionEvent } from '../../../../lib/action-atoms.js';
+import { ListenPane, ListenButton } from './ListenPane.jsx';
 
 const ACC = '#3b6fb0'; // workspace accent (matches the design mockup)
 
@@ -785,12 +787,15 @@ export function PaneBody({ type, D, settings, onSettingsChange }) {
     case 'connectorPolls': return <ConnectorPollsPane D={D} settings={settings} onSettingsChange={onSettingsChange} />;
     case 'captionInput': return <CaptionInputPane />;
     case 'actionLog':   return <ActionLogPane D={D} />;
+    case 'broadcast':   return <BroadcastPane D={D} />;
+    case 'listen':      return <ListenPane />;
     default:            return <Empty>Unknown panel type: {type}</Empty>;
   }
 }
 
 /** Header-right actions specific to a pane type (thumbs toggle, mixer mode). */
 export function PaneHeaderActions({ type, D }) {
+  if (type === 'sent') return <ListenButton />;
   if (type === 'cameras') {
     return (
       <button onClick={() => D.patch({ showThumbs: !D.ui.showThumbs })}

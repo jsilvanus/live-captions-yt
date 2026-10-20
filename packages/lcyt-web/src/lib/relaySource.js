@@ -10,6 +10,7 @@ import { isLinkableFeed } from './deviceFeeds.js';
 export const SOURCE_GROUP_ORDER = Object.freeze(['camera', 'generic', 'dsk']);
 
 const FEED_PREFIX = 'feed:';
+const OUTPUT_PREFIX = 'output:';
 
 /** Named feeds the relay may read from. The DSK entry (`managed:*`) and the main feed (the program stream itself) are left out. */
 export function relaySelectableFeeds(feeds) {
@@ -39,9 +40,10 @@ export function feedOptionLabel(feed) {
 
 /**
  * The <select> value that shows a slot's source.
- * @returns {'program'|'crop'|`feed:${string}`}
+ * @returns {'program'|'crop'|`feed:${string}`|`output:${string}`}
  */
 export function relaySourceValue(entry) {
+  if (entry.sourceOutputId) return `${OUTPUT_PREFIX}${entry.sourceOutputId}`;
   if (entry.sourceFeedId) return `${FEED_PREFIX}${entry.sourceFeedId}`;
   return entry.sourceView === 'crop' ? 'crop' : 'program';
 }
@@ -56,20 +58,38 @@ export function feedIdFromSourceValue(value) {
   return isFeedSourceValue(value) ? value.slice(FEED_PREFIX.length) : '';
 }
 
+/** Whether a value from relaySourceValue is an output id (egress outputs, plan_egress_outputs.md). */
+export function isOutputSourceValue(value) {
+  return typeof value === 'string' && value.startsWith(OUTPUT_PREFIX);
+}
+
+/** The output id inside an `output:` value. */
+export function outputIdFromSourceValue(value) {
+  return isOutputSourceValue(value) ? value.slice(OUTPUT_PREFIX.length) : '';
+}
+
+/** Enabled outputs a slot may read from, in the order the server lists them. */
+export function relaySelectableOutputs(outputs) {
+  return (outputs || []).filter(o => o && o.id && o.enabled !== false);
+}
+
 /**
  * The slot fields a user's pick writes. Picking a feed sets the feed and the view stays 'program'.
- * @returns {{ sourceView: string, sourceFeedId: string } | null}
+ * @returns {{ sourceView: string, sourceFeedId: string, sourceOutputId: string } | null}
  */
 export function sourcePatch(value) {
-  if (value === 'program' || value === 'crop') return { sourceView: value, sourceFeedId: '' };
-  if (isFeedSourceValue(value)) return { sourceView: 'program', sourceFeedId: feedIdFromSourceValue(value) };
+  if (value === 'program' || value === 'crop') return { sourceView: value, sourceFeedId: '', sourceOutputId: '' };
+  if (isFeedSourceValue(value)) return { sourceView: 'program', sourceFeedId: feedIdFromSourceValue(value), sourceOutputId: '' };
+  if (isOutputSourceValue(value)) return { sourceView: 'program', sourceFeedId: '', sourceOutputId: outputIdFromSourceValue(value) };
   return null;
 }
 
 /**
- * The source fields of a POST/PUT /stream body. A feed wins over the view, so only one source field is ever sent.
+ * The source fields of a POST/PUT /stream body. An output wins over a feed, a feed over the view, so only one source
+ * field is ever sent (the server refuses an output together with a feed).
  */
-export function sourceRequestFields({ sourceView, sourceFeedId } = {}) {
+export function sourceRequestFields({ sourceView, sourceFeedId, sourceOutputId } = {}) {
+  if (sourceOutputId) return { sourceOutputId };
   if (sourceFeedId) return { sourceFeedId };
   return sourceView ? { sourceView } : {};
 }
