@@ -1153,7 +1153,7 @@ function gatedRouter(getEnabled) {
   // translation.js/stt.js — the public/callback sub-routers below never
   // consume `auth` at all, so they're unaffected (plan_project_roles.md;
   // previously left ungated, see CONSIDER.md).
-  const { rtmpRouter, feedRtmpRouter, mediamtxHookRouter, ingestionRouter, feedsRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
+  const { rtmpRouter, feedRtmpRouter, mediamtxHookRouter, ingestionRouter, feedsRouter, outputsRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
     createRtmpRouters(db, scopedAuth('rtmp'), rtmp, {
       allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
       requireSetup: requireProjectRole(db, 'setup'),
@@ -1164,6 +1164,7 @@ function gatedRouter(getEnabled) {
   app.use('/internal/mediamtx', rtmpGate(mediamtxHookRouter));
   apiRouter.use('/ingestion',  rtmpGate(ingestionRouter));
   apiRouter.use('/feeds',      rtmpGate(feedsRouter));
+  apiRouter.use('/outputs',    rtmpGate(outputsRouter));
   apiRouter.use('/stream',     rtmpGate(streamRouter));
   apiRouter.use('/stream-hls', rtmpGate(streamHlsRouter));
   apiRouter.use('/radio',      rtmpGate(radioRouter));

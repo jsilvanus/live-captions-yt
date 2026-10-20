@@ -451,6 +451,7 @@ model crop_config {
   active_set_id  String?
   updated_at     String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
   auto_follow    Int     @default(0)
+  output_id      String?
 }
 
 model crop_preset_sets {

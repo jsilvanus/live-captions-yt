@@ -51,6 +51,7 @@ import { SttManager } from './stt-manager.js';
 import { CropManager } from './crop-manager.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createFeedRtmpRouter } from './routes/feed-rtmp.js';
+import { createOutputsRouter } from './routes/outputs.js';
 import { createCropRouter } from './routes/crop.js';
 import { createIngestionRouter } from './routes/ingestion.js';
 import { createFeedsRouter } from './routes/feeds.js';
@@ -78,6 +79,7 @@ export { getRadioConfig, setRadioConfig } from './db.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side
 // helpers only; mutation goes through CropManager.applyPosition() itself.
 export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
+export { outputCropPath } from './crop-outputs.js';
 export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follow.js';
 
 /**
@@ -258,6 +260,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  *   feedRtmpRouter: import('express').Router,
  *   ingestionRouter: import('express').Router,
  *   feedsRouter: import('express').Router,
+ *   outputsRouter: import('express').Router,
  *   streamRouter: import('express').Router,
  *   streamHlsRouter: import('express').Router,
  *   radioRouter: import('express').Router,
@@ -267,10 +270,11 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
 export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null, settings = null, requireSetup = (req, res, next) => next() } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager, settings),
-    feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
+    feedRtmpRouter:  createFeedRtmpRouter(db, relayManager, cropManager),
     mediamtxHookRouter: createMediaMtxHookRouter({ relayManager, settings }),
     ingestionRouter: createIngestionRouter(db, auth, relayManager, settings, requireSetup),
     feedsRouter:     createFeedsRouter(db, auth, relayManager, settings, requireSetup),
+    outputsRouter:   createOutputsRouter(db, auth, requireSetup),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains, requireSetup),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),
     radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics, requireSetup),
