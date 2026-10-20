@@ -10,12 +10,9 @@ import logger from 'lcyt/logger';
 import { listCropScopes, cropSessionKey } from './db/crop.js';
 import { getPrimaryFeedId } from './db/feeds.js';
 
-export const MAX_CROP_SOURCE_DEPTH = 8;
+import { outputCropPath, outputSourcePath, MAX_CROP_SOURCE_DEPTH } from './output-paths.js';
 
-/** MediaMTX path an output's crop writes. */
-export function outputCropPath(apiKey, outputId, isDefault) {
-  return isDefault ? `${apiKey}-crop` : `out-${outputId}-crop`;
-}
+export { outputCropPath, outputSourcePath, MAX_CROP_SOURCE_DEPTH };
 
 /**
  * Walk an output's source chain down to its feed.
@@ -34,27 +31,6 @@ export async function resolveRootFeed(db, apiKey, outputId) {
       return feed ? { feedId: feed.id, feedKey: feed.feed_key, chain } : null;
     }
     cursor = out.source_id;
-  }
-  return null;
-}
-
-/**
- * The MediaMTX path an output's picture is on when nothing else processes it (DSK steps come with PR 3): its feed, or, when it
- * is built on an output whose crop is enabled, that output's crop path.
- */
-export async function outputSourcePath(db, apiKey, outputId, defaultOutputId = null) {
-  let cursor = outputId;
-  for (let i = 0; i < MAX_CROP_SOURCE_DEPTH; i++) {
-    const out = await db.outputs.findFirst({ where: { id: cursor, owner_api_key: apiKey }, select: { id: true, source_type: true, source_id: true } });
-    if (!out) return null;
-    if (out.source_type === 'feed') {
-      const feed = await db.prod_feeds.findFirst({ where: { id: out.source_id, owner_api_key: apiKey }, select: { feed_key: true } });
-      return feed?.feed_key ?? null;
-    }
-    const parent = await db.outputs.findFirst({ where: { id: out.source_id, owner_api_key: apiKey }, select: { id: true, crop_enabled: true } });
-    if (!parent) return null;
-    if (parent.crop_enabled === 1) return outputCropPath(apiKey, parent.id, parent.id === defaultOutputId);
-    cursor = parent.id;
   }
   return null;
 }

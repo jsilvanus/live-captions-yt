@@ -312,6 +312,8 @@ await backfillPrimaryFeeds(db).catch((err) => console.warn(`[feeds] primary feed
 // Egress outputs (plan_egress_outputs.md): Program / Vertical from the main feed, composite viewport, crop and relay slots (idempotent, changes no behaviour yet).
 await backfillOutputs(db).catch((err) => console.warn(`[outputs] backfill failed: ${err.message}`));
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
+// DSK steps of outputs (PR 3): supervised ffmpeg runs, only when the relay stack is active.
+if (process.env.RTMP_RELAY_ACTIVE === '1' || settings?.get?.('media.rtmp_relay_active')) rtmp.outputStepManager?.start();
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer
 // program switch or camera PTZ-preset recall performed by a given project's

@@ -5,6 +5,7 @@
  *   POST   /outputs        { name, sourceType, sourceId, dsk?, cropEnabled?, audioSource?, enabled?, sortOrder? } → 201 output
  *   PATCH  /outputs/:id    any of the same fields
  *   DELETE /outputs/:id    409 while another output or a relay slot uses it
+ *   GET    /outputs/steps  { active, steps, skipped } the DSK steps the supervisor runs for this project
  *
  * Crop settings of an output live under /crop (`outputId` query or body field). Session Bearer; writes are Setup tier.
  */
@@ -13,9 +14,24 @@ import { Router } from 'express';
 import logger from 'lcyt/logger';
 import { listOutputs, createOutput, updateOutput, deleteOutput } from '../db/outputs.js';
 
-export function createOutputsRouter(db, auth, requireSetup = (req, res, next) => next()) {
+export function createOutputsRouter(db, auth, requireSetup = (req, res, next) => next(), stepManager = null) {
   const router = Router();
   router.use(auth);
+
+  // Run the step supervisor now instead of waiting for its next poll (best effort).
+  const kick = () => { stepManager?.reconcile?.(); };
+
+  // GET /outputs/steps: what the step supervisor runs for this project's outputs (DSK steps, skipped ones).
+  router.get('/steps', async (req, res) => {
+    if (!stepManager) return res.json({ active: false, steps: [], skipped: [] });
+    const status = stepManager.status();
+    const mine = new Set((await listOutputs(db, req.session.apiKey)).map(o => o.id));
+    res.json({
+      active: status.active,
+      steps: status.steps.filter(s => mine.has(s.outputId)),
+      skipped: status.skipped.filter(s => mine.has(s.outputId)),
+    });
+  });
 
   router.get('/', async (req, res) => {
     try {
@@ -26,9 +42,11 @@ export function createOutputsRouter(db, auth, requireSetup = (req, res, next) =>
     }
   });
 
-  const reply = (res, r, okStatus = 200) => (r.ok
-    ? res.status(okStatus).json(r.output ?? { ok: true })
-    : res.status(r.status).json({ error: r.error }));
+  const reply = (res, r, okStatus = 200) => {
+    if (!r.ok) return res.status(r.status).json({ error: r.error });
+    kick();
+    return res.status(okStatus).json(r.output ?? { ok: true });
+  };
 
   router.post('/', requireSetup, async (req, res) => {
     try { reply(res, await createOutput(db, req.session.apiKey, req.body), 201); }
