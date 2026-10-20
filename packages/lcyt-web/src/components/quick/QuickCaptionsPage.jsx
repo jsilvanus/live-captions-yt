@@ -11,6 +11,7 @@ import {
 } from '../../lib/sttConfig.js';
 import { getTargets, setTargets } from '../../lib/targetConfig.js';
 import { relaySelectableFeeds, feedOptionLabel } from '../../lib/relaySource.js';
+import { useSttFeed } from '../../hooks/useSttFeed.js';
 import {
   parseCaptionKey, maskKey, findYoutubeTarget, withYoutubeKey, withoutYoutubeTarget, newTargetId,
 } from '../../lib/quickTargets.js';
@@ -155,24 +156,13 @@ export function QuickCaptionsPage() {
     : COMMON_LANGUAGES;
   const langOptions = langs.some(l => l.code === stt.lang) ? langs : [{ code: stt.lang, label: stt.lang }, ...langs];
 
-  // "Audio from": the main stream, or another incoming feed (feedId of POST /stt/start).
-  const [feeds, setFeeds] = useState([]);
-  const [feedId, setFeedId] = useState('');
-  useEffect(() => {
-    if (!connected || engine !== 'auditor') return;
-    let live = true;
-    (async () => {
-      try { if (live) setFeeds(relaySelectableFeeds((await call('/feeds'))?.feeds).filter(f => f.transport !== 'whip')); } catch { /* main stream only */ }
-      try { const c = await call('/stt/config'); if (live) setFeedId(c?.config?.feedId || c?.feedId || ''); } catch { /* keep main */ }
-    })();
-    return () => { live = false; };
-  }, [connected, engine, call]);
+  // "Audio from": the main stream, or another incoming feed (shared with the microphone window: useSttFeed).
+  const { feeds: allFeeds, feedId, setFeed } = useSttFeed();
+  const feeds = relaySelectableFeeds(allFeeds).filter(f => f.transport !== 'whip');
   const chosenFeed = feeds.find(f => f.id === feedId) || null;
 
   async function chooseFeed(id) {
-    setFeedId(id);
-    try { await call('/stt/config', { method: 'PUT', body: { feedId: id || null } }); }
-    catch { setSetupError(t('quick.captions.engine.saveFailed')); }
+    if (!(await setFeed(id))) setSetupError(t('quick.captions.engine.saveFailed'));
   }
 
   usePolling(async () => {
