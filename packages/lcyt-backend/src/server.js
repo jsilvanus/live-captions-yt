@@ -1042,8 +1042,7 @@ apiRouter.use('/roles/planner', createPlannerRouter(db, scopedAuth('role'), _age
 // credentials, same risk class as /ai/providers (plan_project_roles.md).
 apiRouter.use('/connectors', scopedAuth('connector'), requireProjectRole(db, 'setup'), createConnectorsRouter(db, scopedAuth('connector'), _connectorsPollScheduler));
 // Notify contacts and providers (plan_notify_channels.md). Setup tier only: phone numbers and provider secrets.
-// The router declares its own /notify/* paths, so it is mounted without a prefix.
-apiRouter.use(scopedAuth('notify'), requireProjectRole(db, 'setup'), createNotifyRouter(db, scopedAuth('notify')));
+apiRouter.use('/notify', scopedAuth('notify'), requireProjectRole(db, 'setup'), createNotifyRouter(db, scopedAuth('notify')));
 apiRouter.use('/actions', createActionsRouter(db, scopedAuth('action'), {
   executor: _actionExecutor,
   checkProjectRole: _checkProjectRole,

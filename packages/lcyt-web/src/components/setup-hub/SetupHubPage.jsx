@@ -20,7 +20,6 @@ import { McpAccessSection } from './McpAccessSection.jsx';
 import { ConnectorsSection } from './ConnectorsSection.jsx';
 import { AiRoleModelsSection } from './AiRoleModelsSection.jsx';
 import { TallySection } from './TallySection.jsx';
-import { ContactSection } from './ContactSection.jsx';
 import { KEYS } from '../../lib/storageKeys.js';
 import { useCardFavorites } from '../../lib/cardFavorites.js';
 import { useUserAuth } from '../../hooks/useUserAuth.js';
@@ -60,7 +59,6 @@ const cards = {
   'broadcast-platforms': <PlatformsSection />,
   'ai-roles': <AiRoleModelsSection />,
   tally: <TallySection />,
-  contact: <ContactSection />,
 };
 
 const FILTERS = ['all', 'favorites', 'workflow'];
