@@ -454,7 +454,7 @@ model crop_config {
   active_set_id  String?
   updated_at     String  @default(dbgenerated("datetime('now')"))
   auto_follow    Int     @default(0)
-  output_id       String?
+  output_id      String?
 }
 
 model crop_preset_sets {
