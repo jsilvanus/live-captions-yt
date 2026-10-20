@@ -29,7 +29,10 @@ export function useActiveBroadcast({ backendUrl, token, projectKey = null, enabl
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${backendUrl}/api/v1/broadcasts/active`, {
+      // Accept either an origin (http://localhost:3000) or an API base
+      // (http://localhost:3000/api/v1). Normalize once to avoid double-prefixing.
+      const apiBase = `${backendUrl.replace(/\/+$/, '').replace(/\/api\/v1$/, '')}/api/v1`;
+      const res = await fetch(`${apiBase}/broadcasts/active`, {
         headers: {
           Authorization: `Bearer ${token}`,
           ...(projectKey ? { 'X-Project-Id': projectKey } : {}),
