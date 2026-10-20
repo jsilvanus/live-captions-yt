@@ -715,7 +715,7 @@ describe('GET/PUT/DELETE /file/storage-config', () => {
   });
 
   it('PUT sets S3 config once the files-custom-bucket feature is granted; GET reflects it masked', async () => {
-    cfgDb.prepare(
+    await cfgDb.prepare(
       `INSERT INTO project_features (api_key, feature_code, enabled) VALUES (?, 'files-custom-bucket', 1)`
     ).run(CONFIG_API_KEY);
 
