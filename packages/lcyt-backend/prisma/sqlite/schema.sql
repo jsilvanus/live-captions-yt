@@ -935,7 +935,8 @@ CREATE TABLE IF NOT EXISTS "stt_config" (
     "auto_start" INTEGER NOT NULL DEFAULT 0,
     "confidence_threshold" REAL,
     "created_at" INTEGER NOT NULL DEFAULT (strftime('%s','now')),
-    "updated_at" INTEGER NOT NULL DEFAULT (strftime('%s','now'))
+    "updated_at" INTEGER NOT NULL DEFAULT (strftime('%s','now')),
+    "feed_id" TEXT
 );
 
 -- CreateTable
