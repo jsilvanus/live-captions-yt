@@ -497,3 +497,9 @@ Every instance starts every stored light, so with several instances each one pol
 - Recording: the group id of a go-live lives in memory (`steps.js`), so a backend restart between go-live and stop loses it and the recording is not finalized by the stop. `closeSessions` (sessions closed at `completed`) and the idle-expiry exemption for bound sessions belong to PR 3.
 - The relay step uses today's `relay_active` flag and keeps `RTMP_RELAY_ACTIVE` off as "skip"; it moves to `broadcast_outputs` with PR 5.
 - Never run against a real MediaMTX or YouTube; the lifecycle tests use fake steps.
+
+## Output DSK steps have no multi-instance owner
+
+**Where:** `packages/plugins/lcyt-rtmp/src/output-steps.js` (egress outputs PR 3).
+
+Every instance reconciles and tries to start each step; MediaMTX refuses the second publisher so the extra ffmpeg fails and backs off, but it wastes a start per instance. Skipped because the ownership lease design (`ownership.js`) is keyed per api key and a step is keyed per output; do it with PR 4 when relay slots read outputs. Composite-mode viewports are skipped by the step on purpose (the relay still composites them).

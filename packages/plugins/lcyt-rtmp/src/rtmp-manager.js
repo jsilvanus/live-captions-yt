@@ -172,6 +172,8 @@ function outRtspUrl(apiKey, suffix = 'out', settings = null) {
 /** Shared validation regexes used when building runOnPublish fan-out commands. */
 const SAFE_RTMP_RE = /^rtmps?:\/\/[A-Za-z0-9.:-]+\/[A-Za-z0-9_\-\/\.]+$/;
 const SAFE_NAME_RE = /^[A-Za-z0-9_\-]+$/;
+// Registration key of a path fan-out whose audio comes from another path: `<video path>|a|<audio path>`.
+const AUDIO_GROUP_SEP = '|a|';
 
 /**
  * Build a `-f tee` target string from relay slots (no stream selectors — same stream to all).
@@ -404,8 +406,10 @@ export class RtmpRelayManager {
 
       const feedGroups = new Map(); // cameraKey -> slots[]
       for (const r of feedSlots) {
-        if (!feedGroups.has(r.sourceFeedKey)) feedGroups.set(r.sourceFeedKey, []);
-        feedGroups.get(r.sourceFeedKey).push(r);
+        // A slot whose output replaces the sound (sourceAudioPath) is a group of its own: video of the path, audio of another.
+        const groupKey = r.sourceAudioPath ? `${r.sourceFeedKey}${AUDIO_GROUP_SEP}${r.sourceAudioPath}` : r.sourceFeedKey;
+        if (!feedGroups.has(groupKey)) feedGroups.set(groupKey, []);
+        feedGroups.get(groupKey).push(r);
       }
 
       if (allSlots.length === 0) {
@@ -883,12 +887,18 @@ export class RtmpRelayManager {
    * @returns {Promise<void>}
    */
   async _registerPathFanout(pathName, slots, logLabel) {
-    if (!SAFE_NAME_RE.test(pathName)) {
-      throw new Error(`'${pathName}' contains unsafe characters for MediaMTX runOnPublish`);
+    const [videoPath, audioPath = null] = pathName.split(AUDIO_GROUP_SEP);
+    for (const p of [videoPath, audioPath]) {
+      if (p !== null && !SAFE_NAME_RE.test(p)) {
+        throw new Error(`'${p}' contains unsafe characters for MediaMTX runOnPublish`);
+      }
+    }
+    if (audioPath && this._fanout.mode === 'hook') {
+      logger.warn(`[rtmp] ${logLabel}: audio replacement (${audioPath}) needs mediamtx.fanout_mode=runner; sending '${videoPath}' with its own audio`);
     }
     const teeTargets = _buildTeeTargets(slots);
     try {
-      await this._fanout.set(pathName, { sourcePath: pathName, tee: teeTargets, kick: true, redact: _redactRelays(null, slots), label: pathName });
+      await this._fanout.set(pathName, { sourcePath: videoPath, path: videoPath, ...(audioPath ? { audioPath } : {}), tee: teeTargets, kick: true, redact: _redactRelays(null, slots), label: pathName });
       logger.info(`[rtmp] ${logLabel} configured via MediaMTX on '${pathName}' (${slots.length} slot(s))`);
     } catch (err) {
       logger.warn(`[rtmp] MediaMTX addPath (${logLabel}) failed on '${pathName}': ${err.message} — slots may not forward`);

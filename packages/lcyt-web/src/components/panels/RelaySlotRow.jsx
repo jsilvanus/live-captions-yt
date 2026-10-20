@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useLang } from '../../contexts/LangContext.jsx';
 import {
   groupRelaySourceFeeds, feedOptionLabel, relaySourceValue, sourcePatch, relaySelectableFeeds,
-  isFeedSourceValue,
+  isFeedSourceValue, isOutputSourceValue, relaySelectableOutputs,
 } from '../../lib/relaySource.js';
 
 /**
@@ -14,21 +14,24 @@ import {
  *   onChange: (updated) => void
  *   onRemove: () => void
  *   runningSlots?: number[]
+ *   outputs?: Array<{ id, name, enabled }>  the project's egress outputs (GET /outputs); listed as sources too.
  *   feeds?: Array<{ id, name, kind, label, managed, deviceType, deviceId }>  the project's feeds (GET /feeds).
  *     The source picker lists them grouped by kind; managed feeds are left out (plan_feeds_devices.md PR 5).
  *     Omit/empty to hide the source picker entirely (backward compatible for callers that don't fetch feeds,
  *     e.g. embed widgets).
  */
-export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], feeds = [] }) {
+export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], feeds = [], outputs = [] }) {
   const { t } = useLang();
   const [showAdvanced, setShowAdvanced] = useState(
     Boolean(entry.scale || entry.fps != null || entry.videoBitrate || entry.audioBitrate || entry.captionMode === 'cea708' || entry.recordOnStart || entry.recordOnButton)
   );
   const isRunning = runningSlots.includes(entry.slot);
-  const showSource = relaySelectableFeeds(feeds).length > 0;
+  const selectableOutputs = relaySelectableOutputs(outputs);
+  const showSource = relaySelectableFeeds(feeds).length > 0 || selectableOutputs.length > 0;
   const sourceValue = relaySourceValue(entry);
   const sourceGroups = groupRelaySourceFeeds(feeds);
   const knownFeedValues = new Set(relaySelectableFeeds(feeds).map(f => `feed:${f.id}`));
+  const knownOutputValues = new Set(selectableOutputs.map(o => `output:${o.id}`));
 
   return (
     <div style={{ border: '1px solid var(--color-border)', borderRadius: 4, padding: '8px 10px', display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -156,6 +159,16 @@ export function RelaySlotRow({ entry, onChange, onRemove, runningSlots = [], fee
                     ))}
                   </optgroup>
                 ))}
+                {selectableOutputs.length > 0 && (
+                  <optgroup label={t('settings.relay.sourceGroup.output')}>
+                    {selectableOutputs.map(o => (
+                      <option key={o.id} value={`output:${o.id}`}>{o.name}</option>
+                    ))}
+                  </optgroup>
+                )}
+                {isOutputSourceValue(sourceValue) && !knownOutputValues.has(sourceValue) && (
+                  <option value={sourceValue} disabled>{t('settings.relay.sourceMissingOutput')}</option>
+                )}
                 {isFeedSourceValue(sourceValue) && !knownFeedValues.has(sourceValue) && (
                   <option value={sourceValue} disabled>{t('settings.relay.sourceMissingFeed')}</option>
                 )}

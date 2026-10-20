@@ -21,6 +21,7 @@ export const TYPE_OPTIONS = [
   ['variables',   'Variables'],
   ['connectorPolls', 'Connector Polls'],
   ['actionLog',   'Action Log'],
+  ['listen',      'Listen'],
 ];
 
 export const PANE_META = {
@@ -43,6 +44,7 @@ export const PANE_META = {
   variables:   { title: 'Variables',               dot: '#4ab0a0' },
   connectorPolls: { title: 'Connector Polls',      dot: '#1a7f4b' },
   actionLog:   { title: 'Action Log',              dot: '#c79a3a' },
+  listen:      { title: 'Listen',                  dot: '#1a6fd4' },
 };
 
 export function paneMeta(type) {

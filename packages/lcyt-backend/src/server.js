@@ -50,7 +50,7 @@ import {
   listImages, getImageByKey, updateImageSettings, deleteImage,
 } from 'lcyt-dsk';
 import { deprecatedRoute, NGINX_RTMP_MESSAGE } from './middleware/deprecation.js';
-import { initRtmpControl, createRtmpRouters, getRelays, isRelayActive, setRelayActive, backfillFeeds, backfillPrimaryFeeds, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
+import { initRtmpControl, createRtmpRouters, getRelays, isRelayActive, setRelayActive, backfillFeeds, backfillPrimaryFeeds, backfillOutputs, getCropConfig, getCropPreset, listCropPresets, targetCenter, xNormForCenter, createFollowSmoother, readThrough } from 'lcyt-rtmp';
 import { initFilesControl, closeFileHandles } from 'lcyt-files';
 // Optional music detection plugin (lcyt-music) — load dynamically so the
 // server can run when the optional package is not installed in minimal
@@ -313,7 +313,11 @@ const rtmp = await initRtmpControl(db, store, { metrics, resolveStorage, setting
 // Feeds card: copy the feeds that exist as cameras and mixer outputs into prod_feeds (idempotent, never throws).
 await backfillFeeds(db).catch((err) => console.warn(`[feeds] backfill failed: ${err.message}`));
 await backfillPrimaryFeeds(db).catch((err) => console.warn(`[feeds] primary feed backfill failed: ${err.message}`));
+// Egress outputs (plan_egress_outputs.md): Program / Vertical from the main feed, composite viewport, crop and relay slots (idempotent, changes no behaviour yet).
+await backfillOutputs(db).catch((err) => console.warn(`[outputs] backfill failed: ${err.message}`));
 const { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager } = rtmp;
+// DSK steps of outputs (PR 3): supervised ffmpeg runs, only when the relay stack is active.
+if (process.env.RTMP_RELAY_ACTIVE === '1' || settings?.get?.('media.rtmp_relay_active')) rtmp.outputStepManager?.start();
 
 // Vertical-crop production-follow (plan_vertical_crop.md §4): a mixer
 // program switch or camera PTZ-preset recall performed by a given project's
@@ -1198,7 +1202,7 @@ function gatedRouter(getEnabled) {
   // translation.js/stt.js — the public/callback sub-routers below never
   // consume `auth` at all, so they're unaffected (plan_project_roles.md;
   // previously left ungated, see CONSIDER.md).
-  const { rtmpRouter, feedRtmpRouter, mediamtxHookRouter, ingestionRouter, feedsRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
+  const { rtmpRouter, feedRtmpRouter, mediamtxHookRouter, ingestionRouter, feedsRouter, outputsRouter, streamRouter, streamHlsRouter, radioRouter, previewRouter, cropRouter } =
     createRtmpRouters(db, scopedAuth('rtmp'), rtmp, {
       allowedRtmpDomains: _allowedRtmpDomains.join(','), metrics, settings,
       requireSetup: requireProjectRole(db, 'setup'),
@@ -1209,6 +1213,7 @@ function gatedRouter(getEnabled) {
   app.use('/internal/mediamtx', rtmpGate(mediamtxHookRouter));
   apiRouter.use('/ingestion',  rtmpGate(ingestionRouter));
   apiRouter.use('/feeds',      rtmpGate(feedsRouter));
+  apiRouter.use('/outputs',    rtmpGate(outputsRouter));
   apiRouter.use('/stream',     rtmpGate(streamRouter));
   apiRouter.use('/stream-hls', rtmpGate(streamHlsRouter));
   apiRouter.use('/radio',      rtmpGate(radioRouter));

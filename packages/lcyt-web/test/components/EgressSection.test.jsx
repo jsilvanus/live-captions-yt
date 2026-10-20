@@ -48,6 +48,7 @@ beforeEach(() => {
   globalThis.fetch = vi.fn(async (url) => {
     const path = String(url).replace('http://backend.test/api/v1', '');
     if (path === '/feeds') return reply({ feeds: FEEDS });
+    if (path === '/outputs') return reply({ outputs: [{ id: 'out-aaa', name: 'Vertical', enabled: true }, { id: 'out-off', name: 'Off', enabled: false }] });
     return reply({}, 404);
   });
   session = {
@@ -74,5 +75,18 @@ describe('EgressSection source picker', () => {
     const body = session.configureRelay.mock.calls.at(-1)[0];
     expect(body.sourceFeedId).toBe('feed-prog');
     expect(localStorage.getItem('lcyt.relay.slot1.sourceFeedId')).toBe('feed-prog');
+  });
+
+  it('an output pick sends sourceOutputId alone and lists only enabled outputs', async () => {
+    const { container } = renderEgress();
+    const select = await openSlotSettings(container);
+    await waitFor(() => expect([...select.options].some(o => o.value === 'output:out-aaa')).toBe(true));
+    expect([...select.options].some(o => o.value === 'output:out-off')).toBe(false);
+    fireEvent.change(select, { target: { value: 'output:out-aaa' } });
+
+    await waitFor(() => expect(session.configureRelay.mock.calls.at(-1)[0].sourceOutputId).toBe('out-aaa'));
+    const body = session.configureRelay.mock.calls.at(-1)[0];
+    expect(body.sourceFeedId).toBeUndefined();
+    expect(localStorage.getItem('lcyt.relay.slot1.sourceOutputId')).toBe('out-aaa');
   });
 });

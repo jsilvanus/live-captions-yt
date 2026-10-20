@@ -51,6 +51,8 @@ import { SttManager } from './stt-manager.js';
 import { CropManager } from './crop-manager.js';
 import { createRtmpRouter } from './routes/rtmp.js';
 import { createFeedRtmpRouter } from './routes/feed-rtmp.js';
+import { createOutputsRouter } from './routes/outputs.js';
+import { OutputStepManager } from './output-steps.js';
 import { createCropRouter } from './routes/crop.js';
 import { createIngestionRouter } from './routes/ingestion.js';
 import { createFeedsRouter } from './routes/feeds.js';
@@ -69,6 +71,10 @@ export {
   backfillFeeds, backfillPrimaryFeeds, listFeeds, getFeed, getFeedByKey, listFeedsForDevice, unlinkDeviceFeeds,
   getPrimaryFeedKey, getPrimaryFeedId, ensurePrimaryFeed, setPrimaryFeed,
 } from './db/feeds.js';
+export {
+  backfillOutputs, ensureProjectOutputs, listOutputs, getOutput, createOutput, updateOutput, deleteOutput,
+  MAX_OUTPUT_CHAIN_DEPTH, OUTPUT_SOURCE_TYPES,
+} from './db/outputs.js';
 export { getSttConfig, setSttConfig, getSttSourceLanguages, addSttSourceLanguage, updateSttSourceLanguage, deleteSttSourceLanguage } from './db.js';
 export { getRadioConfig, setRadioConfig } from './db.js';
 // Relay on/off for callers outside the routes (the broadcast lifecycle's outputs step).
@@ -76,6 +82,9 @@ export { getRelays, isRelayActive, setRelayActive } from './db/relay.js';
 // crop.* tools (packages/lcyt-tools, plan_vertical_crop.md §4) — read-side
 // helpers only; mutation goes through CropManager.applyPosition() itself.
 export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
+export { outputCropPath, outputDskPath } from './output-paths.js';
+export { resolveOutputRoute } from './output-routing.js';
+export { OutputStepManager, buildDskStepArgs } from './output-steps.js';
 export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follow.js';
 
 /**
@@ -193,6 +202,8 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
   const previewManager = new PreviewManager({ mediamtxClient, webrtcBase: settings ? settings.get('mediamtx.webrtc_base_url') : undefined });
   const sttManager     = new SttManager(store, db, settings);
   const cropManager    = new CropManager({ ffmpegCaps, mediamtxClient, settings });
+  // DSK steps of egress outputs (plan_egress_outputs.md PR 3). Started by the backend after the outputs backfill.
+  const outputStepManager = new OutputStepManager({ db, mediamtx: mediamtxClient, settings });
 
   if (nginxManager.isEnabled) {
     logger.info(`[lcyt-rtmp] NginxManager active → ${process.env.NGINX_RADIO_CONFIG_PATH}`);
@@ -209,11 +220,12 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
       previewManager.stopAll(),
       sttManager.stopAll(),
       cropManager.stopAll(),
+      outputStepManager.stopAll(),
     ]);
   }
 
   if (!ownership) {
-    return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, cropManager, owned: null, stop };
+    return { relayManager, hlsManager, radioManager, previewManager, hlsSubsManager, sttManager, cropManager, outputStepManager, owned: null, stop };
   }
 
   // Several backend instances on one database: relay, crop and STT starts take a lease and every
@@ -236,7 +248,7 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
   logger.info('[lcyt-rtmp] process ownership active: relay, crop and STT calls follow the lease holder');
   return {
     relayManager: ownedRelay, hlsManager, radioManager, previewManager, hlsSubsManager,
-    sttManager: ownedStt, cropManager: ownedCrop,
+    sttManager: ownedStt, cropManager: ownedCrop, outputStepManager,
     owned: { relay: ownedRelay, crop: ownedCrop, stt: ownedStt },
     stop,
   };
@@ -256,19 +268,21 @@ export async function initRtmpControl(db, store = null, { metrics = null, resolv
  *   feedRtmpRouter: import('express').Router,
  *   ingestionRouter: import('express').Router,
  *   feedsRouter: import('express').Router,
+ *   outputsRouter: import('express').Router,
  *   streamRouter: import('express').Router,
  *   streamHlsRouter: import('express').Router,
  *   radioRouter: import('express').Router,
  *   previewRouter: import('express').Router
  * }}
  */
-export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager }, { allowedRtmpDomains, metrics = null, settings = null, requireSetup = (req, res, next) => next() } = {}) {
+export function createRtmpRouters(db, auth, { relayManager, hlsManager, radioManager, previewManager, sttManager, cropManager, musicManager, outputStepManager = null }, { allowedRtmpDomains, metrics = null, settings = null, requireSetup = (req, res, next) => next() } = {}) {
   return {
     rtmpRouter:      createRtmpRouter(db, relayManager, cropManager, musicManager, settings),
-    feedRtmpRouter:  createFeedRtmpRouter(db, relayManager),
+    feedRtmpRouter:  createFeedRtmpRouter(db, relayManager, cropManager),
     mediamtxHookRouter: createMediaMtxHookRouter({ relayManager, settings }),
     ingestionRouter: createIngestionRouter(db, auth, relayManager, settings, requireSetup),
     feedsRouter:     createFeedsRouter(db, auth, relayManager, settings, requireSetup),
+    outputsRouter:   createOutputsRouter(db, auth, requireSetup, outputStepManager),
     streamRouter:    createStreamRouter(db, auth, relayManager, allowedRtmpDomains, requireSetup),
     streamHlsRouter: createStreamHlsRouter(db, hlsManager, metrics),
     radioRouter:     createRadioRouter(db, radioManager, sttManager, auth, metrics, requireSetup),

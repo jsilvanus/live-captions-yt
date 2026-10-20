@@ -1,4 +1,5 @@
 import { ownerOfPrimaryFeedKey } from './feeds.js';
+import { resolveOutputRoute } from '../output-routing.js';
 
 /**
  * Get a full api_keys row by key value.
@@ -145,6 +146,10 @@ function formatRelayRow(row) {
     // what rtmp-manager.js reads.
     sourceFeedId:    row.source_feed_id || null,
     sourceFeedKey:   row.source_feed_key || null,
+    // Optional outputs.id source (egress outputs). sourceFeedKey / sourceView above already carry the resolved route (see
+    // withSourceFeedKeys); sourceAudioPath is the audio feed's path when the output replaces the sound.
+    sourceOutputId:  row.source_output_id || null,
+    sourceAudioPath: row.source_audio_path || null,
     createdAt:    row.created_at,
     updatedAt:    row.updated_at,
   };
@@ -160,7 +165,22 @@ async function withSourceFeedKeys(db, rows) {
     for (const f of feeds) feedKeys.set(f.id, f.feed_key);
   }
   // A feed that no longer exists resolves to null: the slot then sends the project's program/crop view.
-  return rows.map(r => ({ ...r, source_feed_key: r.source_feed_id ? (feedKeys.get(r.source_feed_id) ?? null) : null }));
+  const out = rows.map(r => ({ ...r, source_feed_key: r.source_feed_id ? (feedKeys.get(r.source_feed_id) ?? null) : null }));
+  // Slots that send an output (source_feed_id wins when both are set): the output's route decides the source. A route that
+  // is the main stream or the default crop leaves the slot on the old 'program' / 'crop' handling (an old 'crop' slot never
+  // silently turns into a program slot); any other route fans out that MediaMTX path like a feed-sourced slot.
+  for (const r of out) {
+    if (!r.source_output_id || r.source_feed_key) continue;
+    const route = await resolveOutputRoute(db, r.api_key, r.source_output_id);
+    if (!route) continue;
+    if (route.kind === 'path') {
+      r.source_feed_key = route.path;
+      r.source_audio_path = route.audioPath;
+    } else if (route.kind === 'crop') {
+      r.source_view = 'crop';
+    }
+  }
+  return out;
 }
 
 /**
@@ -217,10 +237,10 @@ export function buildRelayFfmpegUrl(relay) {
  * @param {string} apiKey
  * @param {number} slot  positive integer
  * @param {string} targetUrl
- * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceFeedId?: string|null }} [opts]
+ * @param {{ targetName?: string|null, captionMode?: string, recordOnStart?: boolean, recordOnButton?: boolean, scale?: string|null, fps?: number|null, videoBitrate?: string|null, audioBitrate?: string|null, sourceView?: 'program'|'crop', sourceFeedId?: string|null, sourceOutputId?: string|null }} [opts]
  * @returns {Promise<object>}
  */
-export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceFeedId = null } = {}) {
+export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = null, captionMode = 'http', recordOnStart = false, recordOnButton = false, scale = null, fps = null, videoBitrate = null, audioBitrate = null, sourceView = 'program', sourceFeedId = null, sourceOutputId = null } = {}) {
   if (!Number.isInteger(slot) || slot < 1) {
     throw new RangeError(`slot must be a positive integer, got ${slot}`);
   }
@@ -239,6 +259,7 @@ export async function upsertRelay(db, apiKey, slot, targetUrl, { targetName = nu
     audio_bitrate: audioBitrate || null,
     source_view: sourceView,
     source_feed_id: sourceFeedId || null,
+    source_output_id: sourceOutputId || null,
   };
   const now = db.$util.sqlNow();
   await db.rtmp_relays.upsert({
@@ -272,6 +293,17 @@ export async function resolveRelaySourceFeedKey(db, feedId, requestingApiKey) {
 export async function getApiKeysReferencingFeed(db, feedId) {
   const rows = await db.rtmp_relays.findMany({ where: { source_feed_id: feedId }, distinct: ['api_key'], select: { api_key: true } });
   return rows.map(r => r.api_key);
+}
+
+/**
+ * Whether the project has any relay slot that sends an output (egress outputs).
+ * @param {object} db  Prisma client
+ * @param {string} apiKey
+ * @returns {Promise<boolean>}
+ */
+export async function hasOutputSlots(db, apiKey) {
+  const row = await db.rtmp_relays.findFirst({ where: { api_key: apiKey, source_output_id: { not: null } }, select: { id: true } });
+  return !!row;
 }
 
 /**
