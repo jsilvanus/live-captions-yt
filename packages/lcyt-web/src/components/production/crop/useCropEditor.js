@@ -20,6 +20,15 @@ const CROP = '/crop';
 const DEFAULT_SET_KEY = '__default__';
 const setKeyOf = (id) => (id === null || id === undefined ? DEFAULT_SET_KEY : id);
 
+/**
+ * Add the crop scope to a /crop path: every route takes `outputId` as a query field (plan_egress_outputs.md PR 5).
+ * No output (the default crop) leaves the path as it was.
+ */
+export function withOutputScope(path, outputId) {
+  if (!outputId) return path;
+  return `${path}${path.includes('?') ? '&' : '?'}outputId=${encodeURIComponent(outputId)}`;
+}
+
 export function cameraPresetSources(camera) {
   const presets = camera.controlConfig?.presets || [];
   const rows = [{ cameraId: camera.id, cameraPreset: null, label: camera.name, presetName: null }];
@@ -41,8 +50,40 @@ export function sourceMatchesEntry(source, entry) {
 
 export function useCropEditor() {
   const D = useProductionData();
-  const { jfetch, creds, cameras, connected } = D;
+  const { jfetch: rawFetch, creds, cameras, connected } = D;
   const { backendUrl, apiKey } = creds;
+
+  // Which crop the page edits: null = the project's default crop, else an egress output (its own config, sets and presets).
+  const [outputId, setOutputId] = useState(null);
+  const [outputs, setOutputs] = useState([]);
+  const [defaultOutputId, setDefaultOutputId] = useState(null); // the output the default crop belongs to (Vertical)
+  const jfetch = useCallback((path, opts) => rawFetch(withOutputScope(path, outputId), opts), [rawFetch, outputId]);
+
+  useEffect(() => {
+    if (!backendUrl || !apiKey) return;
+    let cancelled = false;
+    rawFetch('/outputs')
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled) setOutputs(d?.outputs || []); })
+      .catch(() => {});
+    rawFetch(`${CROP}/config`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (!cancelled) setDefaultOutputId(d?.outputId || null); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [rawFetch, backendUrl, apiKey]);
+
+  const selectOutput = useCallback((id) => {
+    setOutputId(id || null);
+    setConfig(null);
+    setSets([]);
+    setPresetsBySet({});
+    setSourceMap([]);
+    setViewSetId(null);
+    setEditingPresetId(null);
+    setSelectedSource(null);
+    setLoaded(false);
+  }, []);
 
   const [config, setConfig] = useState(null); // crop_config fields + live status
   const [sets, setSets] = useState([]);
@@ -306,11 +347,12 @@ export function useCropEditor() {
     ? `${backendUrl}/api/v1/preview/${encodeURIComponent(apiKey)}/incoming.jpg?t=${previewTick}`
     : null;
   const monitorUrl = backendUrl && apiKey
-    ? `${backendUrl}/api/v1/stream-hls/${encodeURIComponent(apiKey)}-crop/index.m3u8`
+    ? `${backendUrl}/api/v1/stream-hls/${encodeURIComponent(outputId ? `out-${outputId}` : apiKey)}-crop/index.m3u8`
     : null;
 
   return {
     D, connected, creds, cameras,
+    outputId, outputs: outputs.filter(o => o.id !== defaultOutputId), defaultOutputId,
     loaded, error, busy,
     config, sets, presets, sourceMap, sources,
     viewSetId, editingPreset, editingPresetId, selectedSource, draftPos,
@@ -318,6 +360,7 @@ export function useCropEditor() {
     boundEntryFor,
     actions: {
       refresh: loadAll,
+      selectOutput,
       selectSet, selectPreset, selectSource,
       setPositionLive, saveConfig,
       createSet, renameSet, deleteSet, activateSet,

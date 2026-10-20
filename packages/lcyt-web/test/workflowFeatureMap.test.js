@@ -40,9 +40,9 @@ describe('cardIdsForEnabledFeatures()', () => {
     assert.deepEqual([...result], ['caption-targets']);
   });
 
-  it('maps ingest to both the egress and feeds cards, restream to egress', () => {
-    assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'ingest', enabled: true }])].sort(), ['egress', 'feeds']);
-    assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'restream', enabled: true }])], ['egress']);
+  it('maps ingest to the egress, feeds and outputs cards, restream to egress and outputs', () => {
+    assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'ingest', enabled: true }])].sort(), ['egress', 'feeds', 'outputs']);
+    assert.deepEqual([...cardIdsForEnabledFeatures([{ code: 'restream', enabled: true }])].sort(), ['egress', 'outputs']);
   });
 
   it('every mapped card id list is non-empty (sanity check on the table itself)', () => {

@@ -8,7 +8,7 @@ import {
   MAX_RELAY_SLOTS,
   setSlotTargetType, setSlotYoutubeKey, setSlotGenericUrl, setSlotGenericName,
   setSlotCaptionMode, setSlotScale, setSlotFps, setSlotVideoBitrate, setSlotAudioBitrate,
-  setSlotRecordOnStart, setSlotRecordOnButton, setSlotSourceView, setSlotSourceFeedId,
+  setSlotRecordOnStart, setSlotRecordOnButton, setSlotSourceView, setSlotSourceFeedId, setSlotSourceOutputId,
   clearSlot, buildInitialRelayList,
 } from '../../lib/relayConfig.js';
 import { sourceRequestFields } from '../../lib/relaySource.js';
@@ -56,6 +56,7 @@ export function EgressSection() {
   const [relayStatus, setRelayStatus] = useState(null);
   const [relayActive, setRelayActiveState] = useState(false);
   const [feeds, setFeeds] = useState([]);
+  const [outputs, setOutputs] = useState([]);
 
   const refreshStatus = useCallback(() => {
     if (!connected || !getRelayStatus) { setRelayStatus(null); return; }
@@ -78,6 +79,8 @@ export function EgressSection() {
     try {
       const feedBody = await authedGet('/feeds');
       setFeeds(feedBody?.feeds || []);
+      const outputBody = await authedGet('/outputs');
+      setOutputs(outputBody?.outputs || []);
     } catch { /* ignore — source picker just stays hidden */ }
   }, [connected, backendUrl, authedGet]);
 
@@ -97,6 +100,7 @@ export function EgressSection() {
     if (updated.recordOnButton !== undefined) setSlotRecordOnButton(slot, !!updated.recordOnButton);
     if (updated.sourceView     !== undefined) setSlotSourceView(slot, updated.sourceView);
     if (updated.sourceFeedId   !== undefined) setSlotSourceFeedId(slot, updated.sourceFeedId);
+    if (updated.sourceOutputId !== undefined) setSlotSourceOutputId(slot, updated.sourceOutputId);
   }
 
   async function persistRelayToBackend(entry) {
@@ -125,7 +129,7 @@ export function EgressSection() {
         videoBitrate: entry.videoBitrate || undefined,
         audioBitrate: entry.audioBitrate || undefined,
         // One source field per request (a feed wins over the view): see sourceRequestFields.
-        ...sourceRequestFields({ sourceView: entry.sourceView, sourceFeedId: entry.sourceFeedId }),
+        ...sourceRequestFields({ sourceView: entry.sourceView, sourceFeedId: entry.sourceFeedId, sourceOutputId: entry.sourceOutputId }),
       });
     } catch { /* ignore */ }
   }
@@ -146,7 +150,7 @@ export function EgressSection() {
     const used = relayList.map(r => r.slot);
     for (let s = 1; s <= MAX_RELAY_SLOTS; s++) {
       if (!used.includes(s)) {
-        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false, sourceView: 'program', sourceFeedId: '' };
+        const entry = { slot: s, targetType: 'youtube', youtubeKey: '', genericUrl: '', genericName: '', captionMode: 'http', scale: '', fps: null, videoBitrate: '', audioBitrate: '', recordOnStart: false, recordOnButton: false, sourceView: 'program', sourceFeedId: '', sourceOutputId: '' };
         setRelayList(list => [...list, entry]);
         setEditingSlot(s);
         return;
@@ -214,6 +218,7 @@ export function EgressSection() {
             onRemove={() => removeSlot(editingEntry.slot)}
             runningSlots={runningSlots}
             feeds={feeds}
+            outputs={outputs}
           />
         </Dialog>
       )}

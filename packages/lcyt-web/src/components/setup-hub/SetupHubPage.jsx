@@ -5,6 +5,7 @@ import { WorkflowsIcon } from './icons.jsx';
 import { DevicesSection } from './DevicesSection.jsx';
 import { BridgeSection } from './BridgeSection.jsx';
 import { EgressSection } from './EgressSection.jsx';
+import { OutputsSection } from './OutputsSection.jsx';
 import { FeedsSection } from './FeedsSection.jsx';
 import { ViewerStreamSection } from './ViewerStreamSection.jsx';
 import { WebRadioSection } from './WebRadioSection.jsx';
@@ -152,6 +153,7 @@ export function SetupHubPage() {
             {isVisible('bridges') && <BridgeSection />}
 
             {/* ── Streaming & graphics ── */}
+            {isVisible('outputs') && <OutputsSection />}
             {isVisible('egress') && <EgressSection />}
             {isVisible('feeds') && <FeedsSection />}
             {isVisible('radio') && <WebRadioSection />}
