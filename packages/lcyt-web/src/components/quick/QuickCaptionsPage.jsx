@@ -10,6 +10,7 @@ import {
   COMMON_LANGUAGES, getSttEngine, getSttLang, setSttEngine, setSttLang, subscribeSttConfig,
 } from '../../lib/sttConfig.js';
 import { getTargets, setTargets } from '../../lib/targetConfig.js';
+import { relaySelectableFeeds, feedOptionLabel } from '../../lib/relaySource.js';
 import {
   parseCaptionKey, maskKey, findYoutubeTarget, withYoutubeKey, withoutYoutubeTarget, newTargetId,
 } from '../../lib/quickTargets.js';
@@ -154,6 +155,26 @@ export function QuickCaptionsPage() {
     : COMMON_LANGUAGES;
   const langOptions = langs.some(l => l.code === stt.lang) ? langs : [{ code: stt.lang, label: stt.lang }, ...langs];
 
+  // "Audio from": the main stream, or another incoming feed (feedId of POST /stt/start).
+  const [feeds, setFeeds] = useState([]);
+  const [feedId, setFeedId] = useState('');
+  useEffect(() => {
+    if (!connected || engine !== 'auditor') return;
+    let live = true;
+    (async () => {
+      try { if (live) setFeeds(relaySelectableFeeds((await call('/feeds'))?.feeds).filter(f => f.transport !== 'whip')); } catch { /* main stream only */ }
+      try { const c = await call('/stt/config'); if (live) setFeedId(c?.config?.feedId || c?.feedId || ''); } catch { /* keep main */ }
+    })();
+    return () => { live = false; };
+  }, [connected, engine, call]);
+  const chosenFeed = feeds.find(f => f.id === feedId) || null;
+
+  async function chooseFeed(id) {
+    setFeedId(id);
+    try { await call('/stt/config', { method: 'PUT', body: { feedId: id || null } }); }
+    catch { setSetupError(t('quick.captions.engine.saveFailed')); }
+  }
+
   usePolling(async () => {
     const status = await session.getSttStatus();
     setServerRunning(!!status?.running && status?.provider === 'auditor');
@@ -179,7 +200,7 @@ export function QuickCaptionsPage() {
         await session.stopStt();
         setServerRunning(false);
       } else {
-        await session.startStt({ provider: 'auditor', language: stt.lang, ...(ingest.streamKey ? { streamKey: ingest.streamKey } : {}) });
+        await session.startStt({ provider: 'auditor', language: stt.lang, ...(chosenFeed ? { feedId: chosenFeed.id } : (ingest.streamKey ? { streamKey: ingest.streamKey } : {})) });
         setServerRunning(true);
       }
     } catch (err) {
@@ -203,7 +224,7 @@ export function QuickCaptionsPage() {
     finally { setSending(false); }
   }
 
-  const setupReady = !!savedKey && (engine === 'browser' || ingest.enabled);
+  const setupReady = !!savedKey && (engine === 'browser' || !!chosenFeed || ingest.enabled);
 
   return (
     <QuickShell title={t('quick.workflow.captions.title')}>
@@ -276,7 +297,20 @@ export function QuickCaptionsPage() {
         {setupError && <p className={s.error} role="alert">{setupError}</p>}
       </section>
 
-      {engine === 'auditor' && <IngestDirections onChange={setIngest} />}
+      {engine === 'auditor' && feeds.length > 0 && (
+        <section className={s.card} aria-label={t('quick.captions.audioFrom')}>
+          <label className={s.field}>
+            <span>{t('quick.captions.audioFrom')}</span>
+            <select className={s.input} value={chosenFeed ? chosenFeed.id : ''} disabled={serverRunning}
+              onChange={e => chooseFeed(e.target.value)} aria-label={t('quick.captions.audioFrom')}>
+              <option value="">{t('quick.captions.mainStream')}</option>
+              {feeds.map(f => <option key={f.id} value={f.id}>{feedOptionLabel(f)}</option>)}
+            </select>
+          </label>
+          {chosenFeed?.ingestUrl && <code className={`${s.input} ${s.mono}`}>{chosenFeed.ingestUrl}</code>}
+        </section>
+      )}
+      {engine === 'auditor' && !chosenFeed && <IngestDirections onChange={setIngest} />}
 
       {/* ── Run ── */}
       <section className={s.card} aria-label={t('quick.section.action')}>
@@ -291,7 +325,7 @@ export function QuickCaptionsPage() {
           type="button"
           className={`${s.big} ${listening ? s.bigOn : ''}`}
           aria-pressed={listening}
-          disabled={busy || !connected || (!listening && !setupReady && engine === 'auditor' && !!savedKey && !ingest.enabled)}
+          disabled={busy || !connected || (!listening && !setupReady && engine === 'auditor' && !!savedKey && !chosenFeed && !ingest.enabled)}
           onClick={toggle}
         >
           {listening ? t('quick.captions.stop') : t('quick.captions.start')}

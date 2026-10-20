@@ -1059,6 +1059,8 @@ export default {
       start: 'Starta textning',
       stop: 'Stoppa textning',
       listening: 'Lyssnar',
+      audioFrom: 'Ljud från',
+      mainStream: 'Huvudström',
       idle: 'Lyssnar inte',
       needKey: 'Lägg först till YouTubes textningsnyckel.',
       startFailed: 'Det gick inte att starta',

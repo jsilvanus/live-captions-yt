@@ -1055,6 +1055,8 @@ export default {
       start: 'Aloita tekstitys',
       stop: 'Lopeta tekstitys',
       listening: 'Kuuntelee',
+      audioFrom: 'Ääni lähteestä',
+      mainStream: 'Pääsyöte',
       idle: 'Ei kuuntele',
       needKey: 'Lisää ensin YouTuben tekstitysavain.',
       startFailed: 'Käynnistys epäonnistui',

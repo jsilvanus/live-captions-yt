@@ -1102,6 +1102,8 @@ export default {
       start: 'Start captions',
       stop: 'Stop captions',
       listening: 'Listening',
+      audioFrom: 'Audio from',
+      mainStream: 'Main stream',
       idle: 'Not listening',
       needKey: 'Add the YouTube caption key first.',
       startFailed: 'Could not start',
