@@ -12,6 +12,11 @@
  * survive an input-resolution change; pixel conversion happens in
  * crop-manager.js at apply time.
  *
+ * Scope (egress outputs, plan_egress_outputs.md PR 2): every helper takes the project's api key (a string, the project's
+ * default crop) or a scope object from resolveCropScope(). The default crop keeps its config in crop_config and its rows
+ * have output_id NULL or crop_config.output_id (the output the legacy crop was migrated to); any other output keeps its
+ * config in output_crop_config and its sets, presets and source-map rows carry its output_id.
+ *
  * The tables come from the backend's Prisma schema / PostgreSQL migrations. Foreign keys are enforced
  * (ON DELETE CASCADE), the manual deletes below are redundant but kept.
  *
@@ -75,6 +80,62 @@ export async function resolveCameraIdForMixerInput(db, mixerInput) {
   return row?.id ?? null;
 }
 
+/**
+ * @typedef {{ apiKey: string, outputId: string|null, isDefault: boolean }} CropScope
+ * isDefault: the project's own crop (crop_config); outputId is the output it belongs to, if any.
+ */
+
+/**
+ * Resolve the crop scope of a request. No outputId (or the id of the default crop output) = the project's default crop.
+ * @returns {Promise<CropScope|null>} null when outputId is not an output of the project
+ */
+export async function resolveCropScope(db, apiKey, outputId = null) {
+  const cfg = await db.crop_config.findUnique({ where: { api_key: apiKey }, select: { output_id: true } });
+  const defaultOutputId = cfg?.output_id ?? null;
+  if (outputId === null || outputId === undefined || outputId === '' || outputId === defaultOutputId) {
+    return { apiKey, outputId: defaultOutputId, isDefault: true };
+  }
+  const out = await db.outputs.findFirst({ where: { id: String(outputId), owner_api_key: apiKey }, select: { id: true } });
+  return out ? { apiKey, outputId: out.id, isDefault: false } : null;
+}
+
+/** A string api key means the project's default crop; a scope object is used as is. */
+async function scopeOf(db, x) {
+  return typeof x === 'string' ? resolveCropScope(db, x, null) : x;
+}
+
+/** Prisma where-fragment selecting the rows of a scope. */
+function outFilter(scope) {
+  if (!scope.isDefault) return { output_id: scope.outputId };
+  return scope.outputId ? { OR: [{ output_id: null }, { output_id: scope.outputId }] } : { output_id: null };
+}
+
+const inScope = (scope, rowOutputId) => (scope.isDefault ? (rowOutputId ?? null) === null || rowOutputId === scope.outputId : rowOutputId === scope.outputId);
+
+/** The session key CropManager uses for a scope: the api key for the default crop, the output id otherwise. */
+export function cropSessionKey(scope) {
+  return scope.isDefault ? scope.apiKey : scope.outputId;
+}
+
+/**
+ * Every crop of a project with its config: the default crop first, then each other output that has crop settings.
+ * @returns {Promise<Array<{ scope: CropScope, config: object }>>}
+ */
+export async function listCropScopes(db, apiKey) {
+  const def = await resolveCropScope(db, apiKey, null);
+  const list = [{ scope: def, config: await getCropConfig(db, def) }];
+  const outputs = await db.outputs.findMany({ where: { owner_api_key: apiKey }, select: { id: true } });
+  const rows = outputs.length
+    ? await db.output_crop_config.findMany({ where: { output_id: { in: outputs.map(o => o.id) } }, select: { output_id: true } })
+    : [];
+  for (const { output_id } of rows) {
+    if (output_id === def.outputId) continue;
+    const scope = await resolveCropScope(db, apiKey, output_id);
+    if (scope && !scope.isDefault) list.push({ scope, config: await getCropConfig(db, scope) });
+  }
+  return list;
+}
+
 function formatConfig(row) {
   return {
     enabled:       row.enabled === 1,
@@ -98,8 +159,11 @@ const DEFAULT_CONFIG = Object.freeze({
 /**
  * @returns {Promise<object>} config (defaults when no row exists)
  */
-export async function getCropConfig(db, apiKey) {
-  const row = await db.crop_config.findUnique({ where: { api_key: apiKey } });
+export async function getCropConfig(db, x) {
+  const scope = await scopeOf(db, x);
+  const row = scope.isDefault
+    ? await db.crop_config.findUnique({ where: { api_key: scope.apiKey } })
+    : await db.output_crop_config.findUnique({ where: { output_id: scope.outputId } });
   return row ? formatConfig(row) : { ...DEFAULT_CONFIG };
 }
 
@@ -107,7 +171,9 @@ export async function getCropConfig(db, apiKey) {
  * Upsert crop config. Only provided fields change.
  * @returns {Promise<{ ok: true, config: object } | { ok: false, error: string }>}
  */
-export async function setCropConfig(db, apiKey, patch = {}) {
+export async function setCropConfig(db, x, patch = {}) {
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
   const { enabled, aspectW, aspectH, outW, outH, videoBitrate, followProgram, transitionMs, activeSetId, autoFollow } = patch;
 
   const isPosInt = v => Number.isInteger(v) && v > 0;
@@ -122,12 +188,11 @@ export async function setCropConfig(db, apiKey, patch = {}) {
     return { ok: false, error: "videoBitrate must look like '4500k'" };
   }
   if (activeSetId !== undefined && activeSetId !== null) {
-    const set = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(activeSetId) }, select: { id: true } });
+    const set = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(activeSetId), ...outFilter(scope) }, select: { id: true } });
     if (!set) return { ok: false, error: 'activeSetId does not reference one of this project\'s sets' };
   }
 
-  const existing = await db.crop_config.findUnique({ where: { api_key: apiKey } });
-  const cur = existing ? formatConfig(existing) : { ...DEFAULT_CONFIG };
+  const cur = await getCropConfig(db, scope);
   const next = {
     enabled:       enabled       !== undefined ? Boolean(enabled)       : cur.enabled,
     aspectW:       aspectW       !== undefined ? aspectW                : cur.aspectW,
@@ -154,8 +219,16 @@ export async function setCropConfig(db, apiKey, patch = {}) {
     auto_follow: next.autoFollow ? 1 : 0,
     updated_at: db.$util.sqlNow(),
   };
-  await db.crop_config.upsert({ where: { api_key: apiKey }, create: { api_key: apiKey, ...values }, update: values });
-  return { ok: true, config: await getCropConfig(db, apiKey) };
+  if (scope.isDefault) {
+    await db.crop_config.upsert({ where: { api_key: apiKey }, create: { api_key: apiKey, ...values }, update: values });
+  } else {
+    await db.output_crop_config.upsert({ where: { output_id: scope.outputId }, create: { output_id: scope.outputId, ...values }, update: values });
+  }
+  // outputs.crop_enabled mirrors the crop config's enabled flag (the config is the authority).
+  if (scope.outputId && enabled !== undefined) {
+    await db.outputs.updateMany({ where: { id: scope.outputId, owner_api_key: apiKey }, data: { crop_enabled: next.enabled ? 1 : 0 } });
+  }
+  return { ok: true, config: await getCropConfig(db, scope) };
 }
 
 // ── preset sets ─────────────────────────────────────────────────────────────
@@ -164,9 +237,10 @@ function formatSet(row) {
   return { id: row.id, name: row.name, sortOrder: row.sort_order, createdAt: row.created_at };
 }
 
-export async function listCropSets(db, apiKey) {
+export async function listCropSets(db, x) {
+  const scope = await scopeOf(db, x);
   const rows = await db.crop_preset_sets.findMany({
-    where: { api_key: apiKey },
+    where: { api_key: scope.apiKey, ...outFilter(scope) },
     orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
   });
   return rows.map(formatSet);
@@ -179,28 +253,30 @@ const isUniqueViolation = err => err?.code === 'P2002' || /UNIQUE|unique constra
  * rows) from another set as a starting point.
  * @returns {Promise<{ ok: true, set: object } | { ok: false, error: string }>}
  */
-export async function createCropSet(db, apiKey, { name, sortOrder = 0, cloneFromSetId = null } = {}) {
+export async function createCropSet(db, x, { name, sortOrder = 0, cloneFromSetId = null } = {}) {
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
   if (!name || typeof name !== 'string' || !name.trim()) return { ok: false, error: 'name is required' };
   const id = randomUUID();
   const createdAt = db.$util.sqlNow();
   try {
     await db.$transaction(async tx => {
-      await tx.crop_preset_sets.create({ data: { id, api_key: apiKey, name: name.trim(), sort_order: sortOrder, created_at: createdAt } });
+      await tx.crop_preset_sets.create({ data: { id, api_key: apiKey, name: name.trim(), sort_order: sortOrder, created_at: createdAt, output_id: scope.outputId } });
       if (cloneFromSetId) {
         const source = await tx.crop_presets.findMany({
-          where: { api_key: apiKey, set_id: cloneFromSetId },
+          where: { api_key: apiKey, set_id: cloneFromSetId, ...outFilter(scope) },
           orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
         });
         for (const p of source) {
           const newPresetId = randomUUID();
           await tx.crop_presets.create({
-            data: { id: newPresetId, api_key: apiKey, set_id: id, name: p.name, x_norm: p.x_norm, y_norm: p.y_norm, sort_order: p.sort_order, created_at: createdAt },
+            data: { id: newPresetId, api_key: apiKey, set_id: id, name: p.name, x_norm: p.x_norm, y_norm: p.y_norm, sort_order: p.sort_order, created_at: createdAt, output_id: scope.outputId },
           });
           const maps = await tx.$queryRaw`SELECT * FROM crop_source_map WHERE api_key = ${apiKey} AND preset_id = ${p.id}`;
           for (const m of maps) {
             await insertSourceMapRow(tx, {
               id: randomUUID(), apiKey, mixerId: m.mixer_id, mixerInput: db.$util.num(m.mixer_input),
-              cameraId: m.camera_id, cameraPreset: m.camera_preset, presetId: newPresetId,
+              cameraId: m.camera_id, cameraPreset: m.camera_preset, presetId: newPresetId, outputId: scope.outputId,
             });
           }
         }
@@ -214,8 +290,9 @@ export async function createCropSet(db, apiKey, { name, sortOrder = 0, cloneFrom
   return { ok: true, set: formatSet(row) };
 }
 
-export async function updateCropSet(db, apiKey, id, { name, sortOrder } = {}) {
-  const existing = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(id) } });
+export async function updateCropSet(db, x, id, { name, sortOrder } = {}) {
+  const scope = await scopeOf(db, x);
+  const existing = await db.crop_preset_sets.findFirst({ where: { api_key: scope.apiKey, id: String(id), ...outFilter(scope) } });
   if (!existing) return { ok: false, error: 'Set not found', status: 404 };
   try {
     await db.crop_preset_sets.update({
@@ -233,15 +310,18 @@ export async function updateCropSet(db, apiKey, id, { name, sortOrder } = {}) {
 }
 
 /** Deletes a set with its presets and their source-map rows (manual cascade). */
-export async function deleteCropSet(db, apiKey, id) {
-  const existing = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(id) }, select: { id: true } });
+export async function deleteCropSet(db, x, id) {
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
+  const existing = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(id), ...outFilter(scope) }, select: { id: true } });
   if (!existing) return false;
   await db.$transaction(async tx => {
     const presets = await tx.crop_presets.findMany({ where: { api_key: apiKey, set_id: existing.id }, select: { id: true } });
     await tx.crop_source_map.deleteMany({ where: { api_key: apiKey, preset_id: { in: presets.map(p => p.id) } } });
     await tx.crop_presets.deleteMany({ where: { api_key: apiKey, set_id: existing.id } });
     await tx.crop_preset_sets.deleteMany({ where: { api_key: apiKey, id: existing.id } });
-    await tx.crop_config.updateMany({ where: { api_key: apiKey, active_set_id: existing.id }, data: { active_set_id: null } });
+    if (scope.isDefault) await tx.crop_config.updateMany({ where: { api_key: apiKey, active_set_id: existing.id }, data: { active_set_id: null } });
+    else await tx.output_crop_config.updateMany({ where: { output_id: scope.outputId, active_set_id: existing.id }, data: { active_set_id: null } });
   });
   return true;
 }
@@ -264,27 +344,31 @@ function formatPreset(row) {
  * List presets. When `setId` is undefined the project's ACTIVE set is used
  * (null = the implicit default set, i.e. presets with set_id IS NULL).
  */
-export async function listCropPresets(db, apiKey, { setId } = {}) {
-  const effectiveSetId = setId !== undefined ? setId : (await getCropConfig(db, apiKey)).activeSetId;
+export async function listCropPresets(db, x, { setId } = {}) {
+  const scope = await scopeOf(db, x);
+  const effectiveSetId = setId !== undefined ? setId : (await getCropConfig(db, scope)).activeSetId;
   const rows = await db.crop_presets.findMany({
-    where: { api_key: apiKey, set_id: effectiveSetId === null ? null : String(effectiveSetId) },
+    where: { api_key: scope.apiKey, set_id: effectiveSetId === null ? null : String(effectiveSetId), ...outFilter(scope) },
     orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }],
   });
   return rows.map(formatPreset);
 }
 
-export async function getCropPreset(db, apiKey, id) {
-  const row = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id) } });
+export async function getCropPreset(db, x, id) {
+  const scope = await scopeOf(db, x);
+  const row = await db.crop_presets.findFirst({ where: { api_key: scope.apiKey, id: String(id), ...outFilter(scope) } });
   return row ? formatPreset(row) : null;
 }
 
-export async function createCropPreset(db, apiKey, { name, xNorm = 0.5, yNorm = 0, setId = null, sortOrder = 0 } = {}) {
+export async function createCropPreset(db, x, { name, xNorm = 0.5, yNorm = 0, setId = null, sortOrder = 0 } = {}) {
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
   if (!name || typeof name !== 'string' || !name.trim()) return { ok: false, error: 'name is required' };
   if (!Number.isFinite(Number(xNorm)) || !Number.isFinite(Number(yNorm))) {
     return { ok: false, error: 'xNorm and yNorm must be numbers' };
   }
   if (setId !== null) {
-    const set = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(setId) }, select: { id: true } });
+    const set = await db.crop_preset_sets.findFirst({ where: { api_key: apiKey, id: String(setId), ...outFilter(scope) }, select: { id: true } });
     if (!set) return { ok: false, error: 'setId does not reference one of this project\'s sets' };
   }
   const id = randomUUID();
@@ -292,18 +376,19 @@ export async function createCropPreset(db, apiKey, { name, xNorm = 0.5, yNorm = 
     await db.crop_presets.create({
       data: {
         id, api_key: apiKey, set_id: setId, name: name.trim(), x_norm: clamp01(xNorm), y_norm: clamp01(yNorm),
-        sort_order: sortOrder, created_at: db.$util.sqlNow(),
+        sort_order: sortOrder, created_at: db.$util.sqlNow(), output_id: scope.outputId,
       },
     });
   } catch (err) {
     if (isUniqueViolation(err)) return { ok: false, error: `A preset named "${name.trim()}" already exists in this set` };
     return { ok: false, error: err.message };
   }
-  return { ok: true, preset: await getCropPreset(db, apiKey, id) };
+  return { ok: true, preset: await getCropPreset(db, scope, id) };
 }
 
-export async function updateCropPreset(db, apiKey, id, { name, xNorm, yNorm, sortOrder } = {}) {
-  const existing = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id) } });
+export async function updateCropPreset(db, x, id, { name, xNorm, yNorm, sortOrder } = {}) {
+  const scope = await scopeOf(db, x);
+  const existing = await db.crop_presets.findFirst({ where: { api_key: scope.apiKey, id: String(id), ...outFilter(scope) } });
   if (!existing) return { ok: false, error: 'Preset not found', status: 404 };
   if ((xNorm !== undefined && !Number.isFinite(Number(xNorm))) || (yNorm !== undefined && !Number.isFinite(Number(yNorm)))) {
     return { ok: false, error: 'xNorm and yNorm must be numbers' };
@@ -322,12 +407,14 @@ export async function updateCropPreset(db, apiKey, id, { name, xNorm, yNorm, sor
     if (isUniqueViolation(err)) return { ok: false, error: `A preset named "${name}" already exists in this set` };
     return { ok: false, error: err.message };
   }
-  return { ok: true, preset: await getCropPreset(db, apiKey, existing.id) };
+  return { ok: true, preset: await getCropPreset(db, scope, existing.id) };
 }
 
 /** Deletes a preset and its source-map rows (manual cascade). */
-export async function deleteCropPreset(db, apiKey, id) {
-  const existing = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id) }, select: { id: true } });
+export async function deleteCropPreset(db, x, id) {
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
+  const existing = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(id), ...outFilter(scope) }, select: { id: true } });
   if (!existing) return false;
   await db.$transaction(async tx => {
     await tx.crop_source_map.deleteMany({ where: { api_key: apiKey, preset_id: existing.id } });
@@ -350,26 +437,30 @@ function formatMapRow(row) {
 }
 
 /** Raw rows of crop_source_map with BigInt integers turned into numbers. */
-async function sourceMapRows(db, apiKey, id = null) {
+async function sourceMapRows(db, scope, id = null) {
+  const apiKey = scope.apiKey;
   const rows = id === null
     ? await db.$queryRaw`SELECT * FROM crop_source_map WHERE api_key = ${apiKey}`
     : await db.$queryRaw`SELECT * FROM crop_source_map WHERE api_key = ${apiKey} AND id = ${id}`;
-  return rows.map(r => ({ ...r, mixer_input: db.$util.num(r.mixer_input) }));
+  return rows.filter(r => inScope(scope, r.output_id ?? null)).map(r => ({ ...r, mixer_input: db.$util.num(r.mixer_input) }));
 }
 
 /** Insert one crop_source_map row. camera_preset is TEXT; the caller passes it already normalised. */
-async function insertSourceMapRow(db, { id, apiKey, mixerId, mixerInput, cameraId, cameraPreset, presetId }) {
-  await db.$executeRaw`INSERT INTO crop_source_map (id, api_key, mixer_id, mixer_input, camera_id, camera_preset, preset_id)
-    VALUES (${id}, ${apiKey}, ${mixerId ?? null}, ${mixerInput ?? null}, ${cameraId ?? null}, ${cameraPreset ?? null}, ${presetId})`;
+async function insertSourceMapRow(db, { id, apiKey, mixerId, mixerInput, cameraId, cameraPreset, presetId, outputId = null }) {
+  await db.$executeRaw`INSERT INTO crop_source_map (id, api_key, mixer_id, mixer_input, camera_id, camera_preset, preset_id, output_id)
+    VALUES (${id}, ${apiKey}, ${mixerId ?? null}, ${mixerInput ?? null}, ${cameraId ?? null}, ${cameraPreset ?? null}, ${presetId}, ${outputId})`;
 }
 
-export async function listCropSourceMap(db, apiKey) {
-  return (await sourceMapRows(db, apiKey)).map(formatMapRow);
+export async function listCropSourceMap(db, x) {
+  const scope = await scopeOf(db, x);
+  return (await sourceMapRows(db, scope)).map(formatMapRow);
 }
 
-export async function createCropSourceMapEntry(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null, presetId } = {}) {
+export async function createCropSourceMapEntry(db, x, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null, presetId } = {}) {
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
   if (!presetId) return { ok: false, error: 'presetId is required' };
-  const preset = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(presetId) }, select: { id: true } });
+  const preset = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: String(presetId), ...outFilter(scope) }, select: { id: true } });
   if (!preset) return { ok: false, error: 'presetId does not reference one of this project\'s presets' };
 
   const normMixerInput   = toIntOrNull(mixerInput);
@@ -386,17 +477,18 @@ export async function createCropSourceMapEntry(db, apiKey, { mixerId = null, mix
   const id = randomUUID();
   try {
     await insertSourceMapRow(db, {
-      id, apiKey, mixerId: normMixerId, mixerInput: normMixerInput, cameraId: normCameraId, cameraPreset: normCameraPreset, presetId: preset.id,
+      id, apiKey, mixerId: normMixerId, mixerInput: normMixerInput, cameraId: normCameraId, cameraPreset: normCameraPreset, presetId: preset.id, outputId: scope.outputId,
     });
   } catch (err) {
     return { ok: false, error: err.message };
   }
-  const [row] = await sourceMapRows(db, apiKey, id);
+  const [row] = await sourceMapRows(db, scope, id);
   return { ok: true, entry: formatMapRow(row) };
 }
 
-export async function deleteCropSourceMapEntry(db, apiKey, id) {
-  return (await db.crop_source_map.deleteMany({ where: { api_key: apiKey, id: String(id) } })).count > 0;
+export async function deleteCropSourceMapEntry(db, x, id) {
+  const scope = await scopeOf(db, x);
+  return (await db.crop_source_map.deleteMany({ where: { api_key: scope.apiKey, id: String(id), ...outFilter(scope) } })).count > 0;
 }
 
 /**
@@ -409,7 +501,7 @@ export async function deleteCropSourceMapEntry(db, apiKey, id) {
  * @param {object} src { mixerId?, mixerInput?, cameraId?, cameraPreset? }
  * @returns {Promise<object|null>} the winning preset (formatPreset shape) or null
  */
-export async function resolveCropPresetForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
+export async function resolveCropPresetForSource(db, x, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
   // Normalise caller-provided values (JSON bodies often carry numbers as
   // strings) so the strict comparisons below match the normalised DB values.
   mixerInput   = toIntOrNull(mixerInput);
@@ -418,8 +510,10 @@ export async function resolveCropPresetForSource(db, apiKey, { mixerId = null, m
   mixerId  = mixerId  != null && mixerId  !== '' ? String(mixerId)  : null;
   cameraId = cameraId != null && cameraId !== '' ? String(cameraId) : null;
 
-  const activeSetId = (await getCropConfig(db, apiKey)).activeSetId;
-  const rows = await sourceMapRows(db, apiKey);
+  const scope = await scopeOf(db, x);
+  const apiKey = scope.apiKey;
+  const activeSetId = (await getCropConfig(db, scope)).activeSetId;
+  const rows = await sourceMapRows(db, scope);
 
   let best = null;
   let bestScore = -1;
@@ -449,7 +543,7 @@ export async function resolveCropPresetForSource(db, apiKey, { mixerId = null, m
     }
     if (score === 0) continue;
 
-    const preset = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: row.preset_id } });
+    const preset = await db.crop_presets.findFirst({ where: { api_key: apiKey, id: row.preset_id, ...outFilter(scope) } });
     if (!preset) continue;
     if ((preset.set_id ?? null) !== activeSetId) continue;
 

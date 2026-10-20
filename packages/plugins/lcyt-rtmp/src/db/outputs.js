@@ -178,6 +178,7 @@ export async function deleteOutput(db, apiKey, id) {
   const slot = await db.rtmp_relays.findFirst({ where: { api_key: apiKey, source_output_id: id }, select: { slot: true } });
   if (slot) return { ok: false, error: `relay slot ${slot.slot} sends this output`, status: 409 };
   await db.output_crop_config.deleteMany({ where: { output_id: id } });
+  await db.crop_config.updateMany({ where: { api_key: apiKey, output_id: id }, data: { output_id: null } });
   for (const table of ['crop_preset_sets', 'crop_presets', 'crop_source_map']) {
     await db[table].updateMany({ where: { api_key: apiKey, output_id: id }, data: { output_id: null } });
   }
@@ -206,8 +207,9 @@ async function projectHasCrop(db, apiKey) {
  * Create one project's default outputs from what it already has. Idempotent: a project that has any output is left alone.
  *  - "Program": source = the primary feed, `dsk` = the legacy composite viewport (if any). Only for a project with a primary feed.
  *  - "Vertical": source = Program, crop on when the old crop is enabled; only for a project that has crop settings.
- *    The legacy crop_config row is copied to output_crop_config, and the project's crop sets, presets and source map are
- *    tagged with the Vertical output id in place (no copy, so the (api_key, name) unique indexes cannot clash).
+ *    crop_config.output_id is set to Vertical (the project's default crop keeps its config there), and the project's crop
+ *    sets, presets and source map are tagged with the Vertical output id in place (no copy, so the (api_key, name) unique
+ *    indexes cannot clash).
  *  - relay slots with source_view 'program' / 'crop' get source_output_id Program / Vertical. source_view stays (rollback).
  * @returns {Promise<{ program: string|null, vertical: string|null }>} the ids created (null = not created)
  */
@@ -239,10 +241,8 @@ export async function ensureProjectOutputs(db, apiKey) {
         crop_enabled: cfg?.enabled === 1 ? 1 : 0, sort_order: 1, created_at: db.$util.sqlNow(),
       },
     });
-    if (cfg) {
-      const { api_key: _ignored, ...fields } = cfg;
-      await db.output_crop_config.create({ data: { output_id: verticalId, ...fields } });
-    }
+    // The legacy config stays in crop_config (the default crop) and now says which output it belongs to.
+    if (cfg) await db.crop_config.updateMany({ where: { api_key: apiKey }, data: { output_id: verticalId } });
     for (const table of ['crop_preset_sets', 'crop_presets', 'crop_source_map']) {
       await db[table].updateMany({ where: { api_key: apiKey, output_id: null }, data: { output_id: verticalId } });
     }
@@ -257,6 +257,7 @@ export async function ensureProjectOutputs(db, apiKey) {
  * Run at startup after the primary-feed backfill. @returns {Promise<{ projects: number, outputs: number }>}
  */
 export async function backfillOutputs(db) {
+  await repairCropOutputLinks(db).catch((err) => logger.warn(`[outputs] crop link repair failed: ${err.message}`));
   const keys = await db.api_keys.findMany({ where: { primary_feed_id: { not: null } }, select: { key: true } });
   let projects = 0;
   let outputs = 0;
@@ -270,4 +271,24 @@ export async function backfillOutputs(db) {
     }
   }
   return { projects, outputs };
+}
+
+/**
+ * Projects backfilled before crop_config.output_id existed: point their legacy crop at the "Vertical" output the backfill
+ * made for it and drop the unused per-output copy of the config. Idempotent.
+ */
+export async function repairCropOutputLinks(db) {
+  const rows = await db.crop_config.findMany({ where: { output_id: null }, select: { api_key: true } });
+  for (const { api_key } of rows) {
+    const vertical = await db.outputs.findFirst({
+      where: { owner_api_key: api_key, name: VERTICAL_OUTPUT_NAME, source_type: 'output' }, select: { id: true },
+    });
+    if (!vertical) continue;
+    const tagged = await db.crop_presets.findFirst({ where: { api_key, output_id: vertical.id }, select: { id: true } })
+      ?? await db.crop_preset_sets.findFirst({ where: { api_key, output_id: vertical.id }, select: { id: true } })
+      ?? await db.output_crop_config.findUnique({ where: { output_id: vertical.id }, select: { output_id: true } });
+    if (!tagged) continue;
+    await db.crop_config.updateMany({ where: { api_key, output_id: null }, data: { output_id: vertical.id } });
+    await db.output_crop_config.deleteMany({ where: { output_id: vertical.id } });
+  }
 }

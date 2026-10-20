@@ -27,7 +27,7 @@
 import { spawn } from 'node:child_process';
 import { createFfmpegRunner } from 'lcyt-compute/ffmpeg';
 import logger from 'lcyt/logger';
-import { getCropConfig, resolveCropPresetForSource, resolveCameraIdForMixerInput } from './db/crop.js';
+import { getCropConfig, resolveCropPresetForSource, resolveCameraIdForMixerInput, listCropScopes, cropSessionKey } from './db/crop.js';
 
 const DEFAULT_MEDIAMTX_RTSP = (process.env.MEDIAMTX_RTSP_BASE_URL || 'rtsp://127.0.0.1:8554').replace(/\/$/, '');
 const DEFAULT_MEDIAMTX_RTMP = (process.env.MEDIAMTX_RTMP_BASE_URL || 'rtmp://127.0.0.1:1935').replace(/\/$/, '');
@@ -206,11 +206,14 @@ export class CropManager {
   /**
    * Start (or restart) the crop renderer for a key.
    *
-   * @param {string} apiKey
-   * @param {object} config   crop_config shape from db/crop.js (getCropConfig)
-   * @param {{ position?: { xNorm: number, yNorm: number }, activePresetId?: string|null }} [opts]
+   * @param {string} apiKey   session key: the project's api key (its default crop) or an output id
+   * @param {object} config   crop config shape from db/crop.js (getCropConfig)
+   * @param {{ position?: { xNorm: number, yNorm: number }, activePresetId?: string|null,
+   *           sourcePath?: string, outputPath?: string, apiKey?: string }} [opts]
+   *   sourcePath: MediaMTX path read (default: the session key); outputPath: path written (default `{key}-crop`);
+   *   apiKey: the project, for logs and runner attribution (default: the session key). A restart keeps the previous session's values.
    */
-  async start(apiKey, config, { position, activePresetId = null } = {}) {
+  async start(apiKey, config, { position, activePresetId = null, sourcePath, outputPath, apiKey: projectKey } = {}) {
     if (this._ffmpegCaps?.available === false) {
       throw new Error('ffmpeg is not installed or not available in PATH. Vertical crop requires ffmpeg.');
     }
@@ -220,6 +223,9 @@ export class CropManager {
       throw new Error('ffmpeg lacks the libx264 encoder. Vertical crop requires an ffmpeg build with libx264.');
     }
     const previous = this._sessions.get(apiKey);
+    const srcPath = sourcePath ?? previous?.sourcePath ?? apiKey;
+    const dstPath = outputPath ?? previous?.outputPath ?? CropManager.cropPathName(apiKey);
+    const project = projectKey ?? previous?.apiKey ?? apiKey;
     // Carry the last position across restarts unless explicitly overridden.
     const pos = {
       xNorm: clampNorm(position?.xNorm ?? previous?.position.xNorm ?? 0.5),
@@ -232,7 +238,7 @@ export class CropManager {
     await this.stop(apiKey, { keepFollowState: true });
 
     const rtspBase = ((this._settings ? this._settings.get('mediamtx.rtsp_base_url') : DEFAULT_MEDIAMTX_RTSP)).replace(/\/$/, '');
-    const srcUrl = `${rtspBase}/${encodeURIComponent(apiKey)}`;
+    const srcUrl = `${rtspBase}/${encodeURIComponent(srcPath)}`;
     // Reuse the previous session's successfully-probed resolution on restarts
     // (restart-mode repositioning would otherwise pay the probe on every move).
     let inW, inH, probed;
@@ -267,7 +273,7 @@ export class CropManager {
     args.push('-c:a', 'copy');
     // Bare path — MediaMTX uses the full URL path as the path name.
     const rtmpBase = ((this._settings ? this._settings.get('mediamtx.rtmp_base_url') : DEFAULT_MEDIAMTX_RTMP)).replace(/\/$/, '');
-    args.push('-f', 'flv', `${rtmpBase}/${CropManager.cropPathName(apiKey)}`);
+    args.push('-f', 'flv', `${rtmpBase}/${dstPath}`);
 
     const tag = `[crop:${apiKey.slice(0, 8)}]`;
     const runner = createFfmpegRunner({
@@ -278,12 +284,15 @@ export class CropManager {
       // Open stdin (and no -nostdin in args): ffmpeg reads `C<target> <time> <cmd> <arg>` lines from it.
       stdin: 'pipe',
       purpose: 'crop',
-      apiKey,
+      apiKey: project,
     });
     const handle = await runner.start();
 
     const session = {
       handle,
+      sourcePath: srcPath,
+      outputPath: dstPath,
+      apiKey: project,
       geometry,
       config,
       position: pos,
@@ -366,7 +375,7 @@ export class CropManager {
     }
 
     // Restart fallback — MediaMTX keeps the path alive across the swap.
-    await this.start(apiKey, session.config, { position: target, activePresetId: session.activePresetId });
+    await this.start(apiKey, session.config, { position: target, activePresetId: session.activePresetId, sourcePath: session.sourcePath, outputPath: session.outputPath, apiKey: session.apiKey });
     return { ok: true, mode: 'restart', xNorm: target.xNorm, yNorm: target.yNorm };
   }
 
@@ -391,9 +400,14 @@ export class CropManager {
    *   follow_program is off, nothing is running, or no mapping resolved.
    */
   async applyForSource(db, apiKey, { mixerId = null, mixerInput = null, cameraId = null, cameraPreset = null } = {}) {
-    const config = await getCropConfig(db, apiKey);
-    if (!config.followProgram) return null;
-    if (!this.isRunning(apiKey)) return null;
+    // Every crop of the project (its default crop first, then its other outputs) that follows the program and is running.
+    const eligible = [];
+    for (const entry of await listCropScopes(db, apiKey)) {
+      if (!entry.config.followProgram) continue;
+      const key = cropSessionKey(entry.scope);
+      if (this.isRunning(key)) eligible.push({ ...entry, key });
+    }
+    if (!eligible.length) return null;
 
     let state = this._followState.get(apiKey);
     if (!state) {
@@ -423,17 +437,21 @@ export class CropManager {
       return null;
     }
 
-    const preset = await resolveCropPresetForSource(db, apiKey, {
-      mixerId, mixerInput: state.mixerInput, cameraId: resolvedCameraId, cameraPreset: resolvedCameraPreset,
-    });
-    if (!preset) return null;
-
-    return this.applyPosition(apiKey, {
-      xNorm: preset.xNorm,
-      yNorm: preset.yNorm,
-      transitionMs: config.transitionMs,
-      activePresetId: preset.id,
-    });
+    let first = null;
+    for (const { scope, config, key } of eligible) {
+      const preset = await resolveCropPresetForSource(db, scope, {
+        mixerId, mixerInput: state.mixerInput, cameraId: resolvedCameraId, cameraPreset: resolvedCameraPreset,
+      });
+      if (!preset) continue;
+      const result = await this.applyPosition(key, {
+        xNorm: preset.xNorm,
+        yNorm: preset.yNorm,
+        transitionMs: config.transitionMs,
+        activePresetId: preset.id,
+      });
+      first ??= result;
+    }
+    return first;
   }
 
   async stop(apiKey, { keepFollowState = false } = {}) {

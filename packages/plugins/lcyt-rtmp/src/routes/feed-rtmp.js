@@ -30,6 +30,8 @@
 import express, { Router } from 'express';
 import logger from 'lcyt/logger';
 import { getApiKeysReferencingFeed, isRelayActive, getRelays, getKey } from '../db.js';
+import { readThrough } from '../ownership.js';
+import { startCropsForFeed, stopCropsForFeed } from '../crop-outputs.js';
 
 // feed_key validation: same shape as the main relay keys / DSK app names.
 const FEED_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
@@ -38,11 +40,11 @@ const FEED_KEY_RE = /^[a-zA-Z0-9_-]{1,}$/;
  * Resolve an incoming nginx-rtmp stream `name` to a feed: a prod_feeds row with transport 'rtmp'.
  * @param {object} db  Prisma client
  * @param {string} key
- * @returns {Promise<{ key: string, feedId: string }|null>}
+ * @returns {Promise<{ key: string, feedId: string, ownerApiKey: string }|null>}
  */
 async function resolveFeed(db, key) {
-  const feed = await db.prod_feeds.findUnique({ where: { feed_key: key }, select: { id: true, feed_key: true, transport: true } });
-  if (feed && feed.transport === 'rtmp') return { key: feed.feed_key, feedId: feed.id };
+  const feed = await db.prod_feeds.findUnique({ where: { feed_key: key }, select: { id: true, feed_key: true, transport: true, owner_api_key: true } });
+  if (feed && feed.transport === 'rtmp') return { key: feed.feed_key, feedId: feed.id, ownerApiKey: feed.owner_api_key };
   return null;
 }
 
@@ -51,9 +53,10 @@ async function resolveFeed(db, key) {
  *
  * @param {object} db  Prisma client
  * @param {import('../rtmp-manager.js').RtmpRelayManager} relayManager
+ * @param {import('../crop-manager.js').CropManager} [cropManager]  starts/stops the crops whose source is this feed
  * @returns {Router}
  */
-export function createFeedRtmpRouter(db, relayManager) {
+export function createFeedRtmpRouter(db, relayManager, cropManager = null) {
   const router = Router();
 
   // nginx-rtmp callbacks are application/x-www-form-urlencoded
@@ -100,12 +103,15 @@ export function createFeedRtmpRouter(db, relayManager) {
         }
       }
 
+      if (cropManager && feed.ownerApiKey) await startCropsForFeed(db, cropManager, readThrough, feed.ownerApiKey, feed.feedId);
+
       return res.status(200).send('ok');
     }
 
     if (call === 'publish_done') {
       logger.info(`[feed-rtmp] on_publish_done: feed '${name}' (feed ${feed.feedId.slice(0, 8)}…)`);
       relayManager.markFeedNotPublishing(feed.key);
+      if (cropManager && feed.ownerApiKey) await stopCropsForFeed(db, cropManager, readThrough, feed.ownerApiKey, feed.feedId);
       return res.status(200).send('ok');
     }
 

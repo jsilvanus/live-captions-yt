@@ -896,6 +896,8 @@ export function initSqliteSchema(dbPath) {
   addColumn('crop_preset_sets', 'output_id', 'output_id TEXT');
   addColumn('crop_presets', 'output_id', 'output_id TEXT');
   addColumn('crop_source_map', 'output_id', 'output_id TEXT');
+  // The output the project's legacy crop belongs to (its default crop output); NULL = none.
+  addColumn('crop_config', 'output_id', 'output_id TEXT');
 
   return db;
 }

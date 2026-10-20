@@ -138,8 +138,9 @@ describe('ensureProjectOutputs / backfillOutputs', () => {
     assert.ok(r.program && r.vertical);
     const vertical = await getOutput(db, KEY, r.vertical);
     assert.deepEqual([vertical.name, vertical.sourceType, vertical.sourceId, vertical.cropEnabled], ['Vertical', 'output', r.program, true]);
-    const cfg = await db.prepare('SELECT * FROM output_crop_config WHERE output_id = ?').get(r.vertical);
-    assert.deepEqual([cfg.enabled, cfg.aspect_w, cfg.aspect_h, cfg.follow_program], [1, 4, 5, 0]);
+    // the legacy crop row becomes Vertical's own config (no copy)
+    const cfg = await db.prepare('SELECT * FROM crop_config WHERE api_key = ?').get(KEY);
+    assert.deepEqual([cfg.output_id, cfg.enabled, cfg.aspect_w, cfg.aspect_h, cfg.follow_program], [r.vertical, 1, 4, 5, 0]);
     for (const [table, id] of [['crop_preset_sets', 'set1'], ['crop_presets', 'p1'], ['crop_source_map', 'm1']]) {
       assert.equal((await db.prepare(`SELECT output_id FROM ${table} WHERE id = ?`).get(id)).output_id, r.vertical);
     }

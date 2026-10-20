@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import express from 'express';
-import { isRelayAllowed, isRelayActive, getRelays, getKey, resolveApiKeyFromIngestStreamKey, getCropConfig } from '../db.js';
+import { isRelayAllowed, isRelayActive, getRelays, getKey, resolveApiKeyFromIngestStreamKey } from '../db.js';
+import { startCropsForFeed, stopCropsForFeed } from '../crop-outputs.js';
 import logger from 'lcyt/logger';
 import { readThrough } from '../ownership.js';
 
@@ -91,18 +92,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
 
       // Vertical-crop renderer: start when the project has crop enabled
       // (best-effort, parallel to the relay fan-out above).
-      if (cropManager) {
-        try {
-          const cropConfig = await getCropConfig(db, apiKey);
-          if (cropConfig.enabled && !(await readThrough(cropManager, 'isRunning', apiKey))) {
-            cropManager.start(apiKey, cropConfig).catch(err => {
-              logger.error(`[rtmp] Crop renderer start failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
-            });
-          }
-        } catch (err) {
-          logger.error(`[rtmp] Crop config lookup failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
-        }
-      }
+      if (cropManager) await startCropsForFeed(db, cropManager, readThrough, apiKey);
 
       // Music detection: auto-start if enabled (best-effort, parallel to others).
       if (musicManager && (settings ? settings.get('music.detection_active') : process.env.MUSIC_DETECTION_ACTIVE === '1')) {
@@ -138,11 +128,7 @@ export function createRtmpRouter(db, relayManager, cropManager = null, musicMana
       } catch (err) {
         logger.error(`[rtmp] Failed to stop relay for ${apiKey.slice(0, 8)}…: ${err.message}`);
       }
-      if (cropManager && (await readThrough(cropManager, 'isRunning', apiKey))) {
-        cropManager.stop(apiKey).catch(err => {
-          logger.error(`[rtmp] Crop renderer stop failed for ${apiKey.slice(0, 8)}…: ${err.message}`);
-        });
-      }
+      if (cropManager) await stopCropsForFeed(db, cropManager, readThrough, apiKey);
       // Music detection: stop when stream ends (best-effort).
       if (musicManager?.isRunning(apiKey)) {
         musicManager.stop(apiKey).catch(err => {

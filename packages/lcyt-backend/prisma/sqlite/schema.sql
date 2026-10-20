@@ -387,7 +387,8 @@ CREATE TABLE IF NOT EXISTS "crop_config" (
     "transition_ms" INTEGER NOT NULL DEFAULT 0,
     "active_set_id" TEXT,
     "updated_at" TEXT NOT NULL DEFAULT (datetime('now')),
-    "auto_follow" INTEGER NOT NULL DEFAULT 0
+    "auto_follow" INTEGER NOT NULL DEFAULT 0,
+    "output_id" TEXT
 );
 
 -- CreateTable
