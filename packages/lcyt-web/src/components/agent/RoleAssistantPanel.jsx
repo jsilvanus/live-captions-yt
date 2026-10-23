@@ -32,7 +32,7 @@ export function RoleAssistantPanel({ roleCode, title, subtitle, showHeader = tru
   const dispatch = useGuidedActionDispatcher();
 
   function agentFetch(path, body) {
-    const token = session?.getSessionToken?.();
+    const token = setupToken(session);
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     return fetch(`${backendUrl}/api/v1${path}`, { method: 'POST', headers, body: JSON.stringify(body) });
