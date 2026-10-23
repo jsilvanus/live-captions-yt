@@ -4,7 +4,7 @@ import { IngestStreamsChip } from '../../src/components/IngestStreamsChip.jsx';
 import { SessionContext } from '../../src/contexts/SessionContext.jsx';
 import { LangProvider } from '../../src/contexts/LangContext.jsx';
 
-const session = { connected: true, backendUrl: 'http://api.test', getSessionToken: () => 'tok' };
+const session = { connected: true, backendUrl: 'http://api.test', projectAccessToken: 'project-token', getSessionToken: () => 'session-token' };
 
 function renderChip() {
   return render(
@@ -69,6 +69,7 @@ describe('IngestStreamsChip', () => {
     fireEvent.click(screen.getByText('Discover streams'));
     fireEvent.click(await screen.findByText('Add as feed'));
     await waitFor(() => expect(created).toHaveBeenCalled());
+    expect(created.mock.calls[0][0].headers.Authorization).toBe('Bearer project-token');
     expect(JSON.parse(created.mock.calls[0][0].body)).toEqual({ name: 'webcam', feedKey: 'webcam', transport: 'rtmp', kind: 'camera' });
     await waitFor(() => expect(screen.queryByText('Add as feed')).toBeNull());
   });
