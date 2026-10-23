@@ -3,6 +3,7 @@ import { SessionContext } from '../contexts/SessionContext';
 import { Dialog } from './Dialog.jsx';
 import { SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { TargetRow } from './panels/TargetRow.jsx';
+import { setupToken } from '../lib/setupToken.js';
 
 const EMPTY_NEW = { enabled: true, type: 'youtube', streamKey: '', url: '', viewerKey: '', noBatch: false };
 
@@ -35,9 +36,8 @@ function isValidTarget(t) {
  * inline remove, no `format` field — that column doesn't exist server-side
  * yet) without changing `TargetsPanel`'s own default behavior.
  *
- * Session Bearer auth (`getSessionToken()`), matching `/stt/config`'s
- * convention — *not* the `X-Admin-Key`/apiKey-in-URL pattern the device
- * managers (Cameras/Mixers/...) use, since `/targets` is session-scoped.
+ * Uses the project-access token for role-gated target writes; the live-session
+ * token is only a fallback for older/API-key-only connections.
  */
 export const CaptionTargetsManager = forwardRef(function CaptionTargetsManager({ embedded = false }, ref) {
   const session = useContext(SessionContext);
@@ -52,7 +52,7 @@ export const CaptionTargetsManager = forwardRef(function CaptionTargetsManager({
   const [confirmDelete, setConfirmDelete] = useState(null);
 
   const authedFetch = useCallback((path, opts = {}) => {
-    const token = session?.getSessionToken?.();
+    const token = setupToken(session);
     return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
