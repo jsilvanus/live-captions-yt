@@ -373,7 +373,7 @@ export function DskEditorPage() {
   // ── AI Assist helpers ─────────────────────────────────────────────────
   // Agent routes require session Bearer JWT auth (not X-API-Key).
   function agentFetch(path, body) {
-    const token = session?.getSessionToken?.();
+    const token = projectToken || session?.getSessionToken?.();
     const headers = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
     return fetch(`${serverUrl}/api/v1${path}`, { method: 'POST', headers, body: JSON.stringify(body) });

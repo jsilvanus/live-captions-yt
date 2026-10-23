@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext';
+import { setupToken } from '../../lib/setupToken.js';
 import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { ApiConnectorsIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
@@ -12,13 +13,13 @@ const inputStyle = { padding: '0.4rem 0.5rem', borderRadius: 6, border: '1px sol
 const labelStyle = { fontSize: '0.8em', fontWeight: 600, opacity: 0.8, display: 'block', marginBottom: 2 };
 const fieldStyle = { marginBottom: '0.6rem' };
 
-function useApi({ backendUrl, getSessionToken } = {}) {
+function useApi({ backendUrl, getSessionToken, projectAccessToken } = {}) {
   // Depend on the specific fields read, not the whole session object — a
   // fresh useSession() return value on every render would otherwise give
   // this a new identity each time too, re-triggering every effect that
   // depends on it (re-fetching connectors/requests/mappings on every render).
   const call = useCallback(async (path, { method = 'GET', body } = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken({ projectAccessToken, getSessionToken });
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const res = await fetch(`${backendUrl}/api/v1${path}`, {
@@ -29,7 +30,7 @@ function useApi({ backendUrl, getSessionToken } = {}) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, projectAccessToken]);
   return call;
 }
 
@@ -357,7 +358,7 @@ export function ConnectorsSection() {
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
   const getSessionToken = session?.getSessionToken;
-  const api = useApi({ backendUrl, getSessionToken });
+  const api = useApi({ backendUrl, getSessionToken, projectAccessToken: session?.projectAccessToken });
   const [connectors, setConnectors] = useState([]);
   const [addOpen, setAddOpen] = useState(false);
   const [editingSlug, setEditingSlug] = useState(null);

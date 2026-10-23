@@ -45,6 +45,7 @@ export function DevicesSection() {
     connected: session?.connected,
     backendUrl: session?.backendUrl,
     getSessionToken: session?.getSessionToken,
+    projectAccessToken: session?.projectAccessToken,
   });
 
   // Setup Assistant (plan_ai_roles_framework.md): opens the matching manager's own dialog pre-filled.

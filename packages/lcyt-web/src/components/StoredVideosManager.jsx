@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
+import { setupToken } from '../lib/setupToken.js';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { Dialog } from './Dialog';
 
@@ -129,7 +130,7 @@ export function StoredVideosManager() {
   const session = useSessionContext();
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
-  const token = session?.getSessionToken?.() ?? null;
+  const token = setupToken(session);
 
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(false);
