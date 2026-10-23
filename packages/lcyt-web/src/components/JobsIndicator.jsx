@@ -26,7 +26,7 @@ export default function JobsIndicator() {
   const lang = useLangOptional()?.lang ?? 'en';
   const t = useMemo(() => makePanelT(getMessages(lang)), [lang]);
   const backendUrl = (session.backendUrl || '').replace(/\/$/, '');
-  const getToken = () => setupToken(session);
+  const getToken = useCallback(() => setupToken(session), [session.projectAccessToken, session.getSessionToken]);
 
   const get = useCallback(async (path) => {
     const token = getToken?.();
