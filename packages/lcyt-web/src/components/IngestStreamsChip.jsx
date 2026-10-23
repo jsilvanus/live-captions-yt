@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
+import { setupToken } from '../lib/setupToken.js';
 import styles from './IngestStreamsChip.module.css';
 
 const POLL_MS = 10_000;
@@ -30,7 +31,6 @@ export function IngestStreamsChip() {
   const session = useSessionContext();
   const { t } = useLang();
   const backendUrl = (session.backendUrl || '').replace(/\/$/, '');
-  const getToken = session.getSessionToken;
   const [state, setState] = useState(null);
   const [open, setOpen] = useState(false);
   const [found, setFound] = useState(null);
@@ -39,7 +39,7 @@ export function IngestStreamsChip() {
   const wrapRef = useRef(null);
 
   const call = useCallback(async (path, init = {}) => {
-    const token = getToken?.();
+    const token = setupToken(session);
     if (!backendUrl || !token) throw new Error('not connected');
     const res = await fetch(`${backendUrl}/api/v1${path}`, {
       ...init,
@@ -47,7 +47,7 @@ export function IngestStreamsChip() {
     });
     if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
     return res.json();
-  }, [backendUrl, getToken]);
+  }, [backendUrl, session?.getSessionToken, session?.projectAccessToken]);
 
   const refresh = useCallback(async () => {
     try {
