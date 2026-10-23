@@ -68,9 +68,10 @@ export function usePlatforms() {
   // identity every time and re-trigger every effect depending on it.
   const backendUrl = userBackendUrl || session?.backendUrl || '';
   const getSessionToken = session?.getSessionToken;
+  const projectAccessToken = session?.projectAccessToken;
 
   const call = useCallback(async (path, { method = 'GET', body } = {}) => {
-    const token = getSessionToken?.() || userToken;
+    const token = projectAccessToken || getSessionToken?.() || userToken;
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const res = await fetch(`${backendUrl}/api/v1${path}`, {
@@ -88,7 +89,7 @@ export function usePlatforms() {
       });
     }
     return data;
-  }, [backendUrl, getSessionToken, userToken]);
+  }, [backendUrl, getSessionToken, projectAccessToken, userToken]);
 
   return useMemo(() => ({
     call,
