@@ -26,7 +26,7 @@ function readCreds(session) {
   const backendUrl = (session?.backendUrl || params.get('server') ||
     localStorage.getItem(KEYS.session.backendUrl) || '').replace(/\/$/, '');
   const apiKey = session?.apiKey || params.get('apikey') || '';
-  const token = session?.getSessionToken?.() || params.get('token') ||
+  const token = session?.projectAccessToken || params.get('token') || session?.getSessionToken?.() ||
     localStorage.getItem(KEYS.session.token) || '';
   const streamKey = session?.streamKey || '';
   return { backendUrl, apiKey, token, streamKey };
