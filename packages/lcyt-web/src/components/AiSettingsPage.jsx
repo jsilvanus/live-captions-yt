@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../contexts/SessionContext';
 import { useLang } from '../contexts/LangContext';
 import { useProjectRequired } from '../hooks/useProjectRequired';
+import { setupToken } from '../lib/setupToken.js';
 
 const PROVIDERS = [
   { value: 'none',   label: 'Disabled' },
@@ -23,7 +24,7 @@ export function AiSettingsPage() {
   const fetchConfig = useCallback(async () => {
     if (!session.connected) return;
     try {
-      const token = session.getSessionToken?.();
+      const token = setupToken(session);
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(`${session.backendUrl}/api/v1/ai/config`, { headers });
       if (res.ok) {
@@ -31,7 +32,7 @@ export function AiSettingsPage() {
         setConfig(data.config);
       }
     } catch { /* ignore */ }
-  }, [session.connected, session.backendUrl, session.getSessionToken]);
+  }, [session.connected, session.backendUrl, session.getSessionToken, session.projectAccessToken]);
 
   const fetchStatus = useCallback(async () => {
     if (!session.backendUrl) return;
@@ -52,7 +53,7 @@ export function AiSettingsPage() {
     setSaving(true);
     setStatus('');
     try {
-      const token = session.getSessionToken?.();
+      const token = setupToken(session);
       const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
       const res = await fetch(`${session.backendUrl}/api/v1/ai/config`, {
         method: 'PUT',
