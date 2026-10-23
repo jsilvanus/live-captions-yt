@@ -2,11 +2,12 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   FEEDS_CHANGED_EVENT, notifyFeedsChanged, linkBody, UNLINK_BODY, buildDeviceNames,
 } from '../../lib/deviceFeeds.js';
+import { setupToken } from '../../lib/setupToken.js';
 
 /** Authenticated fetch against the backend's /api/v1 (same token as the Feeds card). */
-function makeAuthedFetch(backendUrl, getSessionToken) {
+function makeAuthedFetch(backendUrl, getSessionToken, projectAccessToken) {
   return (path, opts = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken({ projectAccessToken, getSessionToken });
     return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
@@ -18,10 +19,10 @@ function makeAuthedFetch(backendUrl, getSessionToken) {
  * The project's feeds (`GET /feeds`) plus link/unlink. Reloads on FEEDS_CHANGED_EVENT, so a change made in
  * one card shows in the other. `feeds` is null until the first answer (or when feeds are unavailable).
  */
-export function useDeviceFeeds({ connected, backendUrl, getSessionToken }) {
+export function useDeviceFeeds({ connected, backendUrl, getSessionToken, projectAccessToken }) {
   const [feeds, setFeeds] = useState(null);
   const [error, setError] = useState('');
-  const authedFetch = useMemo(() => makeAuthedFetch(backendUrl, getSessionToken), [backendUrl, getSessionToken]);
+  const authedFetch = useMemo(() => makeAuthedFetch(backendUrl, getSessionToken, projectAccessToken), [backendUrl, getSessionToken, projectAccessToken]);
 
   const load = useCallback(async () => {
     if (!connected) return;
@@ -73,7 +74,7 @@ export function useDeviceFeeds({ connected, backendUrl, getSessionToken }) {
  * Device id -> name for the Feeds card chip. The three lists are fetched once when connected and kept in
  * state; a list that fails leaves its devices unnamed, and the chip falls back to the type and id.
  */
-export function useDeviceNames({ connected, backendUrl, getSessionToken }) {
+export function useDeviceNames({ connected, backendUrl, getSessionToken, projectAccessToken }) {
   const [names, setNames] = useState(() => new Map());
   const authedFetch = useMemo(() => makeAuthedFetch(backendUrl, getSessionToken), [backendUrl, getSessionToken]);
 
