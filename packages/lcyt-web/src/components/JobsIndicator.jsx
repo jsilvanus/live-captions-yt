@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import JobsPanel from './jobs-panel/JobsPanel.jsx';
 import { useSessionContext } from '../contexts/SessionContext';
+import { setupToken } from '../lib/setupToken.js';
 import { useLangOptional } from '../contexts/LangContext';
 import { getMessages, translate } from '../lib/i18n';
 
@@ -25,7 +26,7 @@ export default function JobsIndicator() {
   const lang = useLangOptional()?.lang ?? 'en';
   const t = useMemo(() => makePanelT(getMessages(lang)), [lang]);
   const backendUrl = (session.backendUrl || '').replace(/\/$/, '');
-  const getToken = session.getSessionToken;
+  const getToken = () => setupToken(session);
 
   const get = useCallback(async (path) => {
     const token = getToken?.();
