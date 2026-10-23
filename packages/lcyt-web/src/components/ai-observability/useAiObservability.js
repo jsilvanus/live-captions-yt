@@ -189,7 +189,7 @@ export function useAiObservability() {
     if (!backendUrl || !captureId) return null;
     const token = setupToken({ projectAccessToken, getSessionToken }) || '';
     return `${backendUrl}/api/v1/roles/${roleCode}/captures/${encodeURIComponent(captureId)}/frame?token=${encodeURIComponent(token)}`;
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, projectAccessToken]);
 
   return {
     connected, backendUrl, apiKey,
