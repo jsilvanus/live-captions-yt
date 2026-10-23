@@ -1,5 +1,6 @@
 import { useContext, useState } from 'react';
 import { SessionContext } from '../../contexts/SessionContext';
+import { setupToken } from '../../lib/setupToken.js';
 import { AgentChatPanel, useAgentChat } from './AgentChatPanel.jsx';
 import { useGuidedActionDispatcher } from '../../hooks/useGuidedAction.jsx';
 
