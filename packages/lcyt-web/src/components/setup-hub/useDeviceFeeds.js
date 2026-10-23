@@ -76,7 +76,7 @@ export function useDeviceFeeds({ connected, backendUrl, getSessionToken, project
  */
 export function useDeviceNames({ connected, backendUrl, getSessionToken, projectAccessToken }) {
   const [names, setNames] = useState(() => new Map());
-  const authedFetch = useMemo(() => makeAuthedFetch(backendUrl, getSessionToken), [backendUrl, getSessionToken]);
+  const authedFetch = useMemo(() => makeAuthedFetch(backendUrl, getSessionToken, projectAccessToken), [backendUrl, getSessionToken, projectAccessToken]);
 
   useEffect(() => {
     if (!connected) return undefined;
