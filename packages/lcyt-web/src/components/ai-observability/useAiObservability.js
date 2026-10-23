@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useEventStream } from '../../hooks/useEventStream.js';
+import { setupToken } from '../../lib/setupToken.js';
 import { usePolling } from '../../hooks/usePolling.js';
 
 // ---------------------------------------------------------------------------
