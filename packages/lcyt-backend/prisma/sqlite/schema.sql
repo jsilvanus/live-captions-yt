@@ -1174,6 +1174,15 @@ CREATE TABLE IF NOT EXISTS "outputs" (
     "audio_source" TEXT NOT NULL DEFAULT '"source"',
     "enabled" INTEGER NOT NULL DEFAULT 1,
     "sort_order" INTEGER NOT NULL DEFAULT 0,
+    "created_at" TEXT NOT NULL DEFAULT (datetime('now')),
+    "group_id" TEXT
+);
+
+-- CreateTable
+CREATE TABLE IF NOT EXISTS "output_groups" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "owner_api_key" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
     "created_at" TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -1509,5 +1518,11 @@ CREATE INDEX IF NOT EXISTS "idx_notify_log_key_at" ON "notify_log"("api_key", "a
 CREATE INDEX IF NOT EXISTS "idx_outputs_owner" ON "outputs"("owner_api_key");
 
 -- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_outputs_group" ON "outputs"("group_id");
+
+-- CreateIndex
 CREATE UNIQUE INDEX IF NOT EXISTS "uq_outputs_owner_name" ON "outputs"("owner_api_key", "name");
+
+-- CreateIndex
+CREATE INDEX IF NOT EXISTS "idx_output_groups_owner" ON "output_groups"("owner_api_key");
 

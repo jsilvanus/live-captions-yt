@@ -742,6 +742,9 @@ export default {
       dskNone: 'Ei vielä DSK-näkymiä. Lisää ne kohdassa Grafiikka → Näkymät.',
       dskHint: 'Näkymät lisätään kuvan päälle valintajärjestyksessä. Vain itsenäiset näkymät ajetaan omana vaiheenaan.',
       cropEnabled: 'Rajaa pystykuvaksi',
+      lock: 'Renderöi yhdessä',
+      lockNone: 'Ei lukittu (oma prosessi)',
+      lockHint: 'Lukitut ulostulot renderöidään yhdellä ffmpegillä: sama kuva ja ajoitus, vähemmän suoritinkuormaa. Ne käynnistyvät, pysähtyvät ja käynnistyvät uudelleen yhdessä. Ei rajattaville ulostuloille.',
       audio: 'Ääni',
       audioSource: 'Kuvan oma ääni',
       audioFrom: 'Korvaa syötteen {name} äänellä',
@@ -751,11 +754,13 @@ export default {
       confirmDelete: 'Poistetaanko ulostulo "{name}"?',
       from: 'lähde {name}',
       dskCount: 'DSK: {count}',
+      lockedWith: 'lukittu: {name}',
       crop: 'rajaus',
       err: {
         incomplete: 'Anna ulostulolle nimi ja lähde.',
         save: 'Ulostuloa ei voitu tallentaa.',
         delete: 'Ulostuloa ei voitu poistaa.',
+        lock: 'Ulostuloja ei voitu lukita.',
       },
     },
     feeds: {

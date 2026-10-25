@@ -746,6 +746,9 @@ export default {
       dskNone: 'Inga DSK-vyer ännu. Lägg till dem under Grafik → Vyer.',
       dskHint: 'Vyerna läggs över bilden i den ordning de kryssas i. Bara fristående vyer körs som eget steg.',
       cropEnabled: 'Beskär till stående bild',
+      lock: 'Rendera tillsammans med',
+      lockNone: 'Inte låst (egen process)',
+      lockHint: 'Låsta utgångar renderas av en ffmpeg: samma bild och timing, mindre CPU. De startar, stannar och startar om tillsammans. Inte för utgångar med beskärning.',
       audio: 'Ljud',
       audioSource: 'Bildens eget ljud',
       audioFrom: 'Ersätt med ljudet från {name}',
@@ -755,11 +758,13 @@ export default {
       confirmDelete: 'Ta bort utgången "{name}"?',
       from: 'från {name}',
       dskCount: 'DSK: {count}',
+      lockedWith: 'låst med {name}',
       crop: 'beskärning',
       err: {
         incomplete: 'Ge utgången ett namn och en källa.',
         save: 'Utgången kunde inte sparas.',
         delete: 'Utgången kunde inte tas bort.',
+        lock: 'Utgångarna kunde inte låsas.',
       },
     },
     feeds: {

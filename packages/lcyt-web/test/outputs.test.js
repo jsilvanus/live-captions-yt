@@ -48,3 +48,29 @@ describe('form and body', () => {
     assert.deepEqual(toggleDsk(['a', 'b'], 'a'), ['b']);
   });
 });
+
+import { lockCandidates, lockAction, lockedWithId } from '../src/lib/outputs.js';
+
+describe('lock helpers', () => {
+  const a = { id: 'a', sourceType: 'feed', sourceId: 'f1', cropEnabled: false, groupId: null };
+  const b = { id: 'b', sourceType: 'feed', sourceId: 'f1', cropEnabled: false, groupId: null };
+  const c = { id: 'c', sourceType: 'feed', sourceId: 'f2', cropEnabled: false, groupId: null };
+  const d = { id: 'd', sourceType: 'feed', sourceId: 'f1', cropEnabled: true, groupId: null };
+  it('offers outputs with the same source and no crop', () => {
+    assert.deepEqual(lockCandidates([a, b, c, d], a).map(o => o.id), ['b']);
+    assert.deepEqual(lockCandidates([a, b], { ...a, cropEnabled: true }), []);
+  });
+  it('turns the choice into an action', () => {
+    assert.deepEqual(lockAction([a, b], a, ''), { kind: 'none' });
+    assert.deepEqual(lockAction([a, b], a, 'b'), { kind: 'create', otherId: 'b' });
+    const g = { ...b, groupId: 'lg-1' };
+    assert.deepEqual(lockAction([a, g], a, 'b'), { kind: 'join', groupId: 'lg-1' });
+    assert.deepEqual(lockAction([{ ...a, groupId: 'lg-1' }, g], { ...a, groupId: 'lg-1' }, 'b'), { kind: 'none' });
+    assert.deepEqual(lockAction([{ ...a, groupId: 'lg-1' }, g], { ...a, groupId: 'lg-1' }, ''), { kind: 'leave' });
+  });
+  it('finds the partner of a locked output', () => {
+    const g1 = { ...a, groupId: 'lg-1' }; const g2 = { ...b, groupId: 'lg-1' };
+    assert.equal(lockedWithId([g1, g2], g1), 'b');
+    assert.equal(lockedWithId([a, b], a), '');
+  });
+});

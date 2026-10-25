@@ -86,6 +86,7 @@ export { getCropConfig, getCropPreset, listCropPresets } from './db.js';
 export { outputCropPath, outputDskPath } from './output-paths.js';
 export { resolveOutputRoute } from './output-routing.js';
 export { OutputStepManager, buildDskStepArgs } from './output-steps.js';
+export { buildGroupArgs } from './output-group-plan.js';
 export { targetCenter, xNormForCenter, createFollowSmoother } from './crop-follow.js';
 
 /**

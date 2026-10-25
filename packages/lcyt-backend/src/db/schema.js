@@ -911,6 +911,7 @@ export function initSqliteSchema(dbPath) {
     if (!cols.has(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   };
   addColumn('prod_feeds', 'media', "media TEXT NOT NULL DEFAULT 'av'");
+  addColumn('outputs', 'group_id', 'group_id TEXT');
   addColumn('crop_preset_sets', 'output_id', 'output_id TEXT');
   addColumn('crop_presets', 'output_id', 'output_id TEXT');
   addColumn('crop_source_map', 'output_id', 'output_id TEXT');

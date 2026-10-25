@@ -8,6 +8,7 @@ import { setupToken } from '../../lib/setupToken.js';
 import { feedOptionLabel } from '../../lib/relaySource.js';
 import {
   EMPTY_OUTPUT_FORM, formFromOutput, outputBody, toggleDsk, selectableChainOutputs, selectableOutputFeeds,
+  lockCandidates, lockAction, lockedWithId,
 } from '../../lib/outputs.js';
 
 const HINT_STYLE = { fontSize: 12, color: 'var(--color-text-muted)', margin: '4px 0 0' };
@@ -32,6 +33,7 @@ export function OutputsSection() {
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState(null);     // { mode: 'add' } | { mode: 'edit', output } | null
   const [form, setForm] = useState(EMPTY_OUTPUT_FORM);
+  const [lockWith, setLockWith] = useState('');   // '' = not locked, else the id of the output it is rendered with
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
 
@@ -66,12 +68,14 @@ export function OutputsSection() {
   function openAdd() {
     const firstFeed = selectableOutputFeeds(feeds)[0];
     setForm({ ...EMPTY_OUTPUT_FORM, dsk: [], source: firstFeed ? `feed:${firstFeed.id}` : '' });
+    setLockWith('');
     setFormError('');
     setDialog({ mode: 'add' });
   }
 
   function openEdit(output) {
     setForm(formFromOutput(output));
+    setLockWith(lockedWithId(outputs, output));
     setFormError('');
     setDialog({ mode: 'edit', output });
   }
@@ -92,10 +96,28 @@ export function OutputsSection() {
         setFormError(data?.error || t('outputs.err.save'));
         return;
       }
+      if (editing) {
+        const failed = await applyLock(dialog.output, body);
+        if (failed) { setFormError(failed); await load(); return; }
+      }
       setDialog(null);
       await load();
     } catch { setFormError(t('outputs.err.save')); }
     finally { setSaving(false); }
+  }
+
+  // Make or change the lock after the output itself is saved. @returns {Promise<string>} an error text, or ''
+  async function applyLock(output, body) {
+    const saved = { ...output, ...body, sourceType: body.sourceType, sourceId: body.sourceId, cropEnabled: body.cropEnabled };
+    const action = lockAction(outputs, saved, body.cropEnabled ? '' : lockWith);
+    if (action.kind === 'none') return '';
+    const call = action.kind === 'create'
+      ? authedFetch('/outputs/groups', { method: 'POST', body: JSON.stringify({ outputIds: [output.id, action.otherId] }) })
+      : authedFetch(`/outputs/${encodeURIComponent(output.id)}`, { method: 'PATCH', body: JSON.stringify({ groupId: action.kind === 'join' ? action.groupId : null }) });
+    const r = await call;
+    if (r.ok) return '';
+    const data = await r.json().catch(() => ({}));
+    return data?.error || t('outputs.err.lock');
   }
 
   async function toggleEnabled(output) {
@@ -135,6 +157,7 @@ export function OutputsSection() {
     t('outputs.from', { name: sourceName(output) }),
     output.dsk?.length ? t('outputs.dskCount', { count: output.dsk.length }) : null,
     output.cropEnabled ? t('outputs.crop') : null,
+    output.groupId ? t('outputs.lockedWith', { name: (outputs || []).filter(o => o.id !== output.id && o.groupId === output.groupId).map(o => o.name).join(', ') }) : null,
   ].filter(Boolean).join(' · ');
 
   return (
@@ -224,6 +247,19 @@ export function OutputsSection() {
               />
               {t('outputs.cropEnabled')}
             </label>
+            {dialog.mode === 'edit' && !form.cropEnabled && (() => {
+              const candidates = lockCandidates(outputs, { ...dialog.output, ...(outputBody(form) || {}), cropEnabled: false });
+              return candidates.length > 0 || lockWith ? (
+                <label className="settings-field">
+                  <span className="settings-field__label">{t('outputs.lock')}</span>
+                  <select className="settings-field__input" value={lockWith} onChange={e => setLockWith(e.target.value)}>
+                    <option value="">{t('outputs.lockNone')}</option>
+                    {candidates.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                  </select>
+                  <p style={HINT_STYLE}>{t('outputs.lockHint')}</p>
+                </label>
+              ) : null;
+            })()}
             <label className="settings-field">
               <span className="settings-field__label">{t('outputs.audio')}</span>
               <select
