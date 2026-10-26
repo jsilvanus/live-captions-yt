@@ -19,53 +19,25 @@ import { createHash } from 'node:crypto';
 import logger from 'lcyt/logger';
 import { createFfmpegRunner } from 'lcyt-compute/ffmpeg';
 import { outputDskPath, outputSourcePath, effectiveDskViewports } from './output-paths.js';
+import { buildGroupArgs, groupRequires } from './output-group-plan.js';
 
 const BACKOFF_START_MS = 1000;
 const BACKOFF_MAX_MS = 15000;
 const HEALTHY_AFTER_MS = 30000;
 const DEFAULT_POLL_MS = 3000;
 export const DEFAULT_MAX_OUTPUT_STEPS = 4;
+export const DEFAULT_MAX_GROUP_MEMBERS = 4;
 
 const sha = (s, n = 12) => createHash('sha1').update(s).digest('hex').slice(0, n);
 
-/** `colorkey` filter body for a viewport's chromaKey, same rules as buildDskCompositeFilter (0xRRGGBB, similarity, blend). */
-function colorkeyFilter(chromaKey) {
-  const raw = typeof chromaKey.color === 'string' ? chromaKey.color.trim() : '#00B140';
-  const color = /^#[0-9a-fA-F]{6}$/.test(raw) ? `0x${raw.slice(1)}` : raw.replace(/[^0-9a-zA-Z]/g, '') || '0x00B140';
-  const clamp01 = (v, d) => (Number.isFinite(Number(v)) ? Math.max(0, Math.min(1, Number(v))) : d);
-  return `colorkey=${color}:${clamp01(chromaKey.similarity, 0.3)}:${clamp01(chromaKey.blend, 0.1)}`;
-}
-
 /**
  * ffmpeg arguments of a DSK step. Inputs: 0 = the source, 1..n = the viewport streams (later = on top). The video is
- * re-encoded; audio is copied from the source.
+ * re-encoded; audio is copied from the source. A one-member case of `buildGroupArgs`.
  * @param {{ sourceUrl: string, viewports: Array<{ url: string, chromaKey?: object|null }>, outputUrl: string, videoBitrate?: string }} p
  * @returns {string[]}
  */
 export function buildDskStepArgs({ sourceUrl, viewports, outputUrl, videoBitrate = null }) {
-  const args = ['-rtsp_transport', 'tcp', '-i', sourceUrl];
-  for (const v of viewports) args.push('-rtsp_transport', 'tcp', '-i', v.url);
-  const parts = [];
-  let base = '[0:v]';
-  viewports.forEach((v, i) => {
-    const idx = i + 1;
-    let ov = `[${idx}:v]`;
-    if (v.chromaKey?.enabled) {
-      parts.push(`${ov}${colorkeyFilter(v.chromaKey)}[k${idx}]`);
-      ov = `[k${idx}]`;
-    }
-    // the viewport renders at its own size; fit it to the picture under it
-    parts.push(`${ov}${base}scale2ref=w=main_w:h=main_h[s${idx}][b${idx}]`);
-    parts.push(`[b${idx}][s${idx}]overlay=0:0:eof_action=pass[o${idx}]`);
-    base = `[o${idx}]`;
-  });
-  const last = viewports.length ? base : '[0:v]';
-  args.push('-filter_complex', parts.length ? parts.join(';') : '[0:v]null[o0]');
-  args.push('-map', viewports.length ? last : '[o0]', '-map', '0:a?');
-  args.push('-c:v', 'libx264', '-preset', 'veryfast', '-tune', 'zerolatency');
-  if (videoBitrate) args.push('-b:v', videoBitrate);
-  args.push('-c:a', 'copy', '-f', 'flv', outputUrl);
-  return args;
+  return buildGroupArgs({ sourceUrl, members: [{ viewports, outputUrl, videoBitrate }] });
 }
 
 export class OutputStepManager {
@@ -111,7 +83,10 @@ export class OutputStepManager {
   }
 
   _rtmpBase() {
-    return String(this._get('mediamtx.rtmp_base_url', 'MEDIAMTX_RTMP_BASE_URL', 'rtmp://127.0.0.1:1935')).replace(/\/$/, '');
+    // On a fleet worker the app host's 127.0.0.1 is not MediaMTX: MEDIAMTX_RTMP_FLEET_BASE_URL (like the RTSP one) names it.
+    const fleet = this._get('mediamtx.rtmp_fleet_base_url', 'MEDIAMTX_RTMP_FLEET_BASE_URL', '');
+    const local = this._get('mediamtx.rtmp_base_url', 'MEDIAMTX_RTMP_BASE_URL', 'rtmp://127.0.0.1:1935');
+    return String(fleet || local).replace(/\/$/, '');
   }
 
   _requires() {
@@ -125,10 +100,17 @@ export class OutputStepManager {
     return n > 0 ? n : DEFAULT_POLL_MS;
   }
 
+  /** `outputs.max_group_members` (env MAX_GROUP_MEMBERS): most outputs one lock group may render in one ffmpeg. */
+  get maxGroupMembers() {
+    const n = Number(this._get('outputs.max_group_members', 'MAX_GROUP_MEMBERS', DEFAULT_MAX_GROUP_MEMBERS));
+    return Number.isFinite(n) && n > 1 ? Math.floor(n) : DEFAULT_MAX_GROUP_MEMBERS;
+  }
+
   /**
-   * Every DSK step the database asks for right now: enabled outputs with at least one effective viewport, at most `maxSteps`
-   * steps per project (crops count towards the limit too; the first outputs in sort order win).
-   * @returns {Promise<Array<{ apiKey: string, outputId: string, name: string, path: string, sourcePath: string, viewports: Array<{ name: string, path: string, chromaKey: object|null }> }>>}
+   * Every ffmpeg run the database asks for right now, one entry per process ("unit"): an enabled output with at least one
+   * effective viewport runs alone, outputs of one lock group that read the same input run together in one process. At most
+   * `maxSteps` processes per project (crops count towards the limit too; the first outputs in sort order win).
+   * @returns {Promise<Array<{ key: string, outputId: string, name: string, path: string, groupId: string|null, apiKey: string, sourcePath: string, members: Array<{ outputId: string, name: string, path: string, viewports: Array<{ name: string, path: string, chromaKey: object|null }> }> }>>}
    */
   async desiredSteps() {
     const rows = await this._db.outputs.findMany({
@@ -137,6 +119,7 @@ export class OutputStepManager {
     });
     const perProject = new Map();
     const wanted = [];
+    const groupUnits = new Map(); // `${groupId}|${sourcePath}` -> unit
     this._skipped = [];
     for (const row of rows) {
       const used = perProject.get(row.owner_api_key) ?? 0;
@@ -146,15 +129,26 @@ export class OutputStepManager {
       const viewports = await effectiveDskViewports(this._db, row.owner_api_key, names, this._settings);
       let cost = cropCost;
       if (viewports.length) {
-        if (used + cost + 1 > this.maxSteps) {
-          this._skipped.push({ outputId: row.id, reason: `more than ${this.maxSteps} steps in this project` });
-          perProject.set(row.owner_api_key, used + cost);
-          continue;
-        }
         const sourcePath = await outputSourcePath(this._db, row.owner_api_key, row.id, null, this._settings);
-        cost += 1;
-        if (sourcePath) {
-          wanted.push({ apiKey: row.owner_api_key, outputId: row.id, name: row.name, path: outputDskPath(row.id), sourcePath, viewports });
+        const member = { outputId: row.id, name: row.name, path: outputDskPath(row.id), viewports };
+        const groupKey = row.group_id && row.crop_enabled !== 1 && sourcePath ? `${row.group_id}|${sourcePath}` : null;
+        const unit = groupKey ? groupUnits.get(groupKey) : null;
+        if (unit) {
+          // joins the process of its group: no extra process, only one more rendition
+          if (unit.members.length >= this.maxGroupMembers) {
+            this._skipped.push({ outputId: row.id, reason: `more than ${this.maxGroupMembers} outputs in one lock group` });
+          } else {
+            unit.members.push(member);
+          }
+        } else if (used + cost + 1 > this.maxSteps) {
+          this._skipped.push({ outputId: row.id, reason: `more than ${this.maxSteps} steps in this project` });
+        } else {
+          cost += 1;
+          if (sourcePath) {
+            const u = { key: groupKey ? `group:${groupKey}` : outputDskPath(row.id), outputId: row.id, name: row.name, path: member.path, groupId: groupKey ? row.group_id : null, apiKey: row.owner_api_key, sourcePath, members: [member] };
+            wanted.push(u);
+            if (groupKey) groupUnits.set(groupKey, u);
+          }
         }
       }
       perProject.set(row.owner_api_key, used + cost);
@@ -186,27 +180,35 @@ export class OutputStepManager {
       return;
     }
     const wanted = await this.desiredSteps();
-    await this._stopMissing(new Set(wanted.map(w => w.path)));
+    await this._stopMissing(new Set(wanted.map(w => w.key)));
     for (const w of wanted) {
       const srcReady = await this._ready(w.sourcePath);
       if (srcReady === null) continue;
-      let st = this._steps.get(w.path);
+      let st = this._steps.get(w.key);
       if (!srcReady) {
         if (st?.runner) await this._stopRunner(st);
         if (st) { clearTimeout(st.timer); st.timer = null; st.backoff = BACKOFF_START_MS; }
         continue;
       }
-      const ready = [];
-      for (const v of w.viewports) {
-        const r = await this._ready(v.path);
-        if (r) ready.push(v);
+      // each member runs with the viewports that are ready at this moment
+      const members = [];
+      for (const m of w.members) {
+        const ready = [];
+        for (const v of m.viewports) {
+          const r = await this._ready(v.path);
+          if (r) ready.push(v);
+        }
+        members.push({ ...m, viewports: ready });
       }
-      const specHash = sha(JSON.stringify([w.sourcePath, ready.map(v => [v.path, v.chromaKey ?? null])]));
+      const specHash = sha(JSON.stringify([w.sourcePath, members.map(m => [m.path, m.viewports.map(v => [v.path, v.chromaKey ?? null])])]));
       if (!st) {
-        st = { path: w.path, outputId: w.outputId, apiKey: w.apiKey, name: w.name, runner: null, restarts: 0, backoff: BACKOFF_START_MS, timer: null, startedAt: 0, specHash: null };
-        this._steps.set(w.path, st);
+        st = { key: w.key, path: members[0].path, groupId: w.groupId, apiKey: w.apiKey, runner: null, restarts: 0, backoff: BACKOFF_START_MS, timer: null, startedAt: 0, specHash: null };
+        this._steps.set(w.key, st);
       }
-      st.spec = { sourcePath: w.sourcePath, viewports: ready };
+      st.path = members[0].path;
+      st.name = members.map(m => m.name).join('+');
+      st.outputIds = members.map(m => m.outputId);
+      st.spec = { sourcePath: w.sourcePath, members };
       if (st.runner && st.specHash !== specHash) await this._stopRunner(st);
       st.specHash = specHash;
       if (!st.runner && !st.timer) await this._start(st);
@@ -215,14 +217,15 @@ export class OutputStepManager {
   }
 
   async _start(st) {
-    const tag = `[output-step:${st.name.slice(0, 20)}]`;
+    const tag = `[output-step:${st.name.slice(0, 40)}]`;
     const base = this._rtspBase();
-    const args = buildDskStepArgs({
-      sourceUrl: `${base}/${st.spec.sourcePath}`,
-      viewports: st.spec.viewports.map(v => ({ url: `${base}/${v.path}`, chromaKey: v.chromaKey })),
-      outputUrl: `${this._rtmpBase()}/${st.path}`,
-    });
-    const jobId = `ostep-${sha(`${st.path}|${st.specHash}`, 16)}-${st.restarts}`;
+    const rtmp = this._rtmpBase();
+    const members = st.spec.members.map(m => ({
+      viewports: m.viewports.map(v => ({ url: `${base}/${v.path}`, chromaKey: v.chromaKey })),
+      outputUrl: `${rtmp}/${m.path}`,
+    }));
+    const args = buildGroupArgs({ sourceUrl: `${base}/${st.spec.sourcePath}`, members });
+    const jobId = `ostep-${sha(`${st.key}|${st.specHash}`, 16)}-${st.restarts}`;
     let runner;
     try {
       runner = this._runnerFactory({
@@ -236,14 +239,15 @@ export class OutputStepManager {
         jobId,
         class: 'stream',
         priority: 500,
-        requires: ['encoder:libx264', ...(st.spec.viewports.some(v => v.chromaKey?.enabled) ? ['filter:colorkey'] : []), ...this._requires()],
+        requires: [...groupRequires(members), ...this._requires()],
       });
       st.runner = runner;
       st.startedAt = Date.now();
       runner.on('error', (err) => logger.error(`${tag} ffmpeg error: ${err.message}`));
       runner.on('close', (info) => this._onClose(st, runner, info));
       await runner.start();
-      logger.info(`${tag} DSK step started for '${st.path}' (${st.spec.viewports.length} viewport(s))${runner.where ? ` on ${runner.where}` : ''}`);
+      const n = st.spec.members.length;
+      logger.info(`${tag} DSK step started for '${st.path}' (${st.spec.members.reduce((a, m) => a + m.viewports.length, 0)} viewport(s)${n > 1 ? `, ${n} locked outputs in one ffmpeg` : ''})${runner.where ? ` on ${runner.where}` : ''}`);
     } catch (err) {
       logger.warn(`${tag} could not start DSK step '${st.path}': ${err.message}`);
       if (st.runner === runner) st.runner = null;
@@ -255,13 +259,13 @@ export class OutputStepManager {
     if (st.runner !== runner) return; // replaced or stopped on purpose
     st.runner = null;
     if (Date.now() - st.startedAt > HEALTHY_AFTER_MS) st.backoff = BACKOFF_START_MS;
-    if (this._steps.get(st.path) !== st) return;
+    if (this._steps.get(st.key) !== st) return;
     logger.warn(`[output-steps] '${st.path}' ffmpeg ended (code ${info?.code ?? '?'}); checking whether to restart`);
     this._scheduleRestart(st);
   }
 
   _scheduleRestart(st) {
-    if (st.timer || this._steps.get(st.path) !== st) return;
+    if (st.timer || this._steps.get(st.key) !== st) return;
     const delay = st.backoff;
     st.backoff = Math.min(st.backoff * 2, BACKOFF_MAX_MS);
     st.restarts += 1;
@@ -308,8 +312,9 @@ export class OutputStepManager {
     return {
       active: this.active,
       steps: [...this._steps.values()].map(st => ({
-        outputId: st.outputId, path: st.path, running: !!st.runner, where: st.runner?.where ?? null,
-        viewports: st.spec?.viewports.map(v => v.name) ?? [], restarts: st.restarts,
+        outputId: st.outputIds?.[0] ?? null, outputIds: st.outputIds ?? [], groupId: st.groupId ?? null,
+        path: st.path, paths: st.spec?.members.map(m => m.path) ?? [], running: !!st.runner, where: st.runner?.where ?? null,
+        viewports: [...new Set(st.spec?.members.flatMap(m => m.viewports.map(v => v.name)) ?? [])], restarts: st.restarts,
       })),
       skipped: this._skipped,
     };

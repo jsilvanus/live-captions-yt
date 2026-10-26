@@ -76,3 +76,31 @@ export function outputBody(form) {
 export function toggleDsk(list, name) {
   return list.includes(name) ? list.filter(n => n !== name) : [...list, name];
 }
+
+/**
+ * Outputs a lock may be made with: other outputs that read the same source and have no crop (the server checks the real
+ * input path; the crop restriction is for the first version of locking). An output with a crop cannot be locked itself.
+ */
+export function lockCandidates(outputs, self) {
+  if (!self || self.cropEnabled) return [];
+  return (outputs || []).filter(o => o && o.id && o.id !== self.id && !o.cropEnabled
+    && o.sourceType === self.sourceType && o.sourceId === self.sourceId);
+}
+
+/**
+ * What saving the "lock with" choice means for an existing output. `choice` is '' (not locked) or another output's id.
+ * @returns {{ kind: 'none' } | { kind: 'leave' } | { kind: 'join', groupId: string } | { kind: 'create', otherId: string }}
+ */
+export function lockAction(outputs, self, choice) {
+  const other = choice ? (outputs || []).find(o => o.id === choice) : null;
+  if (!other) return self.groupId ? { kind: 'leave' } : { kind: 'none' };
+  if (self.groupId && self.groupId === other.groupId) return { kind: 'none' };
+  if (other.groupId) return { kind: 'join', groupId: other.groupId };
+  return { kind: 'create', otherId: other.id };
+}
+
+/** The output this one is locked with, for the select (the first other member of its group), or ''. */
+export function lockedWithId(outputs, self) {
+  if (!self?.groupId) return '';
+  return (outputs || []).find(o => o.id !== self.id && o.groupId === self.groupId)?.id || '';
+}

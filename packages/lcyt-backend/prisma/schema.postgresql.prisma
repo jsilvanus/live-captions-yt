@@ -1287,9 +1287,22 @@ model outputs {
   enabled       Int     @default(1)
   sort_order    Int     @default(0)
   created_at    String  @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+  /// Lock group (output_groups.id, no foreign key): outputs of one group are rendered by one ffmpeg (plan_locked_outputs.md).
+  group_id      String?
 
   @@unique([owner_api_key, name], map: "uq_outputs_owner_name")
   @@index([owner_api_key], map: "idx_outputs_owner")
+  @@index([group_id], map: "idx_outputs_group")
+}
+
+/// A lock group: outputs that share one input and one ffmpeg process. Members point here with outputs.group_id.
+model output_groups {
+  id            String @id
+  owner_api_key String
+  name          String
+  created_at    String @default(dbgenerated("to_char((now() AT TIME ZONE 'utc'), 'YYYY-MM-DD HH24:MI:SS')"))
+
+  @@index([owner_api_key], map: "idx_output_groups_owner")
 }
 
 /// Crop settings of one output (the legacy per-project crop_config row stays for the project's first crop output until it is re-keyed).

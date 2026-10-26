@@ -9,12 +9,15 @@
 
 import { randomBytes } from 'node:crypto';
 import logger from 'lcyt/logger';
+import { outputSourcePath } from '../output-paths.js';
 
 export const OUTPUT_SOURCE_TYPES = ['feed', 'output'];
 /** At most this many outputs in one chain, the one being written included (Vertical on Program on a feed is 2). */
 export const MAX_OUTPUT_CHAIN_DEPTH = 3;
 export const PROGRAM_OUTPUT_NAME = 'Program';
 export const VERTICAL_OUTPUT_NAME = 'Vertical';
+/** Default cap of outputs in one lock group (setting outputs.max_group_members). */
+export const DEFAULT_MAX_GROUP_MEMBERS = 4;
 
 export function generateOutputId() {
   return `out-${randomBytes(6).toString('hex')}`;
@@ -36,6 +39,7 @@ function toOutput(row) {
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order ?? 0,
     createdAt: row.created_at,
+    groupId: row.group_id ?? null,
   };
 }
 
@@ -76,6 +80,10 @@ export function validateOutputInput(body, { partial = false } = {}) {
       return { ok: false, error: 'dsk must be a list of distinct viewport names' };
     }
     v.dsk = b.dsk;
+  }
+  if (b.groupId !== undefined) {
+    if (b.groupId !== null && (typeof b.groupId !== 'string' || !b.groupId)) return { ok: false, error: 'groupId must be a lock group id or null' };
+    v.groupId = b.groupId;
   }
   if (b.cropEnabled !== undefined) v.cropEnabled = Boolean(b.cropEnabled);
   if (b.enabled !== undefined) v.enabled = Boolean(b.enabled);
@@ -139,7 +147,7 @@ export async function createOutput(db, apiKey, body) {
 }
 
 /** Update an output. Only provided fields change. */
-export async function updateOutput(db, apiKey, id, body) {
+export async function updateOutput(db, apiKey, id, body, opts = {}) {
   const existing = await getOutput(db, apiKey, id);
   if (!existing) return { ok: false, error: 'output not found', status: 404 };
   const checked = validateOutputInput(body, { partial: true });
@@ -148,6 +156,19 @@ export async function updateOutput(db, apiKey, id, body) {
   if (v.sourceType !== undefined || v.sourceId !== undefined) {
     const sourceError = await checkOutputSource(db, apiKey, id, v.sourceType ?? existing.sourceType, v.sourceId ?? existing.sourceId);
     if (sourceError) return { ok: false, error: sourceError, status: 400 };
+  }
+  // Lock group rules: an output in (or joining) a group has no crop and reads the same input as the others.
+  const nextGroup = v.groupId !== undefined ? v.groupId : existing.groupId;
+  if (nextGroup) {
+    const touched = v.groupId !== undefined || v.cropEnabled === true || v.sourceType !== undefined || v.sourceId !== undefined;
+    if (touched) {
+      const groupError = await checkGroupMembers(db, apiKey, nextGroup, id, {
+        cropEnabled: v.cropEnabled ?? existing.cropEnabled,
+        sourceType: v.sourceType ?? existing.sourceType,
+        sourceId: v.sourceId ?? existing.sourceId,
+      }, opts.maxGroupMembers);
+      if (groupError) return { ok: false, error: groupError, status: groupError.startsWith('lock group not found') ? 404 : 409 };
+    }
   }
   if (v.name !== undefined && v.name !== existing.name) {
     const clash = await db.outputs.findFirst({ where: { owner_api_key: apiKey, name: v.name }, select: { id: true } });
@@ -162,7 +183,9 @@ export async function updateOutput(db, apiKey, id, body) {
   if (v.audioSource !== undefined) data.audio_source = JSON.stringify(v.audioSource);
   if (v.enabled !== undefined) data.enabled = v.enabled ? 1 : 0;
   if (v.sortOrder !== undefined) data.sort_order = v.sortOrder;
+  if (v.groupId !== undefined) data.group_id = v.groupId;
   if (Object.keys(data).length) await db.outputs.updateMany({ where: { id, owner_api_key: apiKey }, data });
+  if (v.groupId !== undefined && existing.groupId && existing.groupId !== v.groupId) await dissolveGroupIfSmall(db, apiKey, existing.groupId);
   return { ok: true, output: await getOutput(db, apiKey, id) };
 }
 
@@ -184,7 +207,95 @@ export async function deleteOutput(db, apiKey, id) {
     await db[table].updateMany({ where: { api_key: apiKey, output_id: id }, data: { output_id: null } });
   }
   await db.outputs.deleteMany({ where: { id, owner_api_key: apiKey } });
+  if (existing.groupId) await dissolveGroupIfSmall(db, apiKey, existing.groupId);
   return { ok: true };
+}
+
+// ── Lock groups (plan_locked_outputs.md) ────────────────────────────────────────────────────────────────────────────────
+// A lock group is a set of outputs that one ffmpeg renders (see output-group-plan.js). The user makes it by hand; nothing is
+// locked automatically. Members read the same input path, have no crop (v1) and live in the same project.
+
+export function generateGroupId() {
+  return `lg-${randomBytes(6).toString('hex')}`;
+}
+
+function toGroup(row, outputIds) {
+  return { id: row.id, name: row.name, outputIds, createdAt: row.created_at };
+}
+
+export async function listGroups(db, apiKey) {
+  const groups = await db.output_groups.findMany({ where: { owner_api_key: apiKey }, orderBy: [{ created_at: 'asc' }, { id: 'asc' }] });
+  const members = await db.outputs.findMany({
+    where: { owner_api_key: apiKey, group_id: { not: null } },
+    orderBy: [{ sort_order: 'asc' }, { created_at: 'asc' }, { id: 'asc' }],
+    select: { id: true, group_id: true },
+  });
+  return groups.map(g => toGroup(g, members.filter(m => m.group_id === g.id).map(m => m.id)));
+}
+
+/**
+ * Check that `candidate` (the output being added or changed, with its prospective settings) can be a member of `groupId`
+ * together with the group's current members. @returns {Promise<string|null>} an error message or null
+ */
+export async function checkGroupMembers(db, apiKey, groupId, selfId, candidate, maxMembers = DEFAULT_MAX_GROUP_MEMBERS, settings = null) {
+  const group = await db.output_groups.findFirst({ where: { id: groupId, owner_api_key: apiKey }, select: { id: true } });
+  if (!group) return 'lock group not found in this project';
+  if (candidate.cropEnabled) return 'an output with a crop cannot be locked (crop is not supported in a lock group yet)';
+  const others = await db.outputs.findMany({ where: { owner_api_key: apiKey, group_id: groupId, id: { not: selfId } }, select: { id: true, name: true, crop_enabled: true } });
+  if (others.length + 1 > maxMembers) return `a lock group holds at most ${maxMembers} outputs`;
+  const ownPath = candidate.sourceType === 'feed'
+    ? (await db.prod_feeds.findFirst({ where: { id: candidate.sourceId, owner_api_key: apiKey }, select: { feed_key: true } }))?.feed_key ?? null
+    : await outputSourcePath(db, apiKey, selfId, null, settings);
+  for (const o of others) {
+    if (o.crop_enabled === 1) return `output '${o.name}' has a crop and cannot be in a lock group`;
+    const path = await outputSourcePath(db, apiKey, o.id, null, settings);
+    if (!path || !ownPath || path !== ownPath) return `outputs in a lock group must read the same input ('${o.name}' reads another one)`;
+  }
+  return null;
+}
+
+/**
+ * Create a lock group from at least two outputs of the project. Outputs already in a group are refused (leave it first).
+ * @returns {Promise<{ ok: true, group: object } | { ok: false, error: string, status: number }>}
+ */
+export async function createGroup(db, apiKey, body, opts = {}) {
+  const b = body && typeof body === 'object' ? body : {};
+  const ids = Array.isArray(b.outputIds) ? b.outputIds : null;
+  if (!ids || ids.length < 2 || new Set(ids).size !== ids.length || ids.some(i => typeof i !== 'string' || !i)) {
+    return { ok: false, error: 'outputIds must list at least two distinct outputs', status: 400 };
+  }
+  const max = opts.maxGroupMembers ?? DEFAULT_MAX_GROUP_MEMBERS;
+  if (ids.length > max) return { ok: false, error: `a lock group holds at most ${max} outputs`, status: 409 };
+  const rows = await db.outputs.findMany({ where: { owner_api_key: apiKey, id: { in: ids } }, select: { id: true, name: true, source_type: true, source_id: true, crop_enabled: true, group_id: true } });
+  if (rows.length !== ids.length) return { ok: false, error: 'an output was not found in this project', status: 404 };
+  for (const r of rows) {
+    if (r.group_id) return { ok: false, error: `output '${r.name}' is already in a lock group`, status: 409 };
+    if (r.crop_enabled === 1) return { ok: false, error: `output '${r.name}' has a crop and cannot be in a lock group`, status: 409 };
+  }
+  const paths = [];
+  for (const r of rows) paths.push(await outputSourcePath(db, apiKey, r.id, null, opts.settings ?? null));
+  if (paths.some(p => !p) || new Set(paths).size !== 1) return { ok: false, error: 'outputs in a lock group must read the same input', status: 409 };
+  let name = typeof b.name === 'string' && b.name.trim() ? b.name.trim() : rows.map(r => r.name).join(' + ');
+  if (name.length > 80) name = name.slice(0, 80);
+  const id = generateGroupId();
+  await db.output_groups.create({ data: { id, owner_api_key: apiKey, name, created_at: db.$util.sqlNow() } });
+  await db.outputs.updateMany({ where: { owner_api_key: apiKey, id: { in: ids } }, data: { group_id: id } });
+  return { ok: true, group: toGroup({ id, name, created_at: null }, ids) };
+}
+
+/** Dissolve a group: every member goes back to its own step. */
+export async function deleteGroup(db, apiKey, groupId) {
+  const group = await db.output_groups.findFirst({ where: { id: groupId, owner_api_key: apiKey }, select: { id: true } });
+  if (!group) return { ok: false, error: 'lock group not found', status: 404 };
+  await db.outputs.updateMany({ where: { owner_api_key: apiKey, group_id: groupId }, data: { group_id: null } });
+  await db.output_groups.deleteMany({ where: { id: groupId, owner_api_key: apiKey } });
+  return { ok: true };
+}
+
+/** A group with fewer than two members is not a lock: dissolve it. */
+export async function dissolveGroupIfSmall(db, apiKey, groupId) {
+  const n = await db.outputs.count({ where: { owner_api_key: apiKey, group_id: groupId } });
+  if (n < 2) await deleteGroup(db, apiKey, groupId);
 }
 
 /** Name of the project's composite DSK viewport (display_settings.stream.mode === 'composite'), or null. */

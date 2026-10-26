@@ -286,6 +286,8 @@ Used when `RADIO_HLS_SOURCE=mediamtx` or when MediaMTX manages RTMP paths.
 | `MEDIAMTX_HOOK_SECRET` | _(unset)_ | Shared secret for `POST /internal/mediamtx/path` (header `x-lcyt-hook-secret`). The route is closed while empty. Keep `/internal` off the public proxy |
 | `MEDIAMTX_FANOUT_POLL_MS` | `0` | Runner mode: reconcile poll against the MediaMTX API (0 = 2 s without a hook secret, 30 s with one) |
 | `MEDIAMTX_RTSP_FLEET_BASE_URL` | _(unset)_ | RTSP address fleet workers read from when they are on another host (private address of MediaMTX); empty = `MEDIAMTX_RTSP_BASE_URL` |
+| `MEDIAMTX_RTMP_FLEET_BASE_URL` | _(unset)_ | RTMP address fleet output steps publish to when they run on another host (private address of MediaMTX); empty = `MEDIAMTX_RTMP_BASE_URL` |
+| `MAX_GROUP_MEMBERS` | `4` | Most outputs one lock group may render in the same ffmpeg (each is its own x264 encode) |
 | `MEDIAMTX_FLEET_REQUIRES` | _(unset)_ | Capabilities fan-out jobs require, e.g. `net:mediamtx` (worker started with `FFFLEET_PROBE=mediamtx=<host>:8554`) |
 
 `runner` mode is new (2026-10-13) and has not been run against a real MediaMTX or fleet; `hook` stays the default until it has. Plan: `docs/plans/plan_mediamtx_fanout_fleet.md`.

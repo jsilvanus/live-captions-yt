@@ -789,6 +789,9 @@ export default {
       dskNone: 'No DSK viewports yet. Add them in Graphics → Viewports.',
       dskHint: 'Viewports are keyed over the picture in the order they are ticked. Only standalone viewports run as a step.',
       cropEnabled: 'Crop to the vertical frame',
+      lock: 'Render together with',
+      lockNone: 'Not locked (own process)',
+      lockHint: 'Locked outputs are rendered by one ffmpeg: same picture and timing, less CPU. They start, stop and restart together. Not for outputs with a crop.',
       audio: 'Audio',
       audioSource: 'The picture\'s own sound',
       audioFrom: 'Replace with the sound of {name}',
@@ -798,11 +801,13 @@ export default {
       confirmDelete: 'Delete the output "{name}"?',
       from: 'from {name}',
       dskCount: 'DSK: {count}',
+      lockedWith: 'locked with {name}',
       crop: 'crop',
       err: {
         incomplete: 'Give the output a name and a source.',
         save: 'The output could not be saved.',
         delete: 'The output could not be deleted.',
+        lock: 'Could not lock the outputs.',
       },
     },
     feeds: {
