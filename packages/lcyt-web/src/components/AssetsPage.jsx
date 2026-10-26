@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'wouter';
 import { useSessionContext } from '../contexts/SessionContext';
+import { setupToken } from '../lib/setupToken.js';
 import { useProjectRequired } from '../hooks/useProjectRequired';
 import { SetupCard, SetupItemRow } from './setup-hub/SetupCard.jsx';
 import { CATEGORY_COLORS } from './setup-hub/icons.jsx';
@@ -157,7 +158,7 @@ function AssetsPageInner() {
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
 
-  const token = session?.getSessionToken?.() ?? null;
+  const token = setupToken(session);
   const imageAssets = useImageAssets({
     backendUrl,
     connected,

@@ -23,7 +23,7 @@ export function useDskMetacodeSources({ session }) {
     if (loadedForKeyRef.current === apiKey || loadingRef.current) return;
     loadingRef.current = true;
     try {
-      const token = session?.getSessionToken?.();
+      const token = setupToken(session);
       const [imagesResult, viewportsResult] = await Promise.allSettled([
         session.listImages?.() ?? Promise.resolve({ images: [] }),
         fetch(`${backendUrl}/api/v1/dsk/${encodeURIComponent(apiKey)}/viewports`, {

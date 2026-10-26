@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useContext, forwardRef, useImperative
 import { useLang } from '../contexts/LangContext';
 import { SessionContext } from '../contexts/SessionContext';
 import { COMMON_LANGUAGES } from '../lib/sttConfig';
+import { setupToken } from '../lib/setupToken.js';
 import { TRANSLATION_VENDORS } from '../lib/translationConfig';
 import { Dialog } from './Dialog.jsx';
 import { LanguagePicker } from './LanguagePicker.jsx';
@@ -64,7 +65,7 @@ export const LanguagesManager = forwardRef(function LanguagesManager({ embedded 
   const hasCaptionTarget = translations.some(r => r.target === 'captions' && (editing === 'new' || r.id !== editing?.id));
 
   const authedFetch = useCallback((path, opts = {}) => {
-    const token = session?.getSessionToken?.();
+    const token = setupToken(session);
     return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },

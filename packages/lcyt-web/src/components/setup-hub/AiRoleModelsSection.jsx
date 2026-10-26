@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
+import { setupToken } from '../../lib/setupToken.js';
 import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { ModelsIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
@@ -11,9 +12,9 @@ const fieldStyle = { marginBottom: '0.6rem' };
 // Same small authenticated-fetch idiom as ConnectorsSection.jsx — kept local
 // rather than shared, matching this directory's existing convention of each
 // Section owning its own thin fetch wrapper.
-function useApi({ backendUrl, getSessionToken } = {}) {
+function useApi({ backendUrl, getSessionToken, projectAccessToken } = {}) {
   const call = useCallback(async (path, { method = 'GET', body } = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken({ projectAccessToken, getSessionToken });
     const headers = token ? { Authorization: `Bearer ${token}` } : {};
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     const res = await fetch(`${backendUrl}/api/v1${path}`, {
@@ -24,7 +25,7 @@ function useApi({ backendUrl, getSessionToken } = {}) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
     return data;
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, projectAccessToken]);
   return call;
 }
 
@@ -184,7 +185,7 @@ export function AiRoleModelsSection() {
   const connected = session?.connected;
   const backendUrl = session?.backendUrl;
   const getSessionToken = session?.getSessionToken;
-  const api = useApi({ backendUrl, getSessionToken });
+  const api = useApi({ backendUrl, getSessionToken, projectAccessToken: session?.projectAccessToken });
   const [roles, setRoles] = useState([]);
   const [providers, setProviders] = useState([]);
   const [configs, setConfigs] = useState({});

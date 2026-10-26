@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useSessionContext } from '../../contexts/SessionContext.jsx';
 import { useEventStream } from '../../hooks/useEventStream.js';
+import { setupToken } from '../../lib/setupToken.js';
 import { usePolling } from '../../hooks/usePolling.js';
 
 // ---------------------------------------------------------------------------
@@ -26,7 +27,7 @@ const ROLE_CODES = ['tracker', 'describer'];
 
 export function useAiObservability() {
   const session = useSessionContext();
-  const { backendUrl, apiKey, connected, getSessionToken } = session;
+  const { backendUrl, apiKey, connected, getSessionToken, projectAccessToken } = session;
 
   const [status, setStatus] = useState({ tracker: null, describer: null });
   const [captures, setCaptures] = useState({ tracker: [], describer: [] });
@@ -41,7 +42,7 @@ export function useAiObservability() {
   const [perception, setPerception] = useState(null);
 
   const api = useCallback(async (path, opts = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken({ projectAccessToken, getSessionToken });
     const headers = { ...(opts.headers || {}) };
     if (token) headers.Authorization = `Bearer ${token}`;
     let body = opts.body;
@@ -50,7 +51,7 @@ export function useAiObservability() {
       body = JSON.stringify(body);
     }
     return fetch(`${backendUrl}/api/v1${path}`, { ...opts, headers, body });
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, projectAccessToken]);
 
   const loadStatus = useCallback(async (roleCode) => {
     if (!backendUrl || !apiKey) return;
@@ -186,9 +187,9 @@ export function useAiObservability() {
 
   const frameUrl = useCallback((roleCode, captureId) => {
     if (!backendUrl || !captureId) return null;
-    const token = getSessionToken?.() || '';
+    const token = setupToken({ projectAccessToken, getSessionToken }) || '';
     return `${backendUrl}/api/v1/roles/${roleCode}/captures/${encodeURIComponent(captureId)}/frame?token=${encodeURIComponent(token)}`;
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, projectAccessToken]);
 
   return {
     connected, backendUrl, apiKey,

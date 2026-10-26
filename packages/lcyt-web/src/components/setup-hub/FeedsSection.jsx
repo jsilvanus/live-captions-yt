@@ -4,6 +4,7 @@ import { SetupCard, SetupItemRow } from './SetupCard.jsx';
 import { FeedsIcon } from './icons.jsx';
 import { Dialog } from '../Dialog.jsx';
 import { useSetupT } from '../../lib/useSetupT.js';
+import { setupToken } from '../../lib/setupToken.js';
 import { FEEDS_CHANGED_EVENT, notifyFeedsChanged, deviceNameKey } from '../../lib/deviceFeeds.js';
 import { useDeviceNames } from './useDeviceFeeds.js';
 
@@ -69,15 +70,15 @@ export function FeedsSection() {
   const [saving, setSaving] = useState(false);
 
   const authedFetch = useCallback((path, opts = {}) => {
-    const token = getSessionToken?.();
+    const token = setupToken(session);
     return fetch(`${backendUrl}/api/v1${path}`, {
       ...opts,
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(opts.headers || {}) },
     });
-  }, [backendUrl, getSessionToken]);
+  }, [backendUrl, getSessionToken, session?.projectAccessToken]);
 
   // Device names for the linked-device chip (fetched once; a device added later shows its id until reload).
-  const deviceNames = useDeviceNames({ connected, backendUrl, getSessionToken });
+  const deviceNames = useDeviceNames({ connected, backendUrl, getSessionToken, projectAccessToken: session?.projectAccessToken });
 
   const loadFeeds = useCallback(async () => {
     if (!connected) return;
